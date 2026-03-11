@@ -421,7 +421,7 @@ test.describe('Import / Export', () => {
     const mdText = page.locator('#markdown-text');
     await expect(mdText).not.toBeEmpty();
     const content = await mdText.inputValue();
-    expect(content).toMatch(/^- /m);
+    expect(content).toMatch(/^[+-] /m);
   });
 
   test('Apply button imports edited markdown', async ({ page }) => {
@@ -433,6 +433,66 @@ test.describe('Import / Export', () => {
 
     const rows = page.locator('.bullet-row');
     await expect(rows).toHaveCount(2);
+  });
+
+  test('Export uses - for expanded and + for collapsed nodes', async ({ page }) => {
+    // Create a parent with a child, then collapse the parent
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    await page.locator('#markdown-text').fill('- Parent\n  - Child\n- Standalone');
+    await page.locator('#btn-apply-markdown').click();
+
+    // Collapse the first bullet (Parent) via Ctrl+Space
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Control+Space');
+
+    // Open the markdown modal and check the export
+    await page.locator('#toolbar').getByText('Markdown').click();
+    const content = await page.locator('#markdown-text').inputValue();
+    // Collapsed parent should export as '+ Parent'
+    expect(content).toMatch(/^\+ Parent$/m);
+    // Standalone (expanded) should export as '- Standalone'
+    expect(content).toMatch(/^- Standalone$/m);
+  });
+
+  test('Import restores collapsed state from + bullet', async ({ page }) => {
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    // Use + for a collapsed node (with a child) and - for expanded
+    await page.locator('#markdown-text').fill('+ Collapsed\n  - Child\n- Expanded');
+    await page.locator('#btn-apply-markdown').click();
+
+    // The collapsed row should have the 'collapsed' CSS class
+    const collapsedRow = page.locator('.bullet-row').first();
+    await expect(collapsedRow).toHaveClass(/collapsed/);
+
+    // The expanded row should NOT have the 'collapsed' CSS class
+    const expandedRow = page.locator('.bullet-row').nth(1);
+    await expect(expandedRow).not.toHaveClass(/collapsed/);
+  });
+
+  test('Collapsed state round-trips through export and import', async ({ page }) => {
+    // Set up a two-level outline with a collapsed parent
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    await page.locator('#markdown-text').fill('- Parent\n  - Child\n- Other');
+    await page.locator('#btn-apply-markdown').click();
+
+    // Collapse the first bullet
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Control+Space');
+
+    // Export, then re-import the markdown
+    await page.locator('#toolbar').getByText('Markdown').click();
+    const exported = await page.locator('#markdown-text').inputValue();
+    await page.locator('#markdown-text').fill(exported);
+    await page.locator('#btn-apply-markdown').click();
+
+    // The first bullet should still be collapsed after the round-trip
+    const firstRow = page.locator('.bullet-row').first();
+    await expect(firstRow).toHaveClass(/collapsed/);
   });
 });
 

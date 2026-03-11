@@ -229,9 +229,15 @@ The modal textarea is pre-populated with the current outline in Markdown format 
 - Bullet text
   > description line
   - Child bullet
++ Collapsed bullet
+  - Hidden child
 ```
 
-Recursive, depth increases indent by two spaces per level. Lines matching `/^(\s*)([-*])\s(.*)$/` are bullets. Indent depth determines parent via a stack. Lines matching `/^\s*>\s(.*)$/` append to the last node's description.
+Recursive, depth increases indent by two spaces per level. Lines matching `/^(\s*)([-*+])\s(.*)$/` are bullets. Indent depth determines parent via a stack. Lines matching `/^\s*>\s(.*)$/` append to the last node's description.
+
+The bullet character encodes collapsed/expanded state:
+- `-` (or `*`) → expanded (children visible)
+- `+` → collapsed (children hidden)
 
 ---
 

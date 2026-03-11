@@ -1561,7 +1561,8 @@
             let out = '';
             for (const child of node.children) {
                 const indent = '  '.repeat(depth);
-                out += `${indent}- ${child.text}\n`;
+                const bullet = child.collapsed ? '+' : '-';
+                out += `${indent}${bullet} ${child.text}\n`;
                 if (child.description) {
                     for (const line of child.description.split('\n')) {
                         out += `${indent}  > ${line}\n`;
@@ -1580,11 +1581,13 @@
             const stack = [{ node: root, indent: -1 }];
 
             for (const line of lines) {
-                const bulletMatch = line.match(/^(\s*)([-*])\s(.*)$/);
+                const bulletMatch = line.match(/^(\s*)([-*+])\s(.*)$/);
                 if (bulletMatch) {
                     const indentLen = bulletMatch[1].length;
+                    const bulletChar = bulletMatch[2];
                     const text = bulletMatch[3];
                     const node = makeNode(text);
+                    node.collapsed = bulletChar === '+';
 
                     while (stack.length > 1 && stack[stack.length - 1].indent >= indentLen) {
                         stack.pop();
