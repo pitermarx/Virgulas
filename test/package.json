@@ -4,7 +4,7 @@
   "description": "A keyboard-first infinite outliner running entirely in the browser",
   "scripts": {
     "test": "playwright test",
-    "test:ci": "playwright test --reporter=list,json,github",
+    "test:ci": "playwright test",
     "test:headed": "playwright test --headed"
   },
   "devDependencies": {
