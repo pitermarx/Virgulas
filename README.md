@@ -20,7 +20,9 @@ Optional cloud sync via Supabase for signed-in users.
 
 ## Supabase cloud sync
 
-When a user is signed in, the outline data and theme preference are automatically synced to Supabase every 15 seconds.
+Cloud sync is **opt-in**: it must be explicitly enabled via the **Options → Cloud sync → Enable sync** toggle. When disabled (the default), the app works entirely offline using `localStorage`. The `sync_enabled` flag is persisted in `localStorage`.
+
+When sync is enabled and a user is signed in, the outline data and theme preference are synced to Supabase every 15 seconds.
 
 ### Required Supabase table
 
@@ -95,6 +97,8 @@ focusedId    — ID of the bullet whose text is currently focused (or null)
 selectedIds  — ordered array of IDs in the current multi-selection (empty when no selection)
 selectionAnchor — ID of the node where the multi-selection started (null when no selection)
 selectionHead   — ID of the node at the current end of the multi-selection (null when no selection)
+syncEnabled  — boolean; whether cloud sync is active (persisted in localStorage as 'sync_enabled')
+devMode      — boolean; whether the dev panel is visible (persisted in localStorage as 'dev_mode')
 ```
 
 ---
@@ -132,16 +136,21 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 
 <div id="toolbar">             <!-- fixed bottom -->
   <button id="btn-markdown">Markdown</button>    <!-- opens unified edit-as-markdown modal -->
-  <span id="sync-indicator">                     <!-- sync status label (hidden when not signed in) -->
+  <span id="sync-indicator">                     <!-- sync status label (hidden when sync is off or not signed in) -->
   <button id="btn-options">Options</button>       <!-- opens options modal (theme, sign in, GitHub link) -->
   <span class="toolbar-hint">? for shortcuts</span>   <!-- click opens shortcuts modal -->
+</div>
+
+<div id="dev-panel">           <!-- fixed right sidebar, hidden unless dev mode is on -->
+  <h3>Dev panel</h3>
+  <div id="dev-panel-content"> <!-- populated by renderDevPanel(); updated on every render() and setSyncStatus() call -->
 </div>
 
 <!-- five modals, each a .modal-overlay.hidden wrapper -->
 <div id="modal-login">     <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
-<div id="modal-options">   <!-- options: account (sign in / sign out), theme toggle (dark/light), GitHub repo link -->
+<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, developer mode toggle, theme toggle, GitHub repo link -->
 <div id="modal-conflict">  <!-- conflict resolution: local vs server Markdown diff + resolved textarea; Keep Local / Use Server / Apply Resolved buttons -->
 ```
 
@@ -183,6 +192,8 @@ Use CSS custom properties on `:root` for the entire palette and spacing:
 Dark mode is applied by setting `data-theme="dark"` on `<html>`. The `html[data-theme='dark']` selector overrides all colour custom properties with dark equivalents. The current theme is persisted in `localStorage` under the key `theme`. `applyTheme(theme)` sets the attribute and updates the toggle button label.
 
 The sync indicator (`#sync-indicator`) uses modifier classes on the element itself: `syncing`, `synced`, `pending`, `error`, `conflict`. When none of these classes are present (or the `visible` class is absent) it is hidden. The `.sync-spinner` element uses a `@keyframes sync-spin` CSS animation for the rotating ring.
+
+The dev panel (`#dev-panel`) is `position:fixed; right:0; top:0; bottom:0; width:320px` and is hidden (`.hidden` class) unless developer mode is active. `.btn-danger` follows the same structure as `.btn-primary` but uses `var(--danger)` as its background/border colour.
 
 Key layout rules:
 
@@ -326,7 +337,8 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 - In Sign-in mode, submitting the form calls `supabaseClient.auth.signInWithPassword({ email, password })`. On success, `#modal-login` closes and the Account section shows the signed-in email and a **Sign out** button.
 - If the Supabase CDN is unavailable, the **Sign in** button is still shown, and submitting the form shows an "Authentication service unavailable." error.
 - No changes to the Supabase project are required to enable sign-up — email/password sign-up is enabled by default.
-- After sign-in, `startSync()` is called which triggers an immediate `syncNow()` and starts a 15-second `setInterval`. After sign-out, `stopSync()` clears the interval and resets the sync indicator.
+- After sign-in, if sync is enabled, `startSync()` is called which triggers an immediate `syncNow()` and starts a 15-second `setInterval`. After sign-out, `stopSync()` clears the interval and resets the sync indicator.
+- A signed-in user also sees a **Delete account** button (styled with `.btn-danger`). Clicking it shows a confirmation dialog, then deletes the user's row from the `outlines` table and calls `supabaseClient.auth.signOut()`. Local sync-state keys (`sync_version`, `sync_base`) are also cleared.
 
 ---
 
@@ -343,6 +355,8 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 ## Seeded initial data
 
 On first load (empty document), seed with six tip bullets (one of which has two children) to demonstrate nesting, zoom, descriptions, and other features. Every seed bullet includes a description so the description feature is immediately visible. This gives users an immediate working example without any setup.
+
+The seed data is immediately persisted to `localStorage` (via `saveDocLocal()`) so the seeded state survives a refresh even if the user makes no edits. On subsequent loads `loadDoc()` finds the stored document and `seedDoc` is not called again.
 
 The seed data in Markdown format:
 
@@ -388,3 +402,5 @@ The seed data in Markdown format:
 - `tryAutoMerge` returns `null` if any node was edited differently in both local and server versions; only call it when `lastSyncedDocJson` is available (i.e. after the first successful sync).
 - `zoomStack` must be re-validated against the restored doc after a pull or merge — use `zoomStack = zoomStack.filter(id => !!findNode(id))`.
 - `CompressionStream` / `DecompressionStream` are available in Chrome 80+, Firefox 113+, Safari 16.4+. The decompressData fallback attempts plain base64-encoded JSON for robustness.
+- `syncEnabled` must be checked both in `initAuth()` (on session restore) and in `onAuthStateChange` (on sign-in) before calling `startSync()`, so users who have not opted in never trigger a sync.
+- The dev panel (`#dev-panel`) is refreshed on every `render()` call and every `setSyncStatus()` call when `devMode` is `true`. `countNodes(root)` is a simple recursive counter used by `renderDevPanel()`.
