@@ -1,4 +1,4 @@
-# Outline App — Implementation Plan
+# Virgulas — Implementation Plan
 
 ## Purpose & scope
 

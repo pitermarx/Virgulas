@@ -26,8 +26,8 @@ test.describe('App loads', () => {
     await expect(page.locator('#toolbar')).toBeVisible();
   });
 
-  test('page title is Outliner', async ({ page }) => {
-    await expect(page).toHaveTitle('Outliner');
+  test('page title is Virgulas', async ({ page }) => {
+    await expect(page).toHaveTitle('Virgulas');
   });
 });
 
@@ -754,7 +754,7 @@ test.describe('Options dialog', () => {
     await page.click('#btn-options');
     const link = page.locator('#link-github');
     await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute('href', 'https://github.com/pitermarx/Outliner');
+    await expect(link).toHaveAttribute('href', 'https://github.com/pitermarx/Virgulas');
   });
 
   test('theme toggle switches to dark mode', async ({ page }) => {
