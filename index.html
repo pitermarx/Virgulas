@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outliner</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #f7f5f0;
+            --surface: #ffffff;
+            --border: #ddd9d0;
+            --border-light: #ece9e2;
+            --text: #1a1814;
+            --text-muted: #6b6760;
+            --text-faint: #aaa79f;
+            --accent: #2a5caa;
+            --accent-light: #e8eef8;
+            --bullet: #2a5caa;
+            --hover: #f0ede6;
+            --selected: #e8eef8;
+            --danger: #c0392b;
+            --font: Helvetica, Arial, sans-serif;
+            --font-mono: "Courier New", Courier, monospace;
+            --indent: 24px;
+            --radius: 4px;
+            --toolbar-h: 42px;
+            --search-h: 48px;
+            --transition: 120ms ease;
+        }
+
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 15px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Search bar ── */
+        #search-bar {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--search-h);
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            align-items: center;
+            padding: 0 16px;
+            gap: 10px;
+            z-index: 100;
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+        }
+
+        #search-bar.visible {
+            display: flex;
+        }
+
+        #search-input {
+            flex: 1;
+            font-family: var(--font);
+            font-size: 16px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 6px 10px;
+            background: var(--bg);
+            color: var(--text);
+            outline: none;
+        }
+
+        #search-input:focus {
+            border-color: var(--accent);
+        }
+
+        #search-count {
+            font-size: 13px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        #search-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px 6px;
+            border-radius: var(--radius);
+        }
+
+        #search-close:hover {
+            background: var(--hover);
+            color: var(--text);
+        }
+
+        /* ── Main app ── */
+        #app {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 48px 20px calc(var(--toolbar-h) + 32px);
+            min-height: 100%;
+        }
+
+        #app.search-open {
+            padding-top: calc(var(--search-h) + 32px);
+        }
+
+        /* ── Breadcrumb ── */
+        #breadcrumb {
+            display: none;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2px;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            letter-spacing: 0.02em;
+        }
+
+        #breadcrumb.visible {
+            display: flex;
+        }
+
+        .crumb {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            color: var(--accent);
+            text-decoration: none;
+            transition: background var(--transition);
+        }
+
+        .crumb:hover {
+            background: var(--accent-light);
+        }
+
+        .crumb-sep {
+            color: var(--text-faint);
+            padding: 0 2px;
+            user-select: none;
+        }
+
+        /* ── Zoom title / desc ── */
+        #zoom-title {
+            display: none;
+            font-size: 24px;
+            font-weight: 600;
+            line-height: 1.3;
+            color: var(--text);
+            outline: none;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+            margin-bottom: 6px;
+            cursor: text;
+        }
+
+        #zoom-title.visible {
+            display: block;
+        }
+
+        #zoom-title:empty::before {
+            content: "Untitled";
+            color: var(--text-faint);
+        }
+
+        #zoom-desc {
+            display: none;
+            font-size: 14px;
+            color: var(--text-muted);
+            outline: none;
+            margin-bottom: 20px;
+            padding: 4px 0;
+            line-height: 1.7;
+            min-height: 28px;
+        }
+
+        #zoom-desc.visible {
+            display: block;
+        }
+
+        #zoom-desc:empty::before {
+            content: "Add a description…";
+            color: var(--text-faint);
+        }
+
+        /* ── Bullets ── */
+        #bullets {
+            position: relative;
+        }
+
+        .bullet-row {
+            display: flex;
+            align-items: flex-start;
+            position: relative;
+            border-radius: 4px;
+            transition: background var(--transition);
+        }
+
+        .bullet-row:hover {
+            background: var(--hover);
+        }
+
+        .bullet-row.focused {
+            background: var(--hover);
+        }
+
+        .bullet-row.search-match {
+            background: #fff8e1;
+        }
+
+        .bullet-row.search-current {
+            background: #fff0b0;
+        }
+
+        /* Indent guide */
+        .bullet-row::before {
+            content: '';
+            position: absolute;
+            top: 28px;
+            bottom: 0;
+            left: 18px;
+            width: 1px;
+            background: var(--border-light);
+            display: none;
+        }
+
+        .bullet-row.has-children::before {
+            display: block;
+        }
+
+        /* ── Gutter ── */
+        .bullet-gutter {
+            width: 36px;
+            /* Match the bullet-text line-height: 15px * 1.6 = 24px, plus content padding-top 4px */
+            /* So first line centre is at 4px + 12px = 16px from top of row */
+            padding-top: 4px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .collapse-toggle {
+            /* Sits to the left of the dot, does not overlap it */
+            position: absolute;
+            right: 38px;
+            top: 4px;
+            width: 14px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity var(--transition);
+            color: var(--text-faint);
+            font-size: 9px;
+            user-select: none;
+            border-radius: 2px;
+        }
+
+        .bullet-row:hover .collapse-toggle.active,
+        .collapse-toggle.active:focus {
+            opacity: 1;
+        }
+
+        .collapse-toggle.active {
+            opacity: 0;
+        }
+
+        .collapse-toggle:hover {
+            color: var(--accent);
+            background: var(--accent-light);
+            opacity: 1 !important;
+        }
+
+        .bullet-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--bullet);
+            cursor: pointer;
+            /* Centre vertically within first line: (24px line-height - 7px dot) / 2 = 8.5px */
+            margin-top: 8px;
+            flex-shrink: 0;
+            transition: transform var(--transition), background var(--transition);
+        }
+
+        .bullet-dot:hover {
+            background: var(--accent);
+            transform: scale(1.4);
+        }
+
+        .bullet-row.collapsed>.bullet-gutter .bullet-dot {
+            box-shadow: 0 0 0 2px var(--accent-light), 0 0 0 3px var(--bullet);
+        }
+
+        /* ── Content ── */
+        .bullet-content {
+            flex: 1;
+            min-width: 0;
+            padding: 4px 6px 2px 2px;
+        }
+
+        .bullet-text {
+            font-size: 1em;
+            outline: none;
+            color: var(--text);
+            word-break: break-word;
+            caret-color: var(--accent);
+            padding-top: 1px;
+        }
+
+        .bullet-text:empty::before {
+            content: attr(data-placeholder);
+            color: var(--text-faint);
+            pointer-events: none;
+        }
+
+        .bullet-text strong {
+            font-weight: 600;
+        }
+
+        .bullet-text em {
+            font-style: italic;
+        }
+
+        .bullet-text code {
+            font-family: var(--font-mono);
+            font-size: 0.875em;
+            background: var(--border-light);
+            padding: 1px 4px;
+            border-radius: 3px;
+            color: var(--text);
+        }
+
+        .bullet-text a {
+            color: var(--accent);
+            text-decoration: underline;
+            text-decoration-color: var(--accent-light);
+        }
+
+        .bullet-text a:hover {
+            text-decoration-color: var(--accent);
+        }
+
+        .bullet-desc {
+            display: none;
+            width: 100%;
+            font-family: var(--font);
+            font-size: 0.867em;
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            outline: none;
+            resize: none;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .bullet-desc.visible {
+            display: block;
+        }
+
+        /* ── Empty hint ── */
+        #empty-hint {
+            display: none;
+            color: var(--text-faint);
+            font-size: 14px;
+            padding: 32px 0 16px 36px;
+        }
+
+        #empty-hint.visible {
+            display: block;
+        }
+
+        /* ── Toolbar ── */
+        #toolbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: var(--toolbar-h);
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 6px;
+            z-index: 100;
+        }
+
+        .toolbar-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: var(--font);
+            font-size: 12px;
+            padding: 4px 10px;
+            transition: all var(--transition);
+            line-height: 1.4;
+        }
+
+        .toolbar-btn:hover {
+            background: var(--hover);
+            border-color: var(--text-muted);
+            color: var(--text);
+        }
+
+        .toolbar-spacer {
+            flex: 1;
+        }
+
+        .toolbar-hint {
+            font-size: 11px;
+            color: var(--text-faint);
+            letter-spacing: 0.02em;
+        }
+
+        /* ── Modals ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(20, 18, 14, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            backdrop-filter: blur(2px);
+            opacity: 1;
+            transition: opacity var(--transition);
+        }
+
+        .modal-overlay.hidden {
+            display: none;
+        }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+            width: 540px;
+            max-width: calc(100vw - 32px);
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .modal-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 20px;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: var(--radius);
+        }
+
+        .modal-close:hover {
+            background: var(--hover);
+            color: var(--text);
+        }
+
+        .modal-body {
+            padding: 16px 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        textarea.modal-textarea {
+            width: 100%;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg);
+            color: var(--text);
+            padding: 10px;
+            resize: none;
+            outline: none;
+            min-height: 280px;
+        }
+
+        textarea.modal-textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .btn {
+            font-family: var(--font);
+            font-size: 13px;
+            padding: 6px 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all var(--transition);
+            line-height: 1.4;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #1e4a8c;
+            border-color: #1e4a8c;
+        }
+
+        .btn-secondary {
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--hover);
+        }
+
+        /* ── Shortcuts table ── */
+        .shortcuts-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .shortcuts-table tr+tr td {
+            border-top: 1px solid var(--border-light);
+        }
+
+        .shortcuts-table td {
+            padding: 7px 6px;
+            vertical-align: middle;
+        }
+
+        .shortcuts-table td:first-child {
+            width: 42%;
+            color: var(--text-muted);
+        }
+
+        kbd {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 5px;
+            color: var(--text);
+            box-shadow: 0 1px 0 var(--border);
+        }
+
+        /* ── Utility ── */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="search-bar">
+        <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
+        <span id="search-count"></span>
+        <button id="search-close" title="Close (Esc)">×</button>
+    </div>
+
+    <div id="app">
+        <div id="breadcrumb"></div>
+        <div id="zoom-title" contenteditable="true" spellcheck="true"></div>
+        <div id="zoom-desc" contenteditable="true" spellcheck="true"></div>
+        <div id="bullets"></div>
+        <div id="empty-hint">Press <kbd>Enter</kbd> to add the first item…</div>
+    </div>
+
+    <div id="toolbar">
+        <button class="toolbar-btn" id="btn-import">Import</button>
+        <button class="toolbar-btn" id="btn-export">Export</button>
+        <div class="toolbar-spacer"></div>
+        <span class="toolbar-hint">? for shortcuts</span>
+    </div>
+
+    <div id="modal-import" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Import from Markdown</span>
+                <button class="modal-close" data-modal="modal-import">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="modal-textarea" id="import-text" placeholder="Paste Markdown outline here…
+- Item one
+  > Optional description
+  - Child item
+- Item two"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-modal="modal-import">Cancel</button>
+                <button class="btn btn-primary" id="btn-do-import">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-export" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Export as Markdown</span>
+                <button class="modal-close" data-modal="modal-export">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="modal-textarea" id="export-text" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-modal="modal-export">Close</button>
+                <button class="btn btn-primary" id="btn-copy-export">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-shortcuts" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Keyboard shortcuts</span>
+                <button class="modal-close" data-modal="modal-shortcuts">×</button>
+            </div>
+            <div class="modal-body">
+                <table class="shortcuts-table">
+                    <tbody>
+                        <tr>
+                            <td>New bullet</td>
+                            <td><kbd>Enter</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Delete bullet (when empty)</td>
+                            <td><kbd>Backspace</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Indent</td>
+                            <td><kbd>Tab</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Unindent</td>
+                            <td><kbd>Shift+Tab</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Move up</td>
+                            <td><kbd>Alt+↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Move down</td>
+                            <td><kbd>Alt+↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Zoom in</td>
+                            <td><kbd>Alt+→</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Zoom out</td>
+                            <td><kbd>Alt+←</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Toggle description</td>
+                            <td><kbd>Ctrl+Enter</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Collapse / expand</td>
+                            <td><kbd>Ctrl+Space</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Focus previous</td>
+                            <td><kbd>↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Focus next</td>
+                            <td><kbd>↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Search</td>
+                            <td><kbd>Ctrl+F</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Shortcuts</td>
+                            <td><kbd>?</kbd></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top:16px;font-size:12px;color:var(--text-muted)">
+                    Inline Markdown: <kbd>**bold**</kbd> <kbd>*italic*</kbd> <kbd>`code`</kbd> <kbd>[text](url)</kbd> —
+                    rendered on blur.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" data-modal="modal-shortcuts">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // ── Utilities ──────────────────────────────────────────────────────────────
+
+        function uid() {
+            return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+        }
+
+        function makeNode(text = '', children = [], description = '') {
+            return { id: uid(), text, description, children, collapsed: false };
+        }
+
+        function renderInline(text) {
+            return text
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/`(.+?)`/g, '<code>$1</code>')
+                .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        }
+
+        // ── Document ────────────────────────────────────────────────────────────────
+
+        function makeDoc() {
+            const root = makeNode('root');
+            return { root, version: 1 };
+        }
+
+        function seedDoc(doc) {
+            const tips = [
+                makeNode('Press **Enter** to create a new bullet'),
+                makeNode('Use **Tab** and **Shift+Tab** to indent and unindent'),
+                makeNode('Use **Alt+↑/↓** to move bullets up and down', [
+                    makeNode('Alt+→ to zoom into any bullet'),
+                    makeNode('Alt+← to zoom back out'),
+                ]),
+                makeNode('Press **Ctrl+Enter** to add a description to any bullet'),
+                makeNode('Use `Ctrl+F` to search your entire outline'),
+            ];
+            tips[2].children.forEach(c => c); // already created above
+            doc.root.children = tips;
+        }
+
+        // ── State ────────────────────────────────────────────────────────────────────
+
+        let doc = makeDoc();
+        let zoomStack = []; // array of node IDs
+        let focusedId = null;
+        let searchMatches = [];
+        let searchIdx = 0;
+
+        // ── Persistence ───────────────────────────────────────────────────────────
+
+        const STORAGE_KEY = 'outline_v1';
+
+        function saveDoc() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+            } catch (e) { }
+        }
+
+        function loadDoc() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    doc = JSON.parse(raw);
+                    return true;
+                }
+            } catch (e) { }
+            return false;
+        }
+
+        // ── Node lookup ───────────────────────────────────────────────────────────
+
+        function findNode(id, node = doc.root) {
+            if (node.id === id) return node;
+            for (const child of node.children) {
+                const found = findNode(id, child);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        function findParent(id, node = doc.root, parent = null) {
+            if (node.id === id) return parent;
+            for (const child of node.children) {
+                const found = findParent(id, child, node);
+                if (found !== undefined) return found;
+            }
+            return undefined;
+        }
+
+        function getZoomRoot() {
+            if (zoomStack.length === 0) return doc.root;
+            return findNode(zoomStack[zoomStack.length - 1]) || doc.root;
+        }
+
+        // ── Visible flat list ─────────────────────────────────────────────────────
+
+        function flatVisible(node = getZoomRoot(), depth = 0, arr = []) {
+            for (const child of node.children) {
+                arr.push({ node: child, depth });
+                if (!child.collapsed && child.children.length > 0) {
+                    flatVisible(child, depth + 1, arr);
+                }
+            }
+            return arr;
+        }
+
+        // ── Render ────────────────────────────────────────────────────────────────
+
+        function buildRow(node, depth) {
+            const row = document.createElement('div');
+            row.className = 'bullet-row';
+            if (node.children.length > 0) row.classList.add('has-children');
+            if (node.collapsed) row.classList.add('collapsed');
+            row.dataset.id = node.id;
+            row.style.marginLeft = (depth * 20) + 'px';
+
+            // Gutter
+            const gutter = document.createElement('div');
+            gutter.className = 'bullet-gutter';
+
+            const toggle = document.createElement('div');
+            toggle.className = 'collapse-toggle' + (node.children.length > 0 ? ' active' : '');
+            toggle.textContent = node.collapsed ? '▶' : '▼';
+            toggle.title = node.collapsed ? 'Expand' : 'Collapse';
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                node.collapsed = !node.collapsed;
+                saveDoc();
+                render();
+            });
+
+            const dot = document.createElement('div');
+            dot.className = 'bullet-dot';
+            dot.title = 'Zoom in';
+            dot.addEventListener('click', (e) => {
+                e.stopPropagation();
+                zoomInto(node.id);
+            });
+
+            gutter.append(toggle, dot);
+
+            // Content
+            const content = document.createElement('div');
+            content.className = 'bullet-content';
+            // Font size: depth 0 = 100%, depth 1 = 95%, depth 2+ = 90%
+            const fsize = depth === 0 ? '100%' : depth === 1 ? '95%' : '90%';
+            content.style.fontSize = fsize;
+
+            const textEl = document.createElement('div');
+            textEl.className = 'bullet-text';
+            textEl.contentEditable = 'true';
+            textEl.spellcheck = true;
+            textEl.dataset.id = node.id;
+            textEl.dataset.placeholder = 'New item…';
+            textEl.innerHTML = renderInline(node.text);
+
+            textEl.addEventListener('focus', () => {
+                focusedId = node.id;
+                row.classList.add('focused');
+                // Switch to raw text for editing
+                textEl.textContent = node.text;
+                // Move cursor to end
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(textEl);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
+
+            textEl.addEventListener('blur', () => {
+                row.classList.remove('focused');
+                node.text = textEl.textContent;
+                textEl.innerHTML = renderInline(node.text);
+                saveDoc();
+            });
+
+            textEl.addEventListener('input', () => {
+                node.text = textEl.textContent;
+            });
+
+            textEl.addEventListener('keydown', (e) => handleBulletKey(e, node));
+
+            const descEl = document.createElement('textarea');
+            descEl.className = 'bullet-desc' + (node.description ? ' visible' : '');
+            descEl.value = node.description || '';
+            descEl.rows = 1;
+            descEl.placeholder = 'Description…';
+
+            function autoResize() {
+                descEl.style.height = 'auto';
+                descEl.style.height = descEl.scrollHeight + 'px';
+            }
+
+            descEl.addEventListener('focus', () => {
+                focusedId = node.id;
+            });
+            descEl.addEventListener('input', () => {
+                node.description = descEl.value;
+                autoResize();
+                saveDoc();
+            });
+            descEl.addEventListener('blur', () => {
+                if (!node.description) {
+                    descEl.classList.remove('visible');
+                }
+            });
+            descEl.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    descEl.blur();
+                    textEl.focus();
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    descEl.blur();
+                    textEl.focus();
+                }
+            });
+
+            // Delay resize until rendered
+            setTimeout(autoResize, 0);
+
+            content.append(textEl, descEl);
+            row.append(gutter, content);
+            return row;
+        }
+
+        function render() {
+            const activeId = document.activeElement?.dataset?.id;
+            const bulletsEl = document.getElementById('bullets');
+            const emptyHint = document.getElementById('empty-hint');
+            const zoomRoot = getZoomRoot();
+            const flat = flatVisible();
+
+            bulletsEl.innerHTML = '';
+
+            for (const { node, depth } of flat) {
+                bulletsEl.appendChild(buildRow(node, depth));
+            }
+
+            // Search highlights
+            if (searchMatches.length > 0) {
+                searchMatches.forEach((id, i) => {
+                    const el = bulletsEl.querySelector(`.bullet-row[data-id="${id}"]`);
+                    if (el) {
+                        el.classList.add('search-match');
+                        if (i === searchIdx) el.classList.add('search-current');
+                    }
+                });
+            }
+
+            // Empty hint
+            emptyHint.classList.toggle('visible', flat.length === 0);
+
+            // Breadcrumb
+            renderBreadcrumb();
+            renderZoomHeader(zoomRoot);
+
+            // Restore focus
+            if (activeId && activeId !== focusedId) {
+                // Don't steal focus
+            } else if (focusedId) {
+                const el = bulletsEl.querySelector(`.bullet-text[data-id="${focusedId}"]`);
+                if (el && document.activeElement !== el) {
+                    // Don't re-focus if user is typing somewhere else
+                }
+            }
+        }
+
+        function renderBreadcrumb() {
+            const el = document.getElementById('breadcrumb');
+            if (zoomStack.length === 0) {
+                el.classList.remove('visible');
+                return;
+            }
+            el.classList.add('visible');
+            el.innerHTML = '';
+
+            const rootCrumb = document.createElement('span');
+            rootCrumb.className = 'crumb';
+            rootCrumb.textContent = 'Home';
+            rootCrumb.addEventListener('click', () => zoomTo([]));
+            el.appendChild(rootCrumb);
+
+            zoomStack.forEach((id, i) => {
+                const sep = document.createElement('span');
+                sep.className = 'crumb-sep';
+                sep.textContent = ' / ';
+                el.appendChild(sep);
+
+                const node = findNode(id);
+                if (!node) return;
+                const crumb = document.createElement('span');
+                crumb.className = 'crumb';
+                crumb.textContent = node.text || 'Untitled';
+                if (i < zoomStack.length - 1) {
+                    crumb.addEventListener('click', () => zoomTo(zoomStack.slice(0, i + 1)));
+                }
+                el.appendChild(crumb);
+            });
+        }
+
+        function renderZoomHeader(zoomRoot) {
+            const titleEl = document.getElementById('zoom-title');
+            const descEl = document.getElementById('zoom-desc');
+            if (zoomStack.length === 0) {
+                titleEl.classList.remove('visible');
+                descEl.classList.remove('visible');
+                return;
+            }
+            titleEl.classList.add('visible');
+            descEl.classList.add('visible');
+
+            if (document.activeElement !== titleEl) {
+                titleEl.textContent = zoomRoot.text || '';
+            }
+            if (document.activeElement !== descEl) {
+                descEl.textContent = zoomRoot.description || '';
+            }
+        }
+
+        // ── Zoom ──────────────────────────────────────────────────────────────────
+
+        function zoomInto(id) {
+            zoomStack.push(id);
+            focusedId = null;
+            updateHash();
+            render();
+            requestAnimationFrame(() => {
+                const zoomRoot = getZoomRoot();
+                if (zoomRoot.children.length === 0) {
+                    const newNode = makeNode('');
+                    zoomRoot.children.push(newNode);
+                    saveDoc();
+                    render();
+                    focusNode(newNode.id);
+                } else {
+                    focusNode(zoomRoot.children[0].id);
+                }
+            });
+        }
+
+        function zoomOut() {
+            if (zoomStack.length === 0) return;
+            const prevId = zoomStack[zoomStack.length - 1];
+            zoomStack.pop();
+            focusedId = prevId;
+            updateHash();
+            render();
+            requestAnimationFrame(() => focusNode(prevId));
+        }
+
+        function zoomTo(stack) {
+            zoomStack = stack;
+            focusedId = null;
+            updateHash();
+            render();
+        }
+
+        function updateHash() {
+            const hash = zoomStack.length > 0 ? '#/' + zoomStack.join('/') : '#';
+            history.pushState(null, '', hash);
+        }
+
+        function loadFromHash() {
+            const hash = location.hash.replace(/^#\/?/, '');
+            if (!hash) { zoomStack = []; return; }
+            const ids = hash.split('/').filter(Boolean);
+            zoomStack = ids.filter(id => !!findNode(id));
+        }
+
+        // ── Focus helpers ─────────────────────────────────────────────────────────
+
+        function focusNode(id, toEnd = true) {
+            focusedId = id;
+            const el = document.querySelector(`.bullet-text[data-id="${id}"]`);
+            if (!el) return;
+            el.focus();
+            if (toEnd) {
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+
+        function focusNodeAtStart(id) {
+            focusedId = id;
+            const el = document.querySelector(`.bullet-text[data-id="${id}"]`);
+            if (!el) return;
+            el.focus();
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.setStart(el, 0);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        // ── Keyboard ──────────────────────────────────────────────────────────────
+
+        function handleBulletKey(e, node) {
+            // 1. Toggle desc: Ctrl+Enter
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const row = document.querySelector(`.bullet-row[data-id="${node.id}"]`);
+                if (!row) return;
+                const descEl = row.querySelector('.bullet-desc');
+                descEl.classList.add('visible');
+                descEl.focus();
+                descEl.style.height = 'auto';
+                descEl.style.height = descEl.scrollHeight + 'px';
+                const end = descEl.value.length;
+                descEl.setSelectionRange(end, end);
+                return;
+            }
+
+            // 2. Collapse: Ctrl+Space
+            if ((e.ctrlKey || e.metaKey) && e.key === ' ') {
+                e.preventDefault();
+                if (node.children.length > 0) {
+                    node.collapsed = !node.collapsed;
+                    saveDoc();
+                    render();
+                    requestAnimationFrame(() => focusNode(node.id));
+                }
+                return;
+            }
+
+            // 3. Zoom in: Alt+ArrowRight
+            if (e.altKey && e.key === 'ArrowRight') {
+                e.preventDefault();
+                node.text = document.querySelector(`.bullet-text[data-id="${node.id}"]`)?.textContent || node.text;
+                saveDoc();
+                zoomInto(node.id);
+                return;
+            }
+
+            // 4. Zoom out: Alt+ArrowLeft
+            if (e.altKey && e.key === 'ArrowLeft') {
+                e.preventDefault();
+                zoomOut();
+                return;
+            }
+
+            // 5. Move up: Alt+ArrowUp
+            if (e.altKey && e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveNode(node.id, -1);
+                return;
+            }
+
+            // 6. Move down: Alt+ArrowDown
+            if (e.altKey && e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveNode(node.id, 1);
+                return;
+            }
+
+            // 7. Indent: Tab
+            if (!e.shiftKey && e.key === 'Tab') {
+                e.preventDefault();
+                indentNode(node.id);
+                return;
+            }
+
+            // 8. Unindent: Shift+Tab
+            if (e.shiftKey && e.key === 'Tab') {
+                e.preventDefault();
+                unindentNode(node.id);
+                return;
+            }
+
+            // 9. New bullet: Enter
+            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                e.preventDefault();
+                // Commit current text
+                const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
+                if (textEl) node.text = textEl.textContent;
+                newBulletAfter(node.id);
+                return;
+            }
+
+            // 10. Delete: Backspace on empty node
+            if (e.key === 'Backspace') {
+                const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
+                const currentText = textEl ? textEl.textContent : node.text;
+                if (currentText === '' && node.description === '') {
+                    e.preventDefault();
+                    deleteNode(node.id);
+                    return;
+                }
+            }
+
+            // 11. Focus prev: ArrowUp
+            if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                focusPrev(node.id);
+                return;
+            }
+
+            // 12. Focus next: ArrowDown
+            if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                focusNext(node.id);
+                return;
+            }
+
+            // 13. Shortcuts: ?
+            if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
+                if (textEl && textEl.textContent === '') {
+                    e.preventDefault();
+                    openModal('modal-shortcuts');
+                }
+                return;
+            }
+
+            // 14. Search: Ctrl+F
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                openSearch();
+                return;
+            }
+        }
+
+        // ── Node operations ───────────────────────────────────────────────────────
+
+        function newBulletAfter(id) {
+            const zoomRoot = getZoomRoot();
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent) return;
+            const idx = parent.children.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            const node = parent.children[idx];
+            const newNode = makeNode('');
+            // If node has visible children, add as first child
+            if (!node.collapsed && node.children.length > 0) {
+                node.children.unshift(newNode);
+            } else {
+                parent.children.splice(idx + 1, 0, newNode);
+            }
+            saveDoc();
+            render();
+            requestAnimationFrame(() => focusNode(newNode.id, false));
+        }
+
+        function deleteNode(id) {
+            const zoomRoot = getZoomRoot();
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent) return;
+            const idx = parent.children.findIndex(c => c.id === id);
+            if (idx === -1) return;
+
+            // Where to focus after deletion?
+            let focusTarget = null;
+            if (idx > 0) {
+                focusTarget = parent.children[idx - 1].id;
+            } else if (parent !== zoomRoot) {
+                focusTarget = parent.id;
+            }
+
+            parent.children.splice(idx, 1);
+            saveDoc();
+            focusedId = focusTarget;
+            render();
+            if (focusTarget) {
+                requestAnimationFrame(() => focusNode(focusTarget));
+            }
+        }
+
+        function indentNode(id) {
+            const zoomRoot = getZoomRoot();
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent) return;
+            const idx = parent.children.findIndex(c => c.id === id);
+            if (idx === 0) return; // No previous sibling
+            const node = parent.children[idx];
+            const prevSibling = parent.children[idx - 1];
+            parent.children.splice(idx, 1);
+            prevSibling.collapsed = false;
+            prevSibling.children.push(node);
+            saveDoc();
+            render();
+            requestAnimationFrame(() => focusNode(id));
+        }
+
+        function unindentNode(id) {
+            const zoomRoot = getZoomRoot();
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent || parent === zoomRoot) return;
+            const grandParent = findParentInSubtree(parent.id, zoomRoot);
+            if (!grandParent) return;
+            const nodeIdx = parent.children.findIndex(c => c.id === id);
+            const parentIdx = grandParent.children.findIndex(c => c.id === parent.id);
+            if (nodeIdx === -1 || parentIdx === -1) return;
+            const node = parent.children[nodeIdx];
+            parent.children.splice(nodeIdx, 1);
+            grandParent.children.splice(parentIdx + 1, 0, node);
+            saveDoc();
+            render();
+            requestAnimationFrame(() => focusNode(id));
+        }
+
+        function moveNode(id, dir) {
+            const zoomRoot = getZoomRoot();
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent) return;
+            const idx = parent.children.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= parent.children.length) return;
+            const [node] = parent.children.splice(idx, 1);
+            parent.children.splice(newIdx, 0, node);
+            saveDoc();
+            render();
+            requestAnimationFrame(() => focusNode(id));
+        }
+
+        function focusPrev(id) {
+            const flat = flatVisible();
+            const idx = flat.findIndex(x => x.node.id === id);
+            if (idx <= 0) return;
+            focusNode(flat[idx - 1].node.id);
+        }
+
+        function focusNext(id) {
+            const flat = flatVisible();
+            const idx = flat.findIndex(x => x.node.id === id);
+            if (idx === -1 || idx >= flat.length - 1) return;
+            focusNodeAtStart(flat[idx + 1].node.id);
+        }
+
+        // Finds parent within the current zoom subtree
+        function findParentInSubtree(id, subtreeRoot) {
+            if (subtreeRoot.id === id) return null;
+            for (const child of subtreeRoot.children) {
+                if (child.id === id) return subtreeRoot;
+                const found = findParentInSubtree(id, child);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        // ── Search ────────────────────────────────────────────────────────────────
+
+        function openSearch() {
+            const bar = document.getElementById('search-bar');
+            const app = document.getElementById('app');
+            bar.classList.add('visible');
+            app.classList.add('search-open');
+            document.getElementById('search-input').focus();
+        }
+
+        function closeSearch() {
+            const bar = document.getElementById('search-bar');
+            const app = document.getElementById('app');
+            // Capture focus target before clearing state
+            const focusTarget = searchMatches.length > 0 ? searchMatches[searchIdx] : null;
+            bar.classList.remove('visible');
+            app.classList.remove('search-open');
+            document.getElementById('search-input').value = '';
+            searchMatches = [];
+            searchIdx = 0;
+            document.getElementById('search-count').textContent = '';
+            render();
+            if (focusTarget) {
+                requestAnimationFrame(() => focusNode(focusTarget));
+            }
+        }
+
+        function collectAllNodes(node = doc.root, arr = []) {
+            for (const child of node.children) {
+                arr.push(child);
+                collectAllNodes(child, arr);
+            }
+            return arr;
+        }
+
+        function doSearch(query) {
+            if (!query.trim()) {
+                searchMatches = [];
+                searchIdx = 0;
+                document.getElementById('search-count').textContent = '';
+                render();
+                return;
+            }
+            const q = query.toLowerCase();
+            const all = collectAllNodes();
+            searchMatches = all
+                .filter(n => n.text.toLowerCase().includes(q) || (n.description || '').toLowerCase().includes(q))
+                .map(n => n.id);
+            searchIdx = 0;
+            document.getElementById('search-count').textContent =
+                searchMatches.length === 0 ? 'No matches' :
+                    `${searchIdx + 1} / ${searchMatches.length}`;
+            render();
+            if (searchMatches.length > 0) scrollToMatch();
+        }
+
+        function nextMatch() {
+            if (searchMatches.length === 0) return;
+            searchIdx = (searchIdx + 1) % searchMatches.length;
+            document.getElementById('search-count').textContent = `${searchIdx + 1} / ${searchMatches.length}`;
+            render();
+            scrollToMatch();
+        }
+
+        function scrollToMatch() {
+            const id = searchMatches[searchIdx];
+            if (!id) return;
+            const el = document.querySelector(`.bullet-row[data-id="${id}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // ── Import / Export ────────────────────────────────────────────────────────
+
+        function exportMarkdown(node = doc.root, depth = 0) {
+            let out = '';
+            for (const child of node.children) {
+                const indent = '  '.repeat(depth);
+                out += `${indent}- ${child.text}\n`;
+                if (child.description) {
+                    for (const line of child.description.split('\n')) {
+                        out += `${indent}  > ${line}\n`;
+                    }
+                }
+                if (child.children.length > 0) {
+                    out += exportMarkdown(child, depth + 1);
+                }
+            }
+            return out;
+        }
+
+        function importMarkdown(text) {
+            const lines = text.split('\n');
+            const root = makeNode('root');
+            const stack = [{ node: root, indent: -1 }];
+
+            for (const line of lines) {
+                const bulletMatch = line.match(/^(\s*)([-*])\s(.*)$/);
+                if (bulletMatch) {
+                    const indentLen = bulletMatch[1].length;
+                    const text = bulletMatch[3];
+                    const node = makeNode(text);
+
+                    while (stack.length > 1 && stack[stack.length - 1].indent >= indentLen) {
+                        stack.pop();
+                    }
+                    stack[stack.length - 1].node.children.push(node);
+                    stack.push({ node, indent: indentLen });
+                    continue;
+                }
+                const descMatch = line.match(/^\s*>\s?(.*)$/);
+                if (descMatch && stack.length > 1) {
+                    const lastNode = stack[stack.length - 1].node;
+                    lastNode.description = (lastNode.description ? lastNode.description + '\n' : '') + descMatch[1];
+                }
+            }
+            return root;
+        }
+
+        // ── Modals ────────────────────────────────────────────────────────────────
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        // ── URL / history ─────────────────────────────────────────────────────────
+
+        window.addEventListener('popstate', () => {
+            loadFromHash();
+            render();
+        });
+
+        // ── Zoom title / desc editing ─────────────────────────────────────────────
+
+        const zoomTitleEl = document.getElementById('zoom-title');
+        const zoomDescEl = document.getElementById('zoom-desc');
+
+        zoomTitleEl.addEventListener('blur', () => {
+            const zoomRoot = getZoomRoot();
+            if (zoomRoot && zoomStack.length > 0) {
+                zoomRoot.text = zoomTitleEl.textContent;
+                saveDoc();
+                renderBreadcrumb();
+            }
+        });
+
+        zoomDescEl.addEventListener('blur', () => {
+            const zoomRoot = getZoomRoot();
+            if (zoomRoot && zoomStack.length > 0) {
+                zoomRoot.description = zoomDescEl.textContent;
+                saveDoc();
+            }
+        });
+
+        zoomTitleEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                zoomTitleEl.blur();
+                const flat = flatVisible();
+                if (flat.length > 0) focusNode(flat[0].node.id);
+            }
+            if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'Escape') {
+                e.preventDefault();
+                zoomOut();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                openSearch();
+            }
+        });
+
+        zoomDescEl.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                openSearch();
+            }
+        });
+
+        // ── Global key handler ────────────────────────────────────────────────────
+
+        document.addEventListener('keydown', (e) => {
+            const active = document.activeElement;
+            const isEditing = active && (active.isContentEditable || active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+
+            if (e.key === 'Escape') {
+                if (!document.getElementById('modal-import').classList.contains('hidden')) {
+                    closeModal('modal-import'); return;
+                }
+                if (!document.getElementById('modal-export').classList.contains('hidden')) {
+                    closeModal('modal-export'); return;
+                }
+                if (!document.getElementById('modal-shortcuts').classList.contains('hidden')) {
+                    closeModal('modal-shortcuts'); return;
+                }
+                if (document.getElementById('search-bar').classList.contains('visible')) {
+                    closeSearch();
+                    return;
+                }
+            }
+
+            if (!isEditing) {
+                if (e.key === '?') { e.preventDefault(); openModal('modal-shortcuts'); return; }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); openSearch(); return; }
+            }
+        });
+
+        // ── Wire up UI ────────────────────────────────────────────────────────────
+
+        document.getElementById('btn-import').addEventListener('click', () => {
+            document.getElementById('import-text').value = '';
+            openModal('modal-import');
+            setTimeout(() => document.getElementById('import-text').focus(), 50);
+        });
+
+        document.getElementById('btn-export').addEventListener('click', () => {
+            document.getElementById('export-text').value = exportMarkdown().trim();
+            openModal('modal-export');
+            setTimeout(() => document.getElementById('export-text').select(), 50);
+        });
+
+        document.getElementById('btn-do-import').addEventListener('click', () => {
+            const text = document.getElementById('import-text').value;
+            if (!text.trim()) return;
+            const newRoot = importMarkdown(text);
+            doc.root.children = newRoot.children;
+            zoomStack = [];
+            saveDoc();
+            closeModal('modal-import');
+            render();
+        });
+
+        document.getElementById('btn-copy-export').addEventListener('click', () => {
+            const ta = document.getElementById('export-text');
+            ta.select();
+            navigator.clipboard.writeText(ta.value).catch(() => { });
+            const btn = document.getElementById('btn-copy-export');
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy', 1500);
+        });
+
+        // Close buttons and overlay clicks
+        document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const modal = el.dataset.modal || el.closest('.modal-overlay')?.id;
+                if (modal) closeModal(modal);
+            });
+        });
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeModal(overlay.id);
+            });
+        });
+
+        // Search input
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            doSearch(e.target.value);
+        });
+        document.getElementById('search-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); nextMatch(); }
+            if (e.key === 'Escape') { closeSearch(); }
+        });
+        document.getElementById('search-close').addEventListener('click', closeSearch);
+
+        // Toolbar shortcuts hint click
+        document.querySelector('.toolbar-hint').addEventListener('click', () => openModal('modal-shortcuts'));
+
+        // Empty hint: click to add first bullet
+        document.getElementById('empty-hint').addEventListener('click', () => {
+            const zoomRoot = getZoomRoot();
+            const newNode = makeNode('');
+            zoomRoot.children.push(newNode);
+            saveDoc();
+            render();
+            requestAnimationFrame(() => focusNode(newNode.id, false));
+        });
+
+        // bullets div: click on empty area to add bullet
+        document.getElementById('bullets').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('bullets')) {
+                const flat = flatVisible();
+                if (flat.length > 0) {
+                    focusNode(flat[flat.length - 1].node.id);
+                }
+            }
+        });
+
+        // ── Init ──────────────────────────────────────────────────────────────────
+
+        function init() {
+            const loaded = loadDoc();
+            if (!loaded) seedDoc(doc);
+            loadFromHash();
+            render();
+
+            // Focus first bullet
+            requestAnimationFrame(() => {
+                const flat = flatVisible();
+                if (flat.length > 0 && !focusedId) {
+                    // Don't steal focus on load, just let it be
+                }
+            });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
