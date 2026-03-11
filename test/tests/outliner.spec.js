@@ -439,6 +439,28 @@ test.describe('Arrow key navigation', () => {
     const firstRow = page.locator('.bullet-row').first();
     await expect(firstRow).toHaveClass(/focused/);
   });
+
+  test('ArrowDown with no item focused moves focus to the first bullet', async ({ page }) => {
+    // Ensure no bullet is focused by clicking outside
+    await page.locator('body').click({ position: { x: 10, y: 10 } });
+    await expect(page.locator('.bullet-row.focused')).toHaveCount(0);
+
+    await page.keyboard.press('ArrowDown');
+
+    const firstRow = page.locator('.bullet-row').first();
+    await expect(firstRow).toHaveClass(/focused/);
+  });
+
+  test('ArrowUp with no item focused moves focus to the last bullet', async ({ page }) => {
+    // Ensure no bullet is focused by clicking outside
+    await page.locator('body').click({ position: { x: 10, y: 10 } });
+    await expect(page.locator('.bullet-row.focused')).toHaveCount(0);
+
+    await page.keyboard.press('ArrowUp');
+
+    const lastRow = page.locator('.bullet-row').last();
+    await expect(lastRow).toHaveClass(/focused/);
+  });
 });
 
 test.describe('Empty hint', () => {

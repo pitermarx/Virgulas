@@ -183,7 +183,7 @@ Applied only on blur. While editing, raw text is shown.
 | 15       | `search`      | `Ctrl+F`           | focus search input |
 | 16       | `undo`        | `Ctrl+Z`           | undo last structural change |
 
-A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Ctrl+F` / `?` when no editable element is focused.
+A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Ctrl+F` / `?` / `Ctrl+Z` when no editable element is focused. It also handles `ArrowDown` (focus first visible node) and `ArrowUp` (focus last visible node) when no item is focused.
 
 ---
 
@@ -195,7 +195,7 @@ A global `keydown` listener handles `Escape` to close any open modal or the sear
 - `Shift+Enter` or `Escape` from textarea → blur textarea, refocus `.bullet-text`. The view div is then shown if `node.description` is non-empty.
 - On textarea blur: if `node.description` is empty, both view and textarea are hidden.
 - Auto-resize on input: `el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'`.
-- Description font is always smaller than bullet text (0.867em).
+- Description font is always smaller than bullet text (0.867rem), with a line-height of 1.25rem.
 
 ---
 
