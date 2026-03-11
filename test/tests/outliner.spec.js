@@ -65,7 +65,7 @@ test.describe('Editing bullets', () => {
     await expect(page.locator('.bullet-text').first()).toContainText('Persisted text');
   });
 
-  test('Backspace on empty bullet deletes it', async ({ page }) => {
+  test('Ctrl+Backspace on empty bullet deletes it', async ({ page }) => {
     // Create a new empty bullet then delete it
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();
@@ -77,10 +77,8 @@ test.describe('Editing bullets', () => {
     await expect(focusedRow).toBeVisible();
     const countBefore = await page.locator('.bullet-row').count();
 
-    // Ensure the focused bullet text is empty before backspacing
-    const focusedText = focusedRow.locator('.bullet-text');
-    await focusedText.fill('');
-    await page.keyboard.press('Backspace');
+    // Delete with Ctrl+Backspace
+    await page.keyboard.press('Control+Backspace');
     await expect(page.locator('.bullet-row')).toHaveCount(countBefore - 1);
   });
 });
@@ -210,22 +208,36 @@ test.describe('Collapse / Expand', () => {
 });
 
 test.describe('Description', () => {
-  test('Ctrl+Enter shows description textarea', async ({ page }) => {
+  test('Shift+Enter shows description textarea', async ({ page }) => {
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();
-    await page.keyboard.press('Control+Enter');
+    await page.keyboard.press('Shift+Enter');
 
-    const desc = page.locator('.bullet-desc.visible').first();
+    const desc = page.locator('.bullet-desc.editing').first();
     await expect(desc).toBeVisible();
   });
 
   test('Escape from description refocuses bullet text', async ({ page }) => {
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();
-    await page.keyboard.press('Control+Enter');
+    await page.keyboard.press('Shift+Enter');
 
     await page.keyboard.press('Escape');
     await expect(firstText).toBeFocused();
+  });
+
+  test('description view shows when description has content', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+Enter');
+
+    const descEl = page.locator('.bullet-desc.editing').first();
+    await descEl.fill('My description text');
+    await descEl.press('Escape');
+
+    const descView = page.locator('.bullet-desc-view.visible').first();
+    await expect(descView).toBeVisible();
+    await expect(descView).toContainText('My description text');
   });
 });
 
@@ -280,36 +292,106 @@ test.describe('Markdown rendering', () => {
 });
 
 test.describe('Import / Export', () => {
-  test('export modal opens', async ({ page }) => {
-    const exportBtn = page.locator('#toolbar').getByText('Export');
-    await exportBtn.click();
-    await expect(page.locator('#modal-export')).toBeVisible();
+  test('Markdown button opens modal', async ({ page }) => {
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
   });
 
-  test('import modal opens', async ({ page }) => {
-    const importBtn = page.locator('#toolbar').getByText('Import');
-    await importBtn.click();
-    await expect(page.locator('#modal-import')).toBeVisible();
-  });
-
-  test('export produces markdown text', async ({ page }) => {
-    const exportBtn = page.locator('#toolbar').getByText('Export');
-    await exportBtn.click();
-    const exportText = page.locator('#modal-export textarea');
-    await expect(exportText).not.toBeEmpty();
-    const content = await exportText.inputValue();
+  test('Markdown modal shows current outline as markdown', async ({ page }) => {
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    const mdText = page.locator('#markdown-text');
+    await expect(mdText).not.toBeEmpty();
+    const content = await mdText.inputValue();
     expect(content).toMatch(/^- /m);
   });
 
-  test('copy button in export modal copies to clipboard and shows feedback', async ({ page }) => {
-    // The clipboard API requires explicit permission in Playwright
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-    const exportBtn = page.locator('#toolbar').getByText('Export');
-    await exportBtn.click();
-    const copyBtn = page.locator('#btn-copy-export');
-    await copyBtn.click();
-    // Button label changes to 'Copied!' to confirm action
-    await expect(copyBtn).toHaveText('Copied!');
+  test('Apply button imports edited markdown', async ({ page }) => {
+    const mdBtn = page.locator('#toolbar').getByText('Markdown');
+    await mdBtn.click();
+    const mdText = page.locator('#markdown-text');
+    await mdText.fill('- New Item\n- Another Item');
+    await page.locator('#btn-apply-markdown').click();
+
+    const rows = page.locator('.bullet-row');
+    await expect(rows).toHaveCount(2);
+  });
+});
+
+test.describe('Ctrl+Backspace deletion', () => {
+  test('Ctrl+Backspace deletes a bullet', async ({ page }) => {
+    // Create a new bullet first
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+
+    const focusedRow = page.locator('.bullet-row.focused');
+    await expect(focusedRow).toBeVisible();
+    const countBefore = await page.locator('.bullet-row').count();
+
+    // Type some text so the node is non-empty
+    await page.keyboard.type('to delete');
+    await page.keyboard.press('Control+Backspace');
+    await expect(page.locator('.bullet-row')).toHaveCount(countBefore - 1);
+  });
+
+  test('Ctrl+Backspace on node with children shows confirmation', async ({ page }) => {
+    // Find the parent node that has children
+    const parentRow = page.locator('.bullet-row.has-children').first();
+    const parentText = parentRow.locator('.bullet-text');
+    await parentText.click();
+
+    // Listen for dialog and dismiss it (cancel)
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.keyboard.press('Control+Backspace');
+
+    // Node should still be there
+    await expect(parentRow).toBeVisible();
+  });
+
+  test('Ctrl+Backspace on node with children deletes after confirmation', async ({ page }) => {
+    const countBefore = await page.locator('.bullet-row').count();
+    const parentRow = page.locator('.bullet-row.has-children').first();
+    const parentText = parentRow.locator('.bullet-text');
+    await parentText.click();
+
+    // Accept the confirmation dialog
+    page.once('dialog', dialog => dialog.accept());
+    await page.keyboard.press('Control+Backspace');
+
+    // The parent and its children should be gone
+    const countAfter = await page.locator('.bullet-row').count();
+    expect(countAfter).toBeLessThan(countBefore);
+  });
+});
+
+test.describe('Undo', () => {
+  test('Ctrl+Z undoes bullet creation', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+
+    const countAfterCreate = await page.locator('.bullet-row').count();
+
+    // Undo
+    await page.keyboard.press('Control+z');
+    const countAfterUndo = await page.locator('.bullet-row').count();
+    expect(countAfterUndo).toBe(countAfterCreate - 1);
+  });
+
+  test('Ctrl+Z undoes indent', async ({ page }) => {
+    const secondText = page.locator('.bullet-text').nth(1);
+    const secondRow = page.locator('.bullet-row').nth(1);
+    await secondText.click();
+    await page.keyboard.press('Tab');
+    const marginAfterIndent = await secondRow.evaluate(el => el.style.marginLeft);
+
+    await page.keyboard.press('Control+z');
+    const marginAfterUndo = await secondRow.evaluate(el => el.style.marginLeft);
+    expect(marginAfterUndo).not.toBe(marginAfterIndent);
   });
 });
 

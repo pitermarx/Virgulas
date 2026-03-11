@@ -81,14 +81,12 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 </div>
 
 <div id="toolbar">             <!-- fixed bottom -->
-  <button id="btn-import">Import</button>
-  <button id="btn-export">Export</button>
+  <button id="btn-markdown">Markdown</button>    <!-- opens unified edit-as-markdown modal -->
   <span class="toolbar-hint">? for shortcuts</span>   <!-- click opens shortcuts modal -->
 </div>
 
-<!-- three modals, each a .modal-overlay.hidden wrapper -->
-<div id="modal-import">
-<div id="modal-export">        <!-- includes a Copy button that copies to clipboard -->
+<!-- two modals, each a .modal-overlay.hidden wrapper -->
+<div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
 ```
 
@@ -101,8 +99,8 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
     .bullet-dot                22px, click = zoomInto
   .bullet-content
     .bullet-text               contenteditable div
-    .bullet-desc               textarea, display:none unless .visible
-    .bullet-children           optional child wrapper div
+    .bullet-desc-view          div, display:none unless .visible; shows truncated description (2 lines with CSS line-clamp)
+    .bullet-desc               textarea, display:none unless .editing; shown while actively editing the description
 ```
 
 ---
@@ -134,7 +132,8 @@ Key layout rules:
 - `.bullet-dot` and `.collapse-toggle` — both `height:28px` to match gutter.
 - `.bullet-content` — `flex:1; padding:5px 8px 5px 2px`. Text starts right after gutter. Font size scales by depth: depth 0 = 100%, depth 1 = 95%, depth 2+ = 90%.
 - `.bullet-text` — `font-size:15px; line-height:1.6`.
-- `.bullet-desc` — `font-size:12px` (smaller than text), `color:var(--text-muted)`, `display:none` by default, `display:block` when `.visible` class present.
+- `.bullet-desc-view` — `font-size:0.867em`, `color:var(--text-muted)`, `display:none` by default, `display:-webkit-box` with `-webkit-line-clamp:2` when `.visible` class present (truncates to 2 lines with "…"). Click to switch into edit mode.
+- `.bullet-desc` — `font-size:0.867em`, `color:var(--text-muted)`, `display:none` by default, `display:block` when `.editing` class present (textarea used while editing the description).
 - Indent guide line — `::before` on `.bullet-row` at `left:22px`, `display:var(--has-children, none)`.
 - `.collapse-toggle` — `opacity:0`; revealed via `.bullet-row:hover .collapse-toggle.active`.
 
@@ -165,22 +164,24 @@ Applied only on blur. While editing, raw text is shown.
 
 `handleBulletKey(e, node)` is attached to `.bullet-text keydown`. Check shortcuts in this priority order:
 
-| Priority | Action        | Default key  | Notes |
-|----------|---------------|--------------|-------|
-| 1        | `toggleDesc`  | `Ctrl+Enter` | Show/focus desc; from desc, return to text |
-| 2        | `collapse`    | `Ctrl+Space` | toggle collapsed/expanded node |
-| 3        | `zoomIn`      | `Alt+→`      | zoom into node   |
-| 4        | `zoomOut`     | `Alt+←`      | zoom out of node |
-| 5        | `moveUp`      | `Alt+↑`      | move node up   |
-| 6        | `moveDown`    | `Alt+↓`      | move node down |
-| 7        | `indent`      | `Tab`        | indent Node    |
-| 8        | `unindent`    | `Shift+Tab`  | unindent Node  |
-| 9        | `newBullet`   | `Enter`      | Create new bullet |
-| 10       | `deleteNode`  | `Backspace`  | Only on empty bullet (text and description both empty) |
-| 11       | `focusPrev`   | `ArrowUp`    | focus previous visible node |
-| 12       | `focusNext`   | `ArrowDown`  | focus next visible node |
-| 13       | `shortcuts`   | `?`          | show shortcuts (only when bullet text is empty) |
-| 14       | `search`      | `Ctrl+F`     | focus search input |
+| Priority | Action        | Default key        | Notes |
+|----------|---------------|--------------------|-------|
+| 1        | `toggleDesc`  | `Shift+Enter`      | Show/focus desc; from desc, return to text |
+| 2        | `collapse`    | `Ctrl+Space`       | toggle collapsed/expanded node |
+| 3        | `zoomIn`      | `Alt+→`            | zoom into node   |
+| 4        | `zoomOut`     | `Alt+←`            | zoom out of node |
+| 5        | `moveUp`      | `Alt+↑`            | move node up   |
+| 6        | `moveDown`    | `Alt+↓`            | move node down |
+| 7        | `indent`      | `Tab`              | indent Node    |
+| 8        | `unindent`    | `Shift+Tab`        | unindent Node  |
+| 9        | `newBullet`   | `Enter`            | Create new bullet |
+| 10       | `deleteNode`  | `Ctrl+Backspace`   | Delete node (any content); confirmation if node has children |
+| 11       | `deleteEmpty` | `Backspace`        | Only on empty bullet (text and description both empty); confirmation if has children |
+| 12       | `focusPrev`   | `ArrowUp`          | focus previous visible node |
+| 13       | `focusNext`   | `ArrowDown`        | focus next visible node |
+| 14       | `shortcuts`   | `?`                | show shortcuts (only when bullet text is empty) |
+| 15       | `search`      | `Ctrl+F`           | focus search input |
+| 16       | `undo`        | `Ctrl+Z`           | undo last structural change |
 
 A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Ctrl+F` / `?` when no editable element is focused.
 
@@ -188,12 +189,13 @@ A global `keydown` listener handles `Escape` to close any open modal or the sear
 
 ## Description behaviour
 
-- `.bullet-desc` is a `<textarea>`, hidden by default.
-- `Ctrl+Enter` from `.bullet-text` → add `.visible`, focus textarea, cursor to end.
-- `Ctrl+Enter` or `Escape` from textarea → blur textarea, focus `.bullet-text`.
-- On textarea blur: if `node.description` is empty, remove `.visible`.
+- `.bullet-desc-view` is a `<div>` shown when `node.description` is non-empty; it uses CSS `-webkit-line-clamp: 2` to show at most 2 lines with "…" overflow. Click on it to start editing.
+- `.bullet-desc` is a `<textarea>` shown (`.editing`) while the user is actively editing the description; hidden otherwise.
+- `Shift+Enter` from `.bullet-text` → show textarea (`.editing`), hide view, focus textarea, cursor to end.
+- `Shift+Enter` or `Escape` from textarea → blur textarea, refocus `.bullet-text`. The view div is then shown if `node.description` is non-empty.
+- On textarea blur: if `node.description` is empty, both view and textarea are hidden.
 - Auto-resize on input: `el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'`.
-- Description font is always smaller than bullet
+- Description font is always smaller than bullet text (0.867em).
 
 ---
 
@@ -208,7 +210,11 @@ A global `keydown` listener handles `Escape` to close any open modal or the sear
 
 ## Import / Export
 
-**Export to Markdown:**
+A single **Markdown** toolbar button opens the unified `#modal-markdown` modal.
+
+The modal textarea is pre-populated with the current outline in Markdown format (same as the old export). The user can freely edit the Markdown text, then click **Apply** to replace the entire document with the parsed Markdown (same parser as the old import). Clicking **Cancel** discards any edits. The zoom stack is reset on Apply.
+
+**Markdown format:**
 
 ```
 - Bullet text
@@ -216,9 +222,17 @@ A global `keydown` listener handles `Escape` to close any open modal or the sear
   - Child bullet
 ```
 
-Recursive, depth increases indent by two spaces per level. The export modal includes a **Copy** button that copies the Markdown to the clipboard and briefly changes its label to "Copied!".
+Recursive, depth increases indent by two spaces per level. Lines matching `/^(\s*)([-*])\s(.*)$/` are bullets. Indent depth determines parent via a stack. Lines matching `/^\s*>\s(.*)$/` append to the last node's description.
 
-**Import from Markdown:** parse line by line. Lines matching `/^(\s*)([-*])\s(.*)$/` are bullets. Indent depth determines parent via a stack. Lines matching `/^\s*>\s(.*)$/` append to the last node's description. Importing replaces the entire document and resets the zoom stack.
+---
+
+## Undo
+
+`undoStack` is an in-memory array of serialised doc snapshots (max 100 entries).
+
+- `pushUndo()` is called **before** each mutation: `newBulletAfter`, `deleteNode`, `indentNode`, `unindentNode`, `moveNode`, collapse toggle, and Apply in the Markdown modal. It is also called on focus of `.bullet-text` and `.bullet-desc` so that text/description edits are undoable.
+- `undo()` pops the latest snapshot, restores `doc`, saves to localStorage, validates `zoomStack`, and re-renders.
+- `Ctrl+Z` triggers `undo()` from both the bullet keydown handler and the global keydown handler (when no element is focused).
 
 ---
 
@@ -243,7 +257,8 @@ On first load (empty document), seed with a welcome node containing five tip bul
 - `indentNode` when `idx === 0` → no previous sibling, do nothing.
 - `unindentNode` when parent is the current zoom root → do nothing.
 - `deleteNode` when it is the only child → focus parent (or zoom title if parent is zoom root).
-- `zoomStack` IDs from hash that no longer exist in doc → filter them out on load.
+- `deleteNode` when node has children → show a `window.confirm()` dialog before proceeding.
+- `zoomStack` IDs from hash that no longer exist in doc → filter them out on load (also after undo).
 - Re-render must not steal focus from an actively-edited element — check `document.activeElement` before calling `focusNode`.
 - `matchShortcut` for `Ctrl+Space`: `e.key === ' '` not `'Space'`.
 - `renderZoomTitle` must guard against overwriting content while the element is focused.
