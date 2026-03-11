@@ -397,9 +397,9 @@
             display: none;
             width: 100%;
             font-family: var(--font);
-            font-size: 0.867em;
+            font-size: 0.867rem;
             color: var(--text-muted);
-            line-height: 1.5;
+            line-height: 1.25rem;
             background: transparent;
             border: none;
             outline: none;
@@ -835,16 +835,23 @@
 
         function seedDoc(doc) {
             const tips = [
-                makeNode('Press **Enter** to create a new bullet'),
-                makeNode('Use **Tab** and **Shift+Tab** to indent and unindent'),
+                makeNode('Press **Enter** to create a new bullet', [],
+                    'A new bullet is inserted immediately after the current one at the same depth. The cursor moves to it automatically so you can start typing right away.'),
+                makeNode('Use **Tab** and **Shift+Tab** to indent and unindent', [],
+                    'Tab makes the current bullet a child of the bullet above it. Shift+Tab promotes it one level up. On mobile, swipe right to indent and swipe left to unindent.'),
                 makeNode('Use **Alt+↑/↓** to move bullets up and down', [
-                    makeNode('Alt+→ to zoom into any bullet'),
-                    makeNode('Alt+← to zoom back out'),
-                ]),
-                makeNode('Press **Shift+Enter** to add a description to any bullet'),
-                makeNode('Use `Ctrl+F` to search your entire outline'),
+                    makeNode('Alt+→ to zoom into any bullet', [],
+                        'Zooming focuses the view on a single node and its subtree. The breadcrumb bar at the top shows your current path and lets you navigate back up.'),
+                    makeNode('Alt+← to zoom back out', [],
+                        'Returns to the parent level. You can also press Escape while editing the zoom title, or click any crumb in the breadcrumb bar.'),
+                ], 'Reorders siblings without changing their depth or children. Use Ctrl+Space to collapse or expand a bullet\'s children.'),
+                makeNode('Press **Shift+Enter** to add a description to any bullet', [],
+                    'Descriptions appear below the bullet text in a smaller muted font. Press Shift+Enter or Escape from the description to return to the bullet text. Click the description preview to edit it again.'),
+                makeNode('Use `Ctrl+F` to search your entire outline', [],
+                    'Search matches both bullet text and descriptions across the whole document, not just the current zoom level. Press Enter to cycle through matches, Escape to close.'),
+                makeNode('Use `Ctrl+Z` to undo and the **Markdown** button to export', [],
+                    'Undo reverses the last structural change (create, delete, move, indent). The Markdown toolbar button opens a live editor showing your full outline — edit it directly and click Apply to import changes.'),
             ];
-            tips[2].children.forEach(c => c); // already created above
             doc.root.children = tips;
         }
 
