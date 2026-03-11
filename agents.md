@@ -8,13 +8,13 @@ This document defines the rules every agent or contributor **must** follow when 
 
 `README.md` is the authoritative description of everything the app does.
 
-**Whenever you add, remove, or change a feature in `index.html` you must update `README.md` in the same commit/PR.**
+**Whenever you add, remove, or change a feature in `source/index.html` you must update `README.md` in the same commit/PR.**
 
 Checklist for README changes:
 
 - [ ] Every keyboard shortcut listed in the `## Keyboard handling` table matches what `handleBulletKey` and the global keydown listener actually do.
-- [ ] Every HTML element mentioned in `## HTML structure` exists in the `<body>` of `index.html`.
-- [ ] Every CSS custom property in `## CSS architecture` exists in the `:root` block of `index.html`.
+- [ ] Every HTML element mentioned in `## HTML structure` exists in the `<body>` of `source/index.html`.
+- [ ] Every CSS custom property in `## CSS architecture` exists in the `:root` block of `source/index.html`.
 - [ ] The `## Import / Export` section reflects the current Markdown format (bullet lines, description lines, indentation depth).
 - [ ] The `## Search` section mentions all fields that are searched (currently `text` and `description`).
 - [ ] The `## Zoom behaviour` section uses the correct keys (currently `Alt+←` / `Alt+→`, **not** `Ctrl+←`).
@@ -25,9 +25,9 @@ Checklist for README changes:
 
 ## Rule 2 — Every feature must have a Playwright test
 
-All tests live in `tests/outliner.spec.js`.
+All tests live in `test/tests/outliner.spec.js`.
 
-**Whenever you add or change behaviour in `index.html` you must add or update the corresponding test(s) in that file.**
+**Whenever you add or change behaviour in `source/index.html` you must add or update the corresponding test(s) in that file.**
 
 Guidelines for tests:
 
@@ -44,18 +44,19 @@ Guidelines for tests:
 ## How to run tests
 
 ```bash
+cd test
 npm test            # runs Playwright tests (headless, chromium + firefox)
 npm run test:headed # runs with browser visible (useful for debugging)
 npm run test:ci     # runs with CI reporters (JSON + GitHub summary)
 ```
 
-Tests use a local HTTP server on port 3000 (started automatically by Playwright).
+Tests use a local HTTP server on port 3000 (started automatically by Playwright) serving the `source/` directory.
 
 ---
 
 ## Scope of this repository
 
-- **One file app**: all product logic lives in `index.html` (HTML + `<style>` + `<script type="module">`).
+- **One file app**: all product logic lives in `source/index.html` (HTML + `<style>` + `<script type="module">`).
 - **No build step**: do not introduce a build tool, bundler, or external runtime dependency.
 - **No external dependencies**: the `<script>` tag has no `src`; all JS is inline.
-- **Tests only**: `package.json`, `playwright.config.js`, and `tests/` are for testing only and must not be imported by `index.html`.
+- **Tests only**: `test/package.json`, `test/playwright.config.js`, and `test/tests/` are for testing only and must not be imported by `source/index.html`.
