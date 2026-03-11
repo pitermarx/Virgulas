@@ -244,6 +244,10 @@
             background: var(--hover);
         }
 
+        .bullet-row.selected {
+            background: var(--selected);
+        }
+
         .bullet-row.search-match {
             background: #fff8e1;
         }
@@ -772,6 +776,18 @@
                             <td><kbd>↓</kbd></td>
                         </tr>
                         <tr>
+                            <td>Extend selection up</td>
+                            <td><kbd>Shift+↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Extend selection down</td>
+                            <td><kbd>Shift+↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Unfocus bullet</td>
+                            <td><kbd>Escape</kbd></td>
+                        </tr>
+                        <tr>
                             <td>Search</td>
                             <td><kbd>Ctrl+F</kbd></td>
                         </tr>
@@ -873,6 +889,10 @@
         let searchMatches = [];
         let searchIdx = 0;
         let undoStack = [];
+        let selectedIds = []; // IDs of all currently selected nodes (multi-select)
+        let selectionAnchor = null; // node ID where multi-select started
+        let selectionHead = null;   // node ID at the current end of multi-select
+        let _keepSelection = false; // prevents clearing selection on programmatic focus
 
         // ── Persistence ───────────────────────────────────────────────────────────
 
@@ -1005,6 +1025,7 @@
             textEl.innerHTML = renderInline(node.text);
 
             textEl.addEventListener('focus', () => {
+                if (!_keepSelection) clearSelection();
                 focusedId = node.id;
                 row.classList.add('focused');
                 // Switch to raw text for editing
@@ -1287,6 +1308,28 @@
         // ── Keyboard ──────────────────────────────────────────────────────────────
 
         function handleBulletKey(e, node) {
+            // 0. Escape: unfocus the bullet
+            if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                clearSelection();
+                e.target.blur();
+                return;
+            }
+
+            // 0b. Multi-select: Shift+ArrowUp
+            if (e.shiftKey && e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                extendSelection(node.id, -1);
+                return;
+            }
+
+            // 0c. Multi-select: Shift+ArrowDown
+            if (e.shiftKey && e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                extendSelection(node.id, 1);
+                return;
+            }
+
             // 1. Toggle desc: Shift+Enter
             if (e.shiftKey && e.key === 'Enter') {
                 e.preventDefault();
@@ -1336,28 +1379,48 @@
             // 5. Move up: Alt+ArrowUp
             if (e.altKey && e.key === 'ArrowUp') {
                 e.preventDefault();
-                moveNode(node.id, -1);
+                if (selectedIds.length > 1) {
+                    moveNodes(selectedIds, -1);
+                } else {
+                    clearSelection();
+                    moveNode(node.id, -1);
+                }
                 return;
             }
 
             // 6. Move down: Alt+ArrowDown
             if (e.altKey && e.key === 'ArrowDown') {
                 e.preventDefault();
-                moveNode(node.id, 1);
+                if (selectedIds.length > 1) {
+                    moveNodes(selectedIds, 1);
+                } else {
+                    clearSelection();
+                    moveNode(node.id, 1);
+                }
                 return;
             }
 
             // 7. Indent: Tab
             if (!e.shiftKey && e.key === 'Tab') {
                 e.preventDefault();
-                indentNode(node.id);
+                if (selectedIds.length > 1) {
+                    indentNodes(selectedIds);
+                } else {
+                    clearSelection();
+                    indentNode(node.id);
+                }
                 return;
             }
 
             // 8. Unindent: Shift+Tab
             if (e.shiftKey && e.key === 'Tab') {
                 e.preventDefault();
-                unindentNode(node.id);
+                if (selectedIds.length > 1) {
+                    unindentNodes(selectedIds);
+                } else {
+                    clearSelection();
+                    unindentNode(node.id);
+                }
                 return;
             }
 
@@ -1394,6 +1457,7 @@
             // 12. Focus prev: ArrowUp
             if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
+                clearSelection();
                 focusPrev(node.id);
                 return;
             }
@@ -1401,6 +1465,7 @@
             // 13. Focus next: ArrowDown
             if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
+                clearSelection();
                 focusNext(node.id);
                 return;
             }
@@ -1537,6 +1602,131 @@
             saveDoc();
             render();
             requestAnimationFrame(() => focusNode(id));
+        }
+
+        // ── Selection ─────────────────────────────────────────────────────────────
+
+        function clearSelection() {
+            selectedIds = [];
+            selectionAnchor = null;
+            selectionHead = null;
+            document.querySelectorAll('.bullet-row.selected').forEach(el => el.classList.remove('selected'));
+        }
+
+        function applySelectionHighlights() {
+            document.querySelectorAll('.bullet-row.selected').forEach(el => el.classList.remove('selected'));
+            selectedIds.forEach(id => {
+                const el = document.querySelector(`.bullet-row[data-id="${id}"]`);
+                if (el) el.classList.add('selected');
+            });
+        }
+
+        function extendSelection(currentId, dir) {
+            const flat = flatVisible();
+            if (!selectionAnchor) {
+                selectionAnchor = currentId;
+                selectionHead = currentId;
+            }
+            const anchorIdx = flat.findIndex(x => x.node.id === selectionAnchor);
+            const headIdx = flat.findIndex(x => x.node.id === selectionHead);
+            if (headIdx === -1) return;
+            const newHeadIdx = headIdx + dir;
+            if (newHeadIdx < 0 || newHeadIdx >= flat.length) return;
+            selectionHead = flat[newHeadIdx].node.id;
+            const newAnchorIdx = flat.findIndex(x => x.node.id === selectionAnchor);
+            const newHeadFlatIdx = flat.findIndex(x => x.node.id === selectionHead);
+            const from = Math.min(newAnchorIdx, newHeadFlatIdx);
+            const to = Math.max(newAnchorIdx, newHeadFlatIdx);
+            selectedIds = flat.slice(from, to + 1).map(x => x.node.id);
+            applySelectionHighlights();
+            _keepSelection = true;
+            focusNode(selectionHead);
+            _keepSelection = false;
+        }
+
+        function indentNodes(ids) {
+            const zoomRoot = getZoomRoot();
+            const flat = flatVisible();
+            // Process top-to-bottom so each node goes into the same previous sibling in order
+            const ordered = [...ids].sort((a, b) =>
+                flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
+            );
+            pushUndo();
+            for (const id of ordered) {
+                const parent = findParentInSubtree(id, zoomRoot);
+                if (!parent) continue;
+                const idx = parent.children.findIndex(c => c.id === id);
+                if (idx === 0) continue;
+                const node = parent.children[idx];
+                const prevSibling = parent.children[idx - 1];
+                parent.children.splice(idx, 1);
+                prevSibling.collapsed = false;
+                prevSibling.children.push(node);
+            }
+            saveDoc();
+            render();
+            requestAnimationFrame(() => applySelectionHighlights());
+        }
+
+        function unindentNodes(ids) {
+            const zoomRoot = getZoomRoot();
+            const flat = flatVisible();
+            // Process top-to-bottom
+            const ordered = [...ids].sort((a, b) =>
+                flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
+            );
+            pushUndo();
+            // Track how many nodes have been inserted after each parent's position in the grandparent
+            const insertCountByParent = new Map();
+            for (const id of ordered) {
+                const parent = findParentInSubtree(id, zoomRoot);
+                if (!parent || parent === zoomRoot) continue;
+                const grandParent = findParentInSubtree(parent.id, zoomRoot);
+                if (!grandParent) continue;
+                const nodeIdx = parent.children.findIndex(c => c.id === id);
+                const parentIdx = grandParent.children.findIndex(c => c.id === parent.id);
+                if (nodeIdx === -1 || parentIdx === -1) continue;
+                // Remove just this node (no sibling adoption unlike single unindent)
+                const [node] = parent.children.splice(nodeIdx, 1);
+                const prevCount = insertCountByParent.get(parent.id) || 0;
+                grandParent.children.splice(parentIdx + 1 + prevCount, 0, node);
+                insertCountByParent.set(parent.id, prevCount + 1);
+            }
+            saveDoc();
+            render();
+            requestAnimationFrame(() => applySelectionHighlights());
+        }
+
+        function moveNodes(ids, dir) {
+            const zoomRoot = getZoomRoot();
+            if (ids.length === 0) return;
+            // All selected nodes must share the same parent and be contiguous siblings
+            const parent = findParentInSubtree(ids[0], zoomRoot);
+            if (!parent) return;
+            const indices = ids.map(id => {
+                if (findParentInSubtree(id, zoomRoot) !== parent) return -1;
+                return parent.children.findIndex(c => c.id === id);
+            });
+            if (indices.includes(-1)) return;
+            indices.sort((a, b) => a - b);
+            for (let i = 1; i < indices.length; i++) {
+                if (indices[i] !== indices[i - 1] + 1) return; // not contiguous
+            }
+            const firstIdx = indices[0];
+            const lastIdx = indices[indices.length - 1];
+            pushUndo();
+            if (dir === -1) {
+                if (firstIdx === 0) return;
+                const [nodeToSwap] = parent.children.splice(firstIdx - 1, 1);
+                parent.children.splice(lastIdx, 0, nodeToSwap);
+            } else {
+                if (lastIdx === parent.children.length - 1) return;
+                const [nodeToSwap] = parent.children.splice(lastIdx + 1, 1);
+                parent.children.splice(firstIdx, 0, nodeToSwap);
+            }
+            saveDoc();
+            render();
+            requestAnimationFrame(() => applySelectionHighlights());
         }
 
         function focusPrev(id) {
@@ -1769,6 +1959,12 @@
         });
 
         zoomDescEl.addEventListener('keydown', (e) => {
+            if (e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                zoomDescEl.blur();
+                zoomTitleEl.focus();
+                return;
+            }
             if (e.key === 'Escape') {
                 e.preventDefault();
                 zoomDescEl.blur();

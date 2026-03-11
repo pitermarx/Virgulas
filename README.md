@@ -45,6 +45,9 @@ Three pieces of mutable state
 doc          — the Document object 
 zoomStack    — array of node IDs, from root down to current view (url is source of truth)
 focusedId    — ID of the bullet whose text is currently focused (or null)
+selectedIds  — ordered array of IDs in the current multi-selection (empty when no selection)
+selectionAnchor — ID of the node where the multi-selection started (null when no selection)
+selectionHead   — ID of the node at the current end of the multi-selection (null when no selection)
 ```
 
 ---
@@ -168,24 +171,27 @@ Applied only on blur. While editing, raw text is shown.
 
 `handleBulletKey(e, node)` is attached to `.bullet-text keydown`. Check shortcuts in this priority order:
 
-| Priority | Action        | Default key        | Notes |
-|----------|---------------|--------------------|-------|
-| 1        | `toggleDesc`  | `Shift+Enter`      | Show/focus desc; from desc, return to text |
-| 2        | `collapse`    | `Ctrl+Space`       | toggle collapsed/expanded node |
-| 3        | `zoomIn`      | `Alt+→`            | zoom into node   |
-| 4        | `zoomOut`     | `Alt+←`            | zoom out of node |
-| 5        | `moveUp`      | `Alt+↑`            | move node up   |
-| 6        | `moveDown`    | `Alt+↓`            | move node down |
-| 7        | `indent`      | `Tab`              | indent Node    |
-| 8        | `unindent`    | `Shift+Tab`        | unindent Node  |
-| 9        | `newBullet`   | `Enter`            | Create new bullet |
-| 10       | `deleteNode`  | `Ctrl+Backspace`   | Delete node (any content); confirmation if node has children |
-| 11       | `deleteEmpty` | `Backspace`        | Only on empty bullet (text and description both empty); confirmation if has children |
-| 12       | `focusPrev`   | `ArrowUp`          | focus previous visible node |
-| 13       | `focusNext`   | `ArrowDown`        | focus next visible node |
-| 14       | `shortcuts`   | `?`                | show shortcuts (only when bullet text is empty) |
-| 15       | `search`      | `Ctrl+F`           | focus search input |
-| 16       | `undo`        | `Ctrl+Z`           | undo last structural change |
+| Priority | Action           | Default key        | Notes |
+|----------|------------------|--------------------|-------|
+| 0        | `unfocus`        | `Escape`           | Blur bullet; clears multi-selection |
+| 0b       | `selectUp`       | `Shift+↑`          | Extend multi-selection upward |
+| 0c       | `selectDown`     | `Shift+↓`          | Extend multi-selection downward |
+| 1        | `toggleDesc`     | `Shift+Enter`      | Show/focus desc; from desc, return to text |
+| 2        | `collapse`       | `Ctrl+Space`       | toggle collapsed/expanded node |
+| 3        | `zoomIn`         | `Alt+→`            | zoom into node   |
+| 4        | `zoomOut`        | `Alt+←`            | zoom out of node |
+| 5        | `moveUp`         | `Alt+↑`            | move node (or entire selection) up   |
+| 6        | `moveDown`       | `Alt+↓`            | move node (or entire selection) down |
+| 7        | `indent`         | `Tab`              | indent node (or all selected nodes)    |
+| 8        | `unindent`       | `Shift+Tab`        | unindent node (or all selected nodes)  |
+| 9        | `newBullet`      | `Enter`            | Create new bullet |
+| 10       | `deleteNode`     | `Ctrl+Backspace`   | Delete node (any content); confirmation if node has children |
+| 11       | `deleteEmpty`    | `Backspace`        | Only on empty bullet (text and description both empty); confirmation if has children |
+| 12       | `focusPrev`      | `ArrowUp`          | focus previous visible node; clears selection |
+| 13       | `focusNext`      | `ArrowDown`        | focus next visible node; clears selection |
+| 14       | `shortcuts`      | `?`                | show shortcuts (only when bullet text is empty) |
+| 15       | `search`         | `Ctrl+F`           | focus search input |
+| 16       | `undo`           | `Ctrl+Z`           | undo last structural change |
 
 A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Ctrl+F` / `?` / `Ctrl+Z` when no editable element is focused. It also handles `ArrowDown` (focus first visible node) and `ArrowUp` (focus last visible node) when no item is focused.
 
@@ -209,6 +215,7 @@ Both listeners are registered as `{ passive: true }` so they do not block scroll
 - On textarea blur: if `node.description` is empty, both view and textarea are hidden.
 - Auto-resize on input: `el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'`.
 - Description font is always smaller than bullet text (0.867rem), with a line-height of 1.25rem.
+- When zoomed into a node, `#zoom-desc` is a `contenteditable` div. `Shift+Enter` or `Escape` from `#zoom-desc` returns focus to `#zoom-title`.
 
 ---
 
@@ -297,6 +304,7 @@ The seed data in Markdown format:
 - `indentNode` when `idx === 0` → no previous sibling, do nothing.
 - `unindentNode` when parent is the current zoom root → do nothing.
 - `unindentNode` moves the node to after its parent and all of the node's subsequent siblings are re-parented as children of the unindented node (so the visual order is preserved and no siblings are lost).
+- `unindentNodes` (multi-select) does NOT adopt subsequent siblings — only the explicitly selected nodes are promoted.
 - `deleteNode` when it is the only child → focus parent (or zoom title if parent is zoom root).
 - `deleteNode` when node has children → show a `window.confirm()` dialog before proceeding.
 - `zoomStack` IDs from hash that no longer exist in doc → filter them out on load (also after undo).
@@ -304,3 +312,7 @@ The seed data in Markdown format:
 - `matchShortcut` for `Ctrl+Space`: `e.key === ' '` not `'Space'`.
 - `renderZoomTitle` must guard against overwriting content while the element is focused.
 - Backspace delete must check both `text === ''` and `description === ''` to avoid accidental deletion of nodes with only a description.
+- Multi-select (`selectedIds`) is cleared on direct bullet click/focus (via `_keepSelection` flag), on regular ArrowUp/Down, and on Escape.
+- `moveNodes` requires all selected nodes to share the same parent and be contiguous; if not, the operation is a no-op.
+- `indentNodes` processes nodes top-to-bottom so successive siblings all pile into the same previous sibling in order.
+- `_keepSelection` flag prevents the focus event from clearing the selection when `extendSelection` programmatically focuses the selection head.
