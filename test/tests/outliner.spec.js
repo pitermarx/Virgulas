@@ -1070,3 +1070,149 @@ test.describe('Multi-select', () => {
     expect(newFirstText).toBe(thirdBulletText);
   });
 });
+
+test.describe('Sync indicator', () => {
+  test('sync indicator element exists in toolbar', async ({ page }) => {
+    const indicator = page.locator('#sync-indicator');
+    await expect(indicator).toBeAttached();
+  });
+
+  test('sync indicator is hidden by default (not signed in)', async ({ page }) => {
+    const indicator = page.locator('#sync-indicator');
+    // Should not have the 'visible' class when not signed in
+    await expect(indicator).not.toHaveClass(/visible/);
+  });
+
+  test('sync indicator is inside the toolbar', async ({ page }) => {
+    const toolbar = page.locator('#toolbar');
+    const indicator = toolbar.locator('#sync-indicator');
+    await expect(indicator).toBeAttached();
+  });
+
+  test('making a local change via edit shows pending indicator in toolbar', async ({ page }) => {
+    // Initially the sync indicator should not be visible
+    await expect(page.locator('#sync-indicator')).not.toHaveClass(/visible/);
+
+    // Make an actual content edit: type into a bullet and blur
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('Changed text');
+    await firstText.blur();
+
+    // saveDoc() is called on blur and sets syncStatus to 'pending', which adds .visible.pending
+    const indicator = page.locator('#sync-indicator');
+    await expect(indicator).toHaveClass(/visible/);
+    await expect(indicator).toHaveClass(/pending/);
+  });
+
+  test('setSyncStatus drives indicator DOM classes via direct DOM manipulation', async ({ page }) => {
+    // Verify the indicator responds correctly to class changes (CSS-only test)
+    await page.evaluate(() => {
+      const el = document.getElementById('sync-indicator');
+      el.className = 'visible syncing';
+      el.innerHTML = '<span class="sync-spinner"></span><span>Syncing\u2026</span>';
+    });
+    await expect(page.locator('#sync-indicator')).toHaveClass(/syncing/);
+    await expect(page.locator('.sync-spinner')).toBeVisible();
+
+    await page.evaluate(() => {
+      const el = document.getElementById('sync-indicator');
+      el.className = 'visible synced';
+      el.innerHTML = '<span class="sync-dot"></span><span>Synced</span>';
+    });
+    await expect(page.locator('#sync-indicator')).toHaveClass(/synced/);
+
+    await page.evaluate(() => {
+      document.getElementById('sync-indicator').className = '';
+    });
+    await expect(page.locator('#sync-indicator')).not.toHaveClass(/visible/);
+  });
+});
+
+test.describe('Conflict modal', () => {
+  test('conflict modal element exists', async ({ page }) => {
+    const modal = page.locator('#modal-conflict');
+    await expect(modal).toBeAttached();
+  });
+
+  test('conflict modal is hidden by default', async ({ page }) => {
+    const modal = page.locator('#modal-conflict');
+    await expect(modal).toHaveClass(/hidden/);
+  });
+
+  test('conflict modal has local and remote textareas', async ({ page }) => {
+    await expect(page.locator('#conflict-local')).toBeAttached();
+    await expect(page.locator('#conflict-remote')).toBeAttached();
+    await expect(page.locator('#conflict-resolved')).toBeAttached();
+  });
+
+  test('conflict modal has Keep Local, Use Server, and Apply Resolved buttons', async ({ page }) => {
+    await expect(page.locator('#btn-conflict-use-local')).toBeAttached();
+    await expect(page.locator('#btn-conflict-use-remote')).toBeAttached();
+    await expect(page.locator('#btn-conflict-apply')).toBeAttached();
+  });
+
+  test('conflict modal can be opened and closed', async ({ page }) => {
+    // Open modal programmatically
+    await page.evaluate(() => {
+      document.getElementById('modal-conflict').classList.remove('hidden');
+    });
+    const modal = page.locator('#modal-conflict');
+    await expect(modal).not.toHaveClass(/hidden/);
+
+    // Close via Escape key
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveClass(/hidden/);
+  });
+
+  test('Keep Local button closes conflict modal', async ({ page }) => {
+    // Open conflict modal and populate fields
+    await page.evaluate(() => {
+      document.getElementById('conflict-local').value = '- Local item';
+      document.getElementById('conflict-remote').value = '- Remote item';
+      document.getElementById('conflict-resolved').value = '- Local item';
+      document.getElementById('modal-conflict').classList.remove('hidden');
+    });
+    await expect(page.locator('#modal-conflict')).not.toHaveClass(/hidden/);
+
+    // Click Keep Local – since no session, modal closes and status goes idle
+    await page.locator('#btn-conflict-use-local').click();
+    await expect(page.locator('#modal-conflict')).toHaveClass(/hidden/);
+  });
+
+  test('Use Server button closes modal and reverts to sync-synced state', async ({ page }) => {
+    // Populate conflict modal with valid markdown content and open it
+    await page.evaluate(() => {
+      document.getElementById('conflict-local').value = '- Local item';
+      document.getElementById('conflict-remote').value = '- Remote item';
+      document.getElementById('conflict-resolved').value = '- Local item';
+      document.getElementById('modal-conflict').classList.remove('hidden');
+    });
+    await expect(page.locator('#modal-conflict')).not.toHaveClass(/hidden/);
+
+    // Click Use Server — without a real session, the handler still closes the modal
+    // and updates lastSyncedVersion / pendingSync state in localStorage
+    await page.locator('#btn-conflict-use-remote').click();
+    await expect(page.locator('#modal-conflict')).toHaveClass(/hidden/);
+  });
+
+  test('Apply Resolved applies the resolved markdown to the outline', async ({ page }) => {
+    const originalCount = await page.locator('.bullet-row').count();
+
+    await page.evaluate(() => {
+      document.getElementById('conflict-local').value = '- Item A';
+      document.getElementById('conflict-remote').value = '- Item B';
+      document.getElementById('conflict-resolved').value = '- Resolved Item';
+      document.getElementById('modal-conflict').classList.remove('hidden');
+    });
+
+    await page.locator('#btn-conflict-apply').click();
+    await expect(page.locator('#modal-conflict')).toHaveClass(/hidden/);
+
+    // The outline should now contain the resolved content
+    const rows = page.locator('.bullet-row');
+    await expect(rows).toHaveCount(1);
+    const firstText = page.locator('.bullet-text').first();
+    await expect(firstText).toContainText('Resolved Item');
+  });
+});

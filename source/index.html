@@ -734,6 +734,84 @@
         .hidden {
             display: none !important;
         }
+
+        /* ── Sync indicator ── */
+        #sync-indicator {
+            display: none;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-faint);
+            letter-spacing: 0.02em;
+            cursor: default;
+        }
+
+        #sync-indicator.visible {
+            display: flex;
+        }
+
+        #sync-indicator.syncing { color: var(--accent); }
+        #sync-indicator.synced  { color: #4caf50; }
+        #sync-indicator.pending { color: var(--text-muted); }
+        #sync-indicator.error   { color: var(--danger); }
+        #sync-indicator.conflict { color: var(--danger); cursor: pointer; }
+
+        .sync-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            flex-shrink: 0;
+        }
+
+        @keyframes sync-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sync-spinner {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border: 1.5px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: sync-spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        /* ── Conflict modal ── */
+        .conflict-cols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .conflict-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .conflict-textarea {
+            width: 100%;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.5;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg);
+            color: var(--text);
+            padding: 8px;
+            resize: vertical;
+            outline: none;
+            min-height: 160px;
+        }
+
+        .conflict-textarea:focus {
+            border-color: var(--accent);
+        }
     </style>
 </head>
 
@@ -756,6 +834,7 @@
     <div id="toolbar">
         <button class="toolbar-btn" id="btn-markdown">Markdown</button>
         <div class="toolbar-spacer"></div>
+        <span id="sync-indicator"></span>
         <button class="toolbar-btn" id="btn-options">Options</button>
         <span class="toolbar-hint">? for shortcuts</span>
     </div>
@@ -927,6 +1006,39 @@
         </div>
     </div>
 
+    <div id="modal-conflict" class="modal-overlay hidden">
+        <div class="modal" style="max-width:700px;width:calc(100vw - 32px)">
+            <div class="modal-header">
+                <span class="modal-title">Sync Conflict</span>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px">
+                    Both local and server versions have changes that cannot be auto-merged.
+                    Review both versions and edit the resolved version below.
+                </p>
+                <div class="conflict-cols">
+                    <div>
+                        <div class="conflict-label">Your local version</div>
+                        <textarea id="conflict-local" class="conflict-textarea" readonly></textarea>
+                    </div>
+                    <div>
+                        <div class="conflict-label">Server version</div>
+                        <textarea id="conflict-remote" class="conflict-textarea" readonly></textarea>
+                    </div>
+                </div>
+                <div style="margin-top:8px">
+                    <div class="conflict-label">Resolved version (edit as needed)</div>
+                    <textarea id="conflict-resolved" class="conflict-textarea"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-conflict-use-local">Keep Local</button>
+                <button class="btn btn-secondary" id="btn-conflict-use-remote">Use Server</button>
+                <button class="btn btn-primary" id="btn-conflict-apply">Apply Resolved</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module">
         // ── Utilities ──────────────────────────────────────────────────────────────
@@ -994,6 +1106,20 @@
 
         const STORAGE_KEY = 'outline_v1';
         const THEME_KEY = 'theme';
+        const SYNC_VERSION_KEY = 'sync_version';
+        const SYNC_BASE_KEY = 'sync_base';
+        const SYNC_TABLE = 'outlines';
+        const SYNC_INTERVAL_MS = 15000;
+
+        // ── Sync state ────────────────────────────────────────────────────────────
+
+        let pendingSync = false;
+        let lastSyncedVersion = parseInt(localStorage.getItem(SYNC_VERSION_KEY) || '0');
+        let lastSyncedDocJson = localStorage.getItem(SYNC_BASE_KEY) || null;
+        let syncStatus = 'idle';
+        let syncIntervalId = null;
+        let conflictRemoteDoc = null;
+        let conflictServerVersion = 0;
 
         // ── Auth (Supabase) ───────────────────────────────────────────────────────
 
@@ -1024,9 +1150,16 @@
             renderAuthUI(null);
             if (!supabaseClient) return;
             const { data } = await supabaseClient.auth.getSession();
-            renderAuthUI(data.session ? data.session.user : null);
+            const currentUser = data.session ? data.session.user : null;
+            renderAuthUI(currentUser);
+            if (currentUser) startSync();
             supabaseClient.auth.onAuthStateChange((_event, session) => {
                 renderAuthUI(session ? session.user : null);
+                if (session) {
+                    startSync();
+                } else {
+                    stopSync();
+                }
             });
         }
 
@@ -1055,6 +1188,15 @@
         }
 
         function saveDoc() {
+            pendingSync = true;
+            if (syncStatus === 'synced' || syncStatus === 'idle') setSyncStatus('pending');
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+            } catch (e) { }
+        }
+
+        // Save without marking pending (used internally during sync operations)
+        function saveDocLocal() {
             try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
             } catch (e) { }
@@ -1086,7 +1228,325 @@
             return false;
         }
 
-        // ── Node lookup ───────────────────────────────────────────────────────────
+        // ── Compression ───────────────────────────────────────────────────────────
+
+        async function compressData(obj) {
+            const json = JSON.stringify(obj);
+            const encoded = new TextEncoder().encode(json);
+            const stream = new ReadableStream({
+                start(ctrl) { ctrl.enqueue(encoded); ctrl.close(); }
+            }).pipeThrough(new CompressionStream('gzip'));
+            const buf = await new Response(stream).arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            const CHUNK = 8192;
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+            }
+            return btoa(binary);
+        }
+
+        async function decompressData(b64) {
+            try {
+                const binary = atob(b64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                const stream = new ReadableStream({
+                    start(ctrl) { ctrl.enqueue(bytes); ctrl.close(); }
+                }).pipeThrough(new DecompressionStream('gzip'));
+                return JSON.parse(await new Response(stream).text());
+            } catch {
+                // Fallback: try plain base64-encoded JSON (legacy format)
+                return JSON.parse(atob(b64));
+            }
+        }
+
+        // ── Sync indicator ────────────────────────────────────────────────────────
+
+        function setSyncStatus(status) {
+            syncStatus = status;
+            const el = document.getElementById('sync-indicator');
+            if (!el) return;
+            el.className = '';
+            el.innerHTML = '';
+            el.onclick = null;
+            if (status === 'idle') return;
+            el.classList.add('visible', status);
+            if (status === 'syncing') {
+                el.innerHTML = '<span class="sync-spinner"></span><span>Syncing…</span>';
+            } else if (status === 'synced') {
+                el.innerHTML = '<span class="sync-dot"></span><span>Synced</span>';
+                setTimeout(() => { if (syncStatus === 'synced') setSyncStatus('idle'); }, 3000);
+            } else if (status === 'pending') {
+                el.innerHTML = '<span class="sync-dot"></span><span>Pending</span>';
+            } else if (status === 'error') {
+                el.innerHTML = '<span class="sync-dot"></span><span>Sync error</span>';
+            } else if (status === 'conflict') {
+                el.innerHTML = '<span class="sync-dot"></span><span>Conflict – click to resolve</span>';
+                el.onclick = () => openModal('modal-conflict');
+            }
+        }
+
+        // ── Sync functions ────────────────────────────────────────────────────────
+
+        async function getActiveSession() {
+            if (!supabaseClient) return null;
+            const { data } = await supabaseClient.auth.getSession();
+            return data.session || null;
+        }
+
+        async function pushToServer(userId, baseServerVersion) {
+            const newVersion = Math.max(doc.version || 1, baseServerVersion) + 1;
+            doc.version = newVersion;
+            saveDocLocal();
+
+            const syncPayload = { doc, theme: localStorage.getItem(THEME_KEY) || 'light' };
+            const compressed = await compressData(syncPayload);
+
+            const { error } = await supabaseClient.from(SYNC_TABLE).upsert({
+                user_id: userId,
+                data: compressed,
+                version: newVersion,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+
+            if (error) throw error;
+
+            pendingSync = false;
+            lastSyncedVersion = newVersion;
+            lastSyncedDocJson = JSON.stringify(doc);
+            localStorage.setItem(SYNC_VERSION_KEY, String(lastSyncedVersion));
+            localStorage.setItem(SYNC_BASE_KEY, lastSyncedDocJson);
+            setSyncStatus('synced');
+        }
+
+        async function pullFromServer(row) {
+            const payload = await decompressData(row.data);
+            const remoteDoc = payload.doc || payload;
+            const remoteTheme = payload.theme;
+
+            doc = remoteDoc;
+            saveDocLocal();
+
+            if (remoteTheme) {
+                localStorage.setItem(THEME_KEY, remoteTheme);
+                applyTheme(remoteTheme);
+            }
+
+            lastSyncedVersion = row.version;
+            lastSyncedDocJson = JSON.stringify(doc);
+            localStorage.setItem(SYNC_VERSION_KEY, String(lastSyncedVersion));
+            localStorage.setItem(SYNC_BASE_KEY, lastSyncedDocJson);
+
+            pendingSync = false;
+            zoomStack = zoomStack.filter(id => !!findNode(id));
+            render();
+            setSyncStatus('synced');
+        }
+
+        // ── 3-way merge ───────────────────────────────────────────────────────────
+
+        function buildNodeMap(node, map = {}) {
+            map[node.id] = {
+                text: node.text || '',
+                description: node.description || '',
+                collapsed: !!node.collapsed,
+                children: (node.children || []).map(c => c.id)
+            };
+            for (const child of (node.children || [])) {
+                buildNodeMap(child, map);
+            }
+            return map;
+        }
+
+        function tryAutoMerge(localDoc, remoteDoc, baseDocJson) {
+            if (!baseDocJson) return null;
+            let baseDoc;
+            try { baseDoc = JSON.parse(baseDocJson); } catch { return null; }
+
+            const baseMap = buildNodeMap(baseDoc.root);
+            const localMap = buildNodeMap(localDoc.root);
+            const remoteMap = buildNodeMap(remoteDoc.root);
+
+            // Check for conflicts: nodes where both sides made different changes
+            for (const id of Object.keys(baseMap)) {
+                const base = baseMap[id];
+                const local = localMap[id];
+                const remote = remoteMap[id];
+                if (!local || !remote) continue;
+
+                if (local.text !== base.text && remote.text !== base.text && local.text !== remote.text) {
+                    return null; // text conflict
+                }
+                if (local.description !== base.description && remote.description !== base.description &&
+                    local.description !== remote.description) {
+                    return null; // description conflict
+                }
+                // Children order conflict (both sides reordered the same parent differently)
+                const bk = base.children.join(',');
+                const lk = local.children.join(',');
+                const rk = remote.children.join(',');
+                if (lk !== bk && rk !== bk && lk !== rk) {
+                    return null; // structural conflict on same parent
+                }
+            }
+
+            // No conflicts detected — build merged doc starting from local structure
+            const merged = JSON.parse(JSON.stringify(localDoc));
+
+            function mergeNode(localNode) {
+                const id = localNode.id;
+                const base = baseMap[id];
+                const remote = remoteMap[id];
+
+                if (base && remote) {
+                    // Apply remote content changes when local didn't change them
+                    if (remote.text !== base.text && (localNode.text || '') === base.text) {
+                        localNode.text = remote.text;
+                    }
+                    if (remote.description !== base.description &&
+                        (localNode.description || '') === base.description) {
+                        localNode.description = remote.description;
+                    }
+                    if (remote.collapsed !== base.collapsed && localNode.collapsed === base.collapsed) {
+                        localNode.collapsed = remote.collapsed;
+                    }
+
+                    // Add nodes that were added in remote under this parent but don't exist locally
+                    const baseChildSet = new Set(base.children);
+                    for (const newChildId of remote.children) {
+                        if (!baseChildSet.has(newChildId) && !localMap[newChildId]) {
+                            const remoteChild = findNode(newChildId, remoteDoc.root);
+                            if (remoteChild) {
+                                localNode.children.push(JSON.parse(JSON.stringify(remoteChild)));
+                            }
+                        }
+                    }
+                }
+
+                for (const child of (localNode.children || [])) {
+                    mergeNode(child);
+                }
+            }
+
+            mergeNode(merged.root);
+            merged.version = Math.max(localDoc.version || 1, remoteDoc.version || 1) + 1;
+            return merged;
+        }
+
+        // ── Conflict handling ─────────────────────────────────────────────────────
+
+        async function handleConflict(row) {
+            let remotePayload;
+            try {
+                remotePayload = await decompressData(row.data);
+            } catch {
+                setSyncStatus('error');
+                return;
+            }
+            const remoteDoc = remotePayload.doc || remotePayload;
+
+            // Try auto-merge first
+            const merged = tryAutoMerge(doc, remoteDoc, lastSyncedDocJson);
+            if (merged) {
+                const session = await getActiveSession();
+                if (!session) return;
+                doc = merged;
+                saveDocLocal();
+                zoomStack = zoomStack.filter(id => !!findNode(id));
+                render();
+                try {
+                    await pushToServer(session.user.id, row.version);
+                } catch {
+                    setSyncStatus('error');
+                }
+                return;
+            }
+
+            // Auto-merge failed — show conflict modal
+            conflictRemoteDoc = remoteDoc;
+            conflictServerVersion = row.version;
+
+            const localMd = exportMarkdown().trim();
+            const remoteMd = exportMarkdown(remoteDoc.root).trim();
+
+            document.getElementById('conflict-local').value = localMd;
+            document.getElementById('conflict-remote').value = remoteMd;
+            document.getElementById('conflict-resolved').value = localMd;
+
+            setSyncStatus('conflict');
+            openModal('modal-conflict');
+        }
+
+        async function syncNow() {
+            const session = await getActiveSession();
+            if (!session) return;
+
+            setSyncStatus('syncing');
+            try {
+                const { data: row, error: fetchErr } = await supabaseClient
+                    .from(SYNC_TABLE)
+                    .select('version, data')
+                    .eq('user_id', session.user.id)
+                    .maybeSingle();
+
+                if (fetchErr) throw fetchErr;
+
+                const serverVersion = row ? row.version : 0;
+
+                if (lastSyncedVersion === 0) {
+                    // First sync for this account on this device
+                    if (!row) {
+                        // Server is empty — push local data
+                        await pushToServer(session.user.id, 0);
+                    } else if (!doc.root.children.length) {
+                        // Local is empty — pull from server
+                        await pullFromServer(row);
+                    } else {
+                        // Both have data — try merge or show conflict
+                        await handleConflict(row);
+                    }
+                } else if (serverVersion > lastSyncedVersion) {
+                    // Server has newer data than our last sync
+                    if (pendingSync) {
+                        // Both sides changed — attempt 3-way merge
+                        await handleConflict(row);
+                    } else {
+                        // We haven't changed anything — pull server data
+                        await pullFromServer(row);
+                    }
+                } else {
+                    // Server is at the same version as our last sync
+                    if (pendingSync) {
+                        await pushToServer(session.user.id, serverVersion);
+                    } else {
+                        setSyncStatus('synced');
+                    }
+                }
+            } catch (e) {
+                console.error('Sync error:', e);
+                setSyncStatus('error');
+            }
+        }
+
+        function startSync() {
+            if (syncIntervalId) return;
+            syncNow();
+            syncIntervalId = setInterval(syncNow, SYNC_INTERVAL_MS);
+        }
+
+        function stopSync() {
+            if (syncIntervalId) {
+                clearInterval(syncIntervalId);
+                syncIntervalId = null;
+            }
+            setSyncStatus('idle');
+        }
+
+        // Sync immediately when the tab becomes visible again
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && syncIntervalId) syncNow();
+        });
 
         function findNode(id, node = doc.root) {
             if (node.id === id) return node;
@@ -2136,6 +2596,9 @@
                 if (!document.getElementById('modal-login').classList.contains('hidden')) {
                     closeModal('modal-login'); return;
                 }
+                if (!document.getElementById('modal-conflict').classList.contains('hidden')) {
+                    closeModal('modal-conflict'); return;
+                }
                 if (!document.getElementById('modal-markdown').classList.contains('hidden')) {
                     closeModal('modal-markdown'); return;
                 }
@@ -2300,6 +2763,61 @@
                     successDiv.textContent = 'Check your email for a confirmation link.';
                     successDiv.classList.remove('hidden');
                 }
+            }
+        });
+
+        // ── Conflict modal buttons ─────────────────────────────────────────────────
+
+        document.getElementById('btn-conflict-use-local').addEventListener('click', async () => {
+            closeModal('modal-conflict');
+            const session = await getActiveSession();
+            if (session) {
+                setSyncStatus('syncing');
+                try {
+                    await pushToServer(session.user.id, conflictServerVersion);
+                } catch {
+                    setSyncStatus('error');
+                }
+            } else {
+                setSyncStatus('idle');
+            }
+        });
+
+        document.getElementById('btn-conflict-use-remote').addEventListener('click', async () => {
+            closeModal('modal-conflict');
+            if (conflictRemoteDoc) {
+                doc = conflictRemoteDoc;
+                saveDocLocal();
+                zoomStack = zoomStack.filter(id => !!findNode(id));
+                render();
+            }
+            lastSyncedVersion = conflictServerVersion;
+            lastSyncedDocJson = JSON.stringify(doc);
+            localStorage.setItem(SYNC_VERSION_KEY, String(lastSyncedVersion));
+            localStorage.setItem(SYNC_BASE_KEY, lastSyncedDocJson);
+            pendingSync = false;
+            setSyncStatus('synced');
+        });
+
+        document.getElementById('btn-conflict-apply').addEventListener('click', async () => {
+            const text = document.getElementById('conflict-resolved').value;
+            if (!text.trim()) return;
+            const newRoot = importMarkdown(text);
+            doc.root.children = newRoot.children;
+            saveDocLocal();
+            closeModal('modal-conflict');
+            zoomStack = zoomStack.filter(id => !!findNode(id));
+            render();
+            const session = await getActiveSession();
+            if (session) {
+                setSyncStatus('syncing');
+                try {
+                    await pushToServer(session.user.id, conflictServerVersion);
+                } catch {
+                    setSyncStatus('error');
+                }
+            } else {
+                setSyncStatus('idle');
             }
         });
 
