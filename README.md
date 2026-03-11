@@ -5,6 +5,7 @@
 A keyboard-first infinite outliner running entirely in the browser.
 No server, no build step, single HTML file, data lives in the browser (localStorage).
 Export/import via Markdown.
+Optional cloud sync via Supabase for signed-in users.
 
 ---
 
@@ -13,7 +14,52 @@ Export/import via Markdown.
 - **Single HTML file** — HTML + `<style>` + `<script type="module">`. Minimal external dependencies.
 - **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer.
 - **Markdown** — a small hand-rolled inline parser (bold, italic, code, links). No external lib needed.
-- **Supabase** — loaded via CDN (`@supabase/supabase-js@2`) for authentication. The app functions fully offline if the CDN is unavailable.
+- **Supabase** — loaded via CDN (`@supabase/supabase-js@2`) for authentication and cloud sync. The app functions fully offline if the CDN is unavailable.
+
+---
+
+## Supabase cloud sync
+
+When a user is signed in, the outline data and theme preference are automatically synced to Supabase every 15 seconds.
+
+### Required Supabase table
+
+Run the following SQL in your Supabase SQL editor once:
+
+```sql
+CREATE TABLE IF NOT EXISTS outlines (
+  user_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  data       TEXT        NOT NULL,
+  version    BIGINT      NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE outlines ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can only access their own data"
+  ON outlines FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+```
+
+### Sync behaviour
+
+- **Compression**: data is gzip-compressed with the native `CompressionStream` browser API before storing in Supabase to minimise storage and bandwidth.
+- **Poll interval**: every 15 seconds (and immediately when the browser tab regains focus).
+- **Version numbers**: each push increments `doc.version`, allowing the client to detect whether the server has newer data.
+- **Sync indicator**: a small status label appears between the toolbar spacer and the Options button:
+  - *Pending* — unsaved local changes waiting to be pushed.
+  - *Syncing…* — network request in progress.
+  - *Synced* — last sync completed successfully (fades after 3 s).
+  - *Sync error* — network or server failure.
+  - *Conflict – click to resolve* — clicking opens the conflict modal.
+- **Auto-merge**: when both the local and server versions have changes since the last sync, a 3-way merge is attempted. If the changes affect different nodes (different branches of the tree), the merge succeeds silently.
+- **Conflict modal**: if the same node was edited in both versions, the conflict modal opens showing the local and server Markdown side-by-side. Three resolution options are offered:
+  - **Keep Local** — push the local version to the server.
+  - **Use Server** — replace local data with the server version.
+  - **Apply Resolved** — edit the pre-populated "Resolved version" textarea and apply it.
+- **Theme sync**: the active theme (light/dark) is included in the sync payload so it stays consistent across devices.
+- **First sync**: on the first sync after signing in, if the server is empty the local data is uploaded; if local is empty the server data is downloaded; if both have data the conflict modal is shown.
 
 ---
 
@@ -86,15 +132,17 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 
 <div id="toolbar">             <!-- fixed bottom -->
   <button id="btn-markdown">Markdown</button>    <!-- opens unified edit-as-markdown modal -->
+  <span id="sync-indicator">                     <!-- sync status label (hidden when not signed in) -->
   <button id="btn-options">Options</button>       <!-- opens options modal (theme, sign in, GitHub link) -->
   <span class="toolbar-hint">? for shortcuts</span>   <!-- click opens shortcuts modal -->
 </div>
 
-<!-- four modals, each a .modal-overlay.hidden wrapper -->
+<!-- five modals, each a .modal-overlay.hidden wrapper -->
 <div id="modal-login">     <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
 <div id="modal-options">   <!-- options: account (sign in / sign out), theme toggle (dark/light), GitHub repo link -->
+<div id="modal-conflict">  <!-- conflict resolution: local vs server Markdown diff + resolved textarea; Keep Local / Use Server / Apply Resolved buttons -->
 ```
 
 ### Bullet row DOM (produced by `buildRow`)
@@ -133,6 +181,8 @@ Use CSS custom properties on `:root` for the entire palette and spacing:
 ```
 
 Dark mode is applied by setting `data-theme="dark"` on `<html>`. The `html[data-theme='dark']` selector overrides all colour custom properties with dark equivalents. The current theme is persisted in `localStorage` under the key `theme`. `applyTheme(theme)` sets the attribute and updates the toggle button label.
+
+The sync indicator (`#sync-indicator`) uses modifier classes on the element itself: `syncing`, `synced`, `pending`, `error`, `conflict`. When none of these classes are present (or the `visible` class is absent) it is hidden. The `.sync-spinner` element uses a `@keyframes sync-spin` CSS animation for the rotating ring.
 
 Key layout rules:
 
@@ -276,6 +326,7 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 - In Sign-in mode, submitting the form calls `supabaseClient.auth.signInWithPassword({ email, password })`. On success, `#modal-login` closes and the Account section shows the signed-in email and a **Sign out** button.
 - If the Supabase CDN is unavailable, the **Sign in** button is still shown, and submitting the form shows an "Authentication service unavailable." error.
 - No changes to the Supabase project are required to enable sign-up — email/password sign-up is enabled by default.
+- After sign-in, `startSync()` is called which triggers an immediate `syncNow()` and starts a 15-second `setInterval`. After sign-out, `stopSync()` clears the interval and resets the sync indicator.
 
 ---
 
@@ -333,3 +384,7 @@ The seed data in Markdown format:
 - `moveNodes` requires all selected nodes to share the same parent and be contiguous; if not, the operation is a no-op.
 - `indentNodes` processes nodes top-to-bottom so successive siblings all pile into the same previous sibling in order.
 - `_keepSelection` flag prevents the focus event from clearing the selection when `extendSelection` programmatically focuses the selection head.
+- `saveDoc()` marks `pendingSync = true` and updates the sync indicator; `saveDocLocal()` is the internal variant used during sync operations that must not trigger another push.
+- `tryAutoMerge` returns `null` if any node was edited differently in both local and server versions; only call it when `lastSyncedDocJson` is available (i.e. after the first successful sync).
+- `zoomStack` must be re-validated against the restored doc after a pull or merge — use `zoomStack = zoomStack.filter(id => !!findNode(id))`.
+- `CompressionStream` / `DecompressionStream` are available in Chrome 80+, Firefox 113+, Safari 16.4+. The decompressData fallback attempts plain base64-encoded JSON for robustness.
