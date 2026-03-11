@@ -239,6 +239,30 @@ test.describe('Description', () => {
     await expect(descView).toBeVisible();
     await expect(descView).toContainText('My description text');
   });
+
+  test('description top position does not shift between view and edit mode', async ({ page }) => {
+    // Enter a description
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+Enter');
+    const descEl = page.locator('.bullet-desc.editing').first();
+    await descEl.fill('Alignment test');
+    await descEl.press('Escape');
+
+    // Measure the top position of the view element
+    const descView = page.locator('.bullet-desc-view.visible').first();
+    await expect(descView).toBeVisible();
+    const viewBox = await descView.boundingBox();
+
+    // Switch to edit mode by clicking on the description
+    await descView.click();
+    const descEditing = page.locator('.bullet-desc.editing').first();
+    await expect(descEditing).toBeVisible();
+    const editBox = await descEditing.boundingBox();
+
+    // The top position should not shift by more than 1px
+    expect(Math.abs(editBox.y - viewBox.y)).toBeLessThanOrEqual(1);
+  });
 });
 
 test.describe('Search', () => {
