@@ -24,16 +24,20 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: test/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: test
 
       - name: Install Playwright browsers
         run: npx playwright install chromium firefox --with-deps
+        working-directory: test
 
       - name: Run E2E tests
         id: tests
         run: npm run test:ci
+        working-directory: test
         env:
           CI: true
 
@@ -43,19 +47,19 @@ jobs:
         with:
           name: playwright-results
           path: |
-            test-results/
-            playwright-report/
+            test/test-results/
+            test/playwright-report/
           retention-days: 30
 
       - name: Summarize test results for AI agent
         if: always()
         run: |
-          if [ -f test-results/results.json ]; then
+          if [ -f test/test-results/results.json ]; then
             echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             node -e "
               const fs = require('fs');
-              const results = JSON.parse(fs.readFileSync('test-results/results.json', 'utf8'));
+              const results = JSON.parse(fs.readFileSync('test/test-results/results.json', 'utf8'));
               const stats = results.stats;
               const status = stats.unexpected === 0 ? '✅ All tests passed' : '❌ Some tests failed';
               console.log(status);
