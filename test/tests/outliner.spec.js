@@ -1216,3 +1216,112 @@ test.describe('Conflict modal', () => {
     await expect(firstText).toContainText('Resolved Item');
   });
 });
+
+test.describe('Cloud sync toggle', () => {
+  test('Options modal contains a Cloud sync toggle button', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-toggle-sync')).toBeVisible();
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
+  });
+
+  test('clicking Cloud sync toggle enables sync and updates button text', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
+    await page.click('#btn-toggle-sync');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
+  });
+
+  test('clicking Cloud sync toggle again disables sync', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-sync');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
+    await page.click('#btn-toggle-sync');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
+  });
+
+  test('sync enabled state persists after reload', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-sync');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
+
+    await page.reload();
+    await page.waitForSelector('.bullet-row');
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
+  });
+
+  test('sync is disabled by default (not enabled on fresh load)', async ({ page }) => {
+    const syncEnabled = await page.evaluate(() => localStorage.getItem('sync_enabled'));
+    // sync_enabled is either not set (null) or explicitly 'false' — never 'true' by default
+    expect(syncEnabled === null || syncEnabled === 'false').toBe(true);
+  });
+});
+
+test.describe('Developer mode', () => {
+  test('Options modal contains a Developer mode toggle button', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-toggle-dev')).toBeVisible();
+    await expect(page.locator('#btn-toggle-dev')).toContainText('Enable dev mode');
+  });
+
+  test('dev panel is hidden by default', async ({ page }) => {
+    await expect(page.locator('#dev-panel')).toHaveClass(/hidden/);
+  });
+
+  test('clicking Developer mode toggle shows the dev panel', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-dev');
+    await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#dev-panel')).toBeVisible();
+  });
+
+  test('dev panel shows debug information', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-dev');
+    const panel = page.locator('#dev-panel');
+    await expect(panel).toContainText('syncStatus');
+    await expect(panel).toContainText('pendingSync');
+    await expect(panel).toContainText('total nodes');
+  });
+
+  test('clicking Developer mode toggle again hides the dev panel', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-dev');
+    await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
+    await page.click('#btn-toggle-dev');
+    await expect(page.locator('#dev-panel')).toHaveClass(/hidden/);
+  });
+
+  test('dev mode persists after reload', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-dev');
+    await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
+
+    await page.reload();
+    await page.waitForSelector('.bullet-row');
+    await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
+  });
+});
+
+test.describe('Persistence without login', () => {
+  test('seed data is saved to localStorage on first load', async ({ page }) => {
+    // After clearing localStorage and reloading (done by beforeEach), seed data is present
+    const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
+    expect(stored).not.toBeNull();
+    const parsed = JSON.parse(stored);
+    expect(parsed.root.children.length).toBeGreaterThan(0);
+  });
+
+  test('edits made when not logged in persist after reload', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('My persisted change');
+    await firstText.blur();
+
+    await page.reload();
+    await page.waitForSelector('.bullet-row');
+
+    await expect(page.locator('.bullet-text').first()).toContainText('My persisted change');
+  });
+});
+

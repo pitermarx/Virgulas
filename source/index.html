@@ -730,6 +730,86 @@
             opacity: 0.8;
         }
 
+        .btn-danger {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            opacity: 0.85;
+        }
+
+        .auth-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        /* ── Dev panel ── */
+        #dev-panel {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 320px;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            z-index: 50;
+            color: var(--text);
+        }
+
+        #dev-panel h3 {
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--accent);
+            font-family: var(--font);
+        }
+
+        #dev-panel .dev-row {
+            display: flex;
+            gap: 6px;
+            padding: 3px 0;
+            border-bottom: 1px solid var(--border-light);
+            word-break: break-all;
+        }
+
+        #dev-panel .dev-key {
+            color: var(--text-muted);
+            flex-shrink: 0;
+            min-width: 110px;
+        }
+
+        #dev-panel .dev-val {
+            color: var(--text);
+        }
+
+        #dev-panel details {
+            margin-top: 8px;
+        }
+
+        #dev-panel summary {
+            cursor: pointer;
+            color: var(--accent);
+            font-family: var(--font);
+            font-size: 11px;
+            padding: 4px 0;
+        }
+
+        #dev-panel pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 10px;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
         /* ── Utility ── */
         .hidden {
             display: none !important;
@@ -966,6 +1046,14 @@
                         <div id="auth-ui"></div>
                     </div>
                     <div class="options-item">
+                        <span class="options-item-label">Cloud sync</span>
+                        <button class="btn btn-secondary" id="btn-toggle-sync">Enable sync</button>
+                    </div>
+                    <div class="options-item">
+                        <span class="options-item-label">Developer mode</span>
+                        <button class="btn btn-secondary" id="btn-toggle-dev">Enable dev mode</button>
+                    </div>
+                    <div class="options-item">
                         <span class="options-item-label">Theme</span>
                         <button class="btn btn-secondary" id="btn-toggle-theme">Switch to dark mode</button>
                     </div>
@@ -1039,6 +1127,11 @@
         </div>
     </div>
 
+    <div id="dev-panel" class="hidden">
+        <h3>Dev panel</h3>
+        <div id="dev-panel-content"></div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module">
         // ── Utilities ──────────────────────────────────────────────────────────────
@@ -1108,6 +1201,8 @@
         const THEME_KEY = 'theme';
         const SYNC_VERSION_KEY = 'sync_version';
         const SYNC_BASE_KEY = 'sync_base';
+        const SYNC_ENABLED_KEY = 'sync_enabled';
+        const DEV_MODE_KEY = 'dev_mode';
         const SYNC_TABLE = 'outlines';
         const SYNC_INTERVAL_MS = 15000;
 
@@ -1120,6 +1215,8 @@
         let syncIntervalId = null;
         let conflictRemoteDoc = null;
         let conflictServerVersion = 0;
+        let syncEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === 'true';
+        let devMode = localStorage.getItem(DEV_MODE_KEY) === 'true';
 
         // ── Auth (Supabase) ───────────────────────────────────────────────────────
 
@@ -1134,9 +1231,14 @@
             if (!authUI) return;
             if (user) {
                 authUI.innerHTML =
+                    `<div class="auth-actions">` +
                     `<div class="auth-user-email">${user.email}</div>` +
-                    `<button class="btn btn-secondary" id="btn-sign-out">Sign out</button>`;
+                    `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">` +
+                    `<button class="btn btn-secondary" id="btn-sign-out">Sign out</button>` +
+                    `<button class="btn btn-danger" id="btn-delete-account">Delete account</button>` +
+                    `</div></div>`;
                 document.getElementById('btn-sign-out').addEventListener('click', () => signOut());
+                document.getElementById('btn-delete-account').addEventListener('click', () => deleteAccount());
             } else {
                 authUI.innerHTML = `<button class="btn btn-secondary" id="btn-sign-in">Sign in</button>`;
                 document.getElementById('btn-sign-in').addEventListener('click', () => {
@@ -1152,10 +1254,10 @@
             const { data } = await supabaseClient.auth.getSession();
             const currentUser = data.session ? data.session.user : null;
             renderAuthUI(currentUser);
-            if (currentUser) startSync();
+            if (currentUser && syncEnabled) startSync();
             supabaseClient.auth.onAuthStateChange((_event, session) => {
                 renderAuthUI(session ? session.user : null);
-                if (session) {
+                if (session && syncEnabled) {
                     startSync();
                 } else {
                     stopSync();
@@ -1165,6 +1267,24 @@
 
         async function signOut() {
             await supabaseClient.auth.signOut();
+        }
+
+        async function deleteAccount() {
+            if (!confirm('Delete your account? This will permanently remove all synced data and cannot be undone.')) return;
+            try {
+                const session = await getActiveSession();
+                if (session) {
+                    await supabaseClient.from(SYNC_TABLE).delete().eq('user_id', session.user.id);
+                }
+                await supabaseClient.auth.signOut();
+                localStorage.removeItem(SYNC_VERSION_KEY);
+                localStorage.removeItem(SYNC_BASE_KEY);
+                lastSyncedVersion = 0;
+                lastSyncedDocJson = null;
+            } catch (e) {
+                console.error('Delete account error:', e);
+                alert('Failed to delete account data. Please try again.');
+            }
         }
 
         let loginMode = 'signin';
@@ -1185,6 +1305,61 @@
             document.documentElement.setAttribute('data-theme', theme);
             const btn = document.getElementById('btn-toggle-theme');
             if (btn) btn.textContent = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+
+        function renderSyncToggle() {
+            const btn = document.getElementById('btn-toggle-sync');
+            if (!btn) return;
+            btn.textContent = syncEnabled ? 'Disable sync' : 'Enable sync';
+        }
+
+        function countNodes(node) {
+            let count = 0;
+            for (const child of node.children) {
+                count += 1 + countNodes(child);
+            }
+            return count;
+        }
+
+        function renderDevPanel() {
+            const content = document.getElementById('dev-panel-content');
+            if (!content) return;
+            function esc(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+            const rows = [
+                ['syncStatus', syncStatus],
+                ['pendingSync', String(pendingSync)],
+                ['syncEnabled', String(syncEnabled)],
+                ['lastSyncedVersion', String(lastSyncedVersion)],
+                ['zoomStack', JSON.stringify(zoomStack)],
+                ['focusedId', focusedId || '—'],
+                ['selectedIds', JSON.stringify(selectedIds)],
+                ['undoStack.length', String(undoStack.length)],
+                ['doc.version', String(doc.version || 1)],
+                ['total nodes', String(countNodes(doc.root))],
+            ];
+            content.innerHTML =
+                rows.map(([k, v]) =>
+                    `<div class="dev-row"><span class="dev-key">${esc(k)}</span><span class="dev-val">${esc(v)}</span></div>`
+                ).join('') +
+                `<details><summary>doc JSON</summary><pre>${esc(JSON.stringify(doc, null, 2))}</pre></details>`;
+        }
+
+        function applyDevMode() {
+            const panel = document.getElementById('dev-panel');
+            const btn = document.getElementById('btn-toggle-dev');
+            if (!panel) return;
+            if (devMode) {
+                panel.classList.remove('hidden');
+                if (btn) btn.textContent = 'Disable dev mode';
+                renderDevPanel();
+            } else {
+                panel.classList.add('hidden');
+                if (btn) btn.textContent = 'Enable dev mode';
+            }
         }
 
         function saveDoc() {
@@ -1285,6 +1460,7 @@
                 el.innerHTML = '<span class="sync-dot"></span><span>Conflict – click to resolve</span>';
                 el.onclick = () => openModal('modal-conflict');
             }
+            if (devMode) renderDevPanel();
         }
 
         // ── Sync functions ────────────────────────────────────────────────────────
@@ -1789,6 +1965,8 @@
                     // Don't re-focus if user is typing somewhere else
                 }
             }
+
+            if (devMode) renderDevPanel();
         }
 
         function renderBreadcrumb() {
@@ -2662,6 +2840,24 @@
             applyTheme(next);
         });
 
+        document.getElementById('btn-toggle-sync').addEventListener('click', async () => {
+            syncEnabled = !syncEnabled;
+            localStorage.setItem(SYNC_ENABLED_KEY, String(syncEnabled));
+            renderSyncToggle();
+            if (syncEnabled) {
+                const session = await getActiveSession();
+                if (session) startSync();
+            } else {
+                stopSync();
+            }
+        });
+
+        document.getElementById('btn-toggle-dev').addEventListener('click', () => {
+            devMode = !devMode;
+            localStorage.setItem(DEV_MODE_KEY, String(devMode));
+            applyDevMode();
+        });
+
         // Close buttons and overlay clicks
         document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
             el.addEventListener('click', (e) => {
@@ -2826,10 +3022,15 @@
         function init() {
             applyTheme(localStorage.getItem(THEME_KEY) || 'light');
             const loaded = loadDoc();
-            if (!loaded) seedDoc(doc);
+            if (!loaded) {
+                seedDoc(doc);
+                saveDocLocal();
+            }
             loadFromHash();
             render();
             initAuth();
+            renderSyncToggle();
+            applyDevMode();
 
             // Focus first bullet
             requestAnimationFrame(() => {
