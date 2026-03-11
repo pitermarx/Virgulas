@@ -10,9 +10,10 @@ Export/import via Markdown.
 
 ## Tech decisions
 
-- **Single HTML file** — HTML + `<style>` + `<script type="module">`. Zero dependencies, zero build.
+- **Single HTML file** — HTML + `<style>` + `<script type="module">`. Minimal external dependencies.
 - **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer.
 - **Markdown** — a small hand-rolled inline parser (bold, italic, code, links). No external lib needed.
+- **Supabase** — loaded via CDN (`@supabase/supabase-js@2`) for authentication. The app functions fully offline if the CDN is unavailable.
 
 ---
 
@@ -89,10 +90,11 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
   <span class="toolbar-hint">? for shortcuts</span>   <!-- click opens shortcuts modal -->
 </div>
 
-<!-- three modals, each a .modal-overlay.hidden wrapper -->
+<!-- four modals, each a .modal-overlay.hidden wrapper -->
+<div id="modal-login">     <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
-<div id="modal-options">   <!-- options: sign in (coming soon), theme toggle (dark/light), GitHub repo link -->
+<div id="modal-options">   <!-- options: account (sign in / sign out), theme toggle (dark/light), GitHub repo link -->
 ```
 
 ### Bullet row DOM (produced by `buildRow`)
@@ -259,6 +261,18 @@ The bullet character encodes collapsed/expanded state:
 - `pushUndo()` is called **before** each mutation: `newBulletAfter`, `deleteNode`, `indentNode`, `unindentNode`, `moveNode`, collapse toggle, and Apply in the Markdown modal. It is also called on focus of `.bullet-text` and `.bullet-desc` so that text/description edits are undoable.
 - `undo()` pops the latest snapshot, restores `doc`, saves to localStorage, validates `zoomStack`, and re-renders.
 - `Ctrl+Z` triggers `undo()` from both the bullet keydown handler and the global keydown handler (when no element is focused).
+
+---
+
+## Authentication
+
+Authentication is provided by [Supabase](https://supabase.com), loaded from the CDN.
+
+- The `#auth-ui` container inside `#modal-options` is populated dynamically by `renderAuthUI(user)`.
+- On load, `initAuth()` synchronously shows the **Sign in** button, then asynchronously fetches the active session and updates the UI.
+- Clicking **Sign in** opens `#modal-login`, which has email and password fields.
+- On successful login, `#modal-login` closes and the Account section shows the signed-in email and a **Sign out** button.
+- If the Supabase CDN is unavailable, the **Sign in** button is still shown, and submitting the form shows an "Authentication service unavailable." error.
 
 ---
 

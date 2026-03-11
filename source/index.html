@@ -674,6 +674,34 @@
             text-decoration: underline;
         }
 
+        .login-input {
+            width: 100%;
+            padding: 8px 10px;
+            font-size: 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg);
+            color: var(--text);
+            box-sizing: border-box;
+        }
+
+        .login-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .login-error {
+            font-size: 13px;
+            color: #d32f2f;
+            padding: 4px 0;
+        }
+
+        .auth-user-email {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
         /* ── Utility ── */
         .hidden {
             display: none !important;
@@ -826,9 +854,9 @@
             </div>
             <div class="modal-body">
                 <div class="options-list">
-                    <div class="options-item">
+                    <div class="options-item" id="account-options-item">
                         <span class="options-item-label">Account</span>
-                        <button class="btn btn-secondary" id="btn-sign-in" disabled>Sign in (coming soon)</button>
+                        <div id="auth-ui"></div>
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Theme</span>
@@ -843,6 +871,29 @@
         </div>
     </div>
 
+    <div id="modal-login" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Sign in</span>
+                <button class="modal-close" data-modal="modal-login">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="options-list">
+                    <div class="options-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+                        <input type="email" id="login-email" class="login-input" placeholder="Email" autocomplete="email">
+                        <input type="password" id="login-password" class="login-input" placeholder="Password" autocomplete="current-password">
+                        <div id="login-error" class="login-error hidden"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-modal="modal-login">Cancel</button>
+                <button class="btn btn-primary" id="btn-login-submit">Sign in</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module">
         // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -909,6 +960,42 @@
 
         const STORAGE_KEY = 'outline_v1';
         const THEME_KEY = 'theme';
+
+        // ── Auth (Supabase) ───────────────────────────────────────────────────────
+
+        const SUPABASE_URL = 'https://fpuoxiiedqmcfnjubicz.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_qz7yiLLNFBOKG8S7PfiluQ_vn-SKnd8';
+        const supabaseClient = window.supabase
+            ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+            : null;
+
+        function renderAuthUI(user) {
+            const authUI = document.getElementById('auth-ui');
+            if (!authUI) return;
+            if (user) {
+                authUI.innerHTML =
+                    `<div class="auth-user-email">${user.email}</div>` +
+                    `<button class="btn btn-secondary" id="btn-sign-out">Sign out</button>`;
+                document.getElementById('btn-sign-out').addEventListener('click', () => signOut());
+            } else {
+                authUI.innerHTML = `<button class="btn btn-secondary" id="btn-sign-in">Sign in</button>`;
+                document.getElementById('btn-sign-in').addEventListener('click', () => openModal('modal-login'));
+            }
+        }
+
+        async function initAuth() {
+            renderAuthUI(null);
+            if (!supabaseClient) return;
+            const { data } = await supabaseClient.auth.getSession();
+            renderAuthUI(data.session ? data.session.user : null);
+            supabaseClient.auth.onAuthStateChange((_event, session) => {
+                renderAuthUI(session ? session.user : null);
+            });
+        }
+
+        async function signOut() {
+            await supabaseClient.auth.signOut();
+        }
 
         function applyTheme(theme) {
             document.documentElement.setAttribute('data-theme', theme);
@@ -1995,6 +2082,9 @@
             const isEditing = active && (active.isContentEditable || active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
 
             if (e.key === 'Escape') {
+                if (!document.getElementById('modal-login').classList.contains('hidden')) {
+                    closeModal('modal-login'); return;
+                }
                 if (!document.getElementById('modal-markdown').classList.contains('hidden')) {
                     closeModal('modal-markdown'); return;
                 }
@@ -2104,6 +2194,35 @@
             }
         });
 
+        document.getElementById('btn-login-submit').addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.classList.add('hidden');
+
+            if (!email || !password) {
+                errorDiv.textContent = 'Email and password are required.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            if (!supabaseClient) {
+                errorDiv.textContent = 'Authentication service unavailable.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            } else {
+                document.getElementById('login-email').value = '';
+                document.getElementById('login-password').value = '';
+                closeModal('modal-login');
+            }
+        });
+
         // ── Init ──────────────────────────────────────────────────────────────────
 
         function init() {
@@ -2112,6 +2231,7 @@
             if (!loaded) seedDoc(doc);
             loadFromHash();
             render();
+            initAuth();
 
             // Focus first bullet
             requestAnimationFrame(() => {

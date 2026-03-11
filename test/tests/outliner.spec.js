@@ -799,6 +799,58 @@ test.describe('Options dialog', () => {
   });
 });
 
+test.describe('Authentication', () => {
+  test('Options modal shows Sign in button when not logged in', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-sign-in')).toBeVisible();
+  });
+
+  test('clicking Sign in button opens login modal', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+  });
+
+  test('login modal contains email and password fields', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#login-email')).toBeVisible();
+    await expect(page.locator('#login-password')).toBeVisible();
+  });
+
+  test('login modal shows error when fields are empty', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.click('#btn-login-submit');
+    await expect(page.locator('#login-error')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#login-error')).toContainText('required');
+  });
+
+  test('login modal can be closed with Escape', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/);
+  });
+
+  test('login modal can be closed with Cancel button', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+    await page.locator('#modal-login .btn-secondary').click();
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/);
+  });
+
+  test('login modal can be closed by clicking the overlay', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+    await page.locator('#modal-login').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/);
+  });
+});
+
 test.describe('Mobile top spacing', () => {
   test('top padding of #app is small on mobile viewports', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
