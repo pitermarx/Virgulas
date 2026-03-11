@@ -753,6 +753,13 @@ test.describe('Options dialog', () => {
     await expect(page.locator('#btn-toggle-theme')).toBeVisible();
   });
 
+  test('Options modal contains a GitHub link', async ({ page }) => {
+    await page.click('#btn-options');
+    const link = page.locator('#link-github');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', 'https://github.com/pitermarx/Outliner');
+  });
+
   test('theme toggle switches to dark mode', async ({ page }) => {
     await page.click('#btn-options');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -954,5 +961,139 @@ test.describe('Supabase Login', () => {
     await page.waitForSelector('.bullet-row');
     await page.click('#btn-options');
     await expect(page.locator('#btn-sign-in')).toContainText('persisted@example.com');
+  });
+});
+
+test.describe('Escape to unfocus', () => {
+  test('Escape while editing a bullet blurs it', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await expect(firstText).toBeFocused();
+
+    await page.keyboard.press('Escape');
+
+    await expect(firstText).not.toBeFocused();
+  });
+
+  test('? shortcut opens shortcuts modal after Escape unfocuses bullet', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Escape');
+
+    // Now no bullet is focused; ? should open shortcuts modal
+    await page.keyboard.press('?');
+
+    await expect(page.locator('#modal-shortcuts')).not.toHaveClass(/hidden/);
+  });
+});
+
+test.describe('Zoom description Shift+Enter', () => {
+  test('Shift+Enter from zoom description returns focus to zoom header', async ({ page }) => {
+    const firstDot = page.locator('.bullet-dot').first();
+    await firstDot.click();
+    await expect(page.locator('#zoom-title')).toBeFocused();
+
+    // Go to zoom description
+    await page.keyboard.press('Shift+Enter');
+    await expect(page.locator('#zoom-desc')).toBeFocused();
+
+    // Shift+Enter should return to zoom title
+    await page.keyboard.press('Shift+Enter');
+    await expect(page.locator('#zoom-title')).toBeFocused();
+  });
+});
+
+test.describe('Multi-select', () => {
+  test('Shift+ArrowDown selects current and next bullet', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    await page.keyboard.press('Shift+ArrowDown');
+
+    const selectedRows = page.locator('.bullet-row.selected');
+    await expect(selectedRows).toHaveCount(2);
+  });
+
+  test('Shift+ArrowDown then Shift+ArrowDown extends selection to three', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Shift+ArrowDown');
+
+    const selectedRows = page.locator('.bullet-row.selected');
+    await expect(selectedRows).toHaveCount(3);
+  });
+
+  test('Shift+ArrowUp shrinks selection back toward anchor', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(3);
+
+    await page.keyboard.press('Shift+ArrowUp');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+  });
+
+  test('regular ArrowDown clears selection', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(0);
+  });
+
+  test('Tab indents all selected bullets', async ({ page }) => {
+    // Get the first two bullets (both top-level siblings)
+    const rows = page.locator('.bullet-row');
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    // Check initial margin of the 2nd row
+    const secondRow = rows.nth(1);
+    const marginBefore = await secondRow.evaluate(el => el.style.marginLeft);
+
+    // Select first two bullets
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    // Tab should indent — the first bullet is at index 0 (no previous sibling, skipped),
+    // and the second bullet becomes a child of the first.
+    await page.keyboard.press('Tab');
+
+    const marginAfter = await secondRow.evaluate(el => el.style.marginLeft);
+    expect(marginAfter).not.toBe(marginBefore);
+
+    // The first row should remain at root level (unchanged margin)
+    const firstRow = rows.first();
+    const firstMarginAfter = await firstRow.evaluate(el => el.style.marginLeft);
+    expect(firstMarginAfter).toBe('0px');
+  });
+
+  test('Alt+ArrowDown moves selection down', async ({ page }) => {
+    // Use the first two top-level bullets; select them and move down
+    const rows = page.locator('.bullet-row');
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    // Read the text of the first bullet and the bullet that would come after the selection
+    const firstBulletText = await rows.nth(0).locator('.bullet-text').textContent();
+    const thirdBulletText = await rows.nth(2).locator('.bullet-text').textContent();
+
+    // Select first two bullets
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    // Move selection down
+    await page.keyboard.press('Alt+ArrowDown');
+
+    // After move: the node that was 3rd should now be 1st
+    const newFirstText = await rows.nth(0).locator('.bullet-text').textContent();
+    expect(newFirstText).toBe(thirdBulletText);
   });
 });
