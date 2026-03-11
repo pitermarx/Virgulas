@@ -172,6 +172,15 @@ test.describe('Zoom', () => {
 
     await expect(page.locator('#zoom-title')).toBeHidden();
   });
+
+  test('Alt+ArrowRight zooms into a bullet via keyboard', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await expect(page.locator('#zoom-title')).toBeVisible();
+    await expect(page.locator('#breadcrumb')).toBeVisible();
+  });
 });
 
 test.describe('Collapse / Expand', () => {
@@ -290,5 +299,61 @@ test.describe('Import / Export', () => {
     await expect(exportText).not.toBeEmpty();
     const content = await exportText.inputValue();
     expect(content).toMatch(/^- /m);
+  });
+
+  test('copy button in export modal copies to clipboard and shows feedback', async ({ page }) => {
+    // The clipboard API requires explicit permission in Playwright
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const exportBtn = page.locator('#toolbar').getByText('Export');
+    await exportBtn.click();
+    const copyBtn = page.locator('#btn-copy-export');
+    await copyBtn.click();
+    // Button label changes to 'Copied!' to confirm action
+    await expect(copyBtn).toHaveText('Copied!');
+  });
+});
+
+test.describe('Arrow key navigation', () => {
+  test('ArrowDown moves focus to the next bullet', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('ArrowDown');
+
+    // The second row should now be focused
+    const secondRow = page.locator('.bullet-row').nth(1);
+    await expect(secondRow).toHaveClass(/focused/);
+  });
+
+  test('ArrowUp moves focus to the previous bullet', async ({ page }) => {
+    const secondText = page.locator('.bullet-text').nth(1);
+    await secondText.click();
+    await page.keyboard.press('ArrowUp');
+
+    // The first row should now be focused
+    const firstRow = page.locator('.bullet-row').first();
+    await expect(firstRow).toHaveClass(/focused/);
+  });
+});
+
+test.describe('Empty hint', () => {
+  test('empty hint is hidden when there are bullets', async ({ page }) => {
+    await expect(page.locator('#empty-hint')).toBeHidden();
+  });
+
+  test('empty hint is shown when there are no bullets and clicking it creates one', async ({ page }) => {
+    // Set up an empty document directly in localStorage
+    await page.evaluate(() => {
+      localStorage.setItem('outline_v1', JSON.stringify({
+        root: { id: 'root', text: 'root', description: '', children: [], collapsed: false },
+        version: 1
+      }));
+    });
+    await page.reload();
+
+    await expect(page.locator('#empty-hint')).toBeVisible();
+
+    // Clicking the hint should create a new bullet
+    await page.locator('#empty-hint').click();
+    await expect(page.locator('.bullet-row')).toHaveCount(1);
   });
 });
