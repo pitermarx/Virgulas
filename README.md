@@ -82,12 +82,14 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 
 <div id="toolbar">             <!-- fixed bottom -->
   <button id="btn-markdown">Markdown</button>    <!-- opens unified edit-as-markdown modal -->
+  <button id="btn-options">Options</button>       <!-- opens options modal (theme, sign in) -->
   <span class="toolbar-hint">? for shortcuts</span>   <!-- click opens shortcuts modal -->
 </div>
 
-<!-- two modals, each a .modal-overlay.hidden wrapper -->
+<!-- three modals, each a .modal-overlay.hidden wrapper -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
+<div id="modal-options">   <!-- options: sign in (coming soon), theme toggle (dark/light) -->
 ```
 
 ### Bullet row DOM (produced by `buildRow`)
@@ -124,6 +126,8 @@ Use CSS custom properties on `:root` for the entire palette and spacing:
 --search-h: 48px
 --transition: 120ms ease
 ```
+
+Dark mode is applied by setting `data-theme="dark"` on `<html>`. The `html[data-theme='dark']` selector overrides all colour custom properties with dark equivalents. The current theme is persisted in `localStorage` under the key `theme`. `applyTheme(theme)` sets the attribute and updates the toggle button label.
 
 Key layout rules:
 

@@ -35,6 +35,22 @@
             --transition: 120ms ease;
         }
 
+        html[data-theme='dark'] {
+            --bg: #1a1714;
+            --surface: #242220;
+            --border: #3a3733;
+            --border-light: #2e2c2a;
+            --text: #ede9e3;
+            --text-muted: #9b9790;
+            --text-faint: #605d58;
+            --accent: #5c8ed6;
+            --accent-light: #1c2c46;
+            --bullet: #5c8ed6;
+            --hover: #2e2c28;
+            --selected: #1c2c46;
+            --danger: #e05c4a;
+        }
+
         html,
         body {
             height: 100%;
@@ -610,6 +626,30 @@
             box-shadow: 0 1px 0 var(--border);
         }
 
+        /* ── Options list ── */
+        .options-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .options-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .options-item:last-child {
+            border-bottom: none;
+        }
+
+        .options-item-label {
+            font-size: 14px;
+            color: var(--text);
+            font-weight: 500;
+        }
+
         /* ── Utility ── */
         .hidden {
             display: none !important;
@@ -636,6 +676,7 @@
     <div id="toolbar">
         <button class="toolbar-btn" id="btn-markdown">Markdown</button>
         <div class="toolbar-spacer"></div>
+        <button class="toolbar-btn" id="btn-options">Options</button>
         <span class="toolbar-hint">? for shortcuts</span>
     </div>
 
@@ -741,6 +782,30 @@
         </div>
     </div>
 
+    <div id="modal-options" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Options</span>
+                <button class="modal-close" data-modal="modal-options">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="options-list">
+                    <div class="options-item">
+                        <span class="options-item-label">Account</span>
+                        <button class="btn btn-secondary" id="btn-sign-in" disabled>Sign in (coming soon)</button>
+                    </div>
+                    <div class="options-item">
+                        <span class="options-item-label">Theme</span>
+                        <button class="btn btn-secondary" id="btn-toggle-theme">Switch to dark mode</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" data-modal="modal-options">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -795,6 +860,13 @@
         // ── Persistence ───────────────────────────────────────────────────────────
 
         const STORAGE_KEY = 'outline_v1';
+        const THEME_KEY = 'theme';
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const btn = document.getElementById('btn-toggle-theme');
+            if (btn) btn.textContent = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        }
 
         function saveDoc() {
             try {
@@ -1677,6 +1749,9 @@
                 if (!document.getElementById('modal-shortcuts').classList.contains('hidden')) {
                     closeModal('modal-shortcuts'); return;
                 }
+                if (!document.getElementById('modal-options').classList.contains('hidden')) {
+                    closeModal('modal-options'); return;
+                }
                 if (document.getElementById('search-bar').classList.contains('visible')) {
                     closeSearch();
                     return;
@@ -1718,6 +1793,17 @@
             saveDoc();
             closeModal('modal-markdown');
             render();
+        });
+
+        document.getElementById('btn-options').addEventListener('click', () => {
+            openModal('modal-options');
+        });
+
+        document.getElementById('btn-toggle-theme').addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(THEME_KEY, next);
+            applyTheme(next);
         });
 
         // Close buttons and overlay clicks
@@ -1769,6 +1855,7 @@
         // ── Init ──────────────────────────────────────────────────────────────────
 
         function init() {
+            applyTheme(localStorage.getItem(THEME_KEY) || 'light');
             const loaded = loadDoc();
             if (!loaded) seedDoc(doc);
             loadFromHash();

@@ -578,3 +578,61 @@ test.describe('Empty hint', () => {
     await expect(page.locator('.bullet-row')).toHaveCount(1);
   });
 });
+
+test.describe('Options dialog', () => {
+  test('Options button is visible in toolbar', async ({ page }) => {
+    await expect(page.locator('#btn-options')).toBeVisible();
+  });
+
+  test('clicking Options button opens the Options modal', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#modal-options')).not.toHaveClass(/hidden/);
+  });
+
+  test('Options modal contains Sign in and Theme toggle buttons', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-sign-in')).toBeVisible();
+    await expect(page.locator('#btn-toggle-theme')).toBeVisible();
+  });
+
+  test('theme toggle switches to dark mode', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await page.click('#btn-toggle-theme');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('#btn-toggle-theme')).toContainText('Switch to light mode');
+  });
+
+  test('theme toggle switches back to light mode', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-theme');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.click('#btn-toggle-theme');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(page.locator('#btn-toggle-theme')).toContainText('Switch to dark mode');
+  });
+
+  test('theme persists after reload', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-toggle-theme');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.reload();
+    await page.waitForSelector('.bullet-row');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  });
+
+  test('Options modal can be closed with Escape', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#modal-options')).not.toHaveClass(/hidden/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#modal-options')).toHaveClass(/hidden/);
+  });
+
+  test('Options modal can be closed by clicking the overlay', async ({ page }) => {
+    await page.click('#btn-options');
+    await expect(page.locator('#modal-options')).not.toHaveClass(/hidden/);
+    await page.locator('#modal-options').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#modal-options')).toHaveClass(/hidden/);
+  });
+});
