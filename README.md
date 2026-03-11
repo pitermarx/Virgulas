@@ -136,8 +136,8 @@ Key layout rules:
 - `.bullet-dot` and `.collapse-toggle` — both `height:28px` to match gutter.
 - `.bullet-content` — `flex:1; padding:5px 8px 5px 2px`. Text starts right after gutter. Font size scales by depth: depth 0 = 100%, depth 1 = 95%, depth 2+ = 90%.
 - `.bullet-text` — `font-size:15px; line-height:1.6`.
-- `.bullet-desc-view` — `font-size:0.867em`, `color:var(--text-muted)`, `display:none` by default, `display:-webkit-box` with `-webkit-line-clamp:2` when `.visible` class present (truncates to 2 lines with "…"). Click to switch into edit mode.
-- `.bullet-desc` — `font-size:0.867em`, `color:var(--text-muted)`, `display:none` by default, `display:block` when `.editing` class present (textarea used while editing the description).
+- `.bullet-desc-view` — `font-size:0.867rem`, `line-height:1.25rem`, `color:var(--text-muted)`, `display:none` by default, `display:-webkit-box` with `-webkit-line-clamp:2` when `.visible` class present (truncates to 2 lines with "…"). Click to switch into edit mode.
+- `.bullet-desc` — `font-size:0.867rem`, `line-height:1.25rem`, `color:var(--text-muted)`, `display:none` by default, `display:block` when `.editing` class present (textarea used while editing the description).
 - Indent guide line — `::before` on `.bullet-row` at `left:22px`, `display:var(--has-children, none)`.
 - `.collapse-toggle` — `opacity:0`; revealed via `.bullet-row:hover .collapse-toggle.active`.
 
@@ -267,7 +267,28 @@ The bullet character encodes collapsed/expanded state:
 
 ## Seeded initial data
 
-On first load (empty document), seed with a welcome node containing five tip bullets (one of which has two children) to demonstrate nesting. This gives users an immediate working example without any setup.
+On first load (empty document), seed with six tip bullets (one of which has two children) to demonstrate nesting, zoom, descriptions, and other features. Every seed bullet includes a description so the description feature is immediately visible. This gives users an immediate working example without any setup.
+
+The seed data in Markdown format:
+
+```
+- Press **Enter** to create a new bullet
+  > A new bullet is inserted immediately after the current one at the same depth. The cursor moves to it automatically so you can start typing right away.
+- Use **Tab** and **Shift+Tab** to indent and unindent
+  > Tab makes the current bullet a child of the bullet above it. Shift+Tab promotes it one level up. On mobile, swipe right to indent and swipe left to unindent.
+- Use **Alt+↑/↓** to move bullets up and down
+  > Reorders siblings without changing their depth or children. Use Ctrl+Space to collapse or expand a bullet's children.
+  - Alt+→ to zoom into any bullet
+    > Zooming focuses the view on a single node and its subtree. The breadcrumb bar at the top shows your current path and lets you navigate back up.
+  - Alt+← to zoom back out
+    > Returns to the parent level. You can also press Escape while editing the zoom title, or click any crumb in the breadcrumb bar.
+- Press **Shift+Enter** to add a description to any bullet
+  > Descriptions appear below the bullet text in a smaller muted font. Press Shift+Enter or Escape from the description to return to the bullet text. Click the description preview to edit it again.
+- Use `Ctrl+F` to search your entire outline
+  > Search matches both bullet text and descriptions across the whole document, not just the current zoom level. Press Enter to cycle through matches, Escape to close.
+- Use `Ctrl+Z` to undo and the **Markdown** button to export
+  > Undo reverses the last structural change (create, delete, move, indent). The Markdown toolbar button opens a live editor showing your full outline — edit it directly and click Apply to import changes.
+```
 
 ---
 

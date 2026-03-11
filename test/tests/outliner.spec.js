@@ -12,8 +12,14 @@ test.beforeEach(async ({ page }) => {
 test.describe('App loads', () => {
   test('renders the outliner with seeded bullets', async ({ page }) => {
     const rows = page.locator('.bullet-row');
-    await expect(rows).toHaveCount(7); // 5 top-level + 2 children of item 3
+    await expect(rows).toHaveCount(8); // 6 top-level seed bullets + 2 children of third seed bullet
     await expect(page.locator('.bullet-text').first()).toBeVisible();
+  });
+
+  test('seeded bullets have descriptions visible', async ({ page }) => {
+    // All top-level seed bullets have descriptions, so .bullet-desc-view.visible should be present
+    const descViews = page.locator('.bullet-desc-view.visible');
+    await expect(descViews.first()).toBeVisible();
   });
 
   test('shows the toolbar', async ({ page }) => {
@@ -32,7 +38,7 @@ test.describe('Creating bullets', () => {
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     const rows = page.locator('.bullet-row');
-    await expect(rows).toHaveCount(8);
+    await expect(rows).toHaveCount(9);
   });
 
   test('new bullet gets focus after creation', async ({ page }) => {
@@ -420,6 +426,30 @@ test.describe('Description', () => {
 
     // The top position should not shift by more than 1px
     expect(Math.abs(editBox.y - viewBox.y)).toBeLessThanOrEqual(1);
+  });
+
+  test('bullet-desc-view has font-size 0.867rem and line-height 1.25rem', async ({ page }) => {
+    const descView = page.locator('.bullet-desc-view').first();
+    // Get the root font size to compute expected rem-based values
+    const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    const fontSize = await descView.evaluate(el => getComputedStyle(el).fontSize);
+    const lineHeight = await descView.evaluate(el => getComputedStyle(el).lineHeight);
+    expect(parseFloat(fontSize)).toBeCloseTo(0.867 * rootFontSize, 0);
+    expect(parseFloat(lineHeight)).toBeCloseTo(1.25 * rootFontSize, 0);
+  });
+
+  test('bullet-desc has font-size 0.867rem and line-height 1.25rem', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+Enter');
+    const descEl = page.locator('.bullet-desc.editing').first();
+    await expect(descEl).toBeVisible();
+    // Get the root font size to compute expected rem-based values
+    const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    const fontSize = await descEl.evaluate(el => getComputedStyle(el).fontSize);
+    const lineHeight = await descEl.evaluate(el => getComputedStyle(el).lineHeight);
+    expect(parseFloat(fontSize)).toBeCloseTo(0.867 * rootFontSize, 0);
+    expect(parseFloat(lineHeight)).toBeCloseTo(1.25 * rootFontSize, 0);
   });
 });
 
