@@ -98,3 +98,18 @@ jobs:
           else
             echo "⚠️ No test results file found." >> $GITHUB_STEP_SUMMARY
           fi
+
+  auto-merge:
+    name: Auto Rebase and Merge PR
+    needs: test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Rebase, merge and delete branch
+        run: gh pr merge --rebase --delete-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
