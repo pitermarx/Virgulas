@@ -893,6 +893,33 @@ kbd {
     border-color: var(--accent);
 }
 
+/* ── Toast ───────────────────────────────────────────────────────────── */
+
+#toast {
+    position: fixed;
+    bottom: calc(var(--toolbar-h) + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--text);
+    color: var(--bg);
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    z-index: 1000;
+    white-space: nowrap;
+}
+
+#toast.visible {
+    opacity: 1;
+}
+
+#toast.hidden {
+    display: none;
+}
+
 /* ── Splash screen ───────────────────────────────────────────────────── */
 
 #splash {
