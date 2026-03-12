@@ -1326,6 +1326,39 @@ test.describe('Multi-select', () => {
     const toast = page.locator('#toast');
     await expect(toast).not.toBeVisible();
   });
+
+  test('Ctrl+C with parent and child both selected does not duplicate children', async ({ page }) => {
+    // Row 2 (3rd bullet) has children visible as rows 3 and 4.
+    // Selecting both the parent and its child should yield markdown where the child appears only once.
+    const thirdText = page.locator('.bullet-text').nth(2);
+    await thirdText.click();
+
+    // Extend selection down to also include the first child of this bullet
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    // Capture what gets written to the clipboard
+    await page.evaluate(() => {
+      window._clipboardText = '';
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: (text) => { window._clipboardText = text; return Promise.resolve(); } },
+        configurable: true,
+        writable: true,
+      });
+    });
+
+    await page.keyboard.press('Control+c');
+
+    // Wait for the toast to confirm the copy happened
+    await expect(page.locator('#toast')).toBeVisible();
+
+    const clipboardText = await page.evaluate(() => window._clipboardText);
+    const firstChildText = await page.locator('.bullet-text').nth(3).textContent();
+
+    // The first child's text should appear exactly once in the copied markdown
+    const occurrences = clipboardText.split(firstChildText).length - 1;
+    expect(occurrences).toBe(1);
+  });
 });
 
 test.describe('Sync indicator', () => {

@@ -247,7 +247,8 @@ export function copySelectionAsMarkdown(ids) {
         flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
     );
     const nodes = orderedIds.map(id => findNode(id, zoomRoot)).filter(Boolean);
-    const md = exportMarkdown({ children: nodes }).trim();
+    const topLevelNodes = nodes.filter(node => !nodes.some(other => other !== node && findNode(node.id, other)));
+    const md = exportMarkdown({ children: topLevelNodes }).trim();
     navigator.clipboard.writeText(md).then(() => {
         showToast('Markdown copied');
     }).catch(() => {
