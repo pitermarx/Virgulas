@@ -1271,8 +1271,15 @@ test.describe('Multi-select', () => {
     await page.keyboard.press('Shift+ArrowDown');
     await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
 
-    // Grant clipboard-write permission
-    await page.context().grantPermissions(['clipboard-write', 'clipboard-read']);
+    // Mock navigator.clipboard.writeText to avoid cross-browser permission issues
+    // (Firefox does not support the 'clipboard-write' grantPermissions API)
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: () => Promise.resolve() },
+        configurable: true,
+        writable: true,
+      });
+    });
 
     await page.keyboard.press('Control+c');
 
