@@ -34,6 +34,6 @@ jobs:
           version: 1.6.0
 
       - name: Deploy database migrations
-        run: supabase db push --linked
+        run: supabase db push
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
