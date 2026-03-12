@@ -9,6 +9,28 @@ Optional cloud sync via Supabase for signed-in users.
 
 ---
 
+## Deployment
+
+### Production (main branch)
+
+The `deploy.yml` workflow deploys the `source/` directory to **GitHub Pages** on every push to `main` (and on manual `workflow_dispatch`).
+
+### PR preview deployments
+
+The `deploy-preview.yml` workflow runs on every pull request targeting `main`:
+
+- **On PR open / push**: builds a combined GitHub Pages artifact containing:
+  - `main` branch content at the site root (`/`)
+  - PR branch content at `/preview/<branch-name>/`
+
+  After deployment a comment is posted (or updated) on the PR with links to both URLs so you can open the current version and the branch version side-by-side in two tabs.
+
+- **On PR close / merge**: re-deploys from `main` only, removing the preview subdirectory.
+
+Branch names are sanitised (non-alphanumeric characters replaced with `-`) before being used as path segments.
+
+---
+
 ## Tech decisions
 
 - **Single HTML file** — HTML + `<style>` + `<script type="module">`. Minimal external dependencies.
