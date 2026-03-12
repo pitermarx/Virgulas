@@ -3,9 +3,25 @@
 ## Purpose & scope
 
 A keyboard-first infinite outliner running entirely in the browser.
-No server, no build step, single HTML file, data lives in the browser (localStorage).
+No server, no build step, data lives in the browser (localStorage).
 Export/import via Markdown.
 Optional cloud sync via Supabase for signed-in users.
+
+The source is split across a few small files:
+
+```
+source/
+  index.html          HTML structure (no inline CSS or JS)
+  style.css           All styles
+  vendor/supabase.js  Vendored UMD build from @supabase/supabase-js
+  js/
+    model.js   Pure data model (makeNode, findNode, flatVisible, …)
+    state.js   Mutable runtime state + localStorage persistence
+    view.js    DOM rendering — reads state, writes DOM, no event handlers
+    update.js  State-modifying operations (node CRUD, zoom, undo, search)
+    sync.js    Supabase auth + cloud sync
+    app.js     Entry point: event wiring (event delegation on containers)
+```
 
 ---
 
@@ -42,10 +58,10 @@ It calls the GitHub REST API to list all currently open pull requests for this r
 
 ## Tech decisions
 
-- **Single HTML file** — HTML + `<style>` + `<script type="module">`. Minimal external dependencies.
-- **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer.
+- **Multi-file app** — HTML structure in `source/index.html`, CSS in `source/style.css`, and JavaScript split into ES modules under `source/js/`. Inspired by the Elm architecture (Model / Update / View).
+- **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer; events handled with delegation.
 - **Markdown** — a small hand-rolled inline parser (bold, italic, code, links). No external lib needed.
-- **Supabase** — loaded via CDN (`@supabase/supabase-js@2`) for authentication and cloud sync. The app functions fully offline if the CDN is unavailable.
+- **Supabase** — loaded from a local vendored file (`source/vendor/supabase.js`, generated from `@supabase/supabase-js@2` via npm). The app functions fully offline if Supabase is unavailable. Run `npm install` in `source/` and `npm run vendor` to regenerate the bundle.
 
 ---
 
