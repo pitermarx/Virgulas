@@ -41,6 +41,7 @@ export let lastSyncedVersion = parseInt(localStorage.getItem(SYNC_VERSION_KEY) |
 export let lastSyncedDocJson = localStorage.getItem(SYNC_BASE_KEY) || null;
 export let syncStatus = 'idle';
 export let syncIntervalId = null;
+export let syncPaused = false;
 export let conflictRemoteDoc = null;
 export let conflictServerVersion = 0;
 export let syncEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === 'true';
@@ -63,6 +64,7 @@ export function setLastSyncedVersion(value) { lastSyncedVersion = value; }
 export function setLastSyncedDocJson(value) { lastSyncedDocJson = value; }
 export function setSyncStatusVar(value) { syncStatus = value; }
 export function setSyncIntervalId(value) { syncIntervalId = value; }
+export function setSyncPaused(value) { syncPaused = value; }
 export function setConflictRemoteDoc(value) { conflictRemoteDoc = value; }
 export function setConflictServerVersion(value) { conflictServerVersion = value; }
 export function setSyncEnabled(value) { syncEnabled = value; }

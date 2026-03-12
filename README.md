@@ -102,13 +102,18 @@ CREATE POLICY "Users can only access their own data"
   - *Synced* — last sync completed successfully (fades after 3 s).
   - *Sync error* — network or server failure.
   - *Conflict – click to resolve* — clicking opens the conflict modal.
-- **Auto-merge**: when both the local and server versions have changes since the last sync, a 3-way merge is attempted. If the changes affect different nodes (different branches of the tree), the merge succeeds silently.
-- **Conflict modal**: if the same node was edited in both versions, the conflict modal opens showing the local and server Markdown side-by-side. Three resolution options are offered:
-  - **Keep Local** — push the local version to the server.
-  - **Use Server** — replace local data with the server version.
-  - **Apply Resolved** — edit the pre-populated "Resolved version" textarea and apply it.
+- **Sync algorithm** (runs every 15 s):
+  1. If a server pull is pending user resolution, skip the tick entirely.
+  2. Fetch the server version number (lightweight, no data download).
+  3. If **server version == local version**: push local data if there are pending changes; otherwise mark as *Synced*.
+  4. If **server version ≠ local version**: fetch the full server payload, pause further sync ticks, then either auto-apply or open the conflict modal. Local data is **not** pushed in the same tick — the next loop handles the push after the server data has been applied.
+- **Auto-merge**: when the server version differs from the local version and there are local changes, a 3-way merge is attempted. If changes affect different nodes the merge succeeds silently: the merged result is applied locally, `pendingSync` is set, sync is unpaused, and the push happens on the next tick.
+- **Conflict modal**: if the same node was edited in both versions, the conflict modal opens showing the local and server Markdown side-by-side. Sync ticks are paused until the user resolves the conflict. Three resolution options are offered:
+  - **Keep Local** — push the local version to the server (unpauses sync).
+  - **Use Server** — replace local data with the server version (unpauses sync).
+  - **Apply Resolved** — edit the pre-populated "Resolved version" textarea and apply it (unpauses sync).
 - **Theme sync**: the active theme (light/dark) is included in the sync payload so it stays consistent across devices.
-- **First sync**: on the first sync after signing in, if the server is empty the local data is uploaded; if local is empty the server data is downloaded; if both have data the conflict modal is shown.
+- **First sync**: on the first sync after signing in, if the server has no data and the client has local content it is uploaded automatically.
 
 ---
 
