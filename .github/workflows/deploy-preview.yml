@@ -67,6 +67,14 @@ jobs:
             fi
           done
 
+      - name: Inject Supabase config
+        env:
+          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
+          SUPABASE_PUBLISHABLE_DEFAULT_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+        run: |
+          find _site -name "state.js" -exec sed -i "s|__SUPABASE_PROJECT__|$SUPABASE_PROJECT|g" {} \;
+          find _site -name "state.js" -exec sed -i "s|__SUPABASE_PUBLISHABLE_DEFAULT_KEY__|$SUPABASE_PUBLISHABLE_DEFAULT_KEY|g" {} \;
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
@@ -149,6 +157,14 @@ jobs:
               echo "Warning: Could not fetch or extract preview for branch $branch - preview will be skipped"
             fi
           done
+
+      - name: Inject Supabase config
+        env:
+          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
+          SUPABASE_PUBLISHABLE_DEFAULT_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+        run: |
+          find _site -name "state.js" -exec sed -i "s|__SUPABASE_PROJECT__|$SUPABASE_PROJECT|g" {} \;
+          find _site -name "state.js" -exec sed -i "s|__SUPABASE_PUBLISHABLE_DEFAULT_KEY__|$SUPABASE_PUBLISHABLE_DEFAULT_KEY|g" {} \;
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

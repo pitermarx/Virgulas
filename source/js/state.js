@@ -18,8 +18,8 @@ export const SYNC_INTERVAL_MS = 15000;
 
 // ── Supabase credentials ──────────────────────────────────────────────────────
 
-export const SUPABASE_URL = 'https://fpuoxiiedqmcfnjubicz.supabase.co';
-export const SUPABASE_KEY = 'sb_publishable_qz7yiLLNFBOKG8S7PfiluQ_vn-SKnd8';
+export const SUPABASE_URL = 'https://__SUPABASE_PROJECT__.supabase.co';
+export const SUPABASE_KEY = '__SUPABASE_PUBLISHABLE_DEFAULT_KEY__';
 
 // ── Document state ────────────────────────────────────────────────────────────
 

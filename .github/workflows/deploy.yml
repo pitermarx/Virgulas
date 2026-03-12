@@ -28,6 +28,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Inject Supabase config
+        env:
+          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
+          SUPABASE_PUBLISHABLE_DEFAULT_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+        run: |
+          sed -i "s|__SUPABASE_PROJECT__|$SUPABASE_PROJECT|g" source/js/state.js
+          sed -i "s|__SUPABASE_PUBLISHABLE_DEFAULT_KEY__|$SUPABASE_PUBLISHABLE_DEFAULT_KEY|g" source/js/state.js
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
