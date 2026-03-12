@@ -45,6 +45,10 @@ The `deploy-preview.yml` workflow runs on every pull request targeting `main`:
 
 Branch names are sanitised (non-alphanumeric characters replaced with `-`) before being used as path segments.
 
+### Supabase migrations (`supabase-deploy.yml`)
+
+The `supabase-deploy.yml` workflow runs on every push to `main` that touches `supabase/migrations/**` (and on manual `workflow_dispatch`). It applies all pending database migrations to the live Supabase project using `supabase db push`. See the **Infrastructure as code** section under **Supabase cloud sync** for setup details.
+
 ### Preview index page (`/preview/`)
 
 `source/preview/index.html` is a standalone page deployed alongside the main app.
@@ -71,24 +75,45 @@ Cloud sync is **opt-in**: it must be explicitly enabled via the **Options → Cl
 
 When sync is enabled and a user is signed in, the outline data and theme preference are synced to Supabase every 15 seconds.
 
-### Required Supabase table
+### Infrastructure as code
 
-Run the following SQL in your Supabase SQL editor once:
+The Supabase schema is managed via the **Supabase CLI** and lives under `supabase/`:
 
-```sql
-CREATE TABLE IF NOT EXISTS outlines (
-  user_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  data       TEXT        NOT NULL,
-  version    BIGINT      NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+```
+supabase/
+  config.toml                              Supabase CLI project config (project_id, local dev settings)
+  migrations/
+    20240101000000_initial_schema.sql      Creates the `outlines` table and RLS policy
+```
 
-ALTER TABLE outlines ENABLE ROW LEVEL SECURITY;
+Whenever a file under `supabase/migrations/` is pushed to `main`, the `supabase-deploy.yml` workflow automatically applies the pending migrations to the live project using `supabase db push`.
 
-CREATE POLICY "Users can only access their own data"
-  ON outlines FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+#### Required secret
+
+Add a **`SUPABASE_ACCESS_TOKEN`** secret to the GitHub repository (Settings → Secrets → Actions). Generate a token at [app.supabase.com/account/tokens](https://app.supabase.com/account/tokens).
+
+#### Running migrations locally
+
+```bash
+# Install the Supabase CLI (https://supabase.com/docs/guides/cli)
+brew install supabase/tap/supabase   # macOS / Linux via Homebrew
+
+# Link to the remote project (one-time setup)
+supabase link --project-ref fpuoxiiedqmcfnjubicz
+
+# Apply all pending migrations to the remote database
+supabase db push
+```
+
+#### Adding a new migration
+
+```bash
+# Create a new timestamped migration file
+supabase migration new <description>
+# e.g. supabase migration new add_index_on_updated_at
+
+# Edit the generated file under supabase/migrations/, then push to main
+# The supabase-deploy.yml workflow will deploy it automatically.
 ```
 
 ### Sync behaviour
