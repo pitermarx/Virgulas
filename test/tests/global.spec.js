@@ -45,6 +45,7 @@ window.supabase = {
   createClient: function () {
     var authCallbacks = [];
     var currentSession = null;
+    var dbRows = {};
     var mockUser = ${JSON.stringify(MOCK_USER)};
     var mockSession = {
       access_token: '${MOCK_JWT}',
@@ -85,21 +86,52 @@ window.supabase = {
           return Promise.resolve({ error: null });
         }
       },
-      from: function () {
+      from: function (table) {
+        function pickCols(row, cols) {
+          if (!cols || cols.trim() === '*') return Object.assign({}, row);
+          var result = {};
+          cols.split(',').forEach(function (c) {
+            var key = c.trim();
+            if (Object.prototype.hasOwnProperty.call(row, key)) result[key] = row[key];
+          });
+          return result;
+        }
+        function findRow(col, val) {
+          if (col !== 'user_id') return null;
+          return dbRows[val] || null;
+        }
         return {
-          select: function () {
+          select: function (cols) {
             return {
-              eq: function () {
+              eq: function (col, val) {
                 return {
-                  maybeSingle: function () { return Promise.resolve({ data: null, error: null }); },
-                  single:      function () { return Promise.resolve({ data: null, error: null }); }
+                  maybeSingle: function () {
+                    var row = findRow(col, val);
+                    if (!row) return Promise.resolve({ data: null, error: null });
+                    return Promise.resolve({ data: pickCols(row, cols), error: null });
+                  },
+                  single: function () {
+                    var row = findRow(col, val);
+                    if (!row) return Promise.resolve({ data: null, error: null });
+                    return Promise.resolve({ data: pickCols(row, cols), error: null });
+                  }
                 };
               }
             };
           },
-          upsert: function () { return Promise.resolve({ error: null }); },
+          upsert: function (rowData) {
+            if (rowData && rowData.user_id) {
+              dbRows[rowData.user_id] = Object.assign({}, dbRows[rowData.user_id] || {}, rowData);
+            }
+            return Promise.resolve({ error: null });
+          },
           delete: function () {
-            return { eq: function () { return Promise.resolve({ error: null }); } };
+            return {
+              eq: function (col, val) {
+                if (col === 'user_id') delete dbRows[val];
+                return Promise.resolve({ error: null });
+              }
+            };
           }
         };
       }
@@ -423,5 +455,35 @@ test.describe('Global integration flow', () => {
         // After sign-out the options modal should show Sign in again
         await expect(page.locator('#btn-sign-in')).toBeVisible();
         await expect(page.locator('.auth-user-email')).toHaveCount(0);
+    });
+
+    // ── 13. Sync pending resolves ─────────────────────────────────────────────
+
+    test('Step 13: sync pending resolves to synced after enabling sync', async ({ page }) => {
+        // Sign in as tester@virgulas.com
+        await page.click('#btn-options');
+        await page.click('#btn-sign-in');
+        await page.fill('#login-email', 'tester@virgulas.com');
+        await page.fill('#login-password', 'virgulas');
+        await page.click('#btn-login-submit');
+        await expect(page.locator('#modal-login')).toHaveClass(/hidden/);
+        await page.keyboard.press('Escape');
+
+        // Make a local change — the indicator should show 'pending'
+        const firstText = page.locator('.bullet-text').first();
+        await firstText.click();
+        await firstText.fill('Sync test change');
+        await firstText.blur();
+        await expect(page.locator('#sync-indicator')).toHaveClass(/pending/);
+
+        // Enable sync — startSync() calls syncNow() immediately, which should push
+        // the pending change and resolve the indicator.
+        await page.click('#btn-options');
+        await page.click('#btn-toggle-sync');
+        await page.keyboard.press('Escape');
+
+        // The sync indicator must not stay 'pending' — it should transition to
+        // 'syncing' and then 'synced' (or go idle once the synced timer fires).
+        await expect(page.locator('#sync-indicator')).not.toHaveClass(/pending/, { timeout: 5000 });
     });
 });

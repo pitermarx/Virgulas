@@ -330,7 +330,19 @@ export async function syncNow() {
             return;
         }
 
-        // Step 3: Server version != local version — pull server data.
+        // Step 2b: Server version is behind local — push pending changes.
+        // This happens when the server row was removed since the last sync
+        // (e.g. the row was deleted on another device).  Push to restore.
+        if (serverVersion < State.lastSyncedVersion) {
+            if (State.pendingSync) {
+                await pushToServer(session.user.id, serverVersion);
+            } else {
+                setSyncStatus('synced');
+            }
+            return;
+        }
+
+        // Step 3: Server version is ahead of local version — pull server data.
         const { data: dataRow, error: fetchErr } = await supabaseClient
             .from(State.SYNC_TABLE)
             .select('data')
