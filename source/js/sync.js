@@ -200,6 +200,7 @@ async function handleConflict(row) {
         remotePayload = await State.decompressData(row.data);
     } catch {
         setSyncStatus('error');
+        State.setSyncPaused(false);
         return;
     }
     const remoteDoc = remotePayload.doc || remotePayload;
@@ -207,17 +208,17 @@ async function handleConflict(row) {
     const { tryAutoMerge } = await import('./model.js');
     const merged = tryAutoMerge(State.doc, remoteDoc, State.lastSyncedDocJson);
     if (merged) {
-        const session = await getActiveSession();
-        if (!session) return;
         State.setDoc(merged);
         State.saveDocLocal();
         State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
         render();
-        try {
-            await pushToServer(session.user.id, row.version);
-        } catch {
-            setSyncStatus('error');
-        }
+        // Record the server version we merged from so next loop doesn't re-pull
+        State.setLastSyncedVersion(row.version);
+        localStorage.setItem(State.SYNC_VERSION_KEY, String(row.version));
+        // Mark pending so next sync loop will push the merged result
+        State.setPendingSync(true);
+        State.setSyncPaused(false);
+        setSyncStatus('pending');
         return;
     }
 
@@ -233,12 +234,14 @@ async function handleConflict(row) {
 
     setSyncStatus('conflict');
     openModal('modal-conflict');
+    // syncPaused remains true until user resolves the conflict
 }
 
 // ── Conflict modal resolution ─────────────────────────────────────────────────
 
 export async function handleConflictUseLocal() {
     closeModal('modal-conflict');
+    State.setSyncPaused(false);
     const session = await getActiveSession();
     if (session) {
         setSyncStatus('syncing');
@@ -254,6 +257,7 @@ export async function handleConflictUseLocal() {
 
 export async function handleConflictUseRemote() {
     closeModal('modal-conflict');
+    State.setSyncPaused(false);
     if (State.conflictRemoteDoc) {
         State.setDoc(State.conflictRemoteDoc);
         State.saveDocLocal();
@@ -274,6 +278,7 @@ export async function handleConflictApply(text) {
     State.doc.root.children = newRoot.children;
     State.saveDocLocal();
     closeModal('modal-conflict');
+    State.setSyncPaused(false);
     State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
     render();
     const session = await getActiveSession();
@@ -292,12 +297,15 @@ export async function handleConflictApply(text) {
 // ── Sync loop ─────────────────────────────────────────────────────────────────
 
 export async function syncNow() {
+    // Paused while waiting for user to resolve a conflict
+    if (State.syncPaused) return;
+
     const session = await getActiveSession();
     if (!session) return;
 
     setSyncStatus('syncing');
     try {
-        // Fetch only the version first to avoid downloading data unnecessarily.
+        // Step 1: Get server version (lightweight — no data download yet).
         const { data: versionRow, error: versionErr } = await supabaseClient
             .from(State.SYNC_TABLE)
             .select('version')
@@ -307,16 +315,22 @@ export async function syncNow() {
         if (versionErr) throw versionErr;
 
         const serverVersion = versionRow ? versionRow.version : 0;
-        const isInitialSync = State.lastSyncedVersion === 0;
 
-        // If the server version hasn't changed and there's nothing pending locally, we're in sync.
-        if (!isInitialSync && serverVersion === State.lastSyncedVersion && !State.pendingSync) {
-            setSyncStatus('synced');
+        // Step 2: Server version == local version.
+        if (serverVersion === State.lastSyncedVersion) {
+            // Send local data if there are pending changes, or if both sides are
+            // at version 0 (client has never synced) and there is local content.
+            const neverSynced = State.lastSyncedVersion === 0 && serverVersion === 0
+                && State.doc.root.children.length > 0;
+            if (State.pendingSync || neverSynced) {
+                await pushToServer(session.user.id, serverVersion);
+            } else {
+                setSyncStatus('synced');
+            }
             return;
         }
 
-        // A full data fetch is needed — either to pull a new version, resolve a conflict, or push.
-        // Only select 'data'; version is already known from the lightweight first query.
+        // Step 3: Server version != local version — pull server data.
         const { data: dataRow, error: fetchErr } = await supabaseClient
             .from(State.SYNC_TABLE)
             .select('data')
@@ -325,34 +339,38 @@ export async function syncNow() {
 
         if (fetchErr) throw fetchErr;
 
-        // Re-attach the already-known version so downstream helpers (pullFromServer, handleConflict)
-        // can use it without an extra round-trip.
         const row = dataRow ? { ...dataRow, version: serverVersion } : null;
 
-        if (isInitialSync) {
-            if (!row) {
-                await pushToServer(session.user.id, 0);
-            } else if (!State.doc.root.children.length) {
+        if (!row) {
+            // Server has no data row despite a non-zero version — unexpected data
+            // integrity issue; log a warning and skip this tick.
+            console.warn('Sync: server reported version', serverVersion, 'but returned no data row.');
+            setSyncStatus('synced');
+            return;
+        }
+
+        // Pause further sync ticks until server data has been applied.
+        State.setSyncPaused(true);
+
+        try {
+            if (!State.pendingSync) {
+                // No local changes — auto-apply server data and resume immediately.
                 await pullFromServer(row);
+                State.setSyncPaused(false);
             } else {
+                // Local changes exist — try auto-merge or open conflict modal.
+                // handleConflict unpauses on auto-merge; stays paused until user resolves.
                 await handleConflict(row);
             }
-        } else if (serverVersion > State.lastSyncedVersion) {
-            if (State.pendingSync) {
-                await handleConflict(row);
-            } else {
-                await pullFromServer(row);
-            }
-        } else {
-            if (State.pendingSync) {
-                await pushToServer(session.user.id, serverVersion);
-            } else {
-                setSyncStatus('synced');
-            }
+            // Do not send local data until the next sync loop.
+        } catch (e) {
+            State.setSyncPaused(false);
+            throw e;
         }
     } catch (e) {
         console.error('Sync error:', e);
         setSyncStatus('error');
+        State.setSyncPaused(false);
     }
 }
 
@@ -367,5 +385,6 @@ export function stopSync() {
         clearInterval(State.syncIntervalId);
         State.setSyncIntervalId(null);
     }
+    State.setSyncPaused(false);
     setSyncStatus('idle');
 }
