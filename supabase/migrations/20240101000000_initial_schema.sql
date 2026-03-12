@@ -15,3 +15,4 @@ CREATE POLICY "Users can only access their own data"
   ON public.outlines FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
