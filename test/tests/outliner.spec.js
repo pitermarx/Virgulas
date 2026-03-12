@@ -71,6 +71,15 @@ test.describe('Editing bullets', () => {
     await expect(page.locator('.bullet-text').first()).toContainText('Persisted text');
   });
 
+  test('blurring without changing text does not trigger a save', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.blur();
+
+    // saveDoc() is only called if value changed; indicator should remain hidden
+    await expect(page.locator('#sync-indicator')).not.toHaveClass(/visible/);
+  });
+
   test('Ctrl+Backspace on empty bullet deletes it', async ({ page }) => {
     // Create a new empty bullet then delete it
     const firstText = page.locator('.bullet-text').first();

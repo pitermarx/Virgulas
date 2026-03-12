@@ -30,6 +30,7 @@ State.setSyncStatusCallback(setSyncStatus);
 // ── Bullet container delegation ───────────────────────────────────────────────
 
 const bulletsEl = document.getElementById('bullets');
+let _preFocusText = null;
 
 bulletsEl.addEventListener('focusin', (e) => {
     const target = e.target;
@@ -42,6 +43,7 @@ bulletsEl.addEventListener('focusin', (e) => {
         State.setFocusedId(id);
         target.closest('.bullet-row').classList.add('focused');
         target.textContent = node.text;
+        _preFocusText = node.text;
         State.pushUndo();
         const sel = window.getSelection();
         const range = document.createRange();
@@ -81,7 +83,10 @@ bulletsEl.addEventListener('focusout', (e) => {
         if (node) {
             node.text = target.textContent;
             target.innerHTML = renderInline(node.text);
-            State.saveDoc();
+            if (node.text !== _preFocusText) {
+                State.saveDoc();
+            }
+            _preFocusText = null;
         }
         return;
     }
@@ -287,17 +292,23 @@ const zoomDescEl = document.getElementById('zoom-desc');
 zoomTitleEl.addEventListener('blur', () => {
     const zoomRoot = State.getZoomRoot();
     if (zoomRoot && State.zoomStack.length > 0) {
-        zoomRoot.text = zoomTitleEl.textContent;
-        State.saveDoc();
-        renderBreadcrumb();
+        const newText = zoomTitleEl.textContent;
+        if (newText !== zoomRoot.text) {
+            zoomRoot.text = newText;
+            State.saveDoc();
+            renderBreadcrumb();
+        }
     }
 });
 
 zoomDescEl.addEventListener('blur', () => {
     const zoomRoot = State.getZoomRoot();
     if (zoomRoot && State.zoomStack.length > 0) {
-        zoomRoot.description = zoomDescEl.textContent;
-        State.saveDoc();
+        const newDesc = zoomDescEl.textContent;
+        if (newDesc !== (zoomRoot.description || '')) {
+            zoomRoot.description = newDesc;
+            State.saveDoc();
+        }
     }
 });
 
