@@ -576,6 +576,15 @@ textarea.modal-textarea:focus {
     border-color: var(--accent);
 }
 
+#modal-markdown .modal-body {
+    display: flex;
+    flex-direction: column;
+}
+
+#modal-markdown .modal-textarea {
+    flex: 1;
+}
+
 .btn {
     font-family: var(--font);
     font-size: 13px;

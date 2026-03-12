@@ -589,6 +589,64 @@ test.describe('Import / Export', () => {
     const firstRow = page.locator('.bullet-row').first();
     await expect(firstRow).toHaveClass(/collapsed/);
   });
+
+  test('Cancel button closes modal without applying changes', async ({ page }) => {
+    const countBefore = await page.locator('.bullet-row').count();
+
+    await page.locator('#toolbar').getByText('Markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+
+    // Edit the markdown but don't apply
+    await page.locator('#markdown-text').fill('- Only One Item');
+
+    await page.locator('#modal-markdown').getByText('Cancel').click();
+
+    await expect(page.locator('#modal-markdown')).toBeHidden();
+    // Bullet count should be unchanged (Cancel did not apply)
+    await expect(page.locator('.bullet-row')).toHaveCount(countBefore);
+  });
+
+  test('Escape key closes the markdown modal', async ({ page }) => {
+    await page.locator('#toolbar').getByText('Markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('#modal-markdown')).toBeHidden();
+  });
+
+  test('Clicking backdrop closes the markdown modal', async ({ page }) => {
+    await page.locator('#toolbar').getByText('Markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+
+    // Click on the overlay backdrop (top-left corner, outside the centered dialog)
+    await page.locator('#modal-markdown').click({ position: { x: 5, y: 5 } });
+
+    await expect(page.locator('#modal-markdown')).toBeHidden();
+  });
+
+  test('Markdown modal is an overlay – main app content remains in the DOM', async ({ page }) => {
+    await expect(page.locator('.bullet-row').first()).toBeVisible();
+
+    await page.locator('#toolbar').getByText('Markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+
+    // The bullets should still be present in the DOM behind the modal
+    expect(await page.locator('.bullet-row').count()).toBeGreaterThan(0);
+    await expect(page.locator('#app')).toBeAttached();
+  });
+
+  test('Markdown textarea fills the modal body height', async ({ page }) => {
+    await page.locator('#toolbar').getByText('Markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+
+    const bodyBox = await page.locator('#modal-markdown .modal-body').boundingBox();
+    const textareaBox = await page.locator('#markdown-text').boundingBox();
+
+    // The textarea should fill the available body height (within a few pixels of padding)
+    expect(textareaBox.height).toBeGreaterThan(200);
+    expect(textareaBox.height).toBeCloseTo(bodyBox.height - 32, -1); // 32px = 16px top + 16px bottom padding
+  });
 });
 
 test.describe('Ctrl+Backspace deletion', () => {
