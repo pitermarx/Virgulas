@@ -1,5 +1,7 @@
 // @ts-check
 import { test, expect } from '@playwright/test';
+import path from 'path';
+import fs from 'fs';
 
 test.beforeEach(async ({ page }) => {
   // Clear localStorage to ensure a fresh seeded state for each test
@@ -12,7 +14,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('App loads', () => {
   test('renders the outliner with seeded bullets', async ({ page }) => {
     const rows = page.locator('.bullet-row');
-    await expect(rows).toHaveCount(8); // 6 top-level seed bullets + 2 children of third seed bullet
+    await expect(rows).toHaveCount(11); // 7 top-level seed bullets + 2 children of third seed bullet + 2 children of image bullet
     await expect(page.locator('.bullet-text').first()).toBeVisible();
   });
 
@@ -38,7 +40,7 @@ test.describe('Creating bullets', () => {
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     const rows = page.locator('.bullet-row');
-    await expect(rows).toHaveCount(9);
+    await expect(rows).toHaveCount(12);
   });
 
   test('new bullet gets focus after creation', async ({ page }) => {
@@ -509,6 +511,42 @@ test.describe('Markdown rendering', () => {
     await page.keyboard.press('Shift+Tab');
 
     await expect(page.locator('.bullet-text code').first()).toBeVisible();
+  });
+
+  test('image markdown renders as <img>', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('![alt text](https://example.com/image.png)');
+    // Blur to trigger rendering
+    await page.keyboard.press('Escape');
+
+    const img = page.locator('.bullet-text .bullet-img').first();
+    await expect(img).toBeAttached();
+    await expect(img).toHaveAttribute('alt', 'alt text');
+    await expect(img).toHaveAttribute('src', 'https://example.com/image.png');
+  });
+
+  test('image markdown is preserved on re-edit', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('![my image](https://example.com/img.jpg)');
+    // Blur to trigger rendering
+    await page.keyboard.press('Escape');
+
+    // Click into the bullet again — should show raw markdown
+    await firstText.click();
+    await expect(firstText).toContainText('![my image](https://example.com/img.jpg)');
+  });
+
+  test('link markdown is not confused with image markdown', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('[link text](https://example.com)');
+    // Blur to trigger rendering
+    await page.keyboard.press('Escape');
+
+    await expect(firstText.locator('a')).toBeAttached();
+    await expect(firstText.locator('.bullet-img')).toHaveCount(0);
   });
 });
 
@@ -1728,3 +1766,35 @@ test.describe('Preview index page', () => {
   });
 });
 
+
+
+test.describe('Screenshots', () => {
+  const screenshotsDir = path.resolve('..', 'source', 'screenshots');
+
+  test.beforeEach(async ({ page }) => {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+  });
+
+  test('capture main outliner view', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({ path: path.join(screenshotsDir, 'main.png') });
+    expect(fs.existsSync(path.join(screenshotsDir, 'main.png'))).toBe(true);
+  });
+
+  test('capture dark mode view', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator('#btn-options').click();
+    await page.locator('#btn-toggle-theme').click();
+    await page.locator('#modal-options .modal-close').click();
+    await page.screenshot({ path: path.join(screenshotsDir, 'dark-mode.png') });
+    expect(fs.existsSync(path.join(screenshotsDir, 'dark-mode.png'))).toBe(true);
+  });
+
+  test('capture markdown modal', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator('#btn-markdown').click();
+    await expect(page.locator('#modal-markdown')).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotsDir, 'markdown-modal.png') });
+    expect(fs.existsSync(path.join(screenshotsDir, 'markdown-modal.png'))).toBe(true);
+  });
+});

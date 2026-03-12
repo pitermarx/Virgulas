@@ -12,6 +12,7 @@ export function renderInline(text) {
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="bullet-img">')
         .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
 
@@ -42,6 +43,10 @@ export function seedDoc(doc) {
         '  > Search matches both bullet text and descriptions across the whole document, not just the current zoom level. Press Enter to cycle through matches, Escape to close.',
         '- Use `Ctrl+Z` to undo and the **Markdown** button to export',
         '  > Undo reverses the last structural change (create, delete, move, indent). The Markdown toolbar button opens a live editor showing your full outline — edit it directly and click Apply to import changes.',
+        '- Images are supported — type an image in markdown syntax in any bullet text',
+        '  > Use the standard markdown image syntax: an exclamation mark, then the alt text in square brackets, then the URL in parentheses. The image is rendered below the bullet on blur.',
+        '  - ![Virgulas – main view](screenshots/main.png)',
+        '  - ![Virgulas – dark mode](screenshots/dark-mode.png)',
     ].join('\n');
     const newRoot = importMarkdown(md);
     doc.root.children = newRoot.children;

@@ -381,6 +381,15 @@ body {
     text-decoration-color: var(--accent);
 }
 
+.bullet-img {
+    display: block;
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 6px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+}
+
 .bullet-desc-view {
     display: none;
     font-family: var(--font);

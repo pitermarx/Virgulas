@@ -1,5 +1,11 @@
 # Virgulas — Implementation Plan
 
+## Screenshots
+
+| Light mode | Dark mode |
+|---|---|
+| ![Virgulas main view](source/screenshots/main.png) | ![Virgulas dark mode](source/screenshots/dark-mode.png) |
+
 ## Purpose & scope
 
 A keyboard-first infinite outliner running entirely in the browser.
@@ -64,7 +70,7 @@ It calls the GitHub REST API to list all currently open pull requests for this r
 
 - **Multi-file app** — HTML structure in `source/index.html`, CSS in `source/style.css`, and JavaScript split into ES modules under `source/js/`. Inspired by the Elm architecture (Model / Update / View).
 - **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer; events handled with delegation.
-- **Markdown** — a small hand-rolled inline parser (bold, italic, code, links). No external lib needed.
+- **Markdown** — a small hand-rolled inline parser (bold, italic, code, links, images). No external lib needed.
 - **Supabase** — loaded from a local vendored file (`source/vendor/supabase.js`, generated from `@supabase/supabase-js@2` via npm). The app functions fully offline if Supabase is unavailable. Run `npm install` in `source/` and `npm run vendor` to regenerate the bundle.
 
 ---
@@ -311,6 +317,7 @@ Key layout rules:
 - `.bullet-text` — `font-size:15px; line-height:1.6`.
 - `.bullet-desc-view` — `font-size:0.867rem`, `line-height:1.25rem`, `color:var(--text-muted)`, `display:none` by default, `display:-webkit-box` with `-webkit-line-clamp:2` when `.visible` class present (truncates to 2 lines with "…"). Click to switch into edit mode.
 - `.bullet-desc` — `font-size:0.867rem`, `line-height:1.25rem`, `color:var(--text-muted)`, `display:none` by default, `display:block` when `.editing` class present (textarea used while editing the description).
+- `.bullet-img` — `display:block; max-width:100%; max-height:400px; border-radius:6px`. Rendered by `renderInline` for `![alt](url)` syntax. Block element so images appear on their own line below the bullet text.
 - Indent guide line — `::before` on `.bullet-row` at `left:22px`, `display:var(--has-children, none)`.
 - `.collapse-toggle` — `opacity:0`; revealed via `.bullet-row:hover .collapse-toggle.active`.
 
@@ -329,11 +336,14 @@ function renderInline(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="bullet-img">')
     .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
 ```
 
 Applied only on blur. While editing, raw text is shown.
+
+Images are rendered as block elements (`.bullet-img`) below the bullet text. The image pattern is matched before the link pattern to avoid misidentifying `![alt](url)` as a link.
 
 ---
 
