@@ -96,7 +96,6 @@ bulletsEl.addEventListener('focusout', (e) => {
             State.saveDoc();
             target.textContent = '';
             render();
-            requestAnimationFrame(() => focusNode(newNode.id, false));
         } else {
             target.textContent = '';
         }
@@ -156,6 +155,10 @@ bulletsEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
             e.preventDefault();
             target.blur();
+            requestAnimationFrame(() => {
+                const ghostText = document.getElementById('ghost-text');
+                if (ghostText) ghostText.focus();
+            });
         }
         if (e.key === 'Escape') {
             e.preventDefault();

@@ -678,6 +678,15 @@ test.describe('Arrow key navigation', () => {
     await expect(secondRow).toHaveClass(/focused/);
   });
 
+  test('ArrowDown on last bullet focuses ghost row', async ({ page }) => {
+    const rows = page.locator('.bullet-row');
+    const count = await rows.count();
+    const lastText = page.locator('.bullet-text').nth(count - 1);
+    await lastText.click();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
+  });
+
   test('ArrowUp moves focus to the previous bullet', async ({ page }) => {
     const secondText = page.locator('.bullet-text').nth(1);
     await secondText.click();
@@ -748,6 +757,15 @@ test.describe('Ghost row', () => {
     await page.keyboard.press('Enter');
     await expect(page.locator('.bullet-row')).toHaveCount(1);
     // Ghost text should be cleared after committing
+    await expect(page.locator('#ghost-text')).toBeEmpty();
+  });
+
+  test('Enter on ghost with text creates item and focuses ghost', async ({ page }) => {
+    await page.locator('#ghost-row').click();
+    await page.keyboard.type('New item');
+    await page.keyboard.press('Enter');
+    // Ghost should be focused and empty so user can keep adding items
+    await expect(page.locator('#ghost-text')).toBeFocused();
     await expect(page.locator('#ghost-text')).toBeEmpty();
   });
 
