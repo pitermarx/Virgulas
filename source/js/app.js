@@ -8,6 +8,7 @@ import * as State from './state.js';
 import {
     render, setSyncStatus, renderSyncToggle, applyDevMode,
     applyTheme, openModal, closeModal, openSearch,
+    openMarkdownEditor, closeMarkdownEditor,
     setLoginMode, loginMode, setZoomToCallback, showDescEditor, autoResize,
     renderBreadcrumb
 } from './view.js';
@@ -373,14 +374,14 @@ document.addEventListener('keydown', (e) => {
     const isEditing = active && (active.isContentEditable || active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
 
     if (e.key === 'Escape') {
+        if (!document.getElementById('markdown-editor').classList.contains('hidden')) {
+            closeMarkdownEditor(); return;
+        }
         if (!document.getElementById('modal-login').classList.contains('hidden')) {
             closeModal('modal-login'); return;
         }
         if (!document.getElementById('modal-conflict').classList.contains('hidden')) {
             closeModal('modal-conflict'); return;
-        }
-        if (!document.getElementById('modal-markdown').classList.contains('hidden')) {
-            closeModal('modal-markdown'); return;
         }
         if (!document.getElementById('modal-shortcuts').classList.contains('hidden')) {
             closeModal('modal-shortcuts'); return;
@@ -434,14 +435,18 @@ document.addEventListener('visibilitychange', () => {
 
 document.getElementById('btn-markdown').addEventListener('click', () => {
     document.getElementById('markdown-text').value = exportMarkdown(State.doc.root).trim();
-    openModal('modal-markdown');
+    openMarkdownEditor();
     setTimeout(() => document.getElementById('markdown-text').focus(), 50);
+});
+
+document.getElementById('btn-cancel-markdown').addEventListener('click', () => {
+    closeMarkdownEditor();
 });
 
 document.getElementById('btn-apply-markdown').addEventListener('click', () => {
     const text = document.getElementById('markdown-text').value;
     applyMarkdownImport(text);
-    closeModal('modal-markdown');
+    closeMarkdownEditor();
 });
 
 document.getElementById('btn-options').addEventListener('click', () => {

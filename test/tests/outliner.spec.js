@@ -504,13 +504,15 @@ test.describe('Markdown rendering', () => {
 });
 
 test.describe('Import / Export', () => {
-  test('Markdown button opens modal', async ({ page }) => {
+  test('Markdown button opens full-screen editor', async ({ page }) => {
     const mdBtn = page.locator('#toolbar').getByText('Markdown');
     await mdBtn.click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
+    await expect(page.locator('#markdown-editor')).toBeVisible();
+    await expect(page.locator('#app')).toBeHidden();
+    await expect(page.locator('#toolbar')).toBeHidden();
   });
 
-  test('Markdown modal shows current outline as markdown', async ({ page }) => {
+  test('Markdown editor shows current outline as markdown', async ({ page }) => {
     const mdBtn = page.locator('#toolbar').getByText('Markdown');
     await mdBtn.click();
     const mdText = page.locator('#markdown-text');
@@ -519,13 +521,16 @@ test.describe('Import / Export', () => {
     expect(content).toMatch(/^[+-] /m);
   });
 
-  test('Apply button imports edited markdown', async ({ page }) => {
+  test('Save button imports edited markdown and returns to outline', async ({ page }) => {
     const mdBtn = page.locator('#toolbar').getByText('Markdown');
     await mdBtn.click();
     const mdText = page.locator('#markdown-text');
     await mdText.fill('- New Item\n- Another Item');
     await page.locator('#btn-apply-markdown').click();
 
+    await expect(page.locator('#markdown-editor')).toBeHidden();
+    await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('#toolbar')).toBeVisible();
     const rows = page.locator('.bullet-row');
     await expect(rows).toHaveCount(2);
   });
@@ -542,7 +547,7 @@ test.describe('Import / Export', () => {
     await firstText.click();
     await page.keyboard.press('Control+Space');
 
-    // Open the markdown modal and check the export
+    // Open the markdown editor and check the export
     await page.locator('#toolbar').getByText('Markdown').click();
     const content = await page.locator('#markdown-text').inputValue();
     // Collapsed parent should export as '+ Parent'
@@ -590,62 +595,45 @@ test.describe('Import / Export', () => {
     await expect(firstRow).toHaveClass(/collapsed/);
   });
 
-  test('Cancel button closes modal without applying changes', async ({ page }) => {
+  test('Cancel button closes editor without applying changes', async ({ page }) => {
     const countBefore = await page.locator('.bullet-row').count();
 
     await page.locator('#toolbar').getByText('Markdown').click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
+    await expect(page.locator('#markdown-editor')).toBeVisible();
 
     // Edit the markdown but don't apply
     await page.locator('#markdown-text').fill('- Only One Item');
 
-    await page.locator('#modal-markdown').getByText('Cancel').click();
+    await page.locator('#btn-cancel-markdown').click();
 
-    await expect(page.locator('#modal-markdown')).toBeHidden();
+    await expect(page.locator('#markdown-editor')).toBeHidden();
+    await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('#toolbar')).toBeVisible();
     // Bullet count should be unchanged (Cancel did not apply)
     await expect(page.locator('.bullet-row')).toHaveCount(countBefore);
   });
 
-  test('Escape key closes the markdown modal', async ({ page }) => {
+  test('Escape key closes the markdown editor', async ({ page }) => {
     await page.locator('#toolbar').getByText('Markdown').click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
+    await expect(page.locator('#markdown-editor')).toBeVisible();
 
     await page.keyboard.press('Escape');
 
-    await expect(page.locator('#modal-markdown')).toBeHidden();
+    await expect(page.locator('#markdown-editor')).toBeHidden();
+    await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('#toolbar')).toBeVisible();
   });
 
-  test('Clicking backdrop closes the markdown modal', async ({ page }) => {
+  test('Markdown textarea fills the full editor height', async ({ page }) => {
     await page.locator('#toolbar').getByText('Markdown').click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
+    await expect(page.locator('#markdown-editor')).toBeVisible();
 
-    // Click on the overlay backdrop (top-left corner, outside the centered dialog)
-    await page.locator('#modal-markdown').click({ position: { x: 5, y: 5 } });
-
-    await expect(page.locator('#modal-markdown')).toBeHidden();
-  });
-
-  test('Markdown modal is an overlay – main app content remains in the DOM', async ({ page }) => {
-    await expect(page.locator('.bullet-row').first()).toBeVisible();
-
-    await page.locator('#toolbar').getByText('Markdown').click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
-
-    // The bullets should still be present in the DOM behind the modal
-    expect(await page.locator('.bullet-row').count()).toBeGreaterThan(0);
-    await expect(page.locator('#app')).toBeAttached();
-  });
-
-  test('Markdown textarea fills the modal body height', async ({ page }) => {
-    await page.locator('#toolbar').getByText('Markdown').click();
-    await expect(page.locator('#modal-markdown')).toBeVisible();
-
-    const bodyBox = await page.locator('#modal-markdown .modal-body').boundingBox();
+    const editorBox = await page.locator('#markdown-editor').boundingBox();
     const textareaBox = await page.locator('#markdown-text').boundingBox();
 
-    // The textarea should fill the available body height (within a few pixels of padding)
-    expect(textareaBox.height).toBeGreaterThan(200);
-    expect(textareaBox.height).toBeCloseTo(bodyBox.height - 32, -1); // 32px = 16px top + 16px bottom padding
+    // The textarea should fill most of the editor height (editor minus toolbar bar)
+    const toolbarBox = await page.locator('#markdown-editor-bar').boundingBox();
+    expect(textareaBox.height).toBeCloseTo(editorBox.height - toolbarBox.height, -1);
   });
 });
 

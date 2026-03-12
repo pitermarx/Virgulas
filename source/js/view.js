@@ -42,6 +42,18 @@ export function setLoginMode(mode) {
 
 // ── Search UI ─────────────────────────────────────────────────────────────────
 
+export function openMarkdownEditor() {
+    document.getElementById('markdown-editor').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('toolbar').classList.add('hidden');
+}
+
+export function closeMarkdownEditor() {
+    document.getElementById('markdown-editor').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('toolbar').classList.remove('hidden');
+}
+
 export function openSearch() {
     document.getElementById('search-bar').classList.add('visible');
     document.getElementById('app').classList.add('search-open');

@@ -46,24 +46,17 @@
         <span class="toolbar-hint">? for shortcuts</span>
     </div>
 
-    <div id="modal-markdown" class="modal-overlay hidden">
-        <div class="modal">
-            <div class="modal-header">
-                <span class="modal-title">Edit as Markdown</span>
-                <button class="modal-close" data-modal="modal-markdown">×</button>
-            </div>
-            <div class="modal-body">
-                <textarea class="modal-textarea" id="markdown-text" placeholder="Paste or edit Markdown outline here…
-- Item one
+    <div id="markdown-editor" class="hidden">
+        <div id="markdown-editor-bar">
+            <span class="markdown-editor-title">Edit as Markdown</span>
+            <div class="toolbar-spacer"></div>
+            <button class="btn btn-secondary" id="btn-cancel-markdown">Cancel</button>
+            <button class="btn btn-primary" id="btn-apply-markdown">Save</button>
+        </div>
+        <textarea id="markdown-text" spellcheck="false" placeholder="- Item one
   > Optional description
   - Child item
 - Item two"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" data-modal="modal-markdown">Cancel</button>
-                <button class="btn btn-primary" id="btn-apply-markdown">Apply</button>
-            </div>
-        </div>
     </div>
 
     <div id="modal-shortcuts" class="modal-overlay hidden">
