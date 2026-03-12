@@ -4,11 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'supabase/migrations/**'
+      - 'supabase/**'
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -23,15 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: supabase-production
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Supabase CLI
-        # Pinned to v1.6.0 commit SHA — prevents supply-chain attacks via mutable branch reference.
-        # To upgrade: verify the new SHA at https://github.com/supabase/setup-cli/tags
-        uses: supabase/setup-cli@b60b5899c73b63a2d2d651b1e90db8d4c9392f51
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v1
         with:
-          version: 1.6.0
+          version: latest
 
       - name: Deploy database migrations
         run: supabase db push
