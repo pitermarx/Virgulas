@@ -1884,6 +1884,15 @@
                     textEl.textContent = '';
                     textEl.blur();
                 }
+                if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    const flat = flatVisible();
+                    if (flat.length > 0) {
+                        focusNode(flat[flat.length - 1].node.id);
+                    } else if (zoomStack.length > 0) {
+                        document.getElementById('zoom-title').focus();
+                    }
+                }
             });
 
             row.addEventListener('click', () => textEl.focus());
@@ -2845,12 +2854,20 @@
                 zoomTitleEl.blur();
                 const zoomRoot = getZoomRoot();
                 if (zoomRoot) {
-                    pushUndo();
-                    const newNode = makeNode('');
-                    zoomRoot.children.unshift(newNode);
-                    saveDoc();
-                    render();
-                    requestAnimationFrame(() => focusNode(newNode.id, false));
+                    if (zoomRoot.children.length === 0) {
+                        // No children yet — focus the ghost row to add the first one
+                        requestAnimationFrame(() => {
+                            const ghostText = document.getElementById('ghost-text');
+                            if (ghostText) ghostText.focus();
+                        });
+                    } else {
+                        pushUndo();
+                        const newNode = makeNode('');
+                        zoomRoot.children.unshift(newNode);
+                        saveDoc();
+                        render();
+                        requestAnimationFrame(() => focusNode(newNode.id, false));
+                    }
                 }
                 return;
             }
