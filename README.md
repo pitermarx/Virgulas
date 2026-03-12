@@ -116,6 +116,28 @@ supabase migration new <description>
 # The supabase-deploy.yml workflow will deploy it automatically.
 ```
 
+### Security considerations
+
+Running database migrations from CI introduces several attack vectors. The ones relevant to this setup and how each is mitigated:
+
+| Vector | Risk | Mitigation |
+|---|---|---|
+| **Mutable action reference** | `supabase/setup-cli@v1` points at a moving branch. If the upstream repo is compromised the next run executes attacker code with access to the token. | Action pinned to an immutable commit SHA (`b60b5899…`). Update the SHA deliberately when upgrading. |
+| **`version: latest` binary download** | Downloads the most recent CLI release from GitHub Releases on every run. A CDN compromise or account takeover could serve a malicious binary. | Pinned to an explicit version (`1.6.0`). |
+| **Unreviewed path to production** | `ci.yml` auto-merges any PR that passes E2E tests. Those tests are purely browser-based and never inspect SQL files, so a migration PR lands on `main` — and triggers deployment — without a human reviewing the SQL. | The deployment job uses `environment: supabase-production`. Add required reviewers to that environment in GitHub Settings → Environments so no deployment proceeds without explicit approval, even after auto-merge. |
+| **No deployment gate** | Without an environment, the workflow fires immediately on every qualifying push with no approval step. | Addressed by `environment: supabase-production` above. |
+| **Parallel migration runs** | Two quick pushes could start two `supabase db push` processes simultaneously, risking duplicate migrations or Supabase migration-table corruption. | `concurrency: group: supabase-deploy, cancel-in-progress: false` serialises runs; the second waits for the first to finish. |
+| **Broad access token scope** | A Supabase personal access token grants access to **all projects** in the account, not just this one. A leaked token is account-wide. | Rotate the token regularly. Consider creating a dedicated Supabase account that owns only this project. The Supabase CLI does not support project-scoped tokens at this time. |
+| **No rollback** | SQL migrations are irreversible by default. A destructive statement goes to production with no automated rollback path. | Review migration files carefully before merging. For destructive changes, test against a staging project first. Add rollback SQL as a new migration if needed. |
+
+#### Enabling the environment gate (one-time setup)
+
+After adding `environment: supabase-production` to the workflow, configure the gate in GitHub:
+
+1. Go to **Settings → Environments → supabase-production**
+2. Under **Deployment protection rules**, enable **Required reviewers** and add the people who must approve database deployments
+3. Optionally set **Prevent self-review** so the PR author cannot approve their own migration
+
 ### Sync behaviour
 
 - **Compression**: data is gzip-compressed with the native `CompressionStream` browser API before storing in Supabase to minimise storage and bandwidth.
