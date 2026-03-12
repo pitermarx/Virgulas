@@ -430,16 +430,24 @@
             display: block;
         }
 
-        /* ── Empty hint ── */
-        #empty-hint {
-            display: none;
-            color: var(--text-faint);
-            font-size: 14px;
-            padding: 32px 0 16px 36px;
+        /* ── Ghost row ── */
+        .ghost-row {
+            display: flex;
+            align-items: flex-start;
+            border-radius: 4px;
+            opacity: 0.35;
+            cursor: text;
+            transition: background var(--transition), opacity var(--transition);
         }
 
-        #empty-hint.visible {
-            display: block;
+        .ghost-row:hover {
+            background: var(--hover);
+            opacity: 0.6;
+        }
+
+        .ghost-row.focused {
+            background: var(--hover);
+            opacity: 1;
         }
 
         /* ── Toolbar ── */
@@ -967,7 +975,6 @@
         <div id="zoom-title" contenteditable="true" spellcheck="true"></div>
         <div id="zoom-desc" contenteditable="true" spellcheck="true"></div>
         <div id="bullets"></div>
-        <div id="empty-hint">Press <kbd>Enter</kbd> to add a new item…</div>
     </div>
 
     <div id="toolbar">
@@ -1820,6 +1827,72 @@
 
         // ── Render ────────────────────────────────────────────────────────────────
 
+        function buildGhostRow() {
+            const row = document.createElement('div');
+            row.className = 'ghost-row';
+            row.id = 'ghost-row';
+
+            const gutter = document.createElement('div');
+            gutter.className = 'bullet-gutter';
+
+            const toggle = document.createElement('div');
+            toggle.className = 'collapse-toggle';
+
+            const dot = document.createElement('div');
+            dot.className = 'bullet-dot';
+
+            gutter.append(toggle, dot);
+
+            const content = document.createElement('div');
+            content.className = 'bullet-content';
+
+            const textEl = document.createElement('div');
+            textEl.className = 'bullet-text';
+            textEl.contentEditable = 'true';
+            textEl.id = 'ghost-text';
+            textEl.dataset.placeholder = 'New item…';
+
+            textEl.addEventListener('focus', () => {
+                focusedId = null;
+                row.classList.add('focused');
+            });
+
+            textEl.addEventListener('blur', () => {
+                row.classList.remove('focused');
+                const text = textEl.textContent.trim();
+                if (text) {
+                    const zoomRoot = getZoomRoot();
+                    const newNode = makeNode(text);
+                    pushUndo();
+                    zoomRoot.children.push(newNode);
+                    saveDoc();
+                    textEl.textContent = '';
+                    render();
+                    requestAnimationFrame(() => focusNode(newNode.id, false));
+                } else {
+                    textEl.textContent = '';
+                }
+            });
+
+            textEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    e.preventDefault();
+                    textEl.blur();
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    textEl.textContent = '';
+                    textEl.blur();
+                }
+            });
+
+            row.addEventListener('click', () => textEl.focus());
+
+            content.append(textEl);
+            row.append(gutter, content);
+            return row;
+        }
+
         function buildRow(node, depth) {
             const row = document.createElement('div');
             row.className = 'bullet-row';
@@ -1987,7 +2060,6 @@
         function render() {
             const activeId = document.activeElement?.dataset?.id;
             const bulletsEl = document.getElementById('bullets');
-            const emptyHint = document.getElementById('empty-hint');
             const zoomRoot = getZoomRoot();
             const flat = flatVisible();
 
@@ -2008,8 +2080,8 @@
                 });
             }
 
-            // Empty hint: always visible at the end of the list
-            emptyHint.classList.add('visible');
+            // Ghost row: always visible at the end as a visual guide
+            bulletsEl.appendChild(buildGhostRow());
 
             // Breadcrumb
             renderBreadcrumb();
@@ -2854,13 +2926,8 @@
             if (!isEditing) {
                 if (e.key === 'Enter' && !e.defaultPrevented && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
                     e.preventDefault();
-                    const zoomRoot = getZoomRoot();
-                    const newNode = makeNode('');
-                    pushUndo();
-                    zoomRoot.children.push(newNode);
-                    saveDoc();
-                    render();
-                    requestAnimationFrame(() => focusNode(newNode.id, false));
+                    const ghostText = document.getElementById('ghost-text');
+                    if (ghostText) ghostText.focus();
                     return;
                 }
                 if (e.key === '?') { e.preventDefault(); openModal('modal-shortcuts'); return; }
@@ -2953,16 +3020,6 @@
 
         // Toolbar shortcuts hint click
         document.querySelector('.toolbar-hint').addEventListener('click', () => openModal('modal-shortcuts'));
-
-        // Empty hint: click to add first bullet
-        document.getElementById('empty-hint').addEventListener('click', () => {
-            const zoomRoot = getZoomRoot();
-            const newNode = makeNode('');
-            zoomRoot.children.push(newNode);
-            saveDoc();
-            render();
-            requestAnimationFrame(() => focusNode(newNode.id, false));
-        });
 
         // bullets div: click on empty area to add bullet
         document.getElementById('bullets').addEventListener('click', (e) => {

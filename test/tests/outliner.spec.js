@@ -711,12 +711,12 @@ test.describe('Arrow key navigation', () => {
   });
 });
 
-test.describe('Empty hint', () => {
-  test('empty hint is always visible at the end of the list', async ({ page }) => {
-    await expect(page.locator('#empty-hint')).toBeVisible();
+test.describe('Ghost row', () => {
+  test('ghost row is always visible at the end of the list', async ({ page }) => {
+    await expect(page.locator('#ghost-row')).toBeVisible();
   });
 
-  test('clicking empty hint creates a new bullet', async ({ page }) => {
+  test('clicking ghost row focuses it', async ({ page }) => {
     // Set up an empty document directly in localStorage
     await page.evaluate(() => {
       localStorage.setItem('outline_v1', JSON.stringify({
@@ -726,30 +726,43 @@ test.describe('Empty hint', () => {
     });
     await page.reload();
 
-    await expect(page.locator('#empty-hint')).toBeVisible();
+    await expect(page.locator('#ghost-row')).toBeVisible();
 
-    // Clicking the hint should create a new bullet
-    await page.locator('#empty-hint').click();
+    // Clicking the ghost row should focus it
+    await page.locator('#ghost-row').click();
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
+  });
+
+  test('typing in ghost row and pressing Enter creates a new bullet', async ({ page }) => {
+    // Set up an empty document directly in localStorage
+    await page.evaluate(() => {
+      localStorage.setItem('outline_v1', JSON.stringify({
+        root: { id: 'root', text: 'root', description: '', children: [], collapsed: false },
+        version: 1
+      }));
+    });
+    await page.reload();
+
+    await page.locator('#ghost-row').click();
+    await page.keyboard.type('New item');
+    await page.keyboard.press('Enter');
     await expect(page.locator('.bullet-row')).toHaveCount(1);
+    // Ghost text should be cleared after committing
+    await expect(page.locator('#ghost-text')).toBeEmpty();
   });
 });
 
 test.describe('Enter when unfocused', () => {
-  test('pressing Enter when no bullet is focused adds a new bullet at the end', async ({ page }) => {
+  test('pressing Enter when no bullet is focused focuses the ghost row', async ({ page }) => {
     // Ensure no bullet is focused by pressing Escape
     await page.locator('.bullet-text').first().click();
     await page.keyboard.press('Escape');
 
-    const countBefore = await page.locator('.bullet-row').count();
     await page.keyboard.press('Enter');
-    await expect(page.locator('.bullet-row')).toHaveCount(countBefore + 1);
-
-    // The new bullet should be focused at the end
-    const lastRow = page.locator('.bullet-row').last();
-    await expect(lastRow).toHaveClass(/focused/);
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
   });
 
-  test('pressing Enter on an empty page adds a first bullet', async ({ page }) => {
+  test('pressing Enter on an empty page focuses the ghost row', async ({ page }) => {
     await page.evaluate(() => {
       localStorage.setItem('outline_v1', JSON.stringify({
         root: { id: 'root', text: 'root', description: '', children: [], collapsed: false },
@@ -759,7 +772,7 @@ test.describe('Enter when unfocused', () => {
     await page.reload();
 
     await page.keyboard.press('Enter');
-    await expect(page.locator('.bullet-row')).toHaveCount(1);
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
   });
 });
 
