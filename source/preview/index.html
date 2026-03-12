@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virgulas – PR Previews</title>
+  <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #ffffff;
+      --border: #ddd9d0;
+      --text: #1a1814;
+      --text-muted: #6b6760;
+      --accent: #2a5caa;
+      --accent-light: #e8eef8;
+      --danger: #c0392b;
+      --font: Helvetica, Arial, sans-serif;
+      --radius: 4px;
+    }
+
+    html[data-theme='dark'] {
+      --bg: #1a1714;
+      --surface: #242220;
+      --border: #3a3733;
+      --text: #ede9e3;
+      --text-muted: #9b9790;
+      --accent: #5c8ed6;
+      --accent-light: #1e2d47;
+      --danger: #e05c4b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 40px 24px 60px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    header a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--accent);
+      font-size: 14px;
+    }
+
+    header a:hover { text-decoration: underline; }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    #status {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      min-height: 20px;
+    }
+
+    #pr-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 720px;
+    }
+
+    .pr-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .pr-info { flex: 1; min-width: 0; }
+
+    .pr-title {
+      font-size: 15px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pr-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .pr-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      align-items: center;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-secondary {
+      background: var(--accent-light);
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { opacity: 0.88; }
+
+    .empty {
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 20px 0;
+    }
+
+    .error {
+      color: var(--danger);
+      font-size: 14px;
+      padding: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="../" aria-label="Back to Virgulas">
+      <img src="../icon.svg" width="24" height="24" alt="" />
+      Virgulas
+    </a>
+    <h1>Open PR Previews</h1>
+  </header>
+
+  <div id="status">Loading…</div>
+  <ul id="pr-list"></ul>
+
+  <script type="module">
+    const OWNER = 'pitermarx';
+    const REPO  = 'Virgulas';
+
+    // Replicate the branch-name sanitisation used in deploy-preview.yml:
+    // sed 's/[^a-zA-Z0-9._-]/-/g'
+    function safeBranch(name) {
+      return name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    }
+
+    // The preview index lives at  <base>/preview/
+    // Each PR preview lives at    <base>/preview/<branch>/
+    function previewUrl(branch) {
+      const base = new URL('./', window.location.href).href;
+      return base + safeBranch(branch) + '/';
+    }
+
+    const statusEl = document.getElementById('status');
+    const listEl   = document.getElementById('pr-list');
+
+    async function load() {
+      let prs;
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=100`,
+          { headers: { Accept: 'application/vnd.github+json' } }
+        );
+        if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+        prs = await res.json();
+      } catch (err) {
+        statusEl.textContent = '';
+        listEl.innerHTML = `<li class="error">Failed to load pull requests: ${err.message}</li>`;
+        return;
+      }
+
+      statusEl.textContent = '';
+
+      if (prs.length === 0) {
+        listEl.innerHTML = '<li class="empty">No open pull requests at the moment.</li>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      for (const pr of prs) {
+        const li = document.createElement('li');
+        li.className = 'pr-item';
+        li.dataset.prNumber = pr.number;
+
+        const opened = new Date(pr.created_at).toLocaleDateString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric'
+        });
+
+        li.innerHTML = `
+          <div class="pr-info">
+            <div class="pr-title" title="${escHtml(pr.title)}">${escHtml(pr.title)}</div>
+            <div class="pr-meta">#${escHtml(String(pr.number))} · opened ${escHtml(opened)} by ${escHtml(pr.user.login)}</div>
+          </div>
+          <div class="pr-actions">
+            <a class="btn btn-secondary" href="${escHtml(previewUrl(pr.head.ref))}">Preview</a>
+            <a class="btn btn-primary" href="${escHtml(pr.html_url)}" target="_blank" rel="noopener">View PR</a>
+          </div>`;
+        listEl.appendChild(li);
+      }
+    }
+
+    function escHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Apply saved theme so the preview page matches the main app
+    const theme = localStorage.getItem('theme');
+    if (theme) document.documentElement.dataset.theme = theme;
+
+    load();
+  </script>
+</body>
+</html>

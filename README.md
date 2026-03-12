@@ -29,6 +29,15 @@ The `deploy-preview.yml` workflow runs on every pull request targeting `main`:
 
 Branch names are sanitised (non-alphanumeric characters replaced with `-`) before being used as path segments.
 
+### Preview index page (`/preview/`)
+
+`source/preview/index.html` is a standalone page deployed alongside the main app.
+It calls the GitHub REST API to list all currently open pull requests for this repository and renders each one as a card with:
+
+- PR title, number, author, and open date
+- **Preview** button — links to the deployed preview at `/preview/<sanitized-branch>/`
+- **View PR** button — links to the pull request on GitHub
+
 ---
 
 ## Tech decisions

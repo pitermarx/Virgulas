@@ -1403,3 +1403,100 @@ test.describe('Splash screen', () => {
   });
 });
 
+test.describe('Preview index page', () => {
+  const MOCK_PRS = [
+    {
+      number: 42,
+      title: 'Add dark mode toggle',
+      html_url: 'https://github.com/pitermarx/Virgulas/pull/42',
+      created_at: '2025-01-15T10:00:00Z',
+      user: { login: 'alice' },
+      head: { ref: 'feature/dark-mode' },
+    },
+    {
+      number: 7,
+      title: 'Fix indent bug',
+      html_url: 'https://github.com/pitermarx/Virgulas/pull/7',
+      created_at: '2025-02-01T08:00:00Z',
+      user: { login: 'bob' },
+      head: { ref: 'fix/indent-bug' },
+    },
+  ];
+
+  test('page title is "Virgulas – PR Previews"', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await page.goto('/preview/');
+    await expect(page).toHaveTitle('Virgulas – PR Previews');
+  });
+
+  test('shows "Open PR Previews" heading', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await page.goto('/preview/');
+    await expect(page.locator('h1')).toContainText('Open PR Previews');
+  });
+
+  test('shows a card for each open PR', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PRS) })
+    );
+    await page.goto('/preview/');
+    await expect(page.locator('.pr-item')).toHaveCount(2);
+  });
+
+  test('each PR card shows the PR title', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PRS) })
+    );
+    await page.goto('/preview/');
+    await expect(page.locator('.pr-title').first()).toContainText('Add dark mode toggle');
+  });
+
+  test('each PR card contains a link to the GitHub pull request', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PRS) })
+    );
+    await page.goto('/preview/');
+    const prLink = page.locator('.pr-item').first().locator('.btn-primary');
+    await expect(prLink).toHaveAttribute('href', 'https://github.com/pitermarx/Virgulas/pull/42');
+  });
+
+  test('each PR card contains a Preview link to the deployed preview URL', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PRS) })
+    );
+    await page.goto('/preview/');
+    const previewLink = page.locator('.pr-item').first().locator('.btn-secondary');
+    // Branch "feature/dark-mode" sanitised → "feature-dark-mode"
+    await expect(previewLink).toHaveAttribute('href', 'http://localhost:3000/preview/feature-dark-mode/');
+  });
+
+  test('shows empty state when there are no open PRs', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await page.goto('/preview/');
+    await expect(page.locator('.empty')).toContainText('No open pull requests');
+  });
+
+  test('shows error state when GitHub API fails', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    );
+    await page.goto('/preview/');
+    await expect(page.locator('.error')).toBeVisible();
+  });
+
+  test('back link navigates to the main app', async ({ page }) => {
+    await page.route('https://api.github.com/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await page.goto('/preview/');
+    const backLink = page.locator('header a').first();
+    await expect(backLink).toHaveAttribute('href', '../');
+  });
+});
+
