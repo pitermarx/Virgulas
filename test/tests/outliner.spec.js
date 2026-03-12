@@ -712,11 +712,11 @@ test.describe('Arrow key navigation', () => {
 });
 
 test.describe('Empty hint', () => {
-  test('empty hint is hidden when there are bullets', async ({ page }) => {
-    await expect(page.locator('#empty-hint')).toBeHidden();
+  test('empty hint is always visible at the end of the list', async ({ page }) => {
+    await expect(page.locator('#empty-hint')).toBeVisible();
   });
 
-  test('empty hint is shown when there are no bullets and clicking it creates one', async ({ page }) => {
+  test('clicking empty hint creates a new bullet', async ({ page }) => {
     // Set up an empty document directly in localStorage
     await page.evaluate(() => {
       localStorage.setItem('outline_v1', JSON.stringify({
@@ -730,6 +730,35 @@ test.describe('Empty hint', () => {
 
     // Clicking the hint should create a new bullet
     await page.locator('#empty-hint').click();
+    await expect(page.locator('.bullet-row')).toHaveCount(1);
+  });
+});
+
+test.describe('Enter when unfocused', () => {
+  test('pressing Enter when no bullet is focused adds a new bullet at the end', async ({ page }) => {
+    // Ensure no bullet is focused by pressing Escape
+    await page.locator('.bullet-text').first().click();
+    await page.keyboard.press('Escape');
+
+    const countBefore = await page.locator('.bullet-row').count();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.bullet-row')).toHaveCount(countBefore + 1);
+
+    // The new bullet should be focused at the end
+    const lastRow = page.locator('.bullet-row').last();
+    await expect(lastRow).toHaveClass(/focused/);
+  });
+
+  test('pressing Enter on an empty page adds a first bullet', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('outline_v1', JSON.stringify({
+        root: { id: 'root', text: 'root', description: '', children: [], collapsed: false },
+        version: 1
+      }));
+    });
+    await page.reload();
+
+    await page.keyboard.press('Enter');
     await expect(page.locator('.bullet-row')).toHaveCount(1);
   });
 });

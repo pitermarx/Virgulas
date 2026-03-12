@@ -159,7 +159,7 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
   <div id="zoom-title">        <!-- contenteditable, hidden at root -->
   <div id="zoom-desc">         <!-- contenteditable, hidden at root -->
   <div id="bullets">           <!-- main tree, rebuilt on every render -->
-  <div id="empty-hint">        <!-- shown when current zoom has no children; click adds first bullet -->
+  <div id="empty-hint">        <!-- always visible at the end of the list; click or press Enter (unfocused) adds a new bullet -->
 </div>
 
 <div id="toolbar">             <!-- fixed bottom -->
@@ -286,7 +286,7 @@ Applied only on blur. While editing, raw text is shown.
 | 15       | `search`         | `Ctrl+F`           | focus search input |
 | 16       | `undo`           | `Ctrl+Z`           | undo last structural change |
 
-A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Ctrl+F` / `?` / `Ctrl+Z` when no editable element is focused. It also handles `ArrowDown` (focus first visible node) and `ArrowUp` (focus last visible node) when no item is focused.
+A global `keydown` listener handles `Escape` to close any open modal or the search bar, and handles `Enter` (unfocused, adds a new bullet at the end), `Ctrl+F` / `?` / `Ctrl+Z` when no editable element is focused. It also handles `ArrowDown` (focus first visible node) and `ArrowUp` (focus last visible node) when no item is focused.
 
 ## Touch / mobile handling
 

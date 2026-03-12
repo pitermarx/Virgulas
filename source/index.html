@@ -967,7 +967,7 @@
         <div id="zoom-title" contenteditable="true" spellcheck="true"></div>
         <div id="zoom-desc" contenteditable="true" spellcheck="true"></div>
         <div id="bullets"></div>
-        <div id="empty-hint">Press <kbd>Enter</kbd> to add the first item…</div>
+        <div id="empty-hint">Press <kbd>Enter</kbd> to add a new item…</div>
     </div>
 
     <div id="toolbar">
@@ -2008,8 +2008,8 @@
                 });
             }
 
-            // Empty hint
-            emptyHint.classList.toggle('visible', flat.length === 0);
+            // Empty hint: always visible at the end of the list
+            emptyHint.classList.add('visible');
 
             // Breadcrumb
             renderBreadcrumb();
@@ -2852,6 +2852,17 @@
             }
 
             if (!isEditing) {
+                if (e.key === 'Enter' && !e.defaultPrevented && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    e.preventDefault();
+                    const zoomRoot = getZoomRoot();
+                    const newNode = makeNode('');
+                    pushUndo();
+                    zoomRoot.children.push(newNode);
+                    saveDoc();
+                    render();
+                    requestAnimationFrame(() => focusNode(newNode.id, false));
+                    return;
+                }
                 if (e.key === '?') { e.preventDefault(); openModal('modal-shortcuts'); return; }
                 if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); openSearch(); return; }
                 if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return; }
