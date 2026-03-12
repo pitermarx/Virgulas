@@ -15,8 +15,8 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: pages-preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   deploy-preview:
@@ -47,11 +47,25 @@ jobs:
       - name: Build combined artifact
         env:
           SAFE_BRANCH: ${{ steps.branch.outputs.name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p _site
           cp -r _main/source/. _site/
-          mkdir -p "_site/preview/$SAFE_BRANCH"
-          cp -r source/. "_site/preview/$SAFE_BRANCH/"
+
+          # Include previews for all currently open PRs
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName \
+            --jq '.[].headRefName' | \
+          while IFS= read -r branch; do
+            SAFE=$(echo "$branch" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            mkdir -p "_site/preview/$SAFE"
+            if [ "$SAFE" = "$SAFE_BRANCH" ]; then
+              cp -r source/. "_site/preview/$SAFE/"
+            else
+              git fetch --depth=1 origin "$branch" && \
+              git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE/" -x || \
+              echo "Warning: Could not fetch or extract preview for branch $branch - preview will be skipped"
+            fi
+          done
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
@@ -112,13 +126,37 @@ jobs:
         with:
           ref: main
 
+      - name: Build site with remaining previews
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOSED_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          mkdir -p _site
+          cp -r source/. _site/
+
+          # Include previews for all remaining open PRs (the closed PR is excluded
+          # because GitHub updates its state before the workflow runs)
+          CLOSED_SAFE=$(echo "$CLOSED_HEAD_REF" | sed 's/[^a-zA-Z0-9._-]/-/g')
+
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName \
+            --jq '.[].headRefName' | \
+          while IFS= read -r branch; do
+            SAFE=$(echo "$branch" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            if [ "$SAFE" != "$CLOSED_SAFE" ]; then
+              mkdir -p "_site/preview/$SAFE"
+              git fetch --depth=1 origin "$branch" && \
+              git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE/" -x || \
+              echo "Warning: Could not fetch or extract preview for branch $branch - preview will be skipped"
+            fi
+          done
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: 'source'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment
