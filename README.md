@@ -120,6 +120,12 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 ## HTML structure
 
 ```html
+<div id="splash">              <!-- fixed full-screen, z-index 9999, pointer-events:none; shown on first-ever load, auto-dismisses -->
+  <svg class="splash-logo">   <!-- the Virgulas comma-twig SVG mark -->
+  <div class="splash-name">   <!-- "Virgulas" wordmark in Georgia serif -->
+  <div class="splash-tagline"><!-- short tagline -->
+</div>
+
 <div id="search-bar">          <!-- fixed top, hidden unless .visible -->
   <input id="search-input">
   <span id="search-count">
@@ -190,6 +196,8 @@ Use CSS custom properties on `:root` for the entire palette and spacing:
 ```
 
 Dark mode is applied by setting `data-theme="dark"` on `<html>`. The `html[data-theme='dark']` selector overrides all colour custom properties with dark equivalents. The current theme is persisted in `localStorage` under the key `theme`. `applyTheme(theme)` sets the attribute and updates the toggle button label.
+
+The splash screen (`#splash`) uses `var(--bg)` and `var(--accent)` so it automatically renders in the active theme. Since `applyTheme()` is called at the very start of `init()`, the theme is set before the splash becomes visible.
 
 The sync indicator (`#sync-indicator`) uses modifier classes on the element itself: `syncing`, `synced`, `pending`, `error`, `conflict`. When none of these classes are present (or the `visible` class is absent) it is hidden. The `.sync-spinner` element uses a `@keyframes sync-spin` CSS animation for the rotating ring.
 
@@ -378,6 +386,46 @@ The seed data in Markdown format:
 - Use `Ctrl+Z` to undo and the **Markdown** button to export
   > Undo reverses the last structural change (create, delete, move, indent). The Markdown toolbar button opens a live editor showing your full outline — edit it directly and click Apply to import changes.
 ```
+
+---
+
+## Logo, splash screen & PWA icons
+
+### Logo design
+
+The Virgulas mark is a stylised **comma-twig** — combining the two meanings of the word *virgula*:
+- **Comma** (Portuguese) — the overall shape is a comma: a leaf-like head with a curved descending tail.
+- **Twig** (Latin) — the head is drawn as an organic botanical leaf/bud, and the tail flows like a plant stem.
+
+The mark is defined as an inline SVG path with no external images required. It uses the app's accent colour (`--accent`) so it automatically adapts to the current theme (light/dark).
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `source/icon.svg` | Standalone SVG app icon used for favicon, PWA icons, and Apple touch icon |
+| `source/manifest.json` | Web App Manifest enabling "Add to Home Screen" / PWA installation |
+
+### `<head>` metadata
+
+```html
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2a5caa">
+```
+
+### Splash screen
+
+A full-screen overlay (`#splash`) is shown **on the very first load** (when no `localStorage` data exists yet). It displays:
+1. The SVG comma-twig logo mark (96 × 96 px)
+2. The word-mark "Virgulas" in Georgia serif
+3. A short tagline
+
+Behaviour:
+- The overlay has `pointer-events: none` at all times so it never blocks interaction with the underlying UI.
+- It auto-dismisses: 800 ms after `init()` completes, it begins a 700 ms `opacity` fade-out, then receives the `.hidden` class (`display:none`).
+- On subsequent page loads (when `localStorage` already contains data), the overlay starts with the `.hidden` class and is never shown.
 
 ---
 

@@ -1,0 +1,17 @@
+{
+  "name": "Virgulas",
+  "short_name": "Virgulas",
+  "description": "A keyboard-first infinite outliner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5f0",
+  "theme_color": "#2a5caa",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

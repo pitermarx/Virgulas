@@ -1325,3 +1325,52 @@ test.describe('Persistence without login', () => {
   });
 });
 
+test.describe('Splash screen', () => {
+  test('splash element exists in the DOM', async ({ page }) => {
+    await expect(page.locator('#splash')).toBeAttached();
+  });
+
+  test('splash is visible on first load (no prior localStorage)', async ({ page }) => {
+    // beforeEach already cleared localStorage and reloaded; splash should be visible
+    // (pointer-events: none so it doesn't block interaction)
+    const splash = page.locator('#splash');
+    await expect(splash).not.toHaveClass(/hidden/);
+  });
+
+  test('splash shows the app name', async ({ page }) => {
+    await expect(page.locator('.splash-name')).toContainText('Virgulas');
+  });
+
+  test('splash shows the SVG logo mark', async ({ page }) => {
+    await expect(page.locator('#splash .splash-logo')).toBeAttached();
+  });
+
+  test('splash auto-dismisses after a short time', async ({ page }) => {
+    const splash = page.locator('#splash');
+    // Auto-dismiss fires after ~800ms (delay) + 700ms (fade transition) = ~1500ms total
+    await expect(splash).toHaveClass(/hidden/, { timeout: 3000 });
+  });
+
+  test('splash is hidden on subsequent loads (localStorage already populated)', async ({ page }) => {
+    // Wait for splash to fully dismiss from first load
+    await expect(page.locator('#splash')).toHaveClass(/hidden/, { timeout: 3000 });
+
+    // Reload without clearing localStorage
+    await page.reload();
+    await page.waitForSelector('.bullet-row');
+
+    // Splash should remain hidden immediately on subsequent load
+    await expect(page.locator('#splash')).toHaveClass(/hidden/);
+  });
+
+  test('favicon links to icon.svg', async ({ page }) => {
+    const faviconHref = await page.locator('link[rel="icon"]').getAttribute('href');
+    expect(faviconHref).toBe('icon.svg');
+  });
+
+  test('manifest link points to manifest.json', async ({ page }) => {
+    const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');
+    expect(manifestHref).toBe('manifest.json');
+  });
+});
+
