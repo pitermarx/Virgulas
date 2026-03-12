@@ -750,6 +750,45 @@ test.describe('Ghost row', () => {
     // Ghost text should be cleared after committing
     await expect(page.locator('#ghost-text')).toBeEmpty();
   });
+
+  test('ArrowUp from ghost row focuses last bullet when bullets exist', async ({ page }) => {
+    await page.locator('#ghost-row').click();
+    await page.keyboard.press('ArrowUp');
+    const lastBullet = page.locator('.bullet-row .bullet-text').last();
+    await expect(lastBullet).toBeFocused();
+  });
+
+  test('ArrowUp from ghost row focuses zoom title when zoomed into empty bullet', async ({ page }) => {
+    // Zoom into a bullet that has no children (first bullet)
+    const firstDot = page.locator('.bullet-dot').first();
+    await firstDot.click();
+    await expect(page.locator('#zoom-title')).toBeFocused();
+
+    // Click ghost row to focus it (this blurs zoom title without zooming out)
+    await page.locator('#ghost-row').click();
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
+
+    // ArrowUp should go back to zoom title (no bullets in this empty zoom)
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('#zoom-title')).toBeFocused();
+  });
+});
+
+test.describe('Zoom title Enter on empty zoom root', () => {
+  test('Enter on zoom header of empty bullet focuses the ghost row', async ({ page }) => {
+    // Zoom into a bullet that has no children (first bullet)
+    const firstDot = page.locator('.bullet-dot').first();
+    await firstDot.click();
+    await expect(page.locator('#zoom-title')).toBeFocused();
+
+    // No bullet rows visible in this empty zoom
+    await expect(page.locator('.bullet-row')).toHaveCount(0);
+
+    // Enter should focus the ghost row, not create a new bullet
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
+    await expect(page.locator('.bullet-row')).toHaveCount(0);
+  });
 });
 
 test.describe('Enter when unfocused', () => {
