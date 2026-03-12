@@ -1,4 +1,4 @@
+node_modules/
 test/node_modules/
 test/test-results/
 test/playwright-report/
-source/node_modules/

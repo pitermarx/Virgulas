@@ -4,7 +4,7 @@
   "description": "A keyboard-first infinite outliner running entirely in the browser",
   "private": true,
   "scripts": {
-    "vendor": "cp node_modules/@supabase/supabase-js/dist/umd/supabase.js vendor/supabase.js"
+    "vendor": "cp node_modules/@supabase/supabase-js/dist/umd/supabase.js source/vendor/supabase.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1"
