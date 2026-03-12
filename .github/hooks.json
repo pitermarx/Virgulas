@@ -7,7 +7,7 @@
         "bash": "./.github/hooks/approve-workflow.sh",
         "cwd": ".",
         "timeoutSec": 30,
-         "env": { "GITHUB_API_TOKEN": "${{ secrets.APPROVER_TOKEN }}" }
+         "env": { "TOKEN": "${{ secrets.APPROVER_TOKEN }}" }
       }
     ]
   }
