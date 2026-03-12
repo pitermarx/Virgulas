@@ -1,6 +1,5 @@
 -- Create the outlines table used by the Virgulas cloud sync feature.
 -- Each row stores the compressed outline document for one authenticated user.
-
 CREATE TABLE IF NOT EXISTS public.outlines (
   user_id    UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   data       TEXT        NOT NULL,
