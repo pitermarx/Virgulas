@@ -1222,6 +1222,76 @@ test.describe('Multi-select', () => {
     await expect(rows.nth(0)).toHaveAttribute('data-id', secondId);
     await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
   });
+
+  test('Ctrl+Backspace deletes all selected bullets', async ({ page }) => {
+    const rows = page.locator('.bullet-row');
+    const initialCount = await rows.count();
+
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    // Select first two bullets
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    // Delete selection
+    await page.keyboard.press('Control+Backspace');
+
+    // Two bullets should be gone
+    await expect(rows).toHaveCount(initialCount - 2);
+    // Selection should be cleared
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(0);
+  });
+
+  test('Ctrl+Backspace on multi-select leaves focus on nearest predecessor', async ({ page }) => {
+    const rows = page.locator('.bullet-row');
+
+    // Click second bullet, extend selection down to include 3rd (which has children)
+    const secondText = page.locator('.bullet-text').nth(1);
+    await secondText.click();
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    const firstId = await rows.nth(0).getAttribute('data-id');
+
+    // The 3rd seeded bullet has children so a confirm dialog will appear
+    page.once('dialog', dialog => dialog.accept());
+    await page.keyboard.press('Control+Backspace');
+
+    // First bullet (the one before the selection) should be focused
+    const focusedRow = page.locator('.bullet-row.focused');
+    await expect(focusedRow).toHaveAttribute('data-id', firstId);
+  });
+
+  test('Ctrl+C copies selected bullets as markdown and shows toast', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    // Select first two bullets
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+
+    // Grant clipboard-write permission
+    await page.context().grantPermissions(['clipboard-write', 'clipboard-read']);
+
+    await page.keyboard.press('Control+c');
+
+    // Toast should be visible with the correct message
+    const toast = page.locator('#toast');
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveText('Markdown copied');
+  });
+
+  test('Ctrl+C on single bullet does not show toast', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+
+    await page.keyboard.press('Control+c');
+
+    // Toast should NOT appear for a single (non-multi-select) copy
+    const toast = page.locator('#toast');
+    await expect(toast).not.toBeVisible();
+  });
 });
 
 test.describe('Sync indicator', () => {

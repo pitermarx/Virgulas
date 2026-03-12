@@ -2,9 +2,9 @@
 // State-modifying operations: the "Update" layer in the Elm-inspired
 // architecture. These functions apply a change to the state and re-render.
 
-import { makeNode, findNode, flatVisible, findParentInSubtree, collectAllNodes, importMarkdown } from './model.js';
+import { makeNode, findNode, flatVisible, findParentInSubtree, collectAllNodes, importMarkdown, exportMarkdown } from './model.js';
 import * as State from './state.js';
-import { render, setSyncStatus, openSearch, closeSearch, openModal } from './view.js';
+import { render, setSyncStatus, openSearch, closeSearch, openModal, showToast } from './view.js';
 
 // ── Cursor helpers ────────────────────────────────────────────────────────────
 
@@ -191,6 +191,63 @@ export function deleteNode(id) {
     if (focusTarget) {
         requestAnimationFrame(() => focusNode(focusTarget));
     }
+}
+
+export function deleteNodes(ids) {
+    const zoomRoot = State.getZoomRoot();
+    const flat = flatVisible(zoomRoot);
+
+    const ordered = [...ids]
+        .map(id => ({ id, flatIdx: flat.findIndex(x => x.node.id === id) }))
+        .filter(x => x.flatIdx >= 0)
+        .sort((a, b) => a.flatIdx - b.flatIdx);
+
+    if (ordered.length === 0) return;
+
+    const nodes = ordered.map(x => findNode(x.id, zoomRoot)).filter(Boolean);
+    const nodesWithChildren = nodes.filter(n => n.children.length > 0);
+    if (nodesWithChildren.length > 0) {
+        if (!window.confirm(`Delete ${ordered.length} bullet(s) and their children?`)) return;
+    }
+
+    const firstFlatIdx = ordered[0].flatIdx;
+    let focusTarget = null;
+    for (let i = firstFlatIdx - 1; i >= 0; i--) {
+        if (!ids.includes(flat[i].node.id)) {
+            focusTarget = flat[i].node.id;
+            break;
+        }
+    }
+
+    State.pushUndo();
+    for (const { id } of [...ordered].reverse()) {
+        const parent = findParentInSubtree(id, zoomRoot);
+        if (!parent) continue;
+        const idx = parent.children.findIndex(c => c.id === id);
+        if (idx !== -1) parent.children.splice(idx, 1);
+    }
+    clearSelection();
+    State.saveDoc();
+    State.setFocusedId(focusTarget);
+    render();
+    if (focusTarget) {
+        requestAnimationFrame(() => focusNode(focusTarget));
+    }
+}
+
+export function copySelectionAsMarkdown(ids) {
+    const zoomRoot = State.getZoomRoot();
+    const flat = flatVisible(zoomRoot);
+    const orderedIds = [...ids].sort((a, b) =>
+        flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
+    );
+    const nodes = orderedIds.map(id => findNode(id, zoomRoot)).filter(Boolean);
+    const md = exportMarkdown({ children: nodes }).trim();
+    navigator.clipboard.writeText(md).then(() => {
+        showToast('Markdown copied');
+    }).catch(() => {
+        showToast('Copy failed');
+    });
 }
 
 export function indentNode(id) {
@@ -512,7 +569,19 @@ export function handleBulletKey(e, node) {
         e.preventDefault();
         const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
         if (textEl) node.text = textEl.textContent;
-        deleteNode(node.id);
+        if (State.selectedIds.length > 1) {
+            deleteNodes(State.selectedIds);
+        } else {
+            deleteNode(node.id);
+        }
+        return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (State.selectedIds.length > 1) {
+            e.preventDefault();
+            copySelectionAsMarkdown(State.selectedIds);
+        }
         return;
     }
 

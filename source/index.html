@@ -90,6 +90,8 @@
                         <tr><td>Focus next</td><td><kbd>↓</kbd></td></tr>
                         <tr><td>Extend selection up</td><td><kbd>Shift+↑</kbd></td></tr>
                         <tr><td>Extend selection down</td><td><kbd>Shift+↓</kbd></td></tr>
+                        <tr><td>Delete selection</td><td><kbd>Ctrl+Backspace</kbd> (multi-select)</td></tr>
+                        <tr><td>Copy selection as Markdown</td><td><kbd>Ctrl+C</kbd> (multi-select)</td></tr>
                         <tr><td>Unfocus bullet</td><td><kbd>Escape</kbd></td></tr>
                         <tr><td>Search</td><td><kbd>Ctrl+F</kbd></td></tr>
                         <tr><td>Shortcuts</td><td><kbd>?</kbd></td></tr>
@@ -204,6 +206,8 @@
         <h3>Dev panel</h3>
         <div id="dev-panel-content"></div>
     </div>
+
+    <div id="toast" class="hidden"></div>
 
     <script src="vendor/supabase.js"></script>
     <script type="module" src="js/app.js"></script>

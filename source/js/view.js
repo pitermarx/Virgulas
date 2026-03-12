@@ -55,6 +55,21 @@ export function closeSearch() {
     document.getElementById('search-count').textContent = '';
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+export function showToast(message) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('hidden');
+    el.classList.add('visible');
+    clearTimeout(el._toastTimeout);
+    el._toastTimeout = setTimeout(() => {
+        el.classList.remove('visible');
+        setTimeout(() => el.classList.add('hidden'), 200);
+    }, 2000);
+}
+
 // ── Sync indicator ────────────────────────────────────────────────────────────
 
 export function setSyncStatus(status) {

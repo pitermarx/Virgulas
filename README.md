@@ -303,7 +303,8 @@ Applied only on blur. While editing, raw text is shown.
 | 7        | `indent`         | `Tab`              | indent node (or all selected nodes)    |
 | 8        | `unindent`       | `Shift+Tab`        | unindent node (or all selected nodes)  |
 | 9        | `newBullet`      | `Enter`            | Create new bullet |
-| 10       | `deleteNode`     | `Ctrl+Backspace`   | Delete node (any content); confirmation if node has children |
+| 10       | `deleteNode`     | `Ctrl+Backspace`   | Delete node; if multi-select, deletes all selected nodes. Confirmation if any deleted node has children |
+| 10b      | `copyMarkdown`   | `Ctrl+C`           | When multi-select active: copies selected bullets as Markdown to clipboard and shows "Markdown copied" toast |
 | 11       | `deleteEmpty`    | `Backspace`        | Only on empty bullet (text and description both empty); confirmation if has children |
 | 12       | `focusPrev`      | `ArrowUp`          | focus previous visible node; clears selection |
 | 13       | `focusNext`      | `ArrowDown`        | focus next visible node; clears selection |
@@ -484,6 +485,9 @@ Behaviour:
 - `unindentNodes` (multi-select) does NOT adopt subsequent siblings — only the explicitly selected nodes are promoted.
 - `deleteNode` when it is the only child → focus parent (or zoom title if parent is zoom root).
 - `deleteNode` when node has children → show a `window.confirm()` dialog before proceeding.
+- `deleteNodes` (multi-select) deletes in reverse flat order so index shifts don't affect subsequent deletions; shows a single confirmation dialog if any selected node has children.
+- `copySelectionAsMarkdown` (multi-select `Ctrl+C`) exports selected nodes at depth 0 via `exportMarkdown`; shows a "Markdown copied" toast on success.
+- `Ctrl+C` is only intercepted when `selectedIds.length > 1`; single-node copy falls through to the browser default.
 - `zoomStack` IDs from hash that no longer exist in doc → filter them out on load (also after undo).
 - Re-render must not steal focus from an actively-edited element — check `document.activeElement` before calling `focusNode`.
 - `matchShortcut` for `Ctrl+Space`: `e.key === ' '` not `'Space'`.
