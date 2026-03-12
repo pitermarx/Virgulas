@@ -57,7 +57,12 @@ export function focusPrev(id) {
 export function focusNext(id) {
     const flat = flatVisible(State.getZoomRoot());
     const idx = flat.findIndex(x => x.node.id === id);
-    if (idx === -1 || idx >= flat.length - 1) return;
+    if (idx === -1) return;
+    if (idx >= flat.length - 1) {
+        const ghostText = document.getElementById('ghost-text');
+        if (ghostText) ghostText.focus();
+        return;
+    }
     focusNodeAtStart(flat[idx + 1].node.id);
 }
 
