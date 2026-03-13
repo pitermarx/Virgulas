@@ -223,7 +223,6 @@ selectionAnchor — ID of the node where the multi-selection started (null when 
 selectionHead   — ID of the node at the current end of the multi-selection (null when no selection)
 syncEnabled      — boolean; whether cloud sync is active (persisted in localStorage as 'sync_enabled')
 devMode          — boolean; whether the dev panel is visible (persisted in localStorage as 'dev_mode')
-encryptionEnabled — boolean; whether client-side encryption is active (persisted in localStorage as 'encryption_enabled')
 encryptionKey    — CryptoKey (AES-GCM 256-bit) held in memory only — never persisted to localStorage or sent to the server
 ```
 
@@ -282,8 +281,8 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 <div id="modal-login">      <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
-<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, encryption toggle, developer mode toggle, theme toggle, GitHub repo link -->
-<div id="modal-passphrase> <!-- passphrase input used in two modes: 'set' (enable encryption) and 'unlock' (decrypt on load) -->
+<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, change passphrase button, developer mode toggle, theme toggle, GitHub repo link -->
+<div id="modal-passphrase> <!-- passphrase input used in three modes: 'set' (mandatory first-run setup), 'unlock' (decrypt on load), 'change' (update passphrase from Options) -->
 <div id="modal-conflict">  <!-- conflict resolution: local vs server Markdown diff + resolved textarea; Keep Local / Use Server / Apply Resolved buttons -->
 ```
 
@@ -484,20 +483,21 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 
 ## Client-side encryption
 
-Encryption is **opt-in** and is toggled via **Options → Encryption → Enable encryption**.
+Encryption is **mandatory** — all data stored in localStorage and synced to the server is always encrypted. Encryption cannot be disabled.
 
-- **Algorithm**: AES-GCM 256-bit. Keys are derived from a user passphrase using PBKDF2 (100 000 iterations, SHA-256). All cryptographic operations use the browser's built-in `window.crypto.subtle` (Web Crypto API) — no external library is needed.
+- **Algorithm**: AES-GCM 256-bit. Keys are derived from a user passphrase using PBKDF2 (600 000 iterations, SHA-256). All cryptographic operations use the browser's built-in `window.crypto.subtle` (Web Crypto API) — no external library is needed.
 - **Key storage**: The `CryptoKey` is held in memory only for the duration of the session. It is **never** written to `localStorage` or sent over the network.
-- **localStorage**: The three persistence keys stored in `localStorage` for encryption are:
-  - `encryption_enabled` — `'true'` when encryption is active.
-  - `encryption_salt` — a random 16-byte salt (base64) used for PBKDF2 key derivation.
+- **Salt**: A random 32-byte salt is generated on first use and stored in `localStorage` under `encryption_salt` (base64). The salt is not secret and is required to re-derive the same key on subsequent loads.
+- **localStorage**: The two persistence keys stored in `localStorage` for encryption are:
+  - `encryption_salt` — a random 32-byte salt (base64) used for PBKDF2 key derivation.
   - `encryption_verify` — a short AES-GCM ciphertext (base64) of the string `'virgulas-verify'`, used to verify the passphrase is correct on reload without storing the key.
-- **Document storage**: when encryption is enabled, `saveDoc` / `saveDocLocal` write an AES-GCM ciphertext to `localStorage` instead of plain JSON. The 12-byte IV is prepended to the ciphertext, both encoded as a single base64 string.
-- **Cloud sync**: when encryption is enabled, the Supabase sync payload is first gzip-compressed (`compressData`) and then AES-GCM encrypted before being stored in the database. On pull, the payload is decrypted then decompressed. If the server holds unencrypted data (e.g. uploaded before encryption was enabled), decryption fails gracefully and the payload is decompressed directly.
-- **Enabling encryption** (`modal-passphrase`, mode `'set'`): the user provides a passphrase and a confirmation. A random salt is generated, the key is derived, a verification ciphertext is stored, and the current document is immediately re-saved encrypted.
-- **Unlocking on reload** (`modal-passphrase`, mode `'unlock'`): when `encryption_enabled` is `'true'` in `localStorage`, `init()` opens the passphrase modal before loading the document. The user enters their passphrase; the key is derived and verified against the stored `encryption_verify` ciphertext. If correct the document is decrypted and the app proceeds normally. If the user clicks **Start fresh**, all `localStorage` is cleared, encryption is disabled, and the app starts with an empty document.
-- **Disabling encryption**: the user confirms via a browser `confirm()` dialog. `encryption_enabled`, `encryption_salt`, and `encryption_verify` are removed from `localStorage` and the current document is re-saved as plain JSON. The in-memory key is cleared.
-- The `modal-passphrase` overlay cannot be dismissed by clicking outside or pressing `Escape` when in `'unlock'` mode, ensuring the user cannot skip decryption.
+- **Ciphertext format**: the 12-byte IV is prepended to the AES-GCM ciphertext; both are encoded together as a single base64 string. `decrypt()` validates that the combined blob is longer than 12 bytes before attempting decryption.
+- **Authentication token**: `deriveAuthToken(passphrase, salt)` derives an HMAC-SHA-256 key from the same passphrase and salt. Using a different key type (HMAC vs AES-GCM) ensures the auth token and encryption key are cryptographically independent even when the same credentials are used.
+- **Document storage**: `saveDoc` / `saveDocLocal` always write an AES-GCM ciphertext to `localStorage`. If existing data is plaintext (legacy migration), `loadDoc` falls back to parsing it as plain JSON and re-encrypts on the next save.
+- **Cloud sync**: the Supabase sync payload is first gzip-compressed (`compressData`) and then AES-GCM encrypted before being stored in the database. On pull, the payload is decrypted then decompressed. If the server holds unencrypted data (uploaded before encryption was enforced), decryption fails gracefully and the payload is decompressed directly.
+- **First-run setup** (`modal-passphrase`, mode `'set'`): on the very first load (no `encryption_salt` in localStorage), `init()` opens the passphrase modal before loading the document. The user provides a passphrase and a confirmation. A random salt is generated, the key is derived, a verification ciphertext is stored, and the app proceeds. The Cancel button is hidden in `'set'` mode — encryption is mandatory and cannot be skipped. The backdrop click and `Escape` are also disabled in this mode.
+- **Unlocking on reload** (`modal-passphrase`, mode `'unlock'`): when `encryption_salt` exists in localStorage, `init()` opens the passphrase modal. The user enters their passphrase; the key is derived and verified against the stored `encryption_verify` ciphertext. If correct the document is decrypted and the app proceeds normally. If the user clicks **Start fresh**, all `localStorage` is cleared and the app restarts into first-run setup. The backdrop click and `Escape` are disabled in `'unlock'` mode too.
+- **Changing the passphrase** (`modal-passphrase`, mode `'change'`): accessible from **Options → Encryption → Change passphrase**. Generates a new salt and key from the new passphrase, updates `encryption_salt` and `encryption_verify`, and re-saves the document. The modal can be cancelled or dismissed with `Escape` in this mode since existing encryption is unchanged.
 
 ---
 

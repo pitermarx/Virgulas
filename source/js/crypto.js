@@ -45,9 +45,11 @@ export async function deriveAuthToken(passphrase, salt) {
         ['sign']
     );
     const raw = await crypto.subtle.exportKey('raw', hmacKey);
-    let bin = '';
     const bytes = new Uint8Array(raw);
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 8192) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
     return btoa(bin);
 }
 
