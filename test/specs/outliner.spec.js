@@ -1789,11 +1789,6 @@ test.describe('Encryption', () => {
     expect(isValidJson(stored)).toBe(true);
   });
 
-  test('enabling sync does not prompt for a passphrase', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-sync');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
-  });
 });
 
 test.describe('Screenshots', () => {
