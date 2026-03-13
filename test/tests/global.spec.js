@@ -120,6 +120,11 @@ async function setupPage(page) {
     await page.goto('/');
     await page.evaluate(() => localStorage.clear());
     await page.reload();
+    // Encryption is mandatory: set up passphrase on first load (no salt yet)
+    await page.waitForSelector('#modal-passphrase:not(.hidden)');
+    await page.fill('#passphrase-input', 'testpass');
+    await page.fill('#passphrase-confirm', 'testpass');
+    await page.click('#btn-passphrase-submit');
     // After clearing localStorage the app may render the ghost row before any bullets
     await page.waitForSelector('#ghost-row');
 }

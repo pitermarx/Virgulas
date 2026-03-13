@@ -16,7 +16,7 @@ async function _importPassphrase(passphrase) {
         new TextEncoder().encode(passphrase),
         'PBKDF2',
         false,
-        ['deriveKey', 'deriveBits']
+        ['deriveKey']
     );
 }
 
