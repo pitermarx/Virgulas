@@ -2,8 +2,6 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
@@ -34,6 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Start local Supabase
+        run: npm run db:start
+        timeout-minutes: 5
+
       - name: Install Playwright browsers
         run: npm run test:install
 
@@ -41,8 +43,10 @@ jobs:
         run: npm run test:ci
         env:
           CI: true
-          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
-          SUPABASE_PUBLISHABLE_DEFAULT_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+
+      - name: Stop local Supabase
+        if: always()
+        run: npm run db:stop
 
       - name: Upload test results
         if: always()
@@ -128,8 +132,12 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: deploy-db
-    if: github.ref == 'refs/heads/main'
+    needs: [test, deploy-db]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') &&
+      github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -146,17 +154,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Build site with all open PR previews
+      - name: Build site
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p _site
-          cp -r source/. _site/
 
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # On main: current source IS the main site
+            cp -r source/. _site/
+          else
+            # On non-main: fetch main branch source for the root site.
+            # `git archive -- source` archives the source/ directory; --strip-components=1
+            # removes the leading "source/" prefix so files land directly in _site/.
+            git fetch --depth=1 origin main
+            git archive origin/main -- source | tar --strip-components=1 -C "_site/" -x
+
+            # Also build a preview for the current branch.
+            # Dots are excluded from SAFE to prevent ".." path traversal.
+            CURRENT="${{ github.ref_name }}"
+            SAFE=$(echo "$CURRENT" | sed 's/[^a-zA-Z0-9_-]/-/g')
+            mkdir -p "_site/preview/$SAFE"
+            cp -r source/. "_site/preview/$SAFE/"
+          fi
+
+          # Build previews for all open PRs.
+          # Dots are excluded from SAFE to prevent ".." path traversal.
           gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName \
             --jq '.[].headRefName' | \
           while IFS= read -r branch; do
-            SAFE=$(echo "$branch" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            SAFE=$(echo "$branch" | sed 's/[^a-zA-Z0-9_-]/-/g')
             mkdir -p "_site/preview/$SAFE"
             git fetch --depth=1 origin "$branch" && \
             git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE/" -x || \
@@ -184,6 +211,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
       - name: Purge Cloudflare cache
+        if: github.ref == 'refs/heads/main'
         env:
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

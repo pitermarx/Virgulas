@@ -13,6 +13,14 @@ function isValidJson(str) {
   try { JSON.parse(str); return true; } catch { return false; }
 }
 
+// Helper: returns true when global-setup has injected real Supabase credentials
+// into state.js (i.e. the placeholder tokens are gone).
+// process.cwd() is the project root when running via `npm test`.
+const SUPABASE_AVAILABLE = (() => {
+  const f = path.resolve(process.cwd(), 'source', 'js', 'state.js');
+  return fs.existsSync(f) && !fs.readFileSync(f, 'utf8').includes('__SUPABASE_PROJECT__');
+})();
+
 test.beforeEach(async ({ page }) => {
   // Clear localStorage to ensure a fresh seeded state for each test
   await page.goto('/');
@@ -1818,5 +1826,109 @@ test.describe('Screenshots', () => {
     await expect(page.locator('#modal-markdown')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotsDir, 'markdown-modal.png') });
     expect(fs.existsSync(path.join(screenshotsDir, 'markdown-modal.png'))).toBe(true);
+  });
+});
+
+test.describe('Sync – login with seed user', () => {
+  // These tests require a running Supabase instance (local or remote).
+  // global-setup.mjs injects real credentials into state.js when Supabase is
+  // available; if the placeholder is still present we skip rather than fail.
+  test.beforeEach(async ({ page }) => {
+    test.skip(!SUPABASE_AVAILABLE, 'Supabase not configured — skipping auth tests');
+    // Standard pre-test setup (already done by outer beforeEach, re-asserted here)
+    await expect(page.locator('.bullet-row').first()).toBeVisible();
+  });
+
+  test('sign in with tester@virgulas.com shows user email in options', async ({ page }) => {
+    // Open options → Sign in
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+
+    // Fill credentials for the seed user
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'virgulas');
+
+    // The app will ask to replace local data — accept
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#btn-login-submit');
+
+    // The login modal should close and the user email should be visible
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+  });
+
+  test('sign in stores the encryption password in localStorage', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'virgulas');
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#btn-login-submit');
+
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    // The app (sync.js) intentionally persists the passphrase so the encryption
+    // key can be re-derived on page reload without prompting the user again.
+    const stored = await page.evaluate(() => localStorage.getItem('encryption_password'));
+    expect(stored).toBe('virgulas');
+  });
+
+  test('after sign in the sync indicator becomes active', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'virgulas');
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#btn-login-submit');
+
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    // Sync indicator should become visible (pending or syncing or synced)
+    await expect(page.locator('#sync-indicator')).toHaveClass(/visible/, { timeout: 30000 });
+  });
+
+  test('sign in shows Sign out button in options', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'virgulas');
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#btn-login-submit');
+
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    // Options modal should now show Sign out
+    await page.click('#btn-options');
+    await expect(page.locator('#btn-sign-out')).toBeVisible();
+  });
+
+  test('sign out returns to unauthenticated state', async ({ page }) => {
+    // Sign in first
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'virgulas');
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#btn-login-submit');
+
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+
+    // Now sign out
+    await page.click('#btn-options');
+    await page.click('#btn-sign-out');
+
+    // Auth UI should revert to Sign in button
+    await expect(page.locator('#btn-sign-in')).toBeVisible({ timeout: 10000 });
+    // Sync indicator should no longer be visible
+    await expect(page.locator('#sync-indicator')).not.toHaveClass(/visible/);
+  });
+
+  test('wrong password shows error message', async ({ page }) => {
+    await page.click('#btn-options');
+    await page.click('#btn-sign-in');
+    await page.fill('#login-email', 'tester@virgulas.com');
+    await page.fill('#login-password', 'wrongpassword');
+    await page.click('#btn-login-submit');
+
+    await expect(page.locator('#login-error')).not.toHaveClass(/hidden/, { timeout: 15000 });
   });
 });

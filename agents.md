@@ -53,6 +53,28 @@ Tests use a local HTTP server on port 3000 (started automatically by Playwright)
 
 ---
 
+## Rule 3 — Database migrations must be created for any schema change
+
+**Whenever you add, modify, or remove a database table, column, index, policy, or function you must generate a corresponding Supabase migration file in the same commit/PR.**
+
+To create a migration:
+
+```bash
+npm run db:migrate -- <migration-name>
+```
+
+This creates a new timestamped file under `supabase/migrations/`. Edit that file to add the required SQL DDL statements.
+
+Checklist for migrations:
+
+- [ ] Every new table has a corresponding migration file.
+- [ ] Every column addition, removal, or type change is covered by a migration.
+- [ ] Every RLS policy addition or change is in a migration.
+- [ ] Migrations are idempotent where possible (`IF NOT EXISTS`, `IF EXISTS`).
+- [ ] `supabase/seed.sql` is updated if the schema change affects seed data.
+
+---
+
 ## Scope of this repository
 
 - **No build step**: do not introduce a build tool, bundler, or external runtime dependency.
