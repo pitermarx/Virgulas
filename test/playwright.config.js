@@ -8,7 +8,7 @@ export default defineConfig({
   globalTeardown: './global-teardown.mjs',
   timeout: 120000, // 120 s per test — allows 600 000-iteration PBKDF2 key derivation even under CI load
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 6,
+  workers: process.env.CI ? 4 : 6,
   forbidOnly: !!process.env.CI,
   retries: 0,
   outputDir: '../test-results/artifacts',
