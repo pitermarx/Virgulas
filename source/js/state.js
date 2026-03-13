@@ -13,7 +13,6 @@ export const SYNC_VERSION_KEY = 'sync_version';
 export const SYNC_BASE_KEY = 'sync_base';
 export const SYNC_ENABLED_KEY = 'sync_enabled';
 export const DEV_MODE_KEY = 'dev_mode';
-export const ENCRYPTION_ENABLED_KEY = 'encryption_enabled';
 export const ENCRYPTION_SALT_KEY = 'encryption_salt';
 export const ENCRYPTION_VERIFY_KEY = 'encryption_verify';
 export const SYNC_TABLE = 'outlines';
@@ -49,7 +48,6 @@ export let conflictRemoteDoc = null;
 export let conflictServerVersion = 0;
 export let syncEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === 'true';
 export let devMode = localStorage.getItem(DEV_MODE_KEY) === 'true';
-export let encryptionEnabled = localStorage.getItem(ENCRYPTION_ENABLED_KEY) === 'true';
 export let encryptionKey = null; // CryptoKey held in memory only — never persisted
 
 // ── State setters (needed because ES module bindings are not directly settable) ─
@@ -74,7 +72,6 @@ export function setConflictRemoteDoc(value) { conflictRemoteDoc = value; }
 export function setConflictServerVersion(value) { conflictServerVersion = value; }
 export function setSyncEnabled(value) { syncEnabled = value; }
 export function setDevMode(value) { devMode = value; }
-export function setEncryptionEnabled(value) { encryptionEnabled = value; }
 export function setEncryptionKey(value) { encryptionKey = value; }
 
 // ── Derived state ─────────────────────────────────────────────────────────────
@@ -123,7 +120,13 @@ export async function loadDoc() {
         if (raw) {
             if (encryptionKey) {
                 const { decrypt } = await import('./crypto.js');
-                doc = JSON.parse(await decrypt(encryptionKey, raw));
+                try {
+                    doc = JSON.parse(await decrypt(encryptionKey, raw));
+                } catch {
+                    // Legacy unencrypted data — load as plain JSON and it will be
+                    // re-encrypted on the next save (migration path)
+                    doc = JSON.parse(raw);
+                }
             } else {
                 doc = JSON.parse(raw);
             }

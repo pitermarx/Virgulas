@@ -127,7 +127,7 @@
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Encryption</span>
-                        <button class="btn btn-secondary" id="btn-toggle-encryption">Enable encryption</button>
+                        <button class="btn btn-secondary" id="btn-change-passphrase">Change passphrase</button>
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Theme</span>
@@ -145,7 +145,7 @@
     <div id="modal-passphrase" class="modal-overlay hidden">
         <div class="modal">
             <div class="modal-header">
-                <span class="modal-title" id="passphrase-modal-title">Enable encryption</span>
+                <span class="modal-title" id="passphrase-modal-title">Set your passphrase</span>
             </div>
             <div class="modal-body">
                 <div class="options-list">
@@ -158,8 +158,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="btn-passphrase-cancel">Cancel</button>
-                <button class="btn btn-primary" id="btn-passphrase-submit">Enable</button>
+                <button class="btn btn-secondary hidden" id="btn-passphrase-cancel">Start fresh</button>
+                <button class="btn btn-primary" id="btn-passphrase-submit">Set passphrase</button>
             </div>
         </div>
     </div>

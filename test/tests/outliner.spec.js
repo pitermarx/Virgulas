@@ -3,11 +3,30 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 
+// Helper: complete the passphrase unlock modal after a page reload.
+// After beforeEach has set up a salt, every reload shows the unlock modal.
+async function unlockApp(page) {
+  await expect(page.locator('#modal-passphrase')).toBeVisible();
+  await page.fill('#passphrase-input', 'testpass');
+  await page.click('#btn-passphrase-submit');
+  await page.waitForSelector('#ghost-row');
+}
+
+// Helper: returns true if the given string is valid JSON.
+function isValidJson(str) {
+  try { JSON.parse(str); return true; } catch { return false; }
+}
+
 test.beforeEach(async ({ page }) => {
   // Clear localStorage to ensure a fresh seeded state for each test
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  // Encryption is mandatory: set up passphrase on first load (no salt yet)
+  await expect(page.locator('#modal-passphrase')).toBeVisible();
+  await page.fill('#passphrase-input', 'testpass');
+  await page.fill('#passphrase-confirm', 'testpass');
+  await page.click('#btn-passphrase-submit');
   await page.waitForSelector('.bullet-row');
 });
 
@@ -69,7 +88,7 @@ test.describe('Editing bullets', () => {
 
     // Reload and verify persistence
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     await expect(page.locator('.bullet-text').first()).toContainText('Persisted text');
   });
 
@@ -150,7 +169,7 @@ test.describe('Indenting bullets', () => {
       }));
     });
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
 
     // Click b's text (second visible bullet after a) and unindent it
     const bText = page.locator('.bullet-text').nth(1);
@@ -781,6 +800,7 @@ test.describe('Ghost row', () => {
       }));
     });
     await page.reload();
+    await unlockApp(page);
 
     await expect(page.locator('#ghost-row')).toBeVisible();
 
@@ -798,6 +818,7 @@ test.describe('Ghost row', () => {
       }));
     });
     await page.reload();
+    await unlockApp(page);
 
     await page.locator('#ghost-row').click();
     await page.keyboard.type('New item');
@@ -888,6 +909,7 @@ test.describe('Enter when unfocused', () => {
       }));
     });
     await page.reload();
+    await unlockApp(page);
 
     await page.keyboard.press('Enter');
     await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
@@ -940,7 +962,7 @@ test.describe('Options dialog', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
@@ -1078,7 +1100,7 @@ test.describe('Mobile top spacing', () => {
   test('top padding of #app is small on mobile viewports', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     const paddingTop = await page.locator('#app').evaluate(el =>
       parseFloat(getComputedStyle(el).paddingTop)
     );
@@ -1089,7 +1111,7 @@ test.describe('Mobile top spacing', () => {
   test('desktop top padding of #app is larger than mobile', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     const paddingTop = await page.locator('#app').evaluate(el =>
       parseFloat(getComputedStyle(el).paddingTop)
     );
@@ -1573,7 +1595,7 @@ test.describe('Cloud sync toggle', () => {
     await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
 
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     await page.click('#btn-options');
     await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
   });
@@ -1626,7 +1648,7 @@ test.describe('Developer mode', () => {
     await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
 
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
     await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
   });
 });
@@ -1636,8 +1658,8 @@ test.describe('Persistence without login', () => {
     // After clearing localStorage and reloading (done by beforeEach), seed data is present
     const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
     expect(stored).not.toBeNull();
-    const parsed = JSON.parse(stored);
-    expect(parsed.root.children.length).toBeGreaterThan(0);
+    // Data is encrypted; it should not be parseable as plain JSON
+    expect(isValidJson(stored)).toBe(false);
   });
 
   test('edits made when not logged in persist after reload', async ({ page }) => {
@@ -1647,7 +1669,7 @@ test.describe('Persistence without login', () => {
     await firstText.blur();
 
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
 
     await expect(page.locator('.bullet-text').first()).toContainText('My persisted change');
   });
@@ -1685,7 +1707,7 @@ test.describe('Splash screen', () => {
 
     // Reload without clearing localStorage
     await page.reload();
-    await page.waitForSelector('.bullet-row');
+    await unlockApp(page);
 
     // Splash should remain hidden immediately on subsequent load
     await expect(page.locator('#splash')).toHaveClass(/hidden/);
@@ -1802,39 +1824,35 @@ test.describe('Preview index page', () => {
 
 
 test.describe('Encryption', () => {
-  test('Options modal contains an Encryption toggle button', async ({ page }) => {
+  test('Options modal contains a Change passphrase button', async ({ page }) => {
     await page.click('#btn-options');
-    await expect(page.locator('#btn-toggle-encryption')).toBeVisible();
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Enable encryption');
+    await expect(page.locator('#btn-change-passphrase')).toBeVisible();
+    await expect(page.locator('#btn-change-passphrase')).toContainText('Change passphrase');
   });
 
-  test('clicking Enable encryption opens the passphrase modal', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
+  test('app always prompts for passphrase on first load (no localStorage)', async ({ page }) => {
+    // beforeEach already cleared localStorage and showed the set-passphrase modal.
+    // This test re-verifies the mandatory-encryption flow from a clean state.
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
     await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await expect(page.locator('#passphrase-modal-title')).toContainText('Enable encryption');
+    await expect(page.locator('#passphrase-modal-title')).toContainText('Set your passphrase');
+    // Cancel button must be hidden in 'set' mode (encryption is mandatory)
+    await expect(page.locator('#btn-passphrase-cancel')).toHaveClass(/hidden/);
   });
 
-  test('passphrase modal shows confirm field and Enable button in set mode', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
+  test('passphrase modal shows confirm field and Set passphrase button in set mode', async ({ page }) => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.locator('#modal-passphrase')).toBeVisible();
     await expect(page.locator('#passphrase-confirm')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#btn-passphrase-submit')).toContainText('Enable');
-    await expect(page.locator('#btn-passphrase-cancel')).toContainText('Cancel');
-  });
-
-  test('cancelling the passphrase modal closes it without enabling encryption', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.click('#btn-passphrase-cancel');
-    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Enable encryption');
+    await expect(page.locator('#btn-passphrase-submit')).toContainText('Set passphrase');
   });
 
   test('submitting mismatched passphrases shows an error', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.locator('#modal-passphrase')).toBeVisible();
     await page.fill('#passphrase-input', 'secret123');
     await page.fill('#passphrase-confirm', 'different');
     await page.click('#btn-passphrase-submit');
@@ -1843,102 +1861,59 @@ test.describe('Encryption', () => {
   });
 
   test('submitting empty passphrase shows an error', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.locator('#modal-passphrase')).toBeVisible();
     await page.click('#btn-passphrase-submit');
     await expect(page.locator('#passphrase-error')).not.toHaveClass(/hidden/);
   });
 
-  test('enabling encryption stores salt and verification in localStorage', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
+  test('setting passphrase stores salt and verification in localStorage', async ({ page }) => {
+    // Encryption was set up by beforeEach; salt and verify should already be stored
     const salt = await page.evaluate(() => localStorage.getItem('encryption_salt'));
     const verify = await page.evaluate(() => localStorage.getItem('encryption_verify'));
-    const enabled = await page.evaluate(() => localStorage.getItem('encryption_enabled'));
     expect(salt).not.toBeNull();
     expect(verify).not.toBeNull();
-    expect(enabled).toBe('true');
   });
 
-  test('enabling encryption updates button text to Disable encryption', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Disable encryption');
-  });
-
-  test('enabling encryption stores outline_v1 as encrypted ciphertext (not plain JSON)', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    // saveDocLocal is awaited before closeModal, so when the modal hides the save is done
-    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
+  test('outline_v1 is stored as encrypted ciphertext (not plain JSON)', async ({ page }) => {
     const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
     expect(stored).not.toBeNull();
-    // Encrypted data is base64 and cannot be parsed as JSON
-    let isJson = false;
-    try { JSON.parse(stored); isJson = true; } catch { }
-    expect(isJson).toBe(false);
+    expect(isValidJson(stored)).toBe(false);
   });
 
-  test('disabling encryption shows a confirm dialog and re-saves plaintext', async ({ page }) => {
-    // First enable encryption
+  test('clicking Change passphrase opens the passphrase modal in change mode', async ({ page }) => {
     await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Disable encryption');
-
-    // Now disable it — accept the confirm dialog
-    page.once('dialog', dialog => dialog.accept());
-    await page.click('#btn-toggle-encryption');
-    // saveDocLocal is awaited before renderEncryptionToggle, so when the button text changes the save is done
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Enable encryption');
-    // outline_v1 should now be valid JSON again
-    const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
-    expect(() => JSON.parse(stored)).not.toThrow();
-    // Salt and verify should be removed
-    expect(await page.evaluate(() => localStorage.getItem('encryption_salt'))).toBeNull();
-    expect(await page.evaluate(() => localStorage.getItem('encryption_verify'))).toBeNull();
-    expect(await page.evaluate(() => localStorage.getItem('encryption_enabled'))).toBe('false');
+    await page.click('#btn-change-passphrase');
+    await expect(page.locator('#modal-passphrase')).toBeVisible();
+    await expect(page.locator('#passphrase-modal-title')).toContainText('Change passphrase');
+    await expect(page.locator('#btn-passphrase-cancel')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#btn-passphrase-submit')).toContainText('Update passphrase');
   });
 
-  test('app prompts for passphrase on reload when encryption is enabled', async ({ page }) => {
-    // Enable encryption
+  test('cancelling Change passphrase closes the modal without changing encryption', async ({ page }) => {
     await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    // Wait for async crypto operations to complete (button text updates after localStorage is set)
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Disable encryption');
+    await page.click('#btn-change-passphrase');
+    await expect(page.locator('#modal-passphrase')).toBeVisible();
+    await page.click('#btn-passphrase-cancel');
+    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
+    // Salt and verify should be unchanged
+    const salt = await page.evaluate(() => localStorage.getItem('encryption_salt'));
+    expect(salt).not.toBeNull();
+  });
 
-    // Reload page (beforeEach does not run here; we reload manually)
+  test('app prompts to unlock on reload when passphrase is already set', async ({ page }) => {
+    // Reload page (beforeEach already set up encryption with 'testpass')
     await page.reload();
     // The passphrase unlock modal should appear
     await expect(page.locator('#modal-passphrase')).toBeVisible();
     await expect(page.locator('#passphrase-modal-title')).toContainText('Unlock your outline');
+    // Cancel button should be visible (as "Start fresh") in unlock mode
+    await expect(page.locator('#btn-passphrase-cancel')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#btn-passphrase-cancel')).toContainText('Start fresh');
   });
 
   test('wrong passphrase on unlock shows error', async ({ page }) => {
-    // Enable encryption
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    // Wait for async crypto operations to complete
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Disable encryption');
-
     // Reload
     await page.reload();
     await expect(page.locator('#modal-passphrase')).toBeVisible();
@@ -1950,19 +1925,10 @@ test.describe('Encryption', () => {
   });
 
   test('correct passphrase on unlock loads the outline', async ({ page }) => {
-    // Enable encryption
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-encryption');
-    await page.fill('#passphrase-input', 'mySecretPass');
-    await page.fill('#passphrase-confirm', 'mySecretPass');
-    await page.click('#btn-passphrase-submit');
-    // Wait for async crypto operations to complete
-    await expect(page.locator('#btn-toggle-encryption')).toContainText('Disable encryption');
-
-    // Reload and unlock
+    // Reload and unlock with correct passphrase
     await page.reload();
     await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.fill('#passphrase-input', 'mySecretPass');
+    await page.fill('#passphrase-input', 'testpass');
     await page.click('#btn-passphrase-submit');
     // Modal closes and bullets are rendered
     await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
