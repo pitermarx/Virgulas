@@ -1,0 +1,29 @@
+{
+    "name": "virgulas",
+    "version": "1.0.0",
+    "description": "A keyboard-first infinite outliner running entirely in the browser",
+    "private": true,
+    "scripts": {
+        "vendor": "cp node_modules/@supabase/supabase-js/dist/umd/supabase.js source/vendor/supabase.js",
+        "test": "playwright test --config test/playwright.config.js",
+        "test:install": "playwright install chromium firefox --with-deps",
+        "test:ci": "playwright test --config test/playwright.config.js",
+        "test:headed": "playwright test --headed --config test/playwright.config.js",
+        "db:start": "supabase start",
+        "db:stop": "supabase stop",
+        "db:push": "supabase db push",
+        "db:pull": "supabase db pull",
+        "db:migrate": "supabase migration new",
+        "db:reset": "supabase db reset",
+        "db:diff": "supabase db diff",
+        "db:link": "supabase link"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.99.1"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.58.2",
+        "serve": "^14.2.6",
+        "supabase": "^2.78.1"
+    }
+}

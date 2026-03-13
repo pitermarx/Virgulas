@@ -25,7 +25,7 @@ Checklist for README changes:
 
 ## Rule 2 — Every feature must have a Playwright test
 
-All tests live in `test/tests/outliner.spec.js`.
+All tests live in `test/specs/outliner.spec.js`.
 
 **Whenever you add or change behaviour in `source/index.html` you must add or update the corresponding test(s) in that file.**
 
@@ -44,7 +44,6 @@ Guidelines for tests:
 ## How to run tests
 
 ```bash
-cd test
 npm test            # runs Playwright tests (headless, chromium + firefox)
 npm run test:headed # runs with browser visible (useful for debugging)
 npm run test:ci     # runs with CI reporters (JSON + GitHub summary)
@@ -57,4 +56,4 @@ Tests use a local HTTP server on port 3000 (started automatically by Playwright)
 ## Scope of this repository
 
 - **No build step**: do not introduce a build tool, bundler, or external runtime dependency.
-- **Tests only**: `test/package.json`, `test/playwright.config.js`, and `test/tests/` are for testing only and must not be imported by `source/index.html`.
+- **Tests only**: `test/playwright.config.js`, `test/global-setup.mjs`, `test/global-teardown.mjs`, and `test/specs/` are for testing only and must not be imported by `source/index.html`.

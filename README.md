@@ -37,7 +37,7 @@ There are two workflow files:
 
 | Workflow | File | Trigger |
 |---|---|---|
-| **CI** | `ci.yml` | Every push to any branch, manual |
+| **CI** | `ci.yml` | Push to `main`, pull requests, manual |
 | **Daily Tests** | `daily-tests.yml` | Every day at 06:00 UTC, manual |
 
 ### CI (`ci.yml`)
@@ -51,7 +51,7 @@ push (any branch)
             └─ deploy  [main only]
 ```
 
-**1 — `test` (E2E Tests)** — always runs. Installs Node 24, runs `npm ci` and `npx playwright install chromium firefox`, then executes `npm run test:ci` against both browsers. Uploads artifacts (`test-results/`, `playwright-report/`) with a 30-day retention policy and writes a pass/fail step summary.
+**1 — `test` (E2E Tests)** — always runs. Installs Node 24, runs `npm ci` and `npm run test:install`, then executes `npm run test:ci` against both browsers. Supabase config is injected via `SUPABASE_PROJECT` and `SUPABASE_PUBLISHABLE_DEFAULT_KEY` environment variables (handled by Playwright's `globalSetup`). Uploads artifacts (`test-results/`, `playwright-report/`) with a 15-day retention policy and writes a pass/fail step summary.
 
 **2 — `deploy-db` (Deploy DB Migrations)** — runs on `main` only, after `test` succeeds. Links to the Supabase project and calls `supabase db push` to apply any pending migrations. Protected by the `supabase-production` environment (add required reviewers there to gate deployments). Uses the `SUPABASE_ACCESS_TOKEN` repository secret.
 
@@ -60,13 +60,13 @@ push (any branch)
 - `main` branch source at the site root (`/`)
 - Every currently-open PR branch at `/preview/<safe-branch>/` (fetched via `gh pr list`)
 
-`package.json` and `package-lock.json` are deleted from `_site/` after copying so they are never served. Supabase config placeholders are substituted across all `state.js` files in `_site/`. The artifact is then deployed to GitHub Pages and the Cloudflare cache is purged. Because open PRs are enumerated at deploy time, stale previews for closed/merged branches disappear automatically — no separate cleanup step is needed.
+Supabase config placeholders are substituted across all `state.js` files in `_site/`. The artifact is then deployed to GitHub Pages and the Cloudflare cache is purged. Because open PRs are enumerated at deploy time, stale previews for closed/merged branches disappear automatically — no separate cleanup step is needed.
 
 Branch names are sanitised (non-alphanumeric characters replaced with `-`) before being used as URL path segments.
 
 ### Daily E2E tests (`daily-tests.yml`)
 
-Runs every day at **06:00 UTC** (and on manual `workflow_dispatch`). Before running the Playwright suite it replaces the `__SUPABASE_PROJECT__` and `__SUPABASE_PUBLISHABLE_DEFAULT_KEY__` placeholders in `source/js/state.js` with the repository variables of the same name (via `sed` in the transient CI checkout — nothing is committed). This lets the tests exercise the real production backend. Artifacts are uploaded with a 30-day retention policy under the name `daily-playwright-results`, and a pass/fail summary is written to the GitHub step summary.
+Runs every day at **06:00 UTC** (and on manual `workflow_dispatch`). Sets `BASE_URL=https://virgulas.com` so the Playwright suite runs directly against the live production site — no local server is started and no Supabase config injection is needed (the deployed site already has real values). Artifacts are uploaded with a 15-day retention policy under the name `daily-playwright-results`, and a pass/fail summary is written to the GitHub step summary.
 
 ---
 
@@ -90,13 +90,13 @@ It calls the GitHub REST API to list all currently open pull requests for this r
 - **Multi-file app** — HTML structure in `source/index.html`, CSS in `source/style.css`, and JavaScript split into ES modules under `source/js/`. Inspired by the Elm architecture (Model / Update / View).
 - **Vanilla JS** — no framework. Direct DOM manipulation via a thin render layer; events handled with delegation.
 - **Markdown** — a small hand-rolled inline parser (bold, italic, code, links, images). No external lib needed.
-- **Supabase** — loaded from a local vendored file (`source/vendor/supabase.js`, generated from `@supabase/supabase-js@2` via npm). The app functions fully offline if Supabase is unavailable. Run `npm install` in `source/` and `npm run vendor` to regenerate the bundle.
+- **Supabase** — loaded from a local vendored file (`source/vendor/supabase.js`, generated from `@supabase/supabase-js@2` via npm). The app functions fully offline if Supabase is unavailable. Run `npm install` and `npm run vendor` to regenerate the bundle.
 
 ---
 
 ## Supabase cloud sync
 
-Cloud sync is **opt-in**: it must be explicitly enabled via the **Options → Cloud sync → Enable sync** toggle. When disabled (the default), the app works entirely offline using `localStorage`. The `sync_enabled` flag is persisted in `localStorage`.
+Cloud sync is automatic for signed-in users — there is no separate toggle. When not signed in, the app works entirely offline using `localStorage`.
 
 When sync is enabled and a user is signed in, the outline data and theme preference are synced to Supabase every 15 seconds.
 
@@ -177,9 +177,9 @@ After adding `environment: supabase-production` to the workflow, configure the g
 - **Sync algorithm** (runs every 15 s):
   1. If a server pull is pending user resolution, skip the tick entirely.
   2. Fetch the server version number (lightweight, no data download).
-  3. If **server version == local version**: push local data if there are pending changes; otherwise mark as *Synced*.
-  4. If **server version ≠ local version**: fetch the full server payload, pause further sync ticks, then either auto-apply or open the conflict modal. Local data is **not** pushed in the same tick — the next loop handles the push after the server data has been applied.
-- **Auto-merge**: when the server version differs from the local version and there are local changes, a 3-way merge is attempted. If changes affect different nodes the merge succeeds silently: the merged result is applied locally, `pendingSync` is set, sync is unpaused, and the push happens on the next tick.
+  3. If **server version ≤ local version**: push local data if there are pending changes; otherwise mark as *Synced*.
+  4. If **server version > local version**: fetch the full server payload, pause further sync ticks, then either auto-merge or open the conflict modal. After a successful auto-merge the merged result is pushed immediately in the same tick.
+- **Auto-merge**: when the server version is newer and there are local changes, a 3-way merge is attempted. If changes affect different nodes the merge succeeds silently: the merged result is applied locally and pushed to the server immediately.
 - **Conflict modal**: if the same node was edited in both versions, the conflict modal opens showing the local and server Markdown side-by-side. Sync ticks are paused until the user resolves the conflict. Three resolution options are offered:
   - **Keep Local** — push the local version to the server (unpauses sync).
   - **Use Server** — replace local data with the server version (unpauses sync).
@@ -221,9 +221,9 @@ focusedId    — ID of the bullet whose text is currently focused (or null)
 selectedIds  — ordered array of IDs in the current multi-selection (empty when no selection)
 selectionAnchor — ID of the node where the multi-selection started (null when no selection)
 selectionHead   — ID of the node at the current end of the multi-selection (null when no selection)
-syncEnabled      — boolean; whether cloud sync is active (persisted in localStorage as 'sync_enabled')
+syncEnabled      — (removed; login implies sync)
 devMode          — boolean; whether the dev panel is visible (persisted in localStorage as 'dev_mode')
-encryptionKey    — CryptoKey (AES-GCM 256-bit) held in memory only — never persisted to localStorage or sent to the server
+encryptionKey    — CryptoKey (AES-GCM 256-bit) derived from user's login password — held in memory only, never persisted to localStorage or sent to the server
 ```
 
 ---
@@ -281,8 +281,7 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 <div id="modal-login">      <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
-<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, change passphrase button, developer mode toggle, theme toggle, GitHub repo link -->
-<div id="modal-passphrase> <!-- passphrase input used in three modes: 'set' (mandatory first-run setup), 'unlock' (decrypt on load), 'change' (update passphrase from Options) -->
+<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), developer mode toggle, theme toggle, GitHub repo link -->
 <div id="modal-conflict">  <!-- conflict resolution: local vs server Markdown diff + resolved textarea; Keep Local / Use Server / Apply Resolved buttons -->
 ```
 
@@ -473,31 +472,26 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 - Clicking **Sign in** opens `#modal-login`, which supports two modes: **Sign in** and **Sign up**.
 - The modal starts in Sign-in mode. A "Don't have an account? Sign up" link toggles to Sign-up mode, which shows an additional **Confirm password** field.
 - In Sign-up mode, submitting the form calls `supabaseClient.auth.signUp({ email, password })`. On success, a "Check your email for a confirmation link." message is shown (Supabase sends a confirmation email by default; this can be disabled in the Supabase Auth settings).
-- In Sign-in mode, submitting the form calls `supabaseClient.auth.signInWithPassword({ email, password })`. On success, `#modal-login` closes and the Account section shows the signed-in email and a **Sign out** button.
+- In Sign-in mode, if the local document has content, a confirmation dialog warns that local data will be replaced by the server version. Then the form calls `supabaseClient.auth.signInWithPassword({ email, password })`. On success, the encryption key is derived from the password, the password is stored in `localStorage` (under `encryption_password`), server data is pulled and replaces local data, and `startSync()` begins the 15-second sync loop.
 - If the Supabase CDN is unavailable, the **Sign in** button is still shown, and submitting the form shows an "Authentication service unavailable." error.
 - No changes to the Supabase project are required to enable sign-up — email/password sign-up is enabled by default.
-- After sign-in, if sync is enabled, `startSync()` is called which triggers an immediate `syncNow()` and starts a 15-second `setInterval`. After sign-out, `stopSync()` clears the interval and resets the sync indicator.
-- A signed-in user also sees a **Delete account** button (styled with `.btn-danger`). Clicking it shows a confirmation dialog, then deletes the user's row from the `outlines` table and calls `supabaseClient.auth.signOut()`. Local sync-state keys (`sync_version`, `sync_base`) are also cleared.
+- On sign-out, **all `localStorage` data is cleared**, the document is replaced with seed data, the theme is reset to light, and the UI is re-rendered. This ensures a clean state for the next user.
+- A signed-in user also sees a **Delete account** button (styled with `.btn-danger`). Clicking it shows a confirmation dialog, then deletes the user's row from the `outlines` table and performs a full sign-out (clear + seed).
 
 ---
 
 ## Client-side encryption
 
-Encryption is **mandatory** — all data stored in localStorage and synced to the server is always encrypted. Encryption cannot be disabled.
+Encryption is used **only for server sync** — data synced to the cloud is always encrypted end-to-end. **localStorage stores plain JSON** and is never encrypted.
 
-- **Algorithm**: AES-GCM 256-bit. Keys are derived from a user passphrase using PBKDF2 (600 000 iterations, SHA-256). All cryptographic operations use the browser's built-in `window.crypto.subtle` (Web Crypto API) — no external library is needed.
-- **Key storage**: The `CryptoKey` is held in memory only for the duration of the session. It is **never** written to `localStorage` or sent over the network.
-- **Salt**: A random 32-byte salt is generated on first use and stored in `localStorage` under `encryption_salt` (base64). The salt is not secret and is required to re-derive the same key on subsequent loads.
-- **localStorage**: The two persistence keys stored in `localStorage` for encryption are:
-  - `encryption_salt` — a random 32-byte salt (base64) used for PBKDF2 key derivation.
-  - `encryption_verify` — a short AES-GCM ciphertext (base64) of the string `'virgulas-verify'`, used to verify the passphrase is correct on reload without storing the key.
+The encryption key is derived automatically from the user's login password — there is no separate passphrase modal.
+
+- **Algorithm**: AES-GCM 256-bit. Keys are derived from the user's password using PBKDF2 (600 000 iterations, SHA-256). All cryptographic operations use the browser's built-in `window.crypto.subtle` (Web Crypto API) — no external library is needed.
+- **Key derivation**: On successful sign-in, the encryption key is derived from the password using a random 32-byte salt. The key is held in memory only — it is **never** written to `localStorage` or sent over the network. On sign-out, the key is cleared.
+- **Salt**: A random 32-byte salt is generated on first sign-in and stored in `localStorage` under `encryption_salt` (base64). The salt is also stored on the server (in the `outlines` table's `salt` column) so it can be recovered when signing in on a new device. The salt is not secret and is required to re-derive the same key on subsequent sign-ins.
 - **Ciphertext format**: the 12-byte IV is prepended to the AES-GCM ciphertext; both are encoded together as a single base64 string. `decrypt()` validates that the combined blob is longer than 12 bytes before attempting decryption.
-- **Authentication token**: `deriveAuthToken(passphrase, salt)` derives an HMAC-SHA-256 key from the same passphrase and salt. Using a different key type (HMAC vs AES-GCM) ensures the auth token and encryption key are cryptographically independent even when the same credentials are used.
-- **Document storage**: `saveDoc` / `saveDocLocal` always write an AES-GCM ciphertext to `localStorage`. If existing data is plaintext (legacy migration), `loadDoc` falls back to parsing it as plain JSON and re-encrypts on the next save.
-- **Cloud sync**: the Supabase sync payload is first gzip-compressed (`compressData`) and then AES-GCM encrypted before being stored in the database. On pull, the payload is decrypted then decompressed. If the server holds unencrypted data (uploaded before encryption was enforced), decryption fails gracefully and the payload is decompressed directly.
-- **First-run setup** (`modal-passphrase`, mode `'set'`): on the very first load (no `encryption_salt` in localStorage), `init()` opens the passphrase modal before loading the document. The user provides a passphrase and a confirmation. A random salt is generated, the key is derived, a verification ciphertext is stored, and the app proceeds. The Cancel button is hidden in `'set'` mode — encryption is mandatory and cannot be skipped. The backdrop click and `Escape` are also disabled in this mode.
-- **Unlocking on reload** (`modal-passphrase`, mode `'unlock'`): when `encryption_salt` exists in localStorage, `init()` opens the passphrase modal. The user enters their passphrase; the key is derived and verified against the stored `encryption_verify` ciphertext. If correct the document is decrypted and the app proceeds normally. If the user clicks **Start fresh**, all `localStorage` is cleared and the app restarts into first-run setup. The backdrop click and `Escape` are disabled in `'unlock'` mode too.
-- **Changing the passphrase** (`modal-passphrase`, mode `'change'`): accessible from **Options → Encryption → Change passphrase**. Generates a new salt and key from the new passphrase, updates `encryption_salt` and `encryption_verify`, and re-saves the document. The modal can be cancelled or dismissed with `Escape` in this mode since existing encryption is unchanged.
+- **Document storage**: `saveDoc` / `saveDocLocal` always write **plain JSON** to `localStorage`. No encryption is applied to local storage.
+- **Cloud sync**: the Supabase sync payload is first gzip-compressed (`compressData`) and then AES-GCM encrypted before being stored in the database. On pull, the payload is decrypted then decompressed. If the server holds unencrypted data (uploaded before encryption was enabled), decryption fails gracefully and the payload is decompressed directly.
 
 ---
 
@@ -606,7 +600,7 @@ Behaviour:
 - `tryAutoMerge` returns `null` if any node was edited differently in both local and server versions; only call it when `lastSyncedDocJson` is available (i.e. after the first successful sync).
 - `zoomStack` must be re-validated against the restored doc after a pull or merge — use `zoomStack = zoomStack.filter(id => !!findNode(id))`.
 - `CompressionStream` / `DecompressionStream` are available in Chrome 80+, Firefox 113+, Safari 16.4+. The decompressData fallback attempts plain base64-encoded JSON for robustness.
-- `syncEnabled` must be checked both in `initAuth()` (on session restore) and in `onAuthStateChange` (on sign-in) before calling `startSync()`, so users who have not opted in never trigger a sync.
+- `syncEnabled` must be checked both in `initAuth()` (on session restore) and in `onAuthStateChange` (on sign-in) before calling `startSync()`, so users who have not opted in never trigger a sync. (NOTE: `syncEnabled` was removed; login now implies sync.)
 - The dev panel (`#dev-panel`) is refreshed on every `render()` call and every `setSyncStatus()` call when `devMode` is `true`. `countNodes(root)` is a simple recursive counter used by `renderDevPanel()`.
 - `renderInline` matches `![alt](url)` (images) before `[text](url)` (links) — the image pattern must stay first so `![…](…)` is not accidentally matched as a link. Reversing the order would break image rendering.
 - `renderInline` processes text sequentially; patterns applied earlier can modify the string before later patterns run. Code spans (`` ` `` backtick) are processed before images, so image syntax inside inline code is intentionally converted to `<code>` before the image regex runs — this means you cannot display a literal `![alt](url)` as code in a bullet (it would render as a `<img>` inside `<code>`).

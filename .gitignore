@@ -1,4 +1,14 @@
-test/node_modules/
-test/test-results/
-test/playwright-report/
-source/node_modules/
+node_modules/
+test-results/
+playwright-report/
+
+# Supabase
+.branches
+.temp
+
+# dotenvx
+.env.keys
+.env.local
+.env.*.local
+
+*.bak

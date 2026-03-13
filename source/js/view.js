@@ -97,11 +97,6 @@ export function setSyncStatus(status) {
     if (State.devMode) renderDevPanel();
 }
 
-export function renderSyncToggle() {
-    const btn = document.getElementById('btn-toggle-sync');
-    if (!btn) return;
-    btn.textContent = State.syncEnabled ? 'Disable sync' : 'Enable sync';
-}
 
 // ── Dev panel ─────────────────────────────────────────────────────────────────
 
@@ -116,7 +111,6 @@ export function renderDevPanel() {
     const rows = [
         ['syncStatus', State.syncStatus],
         ['pendingSync', String(State.pendingSync)],
-        ['syncEnabled', String(State.syncEnabled)],
         ['lastSyncedVersion', String(State.lastSyncedVersion)],
         ['zoomStack', JSON.stringify(State.zoomStack)],
         ['focusedId', State.focusedId || '—'],
@@ -248,7 +242,7 @@ export function buildGhostRow() {
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
 // onZoomTo is injected by app.js to avoid a circular import
-let _onZoomTo = () => {};
+let _onZoomTo = () => { };
 export function setZoomToCallback(fn) { _onZoomTo = fn; }
 
 export function renderBreadcrumb() {

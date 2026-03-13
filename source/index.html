@@ -16,7 +16,8 @@
 
     <div id="splash" class="hidden">
         <svg class="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <text x="51" y="48" font-family="Georgia, serif" font-size="90" fill="var(--accent)" text-anchor="middle">,</text>
+            <text x="51" y="48" font-family="Georgia, serif" font-size="90" fill="var(--accent)"
+                text-anchor="middle">,</text>
         </svg>
         <div class="splash-name">Virgulas</div>
         <div class="splash-tagline">your outline, always ready</div>
@@ -72,26 +73,86 @@
             <div class="modal-body">
                 <table class="shortcuts-table">
                     <tbody>
-                        <tr><td>New bullet</td><td><kbd>Enter</kbd></td></tr>
-                        <tr><td>Delete bullet</td><td><kbd>Ctrl+Backspace</kbd></td></tr>
-                        <tr><td>Indent</td><td><kbd>Tab</kbd></td></tr>
-                        <tr><td>Unindent</td><td><kbd>Shift+Tab</kbd></td></tr>
-                        <tr><td>Move up</td><td><kbd>Alt+↑</kbd></td></tr>
-                        <tr><td>Move down</td><td><kbd>Alt+↓</kbd></td></tr>
-                        <tr><td>Zoom in</td><td><kbd>Alt+→</kbd></td></tr>
-                        <tr><td>Zoom out</td><td><kbd>Alt+←</kbd></td></tr>
-                        <tr><td>Toggle description</td><td><kbd>Shift+Enter</kbd></td></tr>
-                        <tr><td>Collapse / expand</td><td><kbd>Ctrl+Space</kbd></td></tr>
-                        <tr><td>Undo</td><td><kbd>Ctrl+Z</kbd></td></tr>
-                        <tr><td>Focus previous</td><td><kbd>↑</kbd></td></tr>
-                        <tr><td>Focus next</td><td><kbd>↓</kbd></td></tr>
-                        <tr><td>Extend selection up</td><td><kbd>Shift+↑</kbd></td></tr>
-                        <tr><td>Extend selection down</td><td><kbd>Shift+↓</kbd></td></tr>
-                        <tr><td>Delete selection</td><td><kbd>Ctrl+Backspace</kbd> (multi-select)</td></tr>
-                        <tr><td>Copy selection as Markdown</td><td><kbd>Ctrl+C</kbd> (multi-select)</td></tr>
-                        <tr><td>Unfocus bullet</td><td><kbd>Escape</kbd></td></tr>
-                        <tr><td>Search</td><td><kbd>Ctrl+F</kbd></td></tr>
-                        <tr><td>Shortcuts</td><td><kbd>?</kbd></td></tr>
+                        <tr>
+                            <td>New bullet</td>
+                            <td><kbd>Enter</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Delete bullet</td>
+                            <td><kbd>Ctrl+Backspace</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Indent</td>
+                            <td><kbd>Tab</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Unindent</td>
+                            <td><kbd>Shift+Tab</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Move up</td>
+                            <td><kbd>Alt+↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Move down</td>
+                            <td><kbd>Alt+↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Zoom in</td>
+                            <td><kbd>Alt+→</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Zoom out</td>
+                            <td><kbd>Alt+←</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Toggle description</td>
+                            <td><kbd>Shift+Enter</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Collapse / expand</td>
+                            <td><kbd>Ctrl+Space</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Undo</td>
+                            <td><kbd>Ctrl+Z</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Focus previous</td>
+                            <td><kbd>↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Focus next</td>
+                            <td><kbd>↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Extend selection up</td>
+                            <td><kbd>Shift+↑</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Extend selection down</td>
+                            <td><kbd>Shift+↓</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Delete selection</td>
+                            <td><kbd>Ctrl+Backspace</kbd> (multi-select)</td>
+                        </tr>
+                        <tr>
+                            <td>Copy selection as Markdown</td>
+                            <td><kbd>Ctrl+C</kbd> (multi-select)</td>
+                        </tr>
+                        <tr>
+                            <td>Unfocus bullet</td>
+                            <td><kbd>Escape</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Search</td>
+                            <td><kbd>Ctrl+F</kbd></td>
+                        </tr>
+                        <tr>
+                            <td>Shortcuts</td>
+                            <td><kbd>?</kbd></td>
+                        </tr>
                     </tbody>
                 </table>
                 <p style="margin-top:16px;font-size:12px;color:var(--text-muted)">
@@ -118,16 +179,8 @@
                         <div id="auth-ui"></div>
                     </div>
                     <div class="options-item">
-                        <span class="options-item-label">Cloud sync</span>
-                        <button class="btn btn-secondary" id="btn-toggle-sync">Enable sync</button>
-                    </div>
-                    <div class="options-item">
                         <span class="options-item-label">Developer mode</span>
                         <button class="btn btn-secondary" id="btn-toggle-dev">Enable dev mode</button>
-                    </div>
-                    <div class="options-item">
-                        <span class="options-item-label">Encryption</span>
-                        <button class="btn btn-secondary" id="btn-change-passphrase">Change passphrase</button>
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Theme</span>
@@ -135,31 +188,10 @@
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Source code</span>
-                        <a class="options-link" id="link-github" href="https://github.com/pitermarx/Virgulas" target="_blank" rel="noopener">github.com/pitermarx/Virgulas</a>
+                        <a class="options-link" id="link-github" href="https://github.com/pitermarx/Virgulas"
+                            target="_blank" rel="noopener">github.com/pitermarx/Virgulas</a>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-passphrase" class="modal-overlay hidden">
-        <div class="modal">
-            <div class="modal-header">
-                <span class="modal-title" id="passphrase-modal-title">Set your passphrase</span>
-            </div>
-            <div class="modal-body">
-                <div class="options-list">
-                    <div class="options-item" style="flex-direction:column;align-items:stretch;gap:8px;">
-                        <p id="passphrase-modal-desc" style="font-size:13px;color:var(--text-muted);margin:0"></p>
-                        <input type="password" id="passphrase-input" class="login-input" placeholder="Passphrase" autocomplete="new-password">
-                        <input type="password" id="passphrase-confirm" class="login-input hidden" placeholder="Confirm passphrase" autocomplete="new-password">
-                        <div id="passphrase-error" class="login-error hidden"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary hidden" id="btn-passphrase-cancel">Start fresh</button>
-                <button class="btn btn-primary" id="btn-passphrase-submit">Set passphrase</button>
             </div>
         </div>
     </div>
@@ -173,9 +205,12 @@
             <div class="modal-body">
                 <div class="options-list">
                     <div class="options-item" style="flex-direction:column;align-items:stretch;gap:8px;">
-                        <input type="email" id="login-email" class="login-input" placeholder="Email" autocomplete="email">
-                        <input type="password" id="login-password" class="login-input" placeholder="Password" autocomplete="current-password">
-                        <input type="password" id="login-confirm-password" class="login-input hidden" placeholder="Confirm password" autocomplete="new-password">
+                        <input type="email" id="login-email" class="login-input" placeholder="Email"
+                            autocomplete="email">
+                        <input type="password" id="login-password" class="login-input" placeholder="Password"
+                            autocomplete="current-password">
+                        <input type="password" id="login-confirm-password" class="login-input hidden"
+                            placeholder="Confirm password" autocomplete="new-password">
                         <div id="login-error" class="login-error hidden"></div>
                         <div id="login-success" class="login-success hidden"></div>
                         <div class="login-switch">

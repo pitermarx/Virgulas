@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS public.outlines (
   user_id    UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   data       TEXT        NOT NULL,
   version    BIGINT      NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  salt       TEXT
 );
 
 -- Enable Row Level Security so users can only access their own data.

@@ -1,13 +1,10 @@
 name: Daily Tests
 
 on:
-  schedule:
-    # Run every day at 06:00 UTC
-    - cron: '0 6 * * *'
+  # Run manually or on a schedule
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  schedule:
+    - cron: '0 6 * * *'
 
 permissions:
   contents: read
@@ -21,35 +18,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Inject Supabase config
-        env:
-          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
-          SUPABASE_PUBLISHABLE_DEFAULT_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
-        run: |
-          sed -i "s|__SUPABASE_PROJECT__|$SUPABASE_PROJECT|g" source/js/state.js
-          sed -i "s|__SUPABASE_PUBLISHABLE_DEFAULT_KEY__|$SUPABASE_PUBLISHABLE_DEFAULT_KEY|g" source/js/state.js
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
           cache: 'npm'
-          cache-dependency-path: test/package-lock.json
 
       - name: Install dependencies
         run: npm ci
-        working-directory: test
 
       - name: Install Playwright browsers
         run: npx playwright install chromium firefox --with-deps
-        working-directory: test
 
-      - name: Run E2E tests
+      - name: Run E2E tests against production
         id: tests
         run: npm run test:ci
-        working-directory: test
         env:
           CI: true
+          BASE_URL: https://virgulas.com
 
       - name: Upload test results
         if: always()
@@ -57,20 +42,20 @@ jobs:
         with:
           name: daily-playwright-results
           path: |
-            test/test-results/
-            test/playwright-report/
-          retention-days: 30
+            test-results/
+            playwright-report/
+          retention-days: 15
           if-no-files-found: warn
 
       - name: Summarize test results
         if: always()
         run: |
-          if [ -f test/test-results/results.json ]; then
+          if [ -f test-results/results.json ]; then
             echo "## Daily Test Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             node -e "
               const fs = require('fs');
-              const results = JSON.parse(fs.readFileSync('test/test-results/results.json', 'utf8'));
+              const results = JSON.parse(fs.readFileSync('test-results/results.json', 'utf8'));
               const stats = results.stats;
               const status = stats.unexpected === 0 ? '✅ All tests passed' : '❌ Some tests failed';
               console.log(status);

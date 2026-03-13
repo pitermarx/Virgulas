@@ -3,12 +3,8 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 
-// Helper: complete the passphrase unlock modal after a page reload.
-// After beforeEach has set up a salt, every reload shows the unlock modal.
-async function unlockApp(page) {
-  await expect(page.locator('#modal-passphrase')).toBeVisible();
-  await page.fill('#passphrase-input', 'testpass');
-  await page.click('#btn-passphrase-submit');
+// Helper: wait for the app to be ready after a page reload.
+async function waitForApp(page) {
   await page.waitForSelector('#ghost-row');
 }
 
@@ -22,14 +18,6 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  // Encryption is mandatory: set up passphrase on first load (no salt yet)
-  await expect(page.locator('#modal-passphrase')).toBeVisible();
-  // Wait for the app's 50 ms auto-focus timer to fire before filling inputs,
-  // so the timer does not race with Playwright's fill of #passphrase-confirm.
-  await expect(page.locator('#passphrase-input')).toBeFocused();
-  await page.fill('#passphrase-input', 'testpass');
-  await page.fill('#passphrase-confirm', 'testpass');
-  await page.click('#btn-passphrase-submit');
   await page.waitForSelector('.bullet-row');
 });
 
@@ -91,7 +79,7 @@ test.describe('Editing bullets', () => {
 
     // Reload and verify persistence
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
     await expect(page.locator('.bullet-text').first()).toContainText('Persisted text');
   });
 
@@ -172,7 +160,7 @@ test.describe('Indenting bullets', () => {
       }));
     });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     // Click b's text (second visible bullet after a) and unindent it
     const bText = page.locator('.bullet-text').nth(1);
@@ -803,7 +791,7 @@ test.describe('Ghost row', () => {
       }));
     });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     await expect(page.locator('#ghost-row')).toBeVisible();
 
@@ -821,7 +809,7 @@ test.describe('Ghost row', () => {
       }));
     });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     await page.locator('#ghost-row').click();
     await page.keyboard.type('New item');
@@ -912,7 +900,7 @@ test.describe('Enter when unfocused', () => {
       }));
     });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     await page.keyboard.press('Enter');
     await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
@@ -965,7 +953,7 @@ test.describe('Options dialog', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
@@ -1103,7 +1091,7 @@ test.describe('Mobile top spacing', () => {
   test('top padding of #app is small on mobile viewports', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
     const paddingTop = await page.locator('#app').evaluate(el =>
       parseFloat(getComputedStyle(el).paddingTop)
     );
@@ -1114,7 +1102,7 @@ test.describe('Mobile top spacing', () => {
   test('desktop top padding of #app is larger than mobile', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
     const paddingTop = await page.locator('#app').evaluate(el =>
       parseFloat(getComputedStyle(el).paddingTop)
     );
@@ -1570,43 +1558,10 @@ test.describe('Conflict modal', () => {
   });
 });
 
-test.describe('Cloud sync toggle', () => {
-  test('Options modal contains a Cloud sync toggle button', async ({ page }) => {
+test.describe('Cloud sync toggle (removed)', () => {
+  test('Options modal does NOT contain a Cloud sync toggle button', async ({ page }) => {
     await page.click('#btn-options');
-    await expect(page.locator('#btn-toggle-sync')).toBeVisible();
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
-  });
-
-  test('clicking Cloud sync toggle enables sync and updates button text', async ({ page }) => {
-    await page.click('#btn-options');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
-    await page.click('#btn-toggle-sync');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
-  });
-
-  test('clicking Cloud sync toggle again disables sync', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-sync');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
-    await page.click('#btn-toggle-sync');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Enable sync');
-  });
-
-  test('sync enabled state persists after reload', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-toggle-sync');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
-
-    await page.reload();
-    await unlockApp(page);
-    await page.click('#btn-options');
-    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
-  });
-
-  test('sync is disabled by default (not enabled on fresh load)', async ({ page }) => {
-    const syncEnabled = await page.evaluate(() => localStorage.getItem('sync_enabled'));
-    // sync_enabled is either not set (null) or explicitly 'false' — never 'true' by default
-    expect(syncEnabled === null || syncEnabled === 'false').toBe(true);
+    await expect(page.locator('#btn-toggle-sync')).toHaveCount(0);
   });
 });
 
@@ -1651,7 +1606,7 @@ test.describe('Developer mode', () => {
     await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
 
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
     await expect(page.locator('#dev-panel')).not.toHaveClass(/hidden/);
   });
 });
@@ -1661,8 +1616,8 @@ test.describe('Persistence without login', () => {
     // After clearing localStorage and reloading (done by beforeEach), seed data is present
     const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
     expect(stored).not.toBeNull();
-    // Data is encrypted; it should not be parseable as plain JSON
-    expect(isValidJson(stored)).toBe(false);
+    // Data is stored as plain JSON (encryption is only for server sync)
+    expect(isValidJson(stored)).toBe(true);
   });
 
   test('edits made when not logged in persist after reload', async ({ page }) => {
@@ -1672,7 +1627,7 @@ test.describe('Persistence without login', () => {
     await firstText.blur();
 
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     await expect(page.locator('.bullet-text').first()).toContainText('My persisted change');
   });
@@ -1710,7 +1665,7 @@ test.describe('Splash screen', () => {
 
     // Reload without clearing localStorage
     await page.reload();
-    await unlockApp(page);
+    await waitForApp(page);
 
     // Splash should remain hidden immediately on subsequent load
     await expect(page.locator('#splash')).toHaveClass(/hidden/);
@@ -1827,115 +1782,17 @@ test.describe('Preview index page', () => {
 
 
 test.describe('Encryption', () => {
-  test('Options modal contains a Change passphrase button', async ({ page }) => {
-    await page.click('#btn-options');
-    await expect(page.locator('#btn-change-passphrase')).toBeVisible();
-    await expect(page.locator('#btn-change-passphrase')).toContainText('Change passphrase');
-  });
 
-  test('app always prompts for passphrase on first load (no localStorage)', async ({ page }) => {
-    // beforeEach already cleared localStorage and showed the set-passphrase modal.
-    // This test re-verifies the mandatory-encryption flow from a clean state.
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await expect(page.locator('#passphrase-modal-title')).toContainText('Set your passphrase');
-    // Cancel button must be hidden in 'set' mode (encryption is mandatory)
-    await expect(page.locator('#btn-passphrase-cancel')).toHaveClass(/hidden/);
-  });
-
-  test('passphrase modal shows confirm field and Set passphrase button in set mode', async ({ page }) => {
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await expect(page.locator('#passphrase-confirm')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#btn-passphrase-submit')).toContainText('Set passphrase');
-  });
-
-  test('submitting mismatched passphrases shows an error', async ({ page }) => {
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.fill('#passphrase-input', 'secret123');
-    await page.fill('#passphrase-confirm', 'different');
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#passphrase-error')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#passphrase-error')).toContainText('do not match');
-  });
-
-  test('submitting empty passphrase shows an error', async ({ page }) => {
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#passphrase-error')).not.toHaveClass(/hidden/);
-  });
-
-  test('setting passphrase stores salt and verification in localStorage', async ({ page }) => {
-    // Encryption was set up by beforeEach; salt and verify should already be stored
-    const salt = await page.evaluate(() => localStorage.getItem('encryption_salt'));
-    const verify = await page.evaluate(() => localStorage.getItem('encryption_verify'));
-    expect(salt).not.toBeNull();
-    expect(verify).not.toBeNull();
-  });
-
-  test('outline_v1 is stored as encrypted ciphertext (not plain JSON)', async ({ page }) => {
+  test('localStorage stores outline_v1 as plain JSON (not encrypted)', async ({ page }) => {
     const stored = await page.evaluate(() => localStorage.getItem('outline_v1'));
     expect(stored).not.toBeNull();
-    expect(isValidJson(stored)).toBe(false);
+    expect(isValidJson(stored)).toBe(true);
   });
 
-  test('clicking Change passphrase opens the passphrase modal in change mode', async ({ page }) => {
+  test('enabling sync does not prompt for a passphrase', async ({ page }) => {
     await page.click('#btn-options');
-    await page.click('#btn-change-passphrase');
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await expect(page.locator('#passphrase-modal-title')).toContainText('Change passphrase');
-    await expect(page.locator('#btn-passphrase-cancel')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#btn-passphrase-submit')).toContainText('Update passphrase');
-  });
-
-  test('cancelling Change passphrase closes the modal without changing encryption', async ({ page }) => {
-    await page.click('#btn-options');
-    await page.click('#btn-change-passphrase');
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.click('#btn-passphrase-cancel');
-    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
-    // Salt and verify should be unchanged
-    const salt = await page.evaluate(() => localStorage.getItem('encryption_salt'));
-    expect(salt).not.toBeNull();
-  });
-
-  test('app prompts to unlock on reload when passphrase is already set', async ({ page }) => {
-    // Reload page (beforeEach already set up encryption with 'testpass')
-    await page.reload();
-    // The passphrase unlock modal should appear
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await expect(page.locator('#passphrase-modal-title')).toContainText('Unlock your outline');
-    // Cancel button should be visible (as "Start fresh") in unlock mode
-    await expect(page.locator('#btn-passphrase-cancel')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#btn-passphrase-cancel')).toContainText('Start fresh');
-  });
-
-  test('wrong passphrase on unlock shows error', async ({ page }) => {
-    // Reload
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    // Enter wrong passphrase
-    await page.fill('#passphrase-input', 'wrongPass');
-    await page.click('#btn-passphrase-submit');
-    await expect(page.locator('#passphrase-error')).not.toHaveClass(/hidden/);
-    await expect(page.locator('#passphrase-error')).toContainText('Wrong passphrase');
-  });
-
-  test('correct passphrase on unlock loads the outline', async ({ page }) => {
-    // Reload and unlock with correct passphrase
-    await page.reload();
-    await expect(page.locator('#modal-passphrase')).toBeVisible();
-    await page.fill('#passphrase-input', 'testpass');
-    await page.click('#btn-passphrase-submit');
-    // Modal closes and bullets are rendered
-    await expect(page.locator('#modal-passphrase')).toHaveClass(/hidden/);
-    await expect(page.locator('.bullet-row').first()).toBeVisible();
+    await page.click('#btn-toggle-sync');
+    await expect(page.locator('#btn-toggle-sync')).toContainText('Disable sync');
   });
 });
 
