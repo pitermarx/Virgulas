@@ -6,7 +6,7 @@
 import { makeNode, findNode, flatVisible, renderInline, exportMarkdown, seedDoc } from './model.js';
 import * as State from './state.js';
 import {
-    render, setSyncStatus, renderSyncToggle, renderEncryptionToggle, applyDevMode,
+    render, setSyncStatus, renderSyncToggle, applyDevMode,
     applyTheme, openModal, closeModal, openSearch,
     setLoginMode, loginMode, setZoomToCallback, showDescEditor, autoResize,
     renderBreadcrumb
@@ -403,8 +403,13 @@ document.addEventListener('keydown', (e) => {
             closeModal('modal-options'); return;
         }
         const passModal = document.getElementById('modal-passphrase');
-        if (!passModal.classList.contains('hidden') && passModal.dataset.mode !== 'unlock') {
-            closeModal('modal-passphrase'); return;
+        if (!passModal.classList.contains('hidden')) {
+            if (passModal.dataset.mode === 'change') {
+                closeModal('modal-passphrase');
+                _passphraseResolve?.(false);
+                _passphraseResolve = null;
+            }
+            return;
         }
         if (document.getElementById('search-bar').classList.contains('visible')) {
             endSearch();
@@ -502,13 +507,28 @@ function openPassphraseModal(mode) {
     document.getElementById('passphrase-confirm').value = '';
     document.getElementById('passphrase-error').classList.add('hidden');
     const isUnlock = mode === 'unlock';
-    document.getElementById('passphrase-modal-title').textContent = isUnlock ? 'Unlock your outline' : 'Enable encryption';
-    document.getElementById('passphrase-modal-desc').textContent = isUnlock
-        ? 'Enter your passphrase to decrypt your notes.'
-        : 'Choose a passphrase to encrypt your notes. It is never sent to the server — keep it safe!';
+    const isSet = mode === 'set';
+    const isChange = mode === 'change';
+    const cancelBtn = document.getElementById('btn-passphrase-cancel');
+    if (isUnlock) {
+        document.getElementById('passphrase-modal-title').textContent = 'Unlock your outline';
+        document.getElementById('passphrase-modal-desc').textContent = 'Enter your passphrase to decrypt your notes.';
+        cancelBtn.textContent = 'Start fresh';
+        cancelBtn.classList.remove('hidden');
+        document.getElementById('btn-passphrase-submit').textContent = 'Unlock';
+    } else if (isChange) {
+        document.getElementById('passphrase-modal-title').textContent = 'Change passphrase';
+        document.getElementById('passphrase-modal-desc').textContent = 'Enter a new passphrase to re-encrypt your notes. It is never sent to the server.';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.classList.remove('hidden');
+        document.getElementById('btn-passphrase-submit').textContent = 'Update passphrase';
+    } else {
+        document.getElementById('passphrase-modal-title').textContent = 'Set your passphrase';
+        document.getElementById('passphrase-modal-desc').textContent = 'Choose a passphrase to encrypt your notes. It is never sent to the server — keep it safe!';
+        cancelBtn.classList.add('hidden');
+        document.getElementById('btn-passphrase-submit').textContent = 'Set passphrase';
+    }
     document.getElementById('passphrase-confirm').classList.toggle('hidden', isUnlock);
-    document.getElementById('btn-passphrase-cancel').textContent = isUnlock ? 'Start fresh' : 'Cancel';
-    document.getElementById('btn-passphrase-submit').textContent = isUnlock ? 'Unlock' : 'Enable';
     openModal('modal-passphrase');
     setTimeout(() => document.getElementById('passphrase-input').focus(), 50);
     return new Promise(resolve => { _passphraseResolve = resolve; });
@@ -552,6 +572,7 @@ async function handlePassphraseSubmit() {
             errorDiv.classList.remove('hidden');
         }
     } else {
+        // 'set' or 'change' mode — generate new salt and key
         const confirmPass = document.getElementById('passphrase-confirm').value;
         if (passphrase !== confirmPass) {
             errorDiv.textContent = 'Passphrases do not match.';
@@ -565,30 +586,16 @@ async function handlePassphraseSubmit() {
         for (let i = 0; i < salt.length; i++) saltBin += String.fromCharCode(salt[i]);
         localStorage.setItem(State.ENCRYPTION_SALT_KEY, btoa(saltBin));
         localStorage.setItem(State.ENCRYPTION_VERIFY_KEY, verifyB64);
-        State.setEncryptionEnabled(true);
         State.setEncryptionKey(key);
-        localStorage.setItem(State.ENCRYPTION_ENABLED_KEY, 'true');
         await State.saveDocLocal(); // re-save doc encrypted
         closeModal('modal-passphrase');
-        renderEncryptionToggle();
         _passphraseResolve?.(true);
         _passphraseResolve = null;
     }
 }
 
-document.getElementById('btn-toggle-encryption').addEventListener('click', async () => {
-    if (State.encryptionEnabled) {
-        if (!confirm('Disable encryption? Your notes will be stored unencrypted in the browser.')) return;
-        State.setEncryptionEnabled(false);
-        State.setEncryptionKey(null);
-        localStorage.setItem(State.ENCRYPTION_ENABLED_KEY, 'false');
-        localStorage.removeItem(State.ENCRYPTION_SALT_KEY);
-        localStorage.removeItem(State.ENCRYPTION_VERIFY_KEY);
-        await State.saveDocLocal(); // re-save doc unencrypted
-        renderEncryptionToggle();
-    } else {
-        await openPassphraseModal('set');
-    }
+document.getElementById('btn-change-passphrase').addEventListener('click', async () => {
+    await openPassphraseModal('change');
 });
 
 document.getElementById('btn-passphrase-submit').addEventListener('click', handlePassphraseSubmit);
@@ -602,18 +609,19 @@ document.getElementById('passphrase-confirm').addEventListener('keydown', (e) =>
 document.getElementById('btn-passphrase-cancel').addEventListener('click', async () => {
     const mode = document.getElementById('modal-passphrase').dataset.mode;
     if (mode === 'unlock') {
-        if (!confirm('Start fresh? This will clear all local data and disable encryption.')) return;
+        if (!confirm('Start fresh? This will clear all local data and cannot be undone.')) return;
         localStorage.clear();
-        State.setEncryptionEnabled(false);
         State.setEncryptionKey(null);
         closeModal('modal-passphrase');
         _passphraseResolve?.(false);
         _passphraseResolve = null;
-    } else {
+    } else if (mode === 'change') {
+        // Cancelling a passphrase change is safe — existing encryption is untouched.
         closeModal('modal-passphrase');
         _passphraseResolve?.(false);
         _passphraseResolve = null;
     }
+    // 'set' mode has no cancel button, so this handler will not be reached.
 });
 
 // ── Modal close buttons ───────────────────────────────────────────────────────
@@ -627,7 +635,8 @@ document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', (e) => {
         if (e.target !== overlay) return;
-        if (overlay.id === 'modal-passphrase' && overlay.dataset.mode === 'unlock') return;
+        if (overlay.id === 'modal-passphrase' &&
+            (overlay.dataset.mode === 'unlock' || overlay.dataset.mode === 'set')) return;
         closeModal(overlay.id);
     });
 });
@@ -671,13 +680,18 @@ document.getElementById('btn-conflict-apply').addEventListener('click', () => {
 async function init() {
     applyTheme(localStorage.getItem(State.THEME_KEY) || 'light');
 
-    if (State.encryptionEnabled) {
+    // Encryption is mandatory: always require a passphrase.
+    const saltExists = !!localStorage.getItem(State.ENCRYPTION_SALT_KEY);
+    if (saltExists) {
+        // Existing user — unlock with passphrase.
         const unlocked = await openPassphraseModal('unlock');
         if (!unlocked) {
-            // User chose "Start fresh" — localStorage was cleared; reset state
-            State.setEncryptionEnabled(false);
+            // User chose "Start fresh" — localStorage was cleared; reset state.
             State.setEncryptionKey(null);
         }
+    } else {
+        // First run — require passphrase setup before the app can be used.
+        await openPassphraseModal('set');
     }
 
     const loaded = await State.loadDoc();
@@ -691,7 +705,6 @@ async function init() {
     render();
     initAuth();
     renderSyncToggle();
-    renderEncryptionToggle();
     applyDevMode();
 
     const splash = document.getElementById('splash');
