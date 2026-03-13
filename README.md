@@ -60,7 +60,7 @@ push (any branch)
 - `main` branch source at the site root (`/`)
 - Every currently-open PR branch at `/preview/<safe-branch>/` (fetched via `gh pr list`)
 
-Supabase config placeholders are substituted across all `state.js` files in `_site/`. The artifact is then deployed to GitHub Pages and the Cloudflare cache is purged. Because open PRs are enumerated at deploy time, stale previews for closed/merged branches disappear automatically — no separate cleanup step is needed.
+`package.json` and `package-lock.json` are deleted from `_site/` after copying so they are never served. Supabase config placeholders are substituted across all `state.js` files in `_site/`. The artifact is then deployed to GitHub Pages and the Cloudflare cache is purged. Because open PRs are enumerated at deploy time, stale previews for closed/merged branches disappear automatically — no separate cleanup step is needed.
 
 Branch names are sanitised (non-alphanumeric characters replaced with `-`) before being used as URL path segments.
 
@@ -151,7 +151,7 @@ Running database migrations from CI introduces several attack vectors. The ones 
 | **`version: latest` binary download** | Downloads the most recent CLI release from GitHub Releases on every run. A CDN compromise or account takeover could serve a malicious binary. | Pinned to an explicit version (`1.6.0`). |
 | **Unreviewed path to production** | Migrations reach `main` — and trigger `deploy-db` — as soon as a PR is merged, without any human reviewing the SQL unless an environment gate is configured. | The `deploy-db` job uses `environment: supabase-production`. Add required reviewers to that environment in GitHub Settings → Environments so no deployment proceeds without explicit approval. |
 | **No deployment gate** | Without an environment, the workflow fires immediately on every qualifying push with no approval step. | Addressed by `environment: supabase-production` above. |
-| **Parallel migration runs** | Two quick pushes to `main` could start two `supabase db push` processes simultaneously, risking duplicate migrations or migration-table corruption. | The `ci-refs/heads/main` concurrency group uses `cancel-in-progress: false` for `main` pushes, so a second run queues rather than interrupting an active migration. Feature-branch runs still cancel eagerly. |
+| **Parallel migration runs** | Two quick pushes to `main` could start two `supabase db push` processes simultaneously, risking duplicate migrations or migration-table corruption. | The top-level concurrency group uses `cancel-in-progress: false`, so a second run queues and waits for the first to finish rather than interrupting an active migration. |
 | **Broad access token scope** | A Supabase personal access token grants access to **all projects** in the account, not just this one. A leaked token is account-wide. | Rotate the token regularly. Consider creating a dedicated Supabase account that owns only this project. The Supabase CLI does not support project-scoped tokens at this time. |
 | **No rollback** | SQL migrations are irreversible by default. A destructive statement goes to production with no automated rollback path. | Review migration files carefully before merging. For destructive changes, test against a staging project first. Add rollback SQL as a new migration if needed. |
 

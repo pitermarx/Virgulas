@@ -9,7 +9,7 @@ env:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -160,6 +160,10 @@ jobs:
             git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE/" -x || \
             echo "Warning: Could not fetch or extract preview for branch $branch - preview will be skipped"
           done
+
+          # Remove npm metadata files — they must never be served
+          find _site -name "package.json" -delete
+          find _site -name "package-lock.json" -delete
 
       - name: Inject Supabase config
         env:
