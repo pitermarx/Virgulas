@@ -126,6 +126,10 @@
                         <button class="btn btn-secondary" id="btn-toggle-dev">Enable dev mode</button>
                     </div>
                     <div class="options-item">
+                        <span class="options-item-label">Encryption</span>
+                        <button class="btn btn-secondary" id="btn-toggle-encryption">Enable encryption</button>
+                    </div>
+                    <div class="options-item">
                         <span class="options-item-label">Theme</span>
                         <button class="btn btn-secondary" id="btn-toggle-theme">Switch to dark mode</button>
                     </div>
@@ -134,6 +138,28 @@
                         <a class="options-link" id="link-github" href="https://github.com/pitermarx/Virgulas" target="_blank" rel="noopener">github.com/pitermarx/Virgulas</a>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-passphrase" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="passphrase-modal-title">Enable encryption</span>
+            </div>
+            <div class="modal-body">
+                <div class="options-list">
+                    <div class="options-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+                        <p id="passphrase-modal-desc" style="font-size:13px;color:var(--text-muted);margin:0"></p>
+                        <input type="password" id="passphrase-input" class="login-input" placeholder="Passphrase" autocomplete="new-password">
+                        <input type="password" id="passphrase-confirm" class="login-input hidden" placeholder="Confirm passphrase" autocomplete="new-password">
+                        <div id="passphrase-error" class="login-error hidden"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-passphrase-cancel">Cancel</button>
+                <button class="btn btn-primary" id="btn-passphrase-submit">Enable</button>
             </div>
         </div>
     </div>

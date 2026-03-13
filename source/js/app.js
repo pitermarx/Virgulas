@@ -6,7 +6,7 @@
 import { makeNode, findNode, flatVisible, renderInline, exportMarkdown, seedDoc } from './model.js';
 import * as State from './state.js';
 import {
-    render, setSyncStatus, renderSyncToggle, applyDevMode,
+    render, setSyncStatus, renderSyncToggle, renderEncryptionToggle, applyDevMode,
     applyTheme, openModal, closeModal, openSearch,
     setLoginMode, loginMode, setZoomToCallback, showDescEditor, autoResize,
     renderBreadcrumb
@@ -402,6 +402,10 @@ document.addEventListener('keydown', (e) => {
         if (!document.getElementById('modal-options').classList.contains('hidden')) {
             closeModal('modal-options'); return;
         }
+        const passModal = document.getElementById('modal-passphrase');
+        if (!passModal.classList.contains('hidden') && passModal.dataset.mode !== 'unlock') {
+            closeModal('modal-passphrase'); return;
+        }
         if (document.getElementById('search-bar').classList.contains('visible')) {
             endSearch();
             return;
@@ -487,6 +491,131 @@ document.getElementById('btn-toggle-dev').addEventListener('click', () => {
     applyDevMode();
 });
 
+// ── Encryption ────────────────────────────────────────────────────────────────
+
+let _passphraseResolve = null;
+
+function openPassphraseModal(mode) {
+    const modal = document.getElementById('modal-passphrase');
+    modal.dataset.mode = mode;
+    document.getElementById('passphrase-input').value = '';
+    document.getElementById('passphrase-confirm').value = '';
+    document.getElementById('passphrase-error').classList.add('hidden');
+    const isUnlock = mode === 'unlock';
+    document.getElementById('passphrase-modal-title').textContent = isUnlock ? 'Unlock your outline' : 'Enable encryption';
+    document.getElementById('passphrase-modal-desc').textContent = isUnlock
+        ? 'Enter your passphrase to decrypt your notes.'
+        : 'Choose a passphrase to encrypt your notes. It is never sent to the server — keep it safe!';
+    document.getElementById('passphrase-confirm').classList.toggle('hidden', isUnlock);
+    document.getElementById('btn-passphrase-cancel').textContent = isUnlock ? 'Start fresh' : 'Cancel';
+    document.getElementById('btn-passphrase-submit').textContent = isUnlock ? 'Unlock' : 'Enable';
+    openModal('modal-passphrase');
+    setTimeout(() => document.getElementById('passphrase-input').focus(), 50);
+    return new Promise(resolve => { _passphraseResolve = resolve; });
+}
+
+async function handlePassphraseSubmit() {
+    const modal = document.getElementById('modal-passphrase');
+    const mode = modal.dataset.mode;
+    const passphrase = document.getElementById('passphrase-input').value;
+    const errorDiv = document.getElementById('passphrase-error');
+    errorDiv.classList.add('hidden');
+
+    if (!passphrase) {
+        errorDiv.textContent = 'Please enter a passphrase.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    const { deriveKey, generateSalt, encrypt, decrypt } = await import('./crypto.js');
+
+    if (mode === 'unlock') {
+        const saltB64 = localStorage.getItem(State.ENCRYPTION_SALT_KEY);
+        const verifyB64 = localStorage.getItem(State.ENCRYPTION_VERIFY_KEY);
+        if (!saltB64 || !verifyB64) {
+            errorDiv.textContent = 'Encryption data is missing. Please start fresh.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+        const saltBin = atob(saltB64);
+        const salt = new Uint8Array(saltBin.length);
+        for (let i = 0; i < saltBin.length; i++) salt[i] = saltBin.charCodeAt(i);
+        try {
+            const key = await deriveKey(passphrase, salt);
+            await decrypt(key, verifyB64); // verify correct passphrase
+            State.setEncryptionKey(key);
+            closeModal('modal-passphrase');
+            _passphraseResolve?.(true);
+            _passphraseResolve = null;
+        } catch {
+            errorDiv.textContent = 'Wrong passphrase. Please try again.';
+            errorDiv.classList.remove('hidden');
+        }
+    } else {
+        const confirmPass = document.getElementById('passphrase-confirm').value;
+        if (passphrase !== confirmPass) {
+            errorDiv.textContent = 'Passphrases do not match.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+        const salt = generateSalt();
+        const key = await deriveKey(passphrase, salt);
+        const verifyB64 = await encrypt(key, 'virgulas-verify');
+        let saltBin = '';
+        for (let i = 0; i < salt.length; i++) saltBin += String.fromCharCode(salt[i]);
+        localStorage.setItem(State.ENCRYPTION_SALT_KEY, btoa(saltBin));
+        localStorage.setItem(State.ENCRYPTION_VERIFY_KEY, verifyB64);
+        State.setEncryptionEnabled(true);
+        State.setEncryptionKey(key);
+        localStorage.setItem(State.ENCRYPTION_ENABLED_KEY, 'true');
+        await State.saveDocLocal(); // re-save doc encrypted
+        closeModal('modal-passphrase');
+        renderEncryptionToggle();
+        _passphraseResolve?.(true);
+        _passphraseResolve = null;
+    }
+}
+
+document.getElementById('btn-toggle-encryption').addEventListener('click', async () => {
+    if (State.encryptionEnabled) {
+        if (!confirm('Disable encryption? Your notes will be stored unencrypted in the browser.')) return;
+        State.setEncryptionEnabled(false);
+        State.setEncryptionKey(null);
+        localStorage.setItem(State.ENCRYPTION_ENABLED_KEY, 'false');
+        localStorage.removeItem(State.ENCRYPTION_SALT_KEY);
+        localStorage.removeItem(State.ENCRYPTION_VERIFY_KEY);
+        await State.saveDocLocal(); // re-save doc unencrypted
+        renderEncryptionToggle();
+    } else {
+        await openPassphraseModal('set');
+    }
+});
+
+document.getElementById('btn-passphrase-submit').addEventListener('click', handlePassphraseSubmit);
+document.getElementById('passphrase-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handlePassphraseSubmit();
+});
+document.getElementById('passphrase-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handlePassphraseSubmit();
+});
+
+document.getElementById('btn-passphrase-cancel').addEventListener('click', async () => {
+    const mode = document.getElementById('modal-passphrase').dataset.mode;
+    if (mode === 'unlock') {
+        if (!confirm('Start fresh? This will clear all local data and disable encryption.')) return;
+        localStorage.clear();
+        State.setEncryptionEnabled(false);
+        State.setEncryptionKey(null);
+        closeModal('modal-passphrase');
+        _passphraseResolve?.(false);
+        _passphraseResolve = null;
+    } else {
+        closeModal('modal-passphrase');
+        _passphraseResolve?.(false);
+        _passphraseResolve = null;
+    }
+});
+
 // ── Modal close buttons ───────────────────────────────────────────────────────
 
 document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
@@ -497,7 +626,9 @@ document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
 });
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeModal(overlay.id);
+        if (e.target !== overlay) return;
+        if (overlay.id === 'modal-passphrase' && overlay.dataset.mode === 'unlock') return;
+        closeModal(overlay.id);
     });
 });
 
@@ -537,9 +668,19 @@ document.getElementById('btn-conflict-apply').addEventListener('click', () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-function init() {
+async function init() {
     applyTheme(localStorage.getItem(State.THEME_KEY) || 'light');
-    const loaded = State.loadDoc();
+
+    if (State.encryptionEnabled) {
+        const unlocked = await openPassphraseModal('unlock');
+        if (!unlocked) {
+            // User chose "Start fresh" — localStorage was cleared; reset state
+            State.setEncryptionEnabled(false);
+            State.setEncryptionKey(null);
+        }
+    }
+
+    const loaded = await State.loadDoc();
     if (!loaded) {
         const splash = document.getElementById('splash');
         if (splash) splash.classList.remove('hidden');
@@ -550,6 +691,7 @@ function init() {
     render();
     initAuth();
     renderSyncToggle();
+    renderEncryptionToggle();
     applyDevMode();
 
     const splash = document.getElementById('splash');

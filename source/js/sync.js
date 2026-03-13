@@ -147,7 +147,7 @@ async function pushToServer(userId, baseServerVersion) {
     State.saveDocLocal();
 
     const syncPayload = { doc: State.doc, theme: localStorage.getItem(State.THEME_KEY) || 'light' };
-    const compressed = await State.compressData(syncPayload);
+    const compressed = await State.encryptPayload(syncPayload);
 
     const { error } = await supabaseClient.from(State.SYNC_TABLE).upsert({
         user_id: userId,
@@ -167,7 +167,7 @@ async function pushToServer(userId, baseServerVersion) {
 }
 
 async function pullFromServer(row) {
-    const payload = await State.decompressData(row.data);
+    const payload = await State.decryptPayload(row.data);
     const remoteDoc = payload.doc || payload;
     const remoteTheme = payload.theme;
 
@@ -197,7 +197,7 @@ async function pullFromServer(row) {
 async function handleConflict(row) {
     let remotePayload;
     try {
-        remotePayload = await State.decompressData(row.data);
+        remotePayload = await State.decryptPayload(row.data);
     } catch {
         setSyncStatus('error');
         State.setSyncPaused(false);
