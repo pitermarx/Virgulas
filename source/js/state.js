@@ -123,8 +123,10 @@ export async function loadDoc() {
                 try {
                     doc = JSON.parse(await decrypt(encryptionKey, raw));
                 } catch {
-                    // Legacy unencrypted data — load as plain JSON and it will be
-                    // re-encrypted on the next save (migration path)
+                    // Migration path: data predates mandatory encryption and is still
+                    // stored as plain JSON.  If `raw` is genuinely corrupted ciphertext
+                    // then JSON.parse(raw) will also throw, propagating to the outer
+                    // try-catch which returns false and triggers a fresh seed.
                     doc = JSON.parse(raw);
                 }
             } else {
