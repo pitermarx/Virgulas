@@ -13,6 +13,9 @@ export const SYNC_VERSION_KEY = 'sync_version';
 export const SYNC_BASE_KEY = 'sync_base';
 export const SYNC_ENABLED_KEY = 'sync_enabled';
 export const DEV_MODE_KEY = 'dev_mode';
+export const ENCRYPTION_ENABLED_KEY = 'encryption_enabled';
+export const ENCRYPTION_SALT_KEY = 'encryption_salt';
+export const ENCRYPTION_VERIFY_KEY = 'encryption_verify';
 export const SYNC_TABLE = 'outlines';
 export const SYNC_INTERVAL_MS = 15000;
 
@@ -46,6 +49,8 @@ export let conflictRemoteDoc = null;
 export let conflictServerVersion = 0;
 export let syncEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === 'true';
 export let devMode = localStorage.getItem(DEV_MODE_KEY) === 'true';
+export let encryptionEnabled = localStorage.getItem(ENCRYPTION_ENABLED_KEY) === 'true';
+export let encryptionKey = null; // CryptoKey held in memory only — never persisted
 
 // ── State setters (needed because ES module bindings are not directly settable) ─
 
@@ -69,6 +74,8 @@ export function setConflictRemoteDoc(value) { conflictRemoteDoc = value; }
 export function setConflictServerVersion(value) { conflictServerVersion = value; }
 export function setSyncEnabled(value) { syncEnabled = value; }
 export function setDevMode(value) { devMode = value; }
+export function setEncryptionEnabled(value) { encryptionEnabled = value; }
+export function setEncryptionKey(value) { encryptionKey = value; }
 
 // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -91,22 +98,35 @@ export function saveDoc() {
         setSyncStatusVar('pending');
         _onSyncStatusUpdate?.('pending');
     }
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-    } catch (e) { }
+    _persistDoc();
 }
 
 export function saveDocLocal() {
+    _persistDoc();
+}
+
+async function _persistDoc() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+        const json = JSON.stringify(doc);
+        if (encryptionKey) {
+            const { encrypt } = await import('./crypto.js');
+            localStorage.setItem(STORAGE_KEY, await encrypt(encryptionKey, json));
+        } else {
+            localStorage.setItem(STORAGE_KEY, json);
+        }
     } catch (e) { }
 }
 
-export function loadDoc() {
+export async function loadDoc() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-            doc = JSON.parse(raw);
+            if (encryptionKey) {
+                const { decrypt } = await import('./crypto.js');
+                doc = JSON.parse(await decrypt(encryptionKey, raw));
+            } else {
+                doc = JSON.parse(raw);
+            }
             return true;
         }
     } catch (e) { }
@@ -148,6 +168,30 @@ export async function decompressData(b64) {
     } catch {
         return JSON.parse(atob(b64));
     }
+}
+
+// ── Sync payload helpers (compress + optional encrypt) ────────────────────────
+
+export async function encryptPayload(obj) {
+    const compressed = await compressData(obj);
+    if (encryptionKey) {
+        const { encrypt } = await import('./crypto.js');
+        return encrypt(encryptionKey, compressed);
+    }
+    return compressed;
+}
+
+export async function decryptPayload(data) {
+    if (encryptionKey) {
+        try {
+            const { decrypt } = await import('./crypto.js');
+            const compressed = await decrypt(encryptionKey, data);
+            return decompressData(compressed);
+        } catch {
+            // Fall back to plain decompress (e.g. data was pushed before encryption was enabled)
+        }
+    }
+    return decompressData(data);
 }
 
 // ── URL / history ─────────────────────────────────────────────────────────────

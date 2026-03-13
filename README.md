@@ -202,8 +202,10 @@ focusedId    — ID of the bullet whose text is currently focused (or null)
 selectedIds  — ordered array of IDs in the current multi-selection (empty when no selection)
 selectionAnchor — ID of the node where the multi-selection started (null when no selection)
 selectionHead   — ID of the node at the current end of the multi-selection (null when no selection)
-syncEnabled  — boolean; whether cloud sync is active (persisted in localStorage as 'sync_enabled')
-devMode      — boolean; whether the dev panel is visible (persisted in localStorage as 'dev_mode')
+syncEnabled      — boolean; whether cloud sync is active (persisted in localStorage as 'sync_enabled')
+devMode          — boolean; whether the dev panel is visible (persisted in localStorage as 'dev_mode')
+encryptionEnabled — boolean; whether client-side encryption is active (persisted in localStorage as 'encryption_enabled')
+encryptionKey    — CryptoKey (AES-GCM 256-bit) held in memory only — never persisted to localStorage or sent to the server
 ```
 
 ---
@@ -258,10 +260,11 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 </div>
 
 <!-- five modals, each a .modal-overlay.hidden wrapper -->
-<div id="modal-login">     <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
+<div id="modal-login">      <!-- sign-in form: email + password fields, error message, Submit/Cancel buttons -->
 <div id="modal-markdown">  <!-- editable textarea showing current outline as Markdown; Apply button imports changes -->
 <div id="modal-shortcuts">
-<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, developer mode toggle, theme toggle, GitHub repo link -->
+<div id="modal-options">   <!-- options: account (sign in / sign out / delete account), cloud sync toggle, encryption toggle, developer mode toggle, theme toggle, GitHub repo link -->
+<div id="modal-passphrase> <!-- passphrase input used in two modes: 'set' (enable encryption) and 'unlock' (decrypt on load) -->
 <div id="modal-conflict">  <!-- conflict resolution: local vs server Markdown diff + resolved textarea; Keep Local / Use Server / Apply Resolved buttons -->
 ```
 
@@ -457,6 +460,25 @@ Authentication is provided by [Supabase](https://supabase.com), loaded from the 
 - No changes to the Supabase project are required to enable sign-up — email/password sign-up is enabled by default.
 - After sign-in, if sync is enabled, `startSync()` is called which triggers an immediate `syncNow()` and starts a 15-second `setInterval`. After sign-out, `stopSync()` clears the interval and resets the sync indicator.
 - A signed-in user also sees a **Delete account** button (styled with `.btn-danger`). Clicking it shows a confirmation dialog, then deletes the user's row from the `outlines` table and calls `supabaseClient.auth.signOut()`. Local sync-state keys (`sync_version`, `sync_base`) are also cleared.
+
+---
+
+## Client-side encryption
+
+Encryption is **opt-in** and is toggled via **Options → Encryption → Enable encryption**.
+
+- **Algorithm**: AES-GCM 256-bit. Keys are derived from a user passphrase using PBKDF2 (100 000 iterations, SHA-256). All cryptographic operations use the browser's built-in `window.crypto.subtle` (Web Crypto API) — no external library is needed.
+- **Key storage**: The `CryptoKey` is held in memory only for the duration of the session. It is **never** written to `localStorage` or sent over the network.
+- **localStorage**: The three persistence keys stored in `localStorage` for encryption are:
+  - `encryption_enabled` — `'true'` when encryption is active.
+  - `encryption_salt` — a random 16-byte salt (base64) used for PBKDF2 key derivation.
+  - `encryption_verify` — a short AES-GCM ciphertext (base64) of the string `'virgulas-verify'`, used to verify the passphrase is correct on reload without storing the key.
+- **Document storage**: when encryption is enabled, `saveDoc` / `saveDocLocal` write an AES-GCM ciphertext to `localStorage` instead of plain JSON. The 12-byte IV is prepended to the ciphertext, both encoded as a single base64 string.
+- **Cloud sync**: when encryption is enabled, the Supabase sync payload is first gzip-compressed (`compressData`) and then AES-GCM encrypted before being stored in the database. On pull, the payload is decrypted then decompressed. If the server holds unencrypted data (e.g. uploaded before encryption was enabled), decryption fails gracefully and the payload is decompressed directly.
+- **Enabling encryption** (`modal-passphrase`, mode `'set'`): the user provides a passphrase and a confirmation. A random salt is generated, the key is derived, a verification ciphertext is stored, and the current document is immediately re-saved encrypted.
+- **Unlocking on reload** (`modal-passphrase`, mode `'unlock'`): when `encryption_enabled` is `'true'` in `localStorage`, `init()` opens the passphrase modal before loading the document. The user enters their passphrase; the key is derived and verified against the stored `encryption_verify` ciphertext. If correct the document is decrypted and the app proceeds normally. If the user clicks **Start fresh**, all `localStorage` is cleared, encryption is disabled, and the app starts with an empty document.
+- **Disabling encryption**: the user confirms via a browser `confirm()` dialog. `encryption_enabled`, `encryption_salt`, and `encryption_verify` are removed from `localStorage` and the current document is re-saved as plain JSON. The in-memory key is cleared.
+- The `modal-passphrase` overlay cannot be dismissed by clicking outside or pressing `Escape` when in `'unlock'` mode, ensuring the user cannot skip decryption.
 
 ---
 

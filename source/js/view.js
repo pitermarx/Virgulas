@@ -103,6 +103,12 @@ export function renderSyncToggle() {
     btn.textContent = State.syncEnabled ? 'Disable sync' : 'Enable sync';
 }
 
+export function renderEncryptionToggle() {
+    const btn = document.getElementById('btn-toggle-encryption');
+    if (!btn) return;
+    btn.textContent = State.encryptionEnabled ? 'Disable encryption' : 'Enable encryption';
+}
+
 // ── Dev panel ─────────────────────────────────────────────────────────────────
 
 export function renderDevPanel() {
