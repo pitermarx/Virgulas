@@ -16,7 +16,7 @@
         "db:migrate": "supabase migration new",
         "db:reset": "supabase db reset",
         "db:diff": "supabase db diff",
-        "db:link": "supabase link"
+        "db:link": "supabase link --project-ref gcpdascpdrakecpknrtt"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.99.1"
