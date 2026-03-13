@@ -2,10 +2,11 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 60000, // 60 s per test to accommodate 600 000-iteration PBKDF2 key derivation
+  timeout: 120000, // 120 s per test — allows 600 000-iteration PBKDF2 key derivation even under CI load
   fullyParallel: true,
+  workers: process.env.CI ? 2 : undefined,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: 0,
   outputDir: 'test-results/artifacts',
   reporter: process.env.CI
     ? [
