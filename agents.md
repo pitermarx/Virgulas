@@ -56,7 +56,5 @@ Tests use a local HTTP server on port 3000 (started automatically by Playwright)
 
 ## Scope of this repository
 
-- **One file app**: all product logic lives in `source/index.html` (HTML + `<style>` + `<script type="module">`).
 - **No build step**: do not introduce a build tool, bundler, or external runtime dependency.
-- **No external dependencies**: the `<script>` tag has no `src`; all JS is inline.
 - **Tests only**: `test/package.json`, `test/playwright.config.js`, and `test/tests/` are for testing only and must not be imported by `source/index.html`.
