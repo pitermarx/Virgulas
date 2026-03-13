@@ -122,6 +122,9 @@ async function setupPage(page) {
     await page.reload();
     // Encryption is mandatory: set up passphrase on first load (no salt yet)
     await page.waitForSelector('#modal-passphrase:not(.hidden)');
+    // Wait for the app's 50 ms auto-focus timer to fire before filling inputs,
+    // so the timer does not race with Playwright's fill of #passphrase-confirm.
+    await expect(page.locator('#passphrase-input')).toBeFocused();
     await page.fill('#passphrase-input', 'testpass');
     await page.fill('#passphrase-confirm', 'testpass');
     await page.click('#btn-passphrase-submit');
