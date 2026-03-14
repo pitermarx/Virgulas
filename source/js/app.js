@@ -289,8 +289,8 @@ bulletsEl.addEventListener('pointerdown', (e) => {
     const link = e.target.closest('a');
     const bulletText = e.target.closest('.bullet-text[data-id]');
     if (link && bulletText && document.activeElement !== bulletText) {
-        e.preventDefault();
         window.open(link.href, '_blank', 'noopener,noreferrer');
+        e.preventDefault();
     }
 });
 

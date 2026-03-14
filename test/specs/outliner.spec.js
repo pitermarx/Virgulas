@@ -937,6 +937,8 @@ test.describe('Options dialog', () => {
     const link = page.locator('#link-github');
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', 'https://github.com/pitermarx/Virgulas');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   test('theme toggle switches to dark mode', async ({ page }) => {
@@ -2013,5 +2015,46 @@ test.describe('Link clicks in bullet text', () => {
     await expect(link).toBeAttached();
     const firstRow = page.locator('.bullet-row').first();
     await expect(firstRow).not.toHaveClass(/focused/);
+  });
+
+  test('rendered markdown link has target="_blank" and rel="noopener noreferrer"', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('[open me](https://example.com)');
+    await page.keyboard.press('Escape');
+
+    const link = firstText.locator('a');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toHaveAttribute('href', 'https://example.com');
+  });
+
+  test('pointerdown on link calls window.open with noopener,noreferrer before preventing default', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await firstText.fill('[test link](https://example.com/target)');
+    await page.keyboard.press('Escape');
+
+    const link = firstText.locator('a');
+    await expect(link).toBeAttached();
+
+    // Intercept window.open to record calls
+    await page.evaluate(() => {
+      window._openCalls = [];
+      window.open = (url, target, features) => {
+        window._openCalls.push({ url, target, features });
+        return null;
+      };
+    });
+
+    await link.evaluate(el => {
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+
+    const calls = await page.evaluate(() => window._openCalls);
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toContain('https://example.com/target');
+    expect(calls[0].target).toBe('_blank');
+    expect(calls[0].features).toContain('noreferrer');
   });
 });
