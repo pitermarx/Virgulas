@@ -198,7 +198,7 @@ export async function handleLoginSubmit(loginMode) {
     // Pull server data and overwrite local
     const { data: serverRow } = await supabaseClient
         .from(State.SYNC_TABLE)
-        .select('data, version')
+        .select('data, version, theme')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -208,9 +208,10 @@ export async function handleLoginSubmit(loginMode) {
             const remoteDoc = payload.doc || payload;
             State.setDoc(remoteDoc);
             State.saveDocLocal();
-            if (payload.theme) {
-                localStorage.setItem(State.THEME_KEY, payload.theme);
-                applyTheme(payload.theme);
+    const theme = payload.theme ?? serverRow.theme;
+            if (theme) {
+                localStorage.setItem(State.THEME_KEY, theme);
+                applyTheme(theme);
             }
             State.setLastSyncedVersion(serverRow.version);
             State.setLastSyncedDocJson(JSON.stringify(State.doc));
@@ -292,15 +293,16 @@ async function pushToServer(userId, baseServerVersion) {
     State.doc.version = newVersion;
     State.saveDocLocal();
 
-    const syncPayload = { doc: State.doc, theme: localStorage.getItem(State.THEME_KEY) || 'light' };
-    const compressed = await State.encryptPayload(syncPayload);
+    const encryptedDoc = await State.encryptPayload(State.doc);
     const saltB64 = localStorage.getItem(State.ENCRYPTION_SALT_KEY);
+    const theme = localStorage.getItem(State.THEME_KEY) || 'light';
 
     const { error } = await supabaseClient.from(State.SYNC_TABLE).upsert({
         user_id: userId,
-        data: compressed,
+        data: encryptedDoc,
         version: newVersion,
         updated_at: new Date().toISOString(),
+        theme,
         ...(saltB64 ? { salt: saltB64 } : {})
     }, { onConflict: 'user_id' });
 
@@ -321,9 +323,10 @@ async function pullFromServer(row) {
     State.setDoc(remoteDoc);
     State.saveDocLocal();
 
-    if (payload.theme) {
-        localStorage.setItem(State.THEME_KEY, payload.theme);
-        applyTheme(payload.theme);
+    const theme = payload.theme ?? row.theme;
+    if (theme) {
+        localStorage.setItem(State.THEME_KEY, theme);
+        applyTheme(theme);
     }
 
     State.setLastSyncedVersion(row.version);
@@ -463,7 +466,7 @@ export async function syncNow() {
 
         // Server is newer — pull
         const { data: dataRow, error: fErr } = await supabaseClient
-            .from(State.SYNC_TABLE).select('data')
+            .from(State.SYNC_TABLE).select('data, theme')
             .eq('user_id', session.user.id).maybeSingle();
         if (fErr) throw fErr;
 

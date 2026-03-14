@@ -135,11 +135,18 @@ export function setSyncStatus(status) {
 
 const STORAGE_LIMIT_BYTES = 20 * 1024; // 20 KB non-enforced limit
 
-export function updateStorageIndicator() {
+export async function updateStorageIndicator() {
     const el = document.getElementById('storage-indicator');
     if (!el) return;
-    const raw = localStorage.getItem(State.STORAGE_KEY) || '';
-    const bytes = new TextEncoder().encode(raw).length;
+    let bytes;
+    try {
+        const encrypted = await State.encryptPayload(State.doc);
+        bytes = new TextEncoder().encode(encrypted).length;
+    } catch (e) {
+        console.error('updateStorageIndicator: failed to compute encrypted size', e);
+        const raw = localStorage.getItem(State.STORAGE_KEY) || '';
+        bytes = new TextEncoder().encode(raw).length;
+    }
     const ratio = Math.min(bytes / STORAGE_LIMIT_BYTES, 1);
     const pct = Math.round(ratio * 100);
     const kbUsed = (bytes / 1024).toFixed(1);

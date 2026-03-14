@@ -1608,13 +1608,17 @@ test.describe('Storage indicator', () => {
     const before = await page.locator('#storage-indicator').getAttribute('title');
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();
-    // Add a lot of text to significantly change the storage size
-    await firstText.fill('A'.repeat(500));
+    // Add varied text (not repetitive) so the compressed/encrypted size actually grows
+    const varied = Array.from({ length: 500 }, (_, i) => String.fromCharCode(33 + ((i * 7 + 13) % 94))).join('');
+    await firstText.fill(varied);
     await firstText.blur();
+    // updateStorageIndicator is async; wait for the title to change
+    await expect(page.locator('#storage-indicator')).not.toHaveAttribute('title', before);
     const after = await page.locator('#storage-indicator').getAttribute('title');
-    // Both should show KB values, and the indicator should have updated
+    // Both should show KB values, and the size should have increased
     expect(after).toMatch(/\d+\.\d+ KB \/ 20 KB/);
-    expect(after).not.toBe(before);
+    const parseKb = (title) => parseFloat(title.match(/^Data: ([\d.]+) KB/)[1]);
+    expect(parseKb(after)).toBeGreaterThan(parseKb(before));
   });
 });
 

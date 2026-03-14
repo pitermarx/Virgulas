@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS public.outlines (
   data       TEXT        NOT NULL,
   version    BIGINT      NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  salt       TEXT
+  salt       TEXT,
+  theme      TEXT
 );
 
 -- Enable Row Level Security so users can only access their own data.
