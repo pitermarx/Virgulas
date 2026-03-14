@@ -145,11 +145,14 @@ export function updateStorageIndicator() {
     const kbUsed = (bytes / 1024).toFixed(1);
     const kbLimit = (STORAGE_LIMIT_BYTES / 1024).toFixed(0);
 
-    // Color: green < 60%, yellow 60–85%, red > 85%
+    // Color: green < 60%, orange 60–85%, red > 85%
     let color;
     if (ratio < 0.6) color = '#4caf50';
     else if (ratio < 0.85) color = '#ff9800';
-    else color = 'var(--danger)';
+    else color = '#c0392b';
+
+    // Track color matches --border light theme; acceptable in both themes
+    const trackColor = '#ddd9d0';
 
     // Mini pie chart using SVG circle stroke-dasharray trick
     // Circle r=5, circumference ≈ 31.42
@@ -160,7 +163,7 @@ export function updateStorageIndicator() {
 
     el.classList.add('visible');
     el.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <circle cx="7" cy="7" r="${r}" fill="none" stroke="var(--border)" stroke-width="2.5"/>
+      <circle cx="7" cy="7" r="${r}" fill="none" stroke="${trackColor}" stroke-width="2.5"/>
       <circle cx="7" cy="7" r="${r}" fill="none" stroke="${color}" stroke-width="2.5"
         stroke-dasharray="${filled.toFixed(2)} ${empty.toFixed(2)}"
         transform="rotate(-90 7 7)"/>

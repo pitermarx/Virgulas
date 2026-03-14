@@ -1608,12 +1608,13 @@ test.describe('Storage indicator', () => {
     const before = await page.locator('#storage-indicator').getAttribute('title');
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();
-    // Add a lot of text to change the storage size
-    await firstText.fill('A'.repeat(200));
+    // Add a lot of text to significantly change the storage size
+    await firstText.fill('A'.repeat(500));
     await firstText.blur();
     const after = await page.locator('#storage-indicator').getAttribute('title');
-    // The title should reflect the new size (may differ from before)
-    expect(after).toMatch(/KB/);
+    // Both should show KB values, and the indicator should have updated
+    expect(after).toMatch(/\d+\.\d+ KB \/ 20 KB/);
+    expect(after).not.toBe(before);
   });
 });
 
