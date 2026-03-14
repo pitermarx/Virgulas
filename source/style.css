@@ -173,7 +173,7 @@ body {
 }
 
 .crumb-last {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 600;
     color: var(--text);
     cursor: default;
@@ -183,11 +183,7 @@ body {
     background: none;
 }
 
-/* ── Zoom title / desc ── */
-#zoom-title {
-    display: none;
-}
-
+/* ── Zoom desc ── */
 #zoom-desc {
     display: none;
     font-size: 14px;

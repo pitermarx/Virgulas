@@ -291,12 +291,6 @@ test.describe('Zoom', () => {
     await expect(page.locator('.crumb-last')).toBeVisible();
   });
 
-  test('zoom-title is never visible (title only shown in breadcrumb)', async ({ page }) => {
-    const firstDot = page.locator('.bullet-dot').first();
-    await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeHidden();
-  });
-
   test('zooming into a bullet focuses the description, not a new item', async ({ page }) => {
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();

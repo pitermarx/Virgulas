@@ -259,7 +259,6 @@ Use `history.pushState` for zoom changes so back/forward work naturally. Use `hi
 
 <div id="app">
   <div id="breadcrumb">        <!-- sticky, crumb links + separators, hidden unless .visible -->
-  <div id="zoom-title">        <!-- contenteditable, hidden at root -->
   <div id="zoom-desc">         <!-- contenteditable, hidden at root -->
   <div id="bullets">           <!-- main tree + ghost row, rebuilt on every render -->
                                <!-- last child is always a .ghost-row: a faded "New item…" placeholder that is never persisted -->
@@ -416,16 +415,15 @@ Both listeners are registered as `{ passive: true }` so they do not block scroll
 - On textarea blur: if `node.description` is empty, both view and textarea are hidden.
 - Auto-resize on input: `el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'`.
 - Description font is always smaller than bullet text (0.867rem), with a line-height of 1.25rem.
-- When zoomed into a node, `#zoom-desc` is a `contenteditable` div. `Shift+Enter` or `Escape` from `#zoom-desc` returns focus to `#zoom-title`.
+- When zoomed into a node, `#zoom-desc` is a `contenteditable` div. `Shift+Enter` from `#zoom-desc` focuses the first bullet; `Escape` zooms out.
 
 ---
 
 ## Zoom behaviour
 
-- `#zoom-title` and `#zoom-desc` are `contenteditable` divs, hidden at root zoom level. Both are editable while zoomed in; changes are saved on blur and the breadcrumb is re-rendered.
+- `#zoom-desc` is a `contenteditable` div, hidden at root zoom level. It is editable while zoomed in; changes are saved on blur and the breadcrumb is re-rendered.
 - On `zoomInto()`: after render, `requestAnimationFrame` → focus on first child, or create an empty one if none exists.
 - `Alt+←` from any top child node → `zoomOut()`.
-- `Escape` from `#zoom-title` also triggers `zoomOut()`.
 
 ---
 
@@ -523,7 +521,7 @@ The seed data in Markdown format:
   - Alt+→ to zoom into any bullet
     > Zooming focuses the view on a single node and its subtree. The breadcrumb bar at the top shows your current path and lets you navigate back up.
   - Alt+← to zoom back out
-    > Returns to the parent level. You can also press Escape while editing the zoom title, or click any crumb in the breadcrumb bar.
+    > Returns to the parent level. You can also click any crumb in the breadcrumb bar.
 - Press **Shift+Enter** to add a description to any bullet
   > Descriptions appear below the bullet text in a smaller muted font. Press Shift+Enter or Escape from the description to return to the bullet text. Click the description preview to edit it again.
 - Use `Ctrl+F` to search your entire outline
@@ -580,7 +578,7 @@ Behaviour:
 - `unindentNode` when parent is the current zoom root → do nothing.
 - `unindentNode` moves the node to after its parent and all of the node's subsequent siblings are re-parented as children of the unindented node (so the visual order is preserved and no siblings are lost).
 - `unindentNodes` (multi-select) does NOT adopt subsequent siblings — only the explicitly selected nodes are promoted.
-- `deleteNode` when it is the only child → focus parent (or zoom title if parent is zoom root).
+- `deleteNode` when it is the only child → focus parent.
 - `deleteNode` when node has children → show a `window.confirm()` dialog before proceeding.
 - `deleteNodes` (multi-select) deletes in reverse flat order so index shifts don't affect subsequent deletions; shows a single confirmation dialog if any selected node has children.
 - `copySelectionAsMarkdown` (multi-select `Ctrl+C`) exports selected nodes at depth 0 via `exportMarkdown`; shows a "Markdown copied" toast on success.
