@@ -267,7 +267,7 @@ test.describe('Zoom', () => {
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
 
-    await expect(page.locator('#zoom-title')).toBeVisible();
+    await expect(page.locator('#zoom-desc')).toBeVisible();
     await expect(page.locator('#breadcrumb')).toBeVisible();
   });
 
@@ -277,23 +277,35 @@ test.describe('Zoom', () => {
     await expect(page.locator('#breadcrumb')).toBeVisible();
   });
 
-  test('zooming into a bullet focuses the header, not a new item', async ({ page }) => {
+  test('breadcrumb last item uses crumb-last class', async ({ page }) => {
+    const firstDot = page.locator('.bullet-dot').first();
+    await firstDot.click();
+    await expect(page.locator('.crumb-last')).toBeVisible();
+  });
+
+  test('zoom-title is never visible (title only shown in breadcrumb)', async ({ page }) => {
+    const firstDot = page.locator('.bullet-dot').first();
+    await firstDot.click();
+    await expect(page.locator('#zoom-title')).toBeHidden();
+  });
+
+  test('zooming into a bullet focuses the description, not a new item', async ({ page }) => {
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
 
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
   });
 
   test('Alt+ArrowLeft zooms out', async ({ page }) => {
     // Zoom into first bullet
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
 
-    // Zoom back out using Alt+ArrowLeft from the focused header
+    // Zoom back out using Alt+ArrowLeft from the focused description
     await page.keyboard.press('Alt+ArrowLeft');
 
-    await expect(page.locator('#zoom-title')).toBeHidden();
+    await expect(page.locator('#breadcrumb')).not.toBeVisible();
   });
 
   test('Alt+ArrowRight zooms into a bullet via keyboard', async ({ page }) => {
@@ -301,68 +313,54 @@ test.describe('Zoom', () => {
     await firstText.click();
     await page.keyboard.press('Alt+ArrowRight');
 
-    await expect(page.locator('#zoom-title')).toBeVisible();
+    await expect(page.locator('#zoom-desc')).toBeVisible();
     await expect(page.locator('#breadcrumb')).toBeVisible();
   });
 
-  test('Enter on zoom header creates a new first child', async ({ page }) => {
+  test('ArrowDown from zoom description focuses first bullet', async ({ page }) => {
     // Zoom into the third bullet which has children
     const thirdDot = page.locator('.bullet-dot').nth(2);
     await thirdDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
-
-    const countBefore = await page.locator('.bullet-row').count();
-    await page.keyboard.press('Enter');
-
-    await expect(page.locator('.bullet-row')).toHaveCount(countBefore + 1);
-    await expect(page.locator('.bullet-row.focused')).toBeVisible();
-  });
-
-  test('ArrowDown from zoom header focuses first bullet', async ({ page }) => {
-    // Zoom into the third bullet which has children
-    const thirdDot = page.locator('.bullet-dot').nth(2);
-    await thirdDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
 
     await page.keyboard.press('ArrowDown');
 
     await expect(page.locator('.bullet-text').first()).toBeFocused();
   });
 
-  test('ArrowUp from first bullet focuses zoom header when zoomed', async ({ page }) => {
+  test('ArrowUp from first bullet focuses zoom description when zoomed', async ({ page }) => {
     // Zoom into the third bullet which has children
     const thirdDot = page.locator('.bullet-dot').nth(2);
     await thirdDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
 
-    // Move to first bullet, then back up to header
+    // Move to first bullet, then back up to description
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('.bullet-text').first()).toBeFocused();
     await page.keyboard.press('ArrowUp');
 
-    await expect(page.locator('#zoom-title')).toBeFocused();
-  });
-
-  test('Shift+Enter on zoom header focuses zoom description', async ({ page }) => {
-    const firstDot = page.locator('.bullet-dot').first();
-    await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
-
-    await page.keyboard.press('Shift+Enter');
-
     await expect(page.locator('#zoom-desc')).toBeFocused();
   });
 
-  test('Escape from zoom description returns focus to zoom header', async ({ page }) => {
+  test('Shift+Enter from zoom description focuses first bullet', async ({ page }) => {
+    // Zoom into the third bullet which has children
+    const thirdDot = page.locator('.bullet-dot').nth(2);
+    await thirdDot.click();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
+
+    await page.keyboard.press('Shift+Enter');
+
+    await expect(page.locator('.bullet-text').first()).toBeFocused();
+  });
+
+  test('Escape from zoom description zooms out', async ({ page }) => {
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
-    await page.keyboard.press('Shift+Enter');
     await expect(page.locator('#zoom-desc')).toBeFocused();
 
     await page.keyboard.press('Escape');
 
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#breadcrumb')).not.toBeVisible();
   });
 });
 
@@ -849,36 +847,35 @@ test.describe('Ghost row', () => {
     await expect(page.locator('#ghost-text')).toBeFocused();
   });
 
-  test('ArrowUp from ghost row focuses zoom title when zoomed into empty bullet', async ({ page }) => {
+  test('ArrowUp from ghost row focuses zoom description when zoomed into empty bullet', async ({ page }) => {
     // Zoom into a bullet that has no children (first bullet)
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
 
-    // Click ghost row to focus it (this blurs zoom title without zooming out)
+    // Click ghost row to focus it (this blurs zoom desc without zooming out)
     await page.locator('#ghost-row').click();
     await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
 
-    // ArrowUp should go back to zoom title (no bullets in this empty zoom)
+    // ArrowUp should go back to zoom description (no bullets in this empty zoom)
     await page.keyboard.press('ArrowUp');
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
   });
 });
 
-test.describe('Zoom title Enter on empty zoom root', () => {
-  test('Enter on zoom header of empty bullet focuses the ghost row', async ({ page }) => {
+test.describe('Zoom description navigation on empty zoom root', () => {
+  test('ArrowDown from zoom description focuses ghost row when empty', async ({ page }) => {
     // Zoom into a bullet that has no children (first bullet)
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('#zoom-desc')).toBeFocused();
 
     // No bullet rows visible in this empty zoom
     await expect(page.locator('.bullet-row')).toHaveCount(0);
 
-    // Enter should focus the ghost row, not create a new bullet
-    await page.keyboard.press('Enter');
-    await expect(page.locator('#ghost-row')).toHaveClass(/focused/);
-    await expect(page.locator('.bullet-row')).toHaveCount(0);
+    // ArrowDown should focus the ghost row
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#ghost-text')).toBeFocused();
   });
 });
 
@@ -1134,18 +1131,15 @@ test.describe('Escape to unfocus', () => {
 });
 
 test.describe('Zoom description Shift+Enter', () => {
-  test('Shift+Enter from zoom description returns focus to zoom header', async ({ page }) => {
-    const firstDot = page.locator('.bullet-dot').first();
-    await firstDot.click();
-    await expect(page.locator('#zoom-title')).toBeFocused();
-
-    // Go to zoom description
-    await page.keyboard.press('Shift+Enter');
+  test('Shift+Enter from zoom description focuses first bullet when children exist', async ({ page }) => {
+    // Zoom into the third bullet which has children
+    const thirdDot = page.locator('.bullet-dot').nth(2);
+    await thirdDot.click();
     await expect(page.locator('#zoom-desc')).toBeFocused();
 
-    // Shift+Enter should return to zoom title
+    // Shift+Enter should move to first bullet
     await page.keyboard.press('Shift+Enter');
-    await expect(page.locator('#zoom-title')).toBeFocused();
+    await expect(page.locator('.bullet-text').first()).toBeFocused();
   });
 });
 

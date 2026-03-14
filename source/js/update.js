@@ -48,7 +48,7 @@ export function focusPrev(id) {
     const flat = flatVisible(State.getZoomRoot());
     const idx = flat.findIndex(x => x.node.id === id);
     if (idx <= 0) {
-        if (State.zoomStack.length > 0) document.getElementById('zoom-title').focus();
+        if (State.zoomStack.length > 0) document.getElementById('zoom-desc').focus();
         return;
     }
     focusNode(flat[idx - 1].node.id);
@@ -113,7 +113,7 @@ export function zoomInto(id) {
     State.updateHash();
     render();
     requestAnimationFrame(() => {
-        document.getElementById('zoom-title').focus();
+        document.getElementById('zoom-desc').focus();
     });
 }
 

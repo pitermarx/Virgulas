@@ -268,7 +268,7 @@ export function renderBreadcrumb() {
 
         const node = findNode(id, State.doc.root);
         const crumb = document.createElement('span');
-        crumb.className = 'crumb';
+        crumb.className = i === State.zoomStack.length - 1 ? 'crumb crumb-last' : 'crumb';
         crumb.textContent = node ? (node.text || 'Untitled') : 'Untitled';
         if (i < State.zoomStack.length - 1) {
             crumb.addEventListener('click', () => _onZoomTo(State.zoomStack.slice(0, i + 1)));
@@ -278,19 +278,13 @@ export function renderBreadcrumb() {
 }
 
 export function renderZoomHeader(zoomRoot) {
-    const titleEl = document.getElementById('zoom-title');
     const descEl = document.getElementById('zoom-desc');
     if (State.zoomStack.length === 0) {
-        titleEl.classList.remove('visible');
         descEl.classList.remove('visible');
         return;
     }
-    titleEl.classList.add('visible');
     descEl.classList.add('visible');
 
-    if (document.activeElement !== titleEl) {
-        titleEl.textContent = zoomRoot.text || '';
-    }
     if (document.activeElement !== descEl) {
         descEl.textContent = zoomRoot.description || '';
     }

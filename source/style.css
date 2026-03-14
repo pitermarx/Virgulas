@@ -172,27 +172,20 @@ body {
     user-select: none;
 }
 
+.crumb-last {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: default;
+}
+
+.crumb-last:hover {
+    background: none;
+}
+
 /* ── Zoom title / desc ── */
 #zoom-title {
     display: none;
-    font-size: 24px;
-    font-weight: 600;
-    line-height: 1.3;
-    color: var(--text);
-    outline: none;
-    border-bottom: 2px solid var(--border);
-    padding-bottom: 12px;
-    margin-bottom: 6px;
-    cursor: text;
-}
-
-#zoom-title.visible {
-    display: block;
-}
-
-#zoom-title:empty::before {
-    content: "Untitled";
-    color: var(--text-faint);
 }
 
 #zoom-desc {

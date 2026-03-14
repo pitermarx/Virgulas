@@ -176,7 +176,7 @@ bulletsEl.addEventListener('keydown', (e) => {
             if (flat.length > 0) {
                 focusNode(flat[flat.length - 1].node.id);
             } else if (State.zoomStack.length > 0) {
-                document.getElementById('zoom-title').focus();
+                document.getElementById('zoom-desc').focus();
             }
         }
         if (e.key === 'Backspace' && target.textContent === '') {
@@ -185,7 +185,7 @@ bulletsEl.addEventListener('keydown', (e) => {
             if (flat.length > 0) {
                 focusNode(flat[flat.length - 1].node.id);
             } else if (State.zoomStack.length > 0) {
-                document.getElementById('zoom-title').focus();
+                document.getElementById('zoom-desc').focus();
             }
         }
         return;
@@ -284,22 +284,9 @@ bulletsEl.addEventListener('touchend', (e) => {
     }
 }, { passive: true });
 
-// ── Zoom title / desc ─────────────────────────────────────────────────────────
+// ── Zoom desc ─────────────────────────────────────────────────────────────────
 
-const zoomTitleEl = document.getElementById('zoom-title');
 const zoomDescEl = document.getElementById('zoom-desc');
-
-zoomTitleEl.addEventListener('blur', () => {
-    const zoomRoot = State.getZoomRoot();
-    if (zoomRoot && State.zoomStack.length > 0) {
-        const newText = zoomTitleEl.textContent;
-        if (newText !== zoomRoot.text) {
-            zoomRoot.text = newText;
-            State.saveDoc();
-            renderBreadcrumb();
-        }
-    }
-});
 
 zoomDescEl.addEventListener('blur', () => {
     const zoomRoot = State.getZoomRoot();
@@ -312,66 +299,34 @@ zoomDescEl.addEventListener('blur', () => {
     }
 });
 
-zoomTitleEl.addEventListener('keydown', (e) => {
-    if (e.shiftKey && e.key === 'Enter') {
-        e.preventDefault();
-        zoomDescEl.focus();
-        return;
-    }
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        zoomTitleEl.blur();
-        const zoomRoot = State.getZoomRoot();
-        if (zoomRoot) {
-            if (zoomRoot.children.length === 0) {
-                requestAnimationFrame(() => {
-                    const ghostText = document.getElementById('ghost-text');
-                    if (ghostText) ghostText.focus();
-                });
-            } else {
-                State.pushUndo();
-                const newNode = makeNode('');
-                zoomRoot.children.unshift(newNode);
-                State.saveDoc();
-                render();
-                requestAnimationFrame(() => focusNode(newNode.id, false));
-            }
-        }
-        return;
-    }
+zoomDescEl.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         const flat = flatVisible(State.getZoomRoot());
-        if (flat.length > 0) focusNodeAtStart(flat[0].node.id);
+        if (flat.length > 0) {
+            focusNodeAtStart(flat[0].node.id);
+        } else {
+            const ghostText = document.getElementById('ghost-text');
+            if (ghostText) ghostText.focus();
+        }
         return;
     }
-    if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
+        zoomDescEl.blur();
         const flat = flatVisible(State.getZoomRoot());
-        if (flat.length > 0) focusNode(flat[flat.length - 1].node.id);
+        if (flat.length > 0) {
+            focusNodeAtStart(flat[0].node.id);
+        } else {
+            const ghostText = document.getElementById('ghost-text');
+            if (ghostText) ghostText.focus();
+        }
         return;
     }
     if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'Escape') {
         e.preventDefault();
+        zoomDescEl.blur();
         zoomOut();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        openSearch();
-    }
-});
-
-zoomDescEl.addEventListener('keydown', (e) => {
-    if (e.shiftKey && e.key === 'Enter') {
-        e.preventDefault();
-        zoomDescEl.blur();
-        zoomTitleEl.focus();
-        return;
-    }
-    if (e.key === 'Escape') {
-        e.preventDefault();
-        zoomDescEl.blur();
-        zoomTitleEl.focus();
         return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
