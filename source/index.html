@@ -14,7 +14,7 @@
 
 <body>
 
-    <div id="splash" class="hidden">
+    <div id="splash">
         <svg class="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <text x="51" y="48" font-family="Georgia, serif" font-size="90" fill="var(--accent)"
                 text-anchor="middle">,</text>
@@ -26,7 +26,7 @@
     <div id="search-bar">
         <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
         <span id="search-count"></span>
-        <button id="search-close" title="Close (Esc)">×</button>
+        <button id="search-close" title="Close (Esc)" data-action="close-search">×</button>
     </div>
 
     <div id="app">
@@ -36,13 +36,82 @@
     </div>
 
     <div id="toolbar">
-        <button class="toolbar-btn" id="btn-markdown">Markdown</button>
+        <button class="toolbar-btn" id="btn-markdown" data-action="open-markdown">Markdown</button>
         <div class="toolbar-spacer"></div>
         <span id="storage-indicator" title=""></span>
-        <span id="sync-indicator" title=""></span>
-        <button class="toolbar-btn" id="btn-options">Options</button>
-        <button class="toolbar-btn toolbar-btn-icon" id="btn-shortcuts" title="Keyboard shortcuts (?)">?</button>
+        <span id="sync-indicator" title="">
+            <span class="sync-spinner" id="sync-svg-syncing" aria-hidden="true"></span>
+            <svg id="sync-svg-online" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2.5 10a2.5 2.5 0 0 1 0-5h.3A4 4 0 1 1 11 8" />
+                <path d="M9 10l1.5 1.5 3-3" stroke-width="1.6" />
+            </svg>
+            <svg id="sync-svg-pending" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2.5 10.5a2.5 2.5 0 0 1 0-5h.3A4 4 0 1 1 11.5 9" />
+                <line x1="7" y1="13" x2="7" y2="8" />
+                <polyline points="5,10 7,8 9,10" />
+            </svg>
+            <svg id="sync-svg-synced" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="2,7 5.5,11 12,3.5" />
+            </svg>
+            <svg id="sync-svg-error" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 1L13 13H1L7 1Z" />
+                <line x1="7" y1="5.5" x2="7" y2="8.5" />
+                <circle cx="7" cy="11" r="0.5" fill="currentColor" />
+            </svg>
+            <svg id="sync-svg-conflict" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="8.5,1 5,7.5 8,7.5 5.5,13" />
+            </svg>
+        </span>
+        <button class="toolbar-btn" id="btn-options" data-action="open-options">Options</button>
+        <button class="toolbar-btn toolbar-btn-icon" id="btn-shortcuts" title="Keyboard shortcuts (?)"
+            data-action="open-shortcuts">?</button>
     </div>
+
+    <template id="template-bullet-row">
+        <div class="bullet-row">
+            <div class="bullet-gutter">
+                <div class="collapse-toggle"></div>
+                <div class="bullet-dot" title="Zoom in"></div>
+            </div>
+            <div class="bullet-content">
+                <div class="bullet-text" contenteditable="true" spellcheck="true"></div>
+                <div class="bullet-desc-view"></div>
+                <textarea class="bullet-desc" rows="1" placeholder="Description…"></textarea>
+            </div>
+        </div>
+    </template>
+
+    <template id="template-ghost-row">
+        <div class="ghost-row" id="ghost-row">
+            <div class="bullet-gutter">
+                <div class="collapse-toggle"></div>
+                <div class="bullet-dot"></div>
+            </div>
+            <div class="bullet-content">
+                <div class="bullet-text" id="ghost-text" contenteditable="true" data-placeholder="New item…"></div>
+            </div>
+        </div>
+    </template>
+
+    <template id="template-auth-guest">
+        <button class="btn btn-secondary" id="btn-sign-in" data-action="sign-in">Sign in</button>
+    </template>
+
+    <template id="template-auth-user">
+        <div class="auth-actions">
+            <div class="auth-user-email" data-auth-email></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn btn-secondary" id="btn-sign-out" data-action="sign-out">Sign out</button>
+                <button class="btn btn-danger" id="btn-delete-account" data-action="delete-account">Delete
+                    account</button>
+            </div>
+        </div>
+    </template>
 
     <div id="modal-markdown" class="modal-overlay hidden">
         <div class="modal">
@@ -59,7 +128,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-modal="modal-markdown">Cancel</button>
-                <button class="btn btn-primary" id="btn-apply-markdown">Apply</button>
+                <button class="btn btn-primary" id="btn-apply-markdown" data-action="apply-markdown">Apply</button>
             </div>
         </div>
     </div>
@@ -180,11 +249,13 @@
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Developer mode</span>
-                        <button class="btn btn-secondary" id="btn-toggle-dev">Enable dev mode</button>
+                        <button class="btn btn-secondary" id="btn-toggle-dev" data-action="toggle-dev">Enable dev
+                            mode</button>
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Theme</span>
-                        <button class="btn btn-secondary" id="btn-toggle-theme">Switch to dark mode</button>
+                        <button class="btn btn-secondary" id="btn-toggle-theme" data-action="toggle-theme">Switch to
+                            dark mode</button>
                     </div>
                     <div class="options-item">
                         <span class="options-item-label">Source code</span>
@@ -215,14 +286,15 @@
                         <div id="login-success" class="login-success hidden"></div>
                         <div class="login-switch">
                             <span id="login-switch-text">Don't have an account?</span>
-                            <button class="login-switch-link" id="btn-login-switch">Sign up</button>
+                            <button class="login-switch-link" id="btn-login-switch" data-action="switch-login-mode">Sign
+                                up</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-modal="modal-login">Cancel</button>
-                <button class="btn btn-primary" id="btn-login-submit">Sign in</button>
+                <button class="btn btn-primary" id="btn-login-submit" data-action="submit-login">Sign in</button>
             </div>
         </div>
     </div>
@@ -253,9 +325,12 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="btn-conflict-use-local">Keep Local</button>
-                <button class="btn btn-secondary" id="btn-conflict-use-remote">Use Server</button>
-                <button class="btn btn-primary" id="btn-conflict-apply">Apply Resolved</button>
+                <button class="btn btn-secondary" id="btn-conflict-use-local" data-action="conflict-use-local">Keep
+                    Local</button>
+                <button class="btn btn-secondary" id="btn-conflict-use-remote" data-action="conflict-use-remote">Use
+                    Server</button>
+                <button class="btn btn-primary" id="btn-conflict-apply" data-action="conflict-apply">Apply
+                    Resolved</button>
             </div>
         </div>
     </div>

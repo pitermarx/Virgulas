@@ -1,11 +1,10 @@
 // ── Sync ──────────────────────────────────────────────────────────────────────
 // Supabase authentication and cloud sync.
-// Login implies sync — there is no separate "enable sync" toggle.
 
-import * as State from './state.js';
-import { render, setSyncStatus, openModal, closeModal, setLoginMode, applyTheme, applyDevMode } from './view.js';
-import { makeDoc, seedDoc, exportMarkdown, importMarkdown, findNode } from './model.js';
-import { deriveKey, generateSalt } from './crypto.js';
+import State from './state.js';
+import { render, renderAuthUI, setSyncStatus, openModal, closeModal, applyTheme, applyDevMode, byId, setHidden, setText } from './view.js';
+import { makeDoc, seedDoc, exportMarkdown, importMarkdown } from './model.js';
+import { deriveKey, generateSalt, bytesToB64, b64ToBytes } from './crypto.js';
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 
@@ -13,68 +12,75 @@ const supabaseClient = window.supabase
     ? window.supabase.createClient(State.SUPABASE_URL, State.SUPABASE_KEY)
     : null;
 
+const syncTable = () => supabaseClient.from(State.SYNC_TABLE);
+const syncRow = (userId, select) => syncTable().select(select).eq('user_id', userId).maybeSingle();
+
+function clearLoginFields() {
+    ['login-email', 'login-password', 'login-confirm-password'].forEach(id => {
+        const el = byId(id);
+        if (el) el.value = '';
+    });
+}
+
+function showLoginMsg(id, message) {
+    setText(id, message);
+    setHidden(id, false);
+}
+
+function requireAuthService(showError) {
+    if (supabaseClient) return true;
+    showError('Authentication service unavailable.');
+    return false;
+}
+
+function normalizeDoc(payload) {
+    return payload?.doc || payload;
+}
+
+function applyRemoteDoc(remoteDoc) {
+    State.replaceDoc(remoteDoc, { save: true });
+    render();
+}
+
+async function ensureSaltOnServer(userId, saltB64) {
+    if (!supabaseClient || !saltB64) return;
+    try {
+        await syncTable().upsert(
+            { user_id: userId, salt: saltB64 },
+            { onConflict: 'user_id' }
+        );
+    } catch (e) {
+        console.warn('Failed to store salt:', e);
+    }
+}
+
+async function pushConflictResolutionIfSession() {
+    const session = await getActiveSession();
+    if (!session) { setSyncStatus('idle'); return; }
+    setSyncStatus('syncing');
+    try {
+        await pushToServer(session.user.id, State.conflictServerVersion);
+    } catch { setSyncStatus('error'); }
+}
+
 // ── Salt helpers ──────────────────────────────────────────────────────────────
 
-function decodeSaltB64(b64) {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
-}
-
-function encodeSalt(bytes) {
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
-}
-
-/** Resolve the encryption salt: local → server → generate new. */
 async function resolveSalt(userId) {
     const localB64 = localStorage.getItem(State.ENCRYPTION_SALT_KEY);
-    if (localB64) return { bytes: decodeSaltB64(localB64), b64: localB64 };
+    if (localB64) return { bytes: b64ToBytes(localB64), b64: localB64 };
 
     if (supabaseClient) {
-        const { data } = await supabaseClient
-            .from(State.SYNC_TABLE).select('salt')
-            .eq('user_id', userId).maybeSingle();
+        const { data } = await syncRow(userId, 'salt');
         if (data?.salt) {
             localStorage.setItem(State.ENCRYPTION_SALT_KEY, data.salt);
-            return { bytes: decodeSaltB64(data.salt), b64: data.salt };
+            return { bytes: b64ToBytes(data.salt), b64: data.salt };
         }
     }
 
     const bytes = generateSalt();
-    const b64 = encodeSalt(bytes);
+    const b64 = bytesToB64(bytes);
     localStorage.setItem(State.ENCRYPTION_SALT_KEY, b64);
     return { bytes, b64 };
-}
-
-// ── Auth UI ───────────────────────────────────────────────────────────────────
-
-function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-export function renderAuthUI(user) {
-    const authUI = document.getElementById('auth-ui');
-    if (!authUI) return;
-    if (user) {
-        authUI.innerHTML =
-            `<div class="auth-actions">` +
-            `<div class="auth-user-email">${escapeHtml(user.email)}</div>` +
-            `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">` +
-            `<button class="btn btn-secondary" id="btn-sign-out">Sign out</button>` +
-            `<button class="btn btn-danger" id="btn-delete-account">Delete account</button>` +
-            `</div></div>`;
-        document.getElementById('btn-sign-out').addEventListener('click', () => signOut());
-        document.getElementById('btn-delete-account').addEventListener('click', () => deleteAccount());
-    } else {
-        authUI.innerHTML = `<button class="btn btn-secondary" id="btn-sign-in">Sign in</button>`;
-        document.getElementById('btn-sign-in').addEventListener('click', () => {
-            setLoginMode('signin');
-            openModal('modal-login');
-        });
-    }
 }
 
 // ── Auth lifecycle ────────────────────────────────────────────────────────────
@@ -91,168 +97,92 @@ export async function initAuth() {
         const password = localStorage.getItem(State.ENCRYPTION_PASSWORD_KEY);
         if (password) {
             const salt = await resolveSalt(user.id);
-            State.setEncryptionKey(await deriveKey(password, salt.bytes));
-            // Ensure salt is on server
-            try {
-                await supabaseClient.from(State.SYNC_TABLE).upsert(
-                    { user_id: user.id, salt: salt.b64 },
-                    { onConflict: 'user_id' }
-                );
-            } catch (e) {
-                console.warn('Failed to store salt:', e);
-            }
+            State.encryptionKey = await deriveKey(password, salt.bytes);
+            await ensureSaltOnServer(user.id, salt.b64);
             startSync();
         } else {
-            // No saved password — cannot derive key, sign out
             await signOut();
         }
     }
 
     supabaseClient.auth.onAuthStateChange(async (_event, session) => {
         renderAuthUI(session?.user);
-        if (!session) {
-            stopSync();
-        } else if (State.encryptionKey) {
-            startSync();
-        }
+        if (!session) stopSync();
+        else if (State.encryptionKey) startSync();
     });
 }
 
 export async function handleLoginSubmit(loginMode) {
-    const email = document.getElementById('login-email').value.trim();
-    const password = document.getElementById('login-password').value;
-    const errorDiv = document.getElementById('login-error');
-    const successDiv = document.getElementById('login-success');
-    errorDiv.classList.add('hidden');
-    successDiv.classList.add('hidden');
+    const email = byId('login-email').value.trim();
+    const password = byId('login-password').value;
+    setHidden('login-error', true);
+    setHidden('login-success', true);
 
-    if (!email || !password) {
-        errorDiv.textContent = 'Email and password are required.';
-        errorDiv.classList.remove('hidden');
-        return;
-    }
+    const showError = (msg) => showLoginMsg('login-error', msg);
+    const showSuccess = (msg) => showLoginMsg('login-success', msg);
 
-    // ── Sign up ───────────────────────────────────────────────────────────────
+    if (!email || !password) { showError('Email and password are required.'); return; }
+
+    // Sign up
     if (loginMode === 'signup') {
-        const confirmPassword = document.getElementById('login-confirm-password').value;
-        if (password !== confirmPassword) {
-            errorDiv.textContent = 'Passwords do not match.';
-            errorDiv.classList.remove('hidden');
-            return;
-        }
-        if (!supabaseClient) {
-            errorDiv.textContent = 'Authentication service unavailable.';
-            errorDiv.classList.remove('hidden');
-            return;
-        }
+        const confirmPassword = byId('login-confirm-password').value;
+        if (password !== confirmPassword) { showError('Passwords do not match.'); return; }
+        if (!requireAuthService(showError)) return;
         const { error } = await supabaseClient.auth.signUp({ email, password });
-        if (error) {
-            errorDiv.textContent = error.message;
-            errorDiv.classList.remove('hidden');
-        } else {
-            document.getElementById('login-email').value = '';
-            document.getElementById('login-password').value = '';
-            document.getElementById('login-confirm-password').value = '';
-            successDiv.textContent = 'Check your email for a confirmation link.';
-            successDiv.classList.remove('hidden');
-        }
+        if (error) showError(error.message);
+        else { clearLoginFields(); showSuccess('Check your email for a confirmation link.'); }
         return;
     }
 
-    // ── Sign in ───────────────────────────────────────────────────────────────
-    if (!supabaseClient) {
-        errorDiv.textContent = 'Authentication service unavailable.';
-        errorDiv.classList.remove('hidden');
-        return;
-    }
-
-    // Warn that local data will be replaced
+    // Sign in
+    if (!requireAuthService(showError)) return;
     if (State.doc.root.children.length > 0) {
         if (!confirm('Signing in will replace your local data with the server version. Continue?')) return;
     }
 
     const { data: signInData, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    if (error) {
-        errorDiv.textContent = error.message;
-        errorDiv.classList.remove('hidden');
-        return;
-    }
+    if (error) { showError(error.message); return; }
 
     const userId = signInData.user.id;
-
-    // Derive encryption key
     const salt = await resolveSalt(userId);
-    State.setEncryptionKey(await deriveKey(password, salt.bytes));
+    State.encryptionKey = await deriveKey(password, salt.bytes);
     localStorage.setItem(State.ENCRYPTION_PASSWORD_KEY, password);
+    await ensureSaltOnServer(userId, salt.b64);
 
-    // Ensure salt is on server
-    try {
-        await supabaseClient.from(State.SYNC_TABLE).upsert(
-            { user_id: userId, salt: salt.b64 },
-            { onConflict: 'user_id' }
-        )
-    } catch (e) {
-        console.warn('Failed to store salt:', e);
-    }
-
-    // Pull server data and overwrite local
-    const { data: serverRow } = await supabaseClient
-        .from(State.SYNC_TABLE)
-        .select('data, version')
-        .eq('user_id', userId)
-        .maybeSingle();
+    const { data: serverRow } = await syncRow(userId, 'data, version');
 
     if (serverRow?.data) {
         try {
-            const payload = await State.decryptPayload(serverRow.data);
-            const remoteDoc = payload.doc || payload;
-            State.setDoc(remoteDoc);
-            State.saveDocLocal();
-            State.setLastSyncedVersion(serverRow.version);
-            State.setLastSyncedDocJson(JSON.stringify(State.doc));
-            localStorage.setItem(State.SYNC_VERSION_KEY, String(serverRow.version));
-            localStorage.setItem(State.SYNC_BASE_KEY, JSON.stringify(State.doc));
-        } catch (e) {
-            console.error('Failed to decrypt server data on login:', e);
-        }
+            applyRemoteDoc(normalizeDoc(await State.decryptPayload(serverRow.data)));
+            State.updateSyncSnapshot(serverRow.version);
+        } catch (e) { console.error('Failed to decrypt server data on login:', e); }
     } else {
-        // No server data — push local on next sync tick
-        State.setLastSyncedVersion(0);
-        State.setPendingSync(true);
+        State.lastSyncedVersion = 0;
+        State.pendingSync = true;
+        render();
     }
-
-    State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
-    render();
-
-    document.getElementById('login-email').value = '';
-    document.getElementById('login-password').value = '';
+    clearLoginFields();
     closeModal('modal-login');
     startSync();
 }
 
 export async function signOut() {
     stopSync();
-    State.setEncryptionKey(null);
+    State.encryptionKey = null;
     if (supabaseClient) await supabaseClient.auth.signOut();
-
-    // Clear all localStorage
     localStorage.clear();
 
-    // Reset to seed data
     const doc = makeDoc();
     seedDoc(doc);
-    State.setDoc(doc);
-    State.saveDocLocal();
+    State.replaceDoc(doc, { save: true });
 
-    // Reset state
-    State.setZoomStack([]);
-    State.setLastSyncedVersion(0);
-    State.setLastSyncedDocJson(null);
-    State.setPendingSync(false);
-    State.setDevMode(false);
+    State.zoomStack = [];
+    State.lastSyncedVersion = 0;
+    State.lastSyncedDocJson = null;
+    State.pendingSync = false;
+    State.devMode = false;
     history.replaceState(null, '', '#');
 
-    // Reset UI
     applyTheme('light');
     applyDevMode();
     render();
@@ -263,9 +193,7 @@ export async function deleteAccount() {
     if (!confirm('Delete your account? This will permanently remove all synced data and cannot be undone.')) return;
     try {
         const session = await getActiveSession();
-        if (session) {
-            await supabaseClient.from(State.SYNC_TABLE).delete().eq('user_id', session.user.id);
-        }
+        if (session) await syncTable().delete().eq('user_id', session.user.id);
         await signOut();
     } catch (e) {
         console.error('Delete account error:', e);
@@ -288,215 +216,135 @@ async function pushToServer(userId, baseServerVersion) {
     State.doc.version = newVersion;
     State.saveDocLocal();
 
-    const encryptedDoc = await State.encryptPayload(State.doc);
     const saltB64 = localStorage.getItem(State.ENCRYPTION_SALT_KEY);
-
-    const { error } = await supabaseClient.from(State.SYNC_TABLE).upsert({
+    const { error } = await syncTable().upsert({
         user_id: userId,
-        data: encryptedDoc,
+        data: await State.encryptPayload(State.doc),
         version: newVersion,
         updated_at: new Date().toISOString(),
         ...(saltB64 ? { salt: saltB64 } : {})
     }, { onConflict: 'user_id' });
-
     if (error) throw error;
 
-    State.setPendingSync(false);
-    State.setLastSyncedVersion(newVersion);
-    State.setLastSyncedDocJson(JSON.stringify(State.doc));
-    localStorage.setItem(State.SYNC_VERSION_KEY, String(newVersion));
-    localStorage.setItem(State.SYNC_BASE_KEY, JSON.stringify(State.doc));
+    State.pendingSync = false;
+    State.updateSyncSnapshot(newVersion);
     setSyncStatus('synced');
 }
 
 async function pullFromServer(row) {
-    const payload = await State.decryptPayload(row.data);
-    const remoteDoc = payload.doc || payload;
-
-    State.setDoc(remoteDoc);
-    State.saveDocLocal();
-
-    State.setLastSyncedVersion(row.version);
-    State.setLastSyncedDocJson(JSON.stringify(State.doc));
-    localStorage.setItem(State.SYNC_VERSION_KEY, String(row.version));
-    localStorage.setItem(State.SYNC_BASE_KEY, JSON.stringify(State.doc));
-    State.setPendingSync(false);
-    State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
-    render();
+    applyRemoteDoc(normalizeDoc(await State.decryptPayload(row.data)));
+    State.updateSyncSnapshot(row.version);
+    State.pendingSync = false;
     setSyncStatus('synced');
 }
 
-// ── 3-way merge & conflict handling ──────────────────────────────────────────
+// ── Conflict handling ─────────────────────────────────────────────────────────
 
 async function handleConflict(row) {
     let remotePayload;
-    try {
-        remotePayload = await State.decryptPayload(row.data);
-    } catch {
-        setSyncStatus('error');
-        State.setSyncPaused(false);
-        return;
-    }
-    const remoteDoc = remotePayload.doc || remotePayload;
+    try { remotePayload = await State.decryptPayload(row.data); }
+    catch { setSyncStatus('error'); State.syncPaused = false; return; }
+    const remoteDoc = normalizeDoc(remotePayload);
 
     const { tryAutoMerge } = await import('./model.js');
     const merged = tryAutoMerge(State.doc, remoteDoc, State.lastSyncedDocJson);
 
     if (merged) {
-        // Auto-merge succeeded — apply and push immediately
-        State.setDoc(merged);
-        State.saveDocLocal();
-        State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
-        render();
-        State.setSyncPaused(false);
+        applyRemoteDoc(merged);
+        State.syncPaused = false;
         await pushToServer(row.user_id, row.version);
         return;
     }
 
-    // Manual conflict resolution
-    State.setConflictRemoteDoc(remoteDoc);
-    State.setConflictServerVersion(row.version);
-
-    document.getElementById('conflict-local').value = exportMarkdown(State.doc.root).trim();
-    document.getElementById('conflict-remote').value = exportMarkdown(remoteDoc.root).trim();
-    document.getElementById('conflict-resolved').value = exportMarkdown(State.doc.root).trim();
-
+    State.conflictRemoteDoc = remoteDoc;
+    State.conflictServerVersion = row.version;
+    byId('conflict-local').value = exportMarkdown(State.doc.root).trim();
+    byId('conflict-remote').value = exportMarkdown(remoteDoc.root).trim();
+    byId('conflict-resolved').value = exportMarkdown(State.doc.root).trim();
     setSyncStatus('conflict');
     openModal('modal-conflict');
-    // syncPaused stays true until user resolves
 }
-
-// ── Conflict modal resolution ─────────────────────────────────────────────────
 
 export async function handleConflictUseLocal() {
     closeModal('modal-conflict');
-    State.setSyncPaused(false);
-    const session = await getActiveSession();
-    if (session) {
-        setSyncStatus('syncing');
-        try { await pushToServer(session.user.id, State.conflictServerVersion); }
-        catch { setSyncStatus('error'); }
-    } else {
-        setSyncStatus('idle');
-    }
+    State.syncPaused = false;
+    await pushConflictResolutionIfSession();
 }
 
 export async function handleConflictUseRemote() {
     closeModal('modal-conflict');
-    State.setSyncPaused(false);
-    if (State.conflictRemoteDoc) {
-        State.setDoc(State.conflictRemoteDoc);
-        State.saveDocLocal();
-        State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
-        render();
-    }
-    State.setLastSyncedVersion(State.conflictServerVersion);
-    State.setLastSyncedDocJson(JSON.stringify(State.doc));
-    localStorage.setItem(State.SYNC_VERSION_KEY, String(State.conflictServerVersion));
-    localStorage.setItem(State.SYNC_BASE_KEY, JSON.stringify(State.doc));
-    State.setPendingSync(false);
+    State.syncPaused = false;
+    if (State.conflictRemoteDoc) applyRemoteDoc(State.conflictRemoteDoc);
+    State.updateSyncSnapshot(State.conflictServerVersion);
+    State.pendingSync = false;
     setSyncStatus('synced');
 }
 
 export async function handleConflictApply(text) {
     if (!text.trim()) return;
-    const newRoot = importMarkdown(text);
-    State.doc.root.children = newRoot.children;
+    State.doc.root.children = importMarkdown(text).children;
     State.saveDocLocal();
     closeModal('modal-conflict');
-    State.setSyncPaused(false);
-    State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
+    State.syncPaused = false;
+    State.sanitizeZoomStack();
     render();
-    const session = await getActiveSession();
-    if (session) {
-        setSyncStatus('syncing');
-        try { await pushToServer(session.user.id, State.conflictServerVersion); }
-        catch { setSyncStatus('error'); }
-    } else {
-        setSyncStatus('idle');
-    }
+    await pushConflictResolutionIfSession();
 }
 
 // ── Sync loop ─────────────────────────────────────────────────────────────────
-// Every 15 s:
-//   1. Query server version.
-//   2. If server version <= local version → push local (if pending changes).
-//   3. If server version > local version → pull, try merge, push.
 
 export async function syncNow() {
-    if (State.syncPaused) return;
-    if (!State.encryptionKey) return;
-
+    if (State.syncPaused || !State.encryptionKey) return;
     const session = await getActiveSession();
     if (!session) return;
 
     setSyncStatus('syncing');
     try {
-        const { data: versionRow, error: vErr } = await supabaseClient
-            .from(State.SYNC_TABLE).select('version')
-            .eq('user_id', session.user.id).maybeSingle();
+        const { data: versionRow, error: vErr } = await syncRow(session.user.id, 'version');
         if (vErr) throw vErr;
 
         const serverVersion = versionRow?.version || 0;
 
         if (serverVersion <= State.lastSyncedVersion) {
-            // Server same or older — push if needed
             const neverSynced = State.lastSyncedVersion === 0 && serverVersion === 0
                 && State.doc.root.children.length > 0;
-            if (State.pendingSync || neverSynced) {
-                await pushToServer(session.user.id, serverVersion);
-            } else {
-                setSyncStatus('synced');
-            }
+            if (State.pendingSync || neverSynced) await pushToServer(session.user.id, serverVersion);
+            else setSyncStatus('synced');
             return;
         }
 
-        // Server is newer — pull
-        const { data: dataRow, error: fErr } = await supabaseClient
-            .from(State.SYNC_TABLE).select('data')
-            .eq('user_id', session.user.id).maybeSingle();
+        const { data: dataRow, error: fErr } = await syncRow(session.user.id, 'data');
         if (fErr) throw fErr;
-
-        if (!dataRow?.data) {
-            setSyncStatus('synced');
-            return;
-        }
+        if (!dataRow?.data) { setSyncStatus('synced'); return; }
 
         const row = { ...dataRow, version: serverVersion, user_id: session.user.id };
-        State.setSyncPaused(true);
-
+        State.syncPaused = true;
         try {
             if (!State.pendingSync) {
-                // No local changes — just pull
                 await pullFromServer(row);
-                State.setSyncPaused(false);
+                State.syncPaused = false;
             } else {
-                // Local changes — try auto-merge or open conflict modal
                 await handleConflict(row);
             }
-        } catch (e) {
-            State.setSyncPaused(false);
-            throw e;
-        }
+        } catch (e) { State.syncPaused = false; throw e; }
     } catch (e) {
         console.error('Sync error:', e);
         setSyncStatus('error');
-        State.setSyncPaused(false);
+        State.syncPaused = false;
     }
 }
 
 export function startSync() {
-    if (!State.encryptionKey) return;
-    if (State.syncIntervalId) return;
+    if (!State.encryptionKey || State.syncIntervalId) return;
     syncNow();
-    State.setSyncIntervalId(setInterval(syncNow, State.SYNC_INTERVAL_MS));
+    State.syncIntervalId = setInterval(syncNow, State.SYNC_INTERVAL_MS);
 }
 
 export function stopSync() {
     if (State.syncIntervalId) {
         clearInterval(State.syncIntervalId);
-        State.setSyncIntervalId(null);
+        State.syncIntervalId = null;
     }
-    State.setSyncPaused(false);
+    State.syncPaused = false;
     setSyncStatus('idle');
 }

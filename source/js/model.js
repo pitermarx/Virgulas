@@ -6,14 +6,21 @@ export function uid() {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 }
 
+export function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const INLINE_RULES = [
+    [/\*\*(.+?)\*\*/g, '<strong>$1</strong>'],
+    [/\*(.+?)\*/g, '<em>$1</em>'],
+    [/`(.+?)`/g, '<code>$1</code>'],
+    [/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="bullet-img">'],
+    [/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>']
+];
+
 export function renderInline(text) {
-    return text
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="bullet-img">')
-        .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    return INLINE_RULES.reduce((acc, [re, rep]) => acc.replace(re, rep), escapeHtml(text || ''));
 }
 
 export function makeNode(text = '', children = [], description = '') {
@@ -59,15 +66,6 @@ export function findNode(id, node) {
         if (found) return found;
     }
     return null;
-}
-
-export function findParent(id, node, parent = null) {
-    if (node.id === id) return parent;
-    for (const child of node.children) {
-        const found = findParent(id, child, node);
-        if (found !== undefined) return found;
-    }
-    return undefined;
 }
 
 export function findParentInSubtree(id, subtreeRoot) {
@@ -121,6 +119,12 @@ export function importMarkdown(text) {
     const root = makeNode('root');
     const stack = [{ node: root, indent: -1 }];
 
+    function appendDescription(lineText) {
+        if (stack.length <= 1) return;
+        const lastNode = stack[stack.length - 1].node;
+        lastNode.description = (lastNode.description ? lastNode.description + '\n' : '') + lineText;
+    }
+
     for (const line of lines) {
         const bulletMatch = line.match(/^(\s*)([-*+])\s(.*)$/);
         if (bulletMatch) {
@@ -138,10 +142,7 @@ export function importMarkdown(text) {
             continue;
         }
         const descMatch = line.match(/^\s*>\s?(.*)$/);
-        if (descMatch && stack.length > 1) {
-            const lastNode = stack[stack.length - 1].node;
-            lastNode.description = (lastNode.description ? lastNode.description + '\n' : '') + descMatch[1];
-        }
+        if (descMatch) appendDescription(descMatch[1]);
     }
     return root;
 }
@@ -153,9 +154,7 @@ export function buildNodeMap(node, map = {}) {
         collapsed: !!node.collapsed,
         children: (node.children || []).map(c => c.id)
     };
-    for (const child of (node.children || [])) {
-        buildNodeMap(child, map);
-    }
+    for (const child of (node.children || [])) buildNodeMap(child, map);
     return map;
 }
 

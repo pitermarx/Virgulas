@@ -1,199 +1,159 @@
 // ── State ─────────────────────────────────────────────────────────────────────
-// Mutable application state and localStorage persistence.
-// This is the "Model instance" in the Elm-inspired architecture — the single
-// source of truth for all runtime state.
+// Single mutable state object and localStorage persistence.
 
 import { makeDoc, findNode } from './model.js';
+import { bytesToB64, b64ToBytes } from './crypto.js';
 
-// ── Storage keys ──────────────────────────────────────────────────────────────
+const State = {
+    // Constants
+    STORAGE_KEY: 'outline_v1',
+    THEME_KEY: 'theme',
+    SYNC_VERSION_KEY: 'sync_version',
+    SYNC_BASE_KEY: 'sync_base',
+    DEV_MODE_KEY: 'dev_mode',
+    ENCRYPTION_SALT_KEY: 'encryption_salt',
+    ENCRYPTION_PASSWORD_KEY: 'encryption_password',
+    SYNC_TABLE: 'outlines',
+    SYNC_INTERVAL_MS: 15000,
+    SUPABASE_URL: 'https://__SUPABASE_PROJECT__.supabase.co',
+    SUPABASE_KEY: '__SUPABASE_PUBLISHABLE_DEFAULT_KEY__',
 
-export const STORAGE_KEY = 'outline_v1';
-export const THEME_KEY = 'theme';
-export const SYNC_VERSION_KEY = 'sync_version';
-export const SYNC_BASE_KEY = 'sync_base';
-export const DEV_MODE_KEY = 'dev_mode';
-export const ENCRYPTION_SALT_KEY = 'encryption_salt';
-export const ENCRYPTION_PASSWORD_KEY = 'encryption_password';
-export const SYNC_TABLE = 'outlines';
-export const SYNC_INTERVAL_MS = 15000;
+    // Document state
+    doc: makeDoc(),
+    zoomStack: [],
+    focusedId: null,
+    searchMatches: [],
+    searchIdx: 0,
+    undoStack: [],
+    selectedIds: [],
+    selectionAnchor: null,
+    selectionHead: null,
+    keepSelection: false,
 
-// ── Supabase credentials ──────────────────────────────────────────────────────
+    // Sync state
+    pendingSync: false,
+    lastSyncedVersion: parseInt(localStorage.getItem('sync_version') || '0'),
+    lastSyncedDocJson: localStorage.getItem('sync_base') || null,
+    syncStatus: 'idle',
+    syncIntervalId: null,
+    syncPaused: false,
+    conflictRemoteDoc: null,
+    conflictServerVersion: 0,
+    devMode: localStorage.getItem('dev_mode') === 'true',
+    encryptionKey: null,
 
-export const SUPABASE_URL = 'https://__SUPABASE_PROJECT__.supabase.co';
-export const SUPABASE_KEY = '__SUPABASE_PUBLISHABLE_DEFAULT_KEY__';
+    // Callbacks (wired by app.js)
+    onSyncStatusUpdate: null,
+    onDocSaved: null,
 
-// ── Document state ────────────────────────────────────────────────────────────
+    // Derived
+    getZoomRoot() {
+        const last = State.zoomStack[State.zoomStack.length - 1];
+        return last ? (findNode(last, State.doc.root) || State.doc.root) : State.doc.root;
+    },
 
-export let doc = makeDoc();
-export let zoomStack = [];       // array of node IDs
-export let focusedId = null;
-export let searchMatches = [];
-export let searchIdx = 0;
-export let undoStack = [];
-export let selectedIds = [];     // IDs of all currently selected nodes
-export let selectionAnchor = null;
-export let selectionHead = null;
-export let _keepSelection = false;
+    sanitizeZoomStack() {
+        State.zoomStack = State.zoomStack.filter(id => !!findNode(id, State.doc.root));
+    },
 
-// ── Sync state ────────────────────────────────────────────────────────────────
+    replaceDoc(doc, { save = false } = {}) {
+        State.doc = doc;
+        State.sanitizeZoomStack();
+        if (save) State.saveDocLocal();
+    },
 
-export let pendingSync = false;
-export let lastSyncedVersion = parseInt(localStorage.getItem(SYNC_VERSION_KEY) || '0');
-export let lastSyncedDocJson = localStorage.getItem(SYNC_BASE_KEY) || null;
-export let syncStatus = 'idle';
-export let syncIntervalId = null;
-export let syncPaused = false;
-export let conflictRemoteDoc = null;
-export let conflictServerVersion = 0;
+    updateSyncSnapshot(version) {
+        const json = JSON.stringify(State.doc);
+        State.lastSyncedVersion = version;
+        State.lastSyncedDocJson = json;
+        localStorage.setItem(State.SYNC_VERSION_KEY, String(version));
+        localStorage.setItem(State.SYNC_BASE_KEY, json);
+    },
 
-export let devMode = localStorage.getItem(DEV_MODE_KEY) === 'true';
-export let encryptionKey = null; // CryptoKey held in memory only — never persisted
-
-// ── State setters (needed because ES module bindings are not directly settable) ─
-
-export function setDoc(value) { doc = value; }
-export function setZoomStack(value) { zoomStack = value; }
-export function setFocusedId(value) { focusedId = value; }
-export function setSearchMatches(value) { searchMatches = value; }
-export function setSearchIdx(value) { searchIdx = value; }
-export function setUndoStack(value) { undoStack = value; }
-export function setSelectedIds(value) { selectedIds = value; }
-export function setSelectionAnchor(value) { selectionAnchor = value; }
-export function setSelectionHead(value) { selectionHead = value; }
-export function setKeepSelection(value) { _keepSelection = value; }
-export function setPendingSync(value) { pendingSync = value; }
-export function setLastSyncedVersion(value) { lastSyncedVersion = value; }
-export function setLastSyncedDocJson(value) { lastSyncedDocJson = value; }
-export function setSyncStatusVar(value) { syncStatus = value; }
-export function setSyncIntervalId(value) { syncIntervalId = value; }
-export function setSyncPaused(value) { syncPaused = value; }
-export function setConflictRemoteDoc(value) { conflictRemoteDoc = value; }
-export function setConflictServerVersion(value) { conflictServerVersion = value; }
-export function setDevMode(value) { devMode = value; }
-export function setEncryptionKey(value) { encryptionKey = value; }
-
-// ── Derived state ─────────────────────────────────────────────────────────────
-
-export function getZoomRoot() {
-    if (zoomStack.length === 0) return doc.root;
-    return findNode(zoomStack[zoomStack.length - 1], doc.root) || doc.root;
-}
-
-// ── Sync status DOM callback ──────────────────────────────────────────────────
-// Set by app.js to allow state.js to trigger DOM updates without importing view.js
-
-let _onSyncStatusUpdate = null;
-export function setSyncStatusCallback(fn) { _onSyncStatusUpdate = fn; }
-
-let _onDocSaved = null;
-export function setDocSavedCallback(fn) { _onDocSaved = fn; }
-
-// ── Persistence ───────────────────────────────────────────────────────────────
-// localStorage always stores plain JSON — encryption is only used for server
-// sync payloads.
-
-export function saveDoc() {
-    pendingSync = true;
-    if (syncStatus === 'synced' || syncStatus === 'idle') {
-        setSyncStatusVar('pending');
-        _onSyncStatusUpdate?.('pending');
-    }
-    _persistDoc();
-}
-
-export function saveDocLocal() {
-    _persistDoc();
-}
-
-function _persistDoc() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-        _onDocSaved?.();
-    } catch (e) { }
-}
-
-export function loadDoc() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            doc = JSON.parse(raw);
-            return true;
+    // Persistence
+    saveDoc() {
+        State.pendingSync = true;
+        if (State.syncStatus === 'synced' || State.syncStatus === 'idle') {
+            State.syncStatus = 'pending';
+            State.onSyncStatusUpdate?.('pending');
         }
-    } catch (e) { }
-    return false;
-}
+        State._persist();
+    },
 
-export function pushUndo() {
-    undoStack.push(JSON.stringify(doc));
-    if (undoStack.length > 100) undoStack.shift();
-}
+    saveDocLocal() { State._persist(); },
 
-// ── Compression ───────────────────────────────────────────────────────────────
-
-export async function compressData(obj) {
-    const json = JSON.stringify(obj);
-    const encoded = new TextEncoder().encode(json);
-    const stream = new ReadableStream({
-        start(ctrl) { ctrl.enqueue(encoded); ctrl.close(); }
-    }).pipeThrough(new CompressionStream('gzip'));
-    const buf = await new Response(stream).arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = '';
-    const CHUNK = 8192;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(binary);
-}
-
-export async function decompressData(b64) {
-    try {
-        const binary = atob(b64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const stream = new ReadableStream({
-            start(ctrl) { ctrl.enqueue(bytes); ctrl.close(); }
-        }).pipeThrough(new DecompressionStream('gzip'));
-        return JSON.parse(await new Response(stream).text());
-    } catch {
-        return JSON.parse(atob(b64));
-    }
-}
-
-// ── Sync payload helpers (compress + optional encrypt) ────────────────────────
-
-export async function encryptPayload(obj) {
-    const compressed = await compressData(obj);
-    if (encryptionKey) {
-        const { encrypt } = await import('./crypto.js');
-        return encrypt(encryptionKey, compressed);
-    }
-    return compressed;
-}
-
-export async function decryptPayload(data) {
-    if (encryptionKey) {
+    _persist() {
         try {
-            const { decrypt } = await import('./crypto.js');
-            const compressed = await decrypt(encryptionKey, data);
-            return decompressData(compressed);
+            localStorage.setItem(State.STORAGE_KEY, JSON.stringify(State.doc));
+            State.onDocSaved?.();
+        } catch { }
+    },
+
+    loadDoc() {
+        try {
+            const raw = localStorage.getItem(State.STORAGE_KEY);
+            if (raw) {
+                State.replaceDoc(JSON.parse(raw));
+                return true;
+            }
+        } catch { }
+        return false;
+    },
+
+    pushUndo() {
+        State.undoStack.push(JSON.stringify(State.doc));
+        if (State.undoStack.length > 100) State.undoStack.shift();
+    },
+
+    // Compression
+    async compressData(obj) {
+        const stream = new ReadableStream({
+            start(c) { c.enqueue(new TextEncoder().encode(JSON.stringify(obj))); c.close(); }
+        }).pipeThrough(new CompressionStream('gzip'));
+        return bytesToB64(new Uint8Array(await new Response(stream).arrayBuffer()));
+    },
+
+    async decompressData(b64) {
+        try {
+            const stream = new ReadableStream({
+                start(c) { c.enqueue(b64ToBytes(b64)); c.close(); }
+            }).pipeThrough(new DecompressionStream('gzip'));
+            return JSON.parse(await new Response(stream).text());
         } catch {
-            // Fall back to plain decompress (e.g. data was pushed before encryption was enabled)
+            return JSON.parse(atob(b64));
         }
-    }
-    return decompressData(data);
-}
+    },
 
-// ── URL / history ─────────────────────────────────────────────────────────────
+    async encryptPayload(obj) {
+        const compressed = await State.compressData(obj);
+        if (State.encryptionKey) {
+            const { encrypt } = await import('./crypto.js');
+            return encrypt(State.encryptionKey, compressed);
+        }
+        return compressed;
+    },
 
-export function updateHash() {
-    const hash = zoomStack.length > 0 ? '#/' + zoomStack.join('/') : '#';
-    history.pushState(null, '', hash);
-}
+    async decryptPayload(data) {
+        if (State.encryptionKey) {
+            try {
+                const { decrypt } = await import('./crypto.js');
+                return State.decompressData(await decrypt(State.encryptionKey, data));
+            } catch { }
+        }
+        return State.decompressData(data);
+    },
 
-export function loadFromHash() {
-    const hash = location.hash.replace(/^#\/?/, '');
-    if (!hash) { zoomStack = []; return; }
-    const ids = hash.split('/').filter(Boolean);
-    zoomStack = ids.filter(id => !!findNode(id, doc.root));
-}
+    // URL / history
+    updateHash() {
+        history.pushState(null, '', State.zoomStack.length ? '#/' + State.zoomStack.join('/') : '#');
+    },
+
+    loadFromHash() {
+        const hash = location.hash.replace(/^#\/?/, '');
+        State.zoomStack = hash
+            ? hash.split('/').filter(Boolean).filter(id => !!findNode(id, State.doc.root))
+            : [];
+    },
+};
+
+export default State;

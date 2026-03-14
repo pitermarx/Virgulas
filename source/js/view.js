@@ -1,28 +1,40 @@
 // ── View ──────────────────────────────────────────────────────────────────────
-// Pure DOM rendering functions. Reads state; does NOT add event listeners
-// on individual rows (all events are handled via delegation in app.js).
-// This is the "View" layer in the Elm-inspired architecture.
+// Pure DOM rendering. Reads state; does NOT add event listeners.
 
-import { renderInline, flatVisible, findNode, countNodes } from './model.js';
-import * as State from './state.js';
+import { renderInline, flatVisible, findNode, countNodes, escapeHtml } from './model.js';
+import State from './state.js';
+
+// ── DOM helpers (shared by app.js / sync.js) ──────────────────────────────────
+
+export const byId = (id) => document.getElementById(id);
+export const setHidden = (id, hidden) => byId(id)?.classList.toggle('hidden', hidden);
+const setVisible = (id, visible) => byId(id)?.classList.toggle('visible', visible);
+export const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
+export const esc = escapeHtml;
+
+const cloneTemplate = (id) => byId(id)?.content.firstElementChild.cloneNode(true);
+const within = (root, selector) => root.querySelector(selector);
+const depthSize = (depth) => depth === 0 ? '100%' : depth === 1 ? '95%' : '90%';
+
+function h(tag, cls, props) {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (props) Object.assign(el, props);
+    return el;
+}
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 export function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    const btn = document.getElementById('btn-toggle-theme');
+    const btn = byId('btn-toggle-theme');
     if (btn) btn.textContent = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
-// ── Modal helpers ─────────────────────────────────────────────────────────────
+// ── Modals ────────────────────────────────────────────────────────────────────
 
-export function openModal(id) {
-    document.getElementById(id).classList.remove('hidden');
-}
-
-export function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
-}
+export function openModal(id) { setHidden(id, false); }
+export function closeModal(id) { setHidden(id, true); }
 
 // ── Login mode ────────────────────────────────────────────────────────────────
 
@@ -31,34 +43,35 @@ export let loginMode = 'signin';
 export function setLoginMode(mode) {
     loginMode = mode;
     const isSignIn = mode === 'signin';
-    document.getElementById('login-modal-title').textContent = isSignIn ? 'Sign in' : 'Sign up';
-    document.getElementById('btn-login-submit').textContent = isSignIn ? 'Sign in' : 'Sign up';
-    document.getElementById('login-confirm-password').classList.toggle('hidden', isSignIn);
-    document.getElementById('login-switch-text').textContent = isSignIn ? "Don't have an account?" : 'Already have an account?';
-    document.getElementById('btn-login-switch').textContent = isSignIn ? 'Sign up' : 'Sign in';
-    document.getElementById('login-error').classList.add('hidden');
-    document.getElementById('login-success').classList.add('hidden');
+    setText('login-modal-title', isSignIn ? 'Sign in' : 'Sign up');
+    setText('btn-login-submit', isSignIn ? 'Sign in' : 'Sign up');
+    setHidden('login-confirm-password', isSignIn);
+    setText('login-switch-text', isSignIn ? "Don't have an account?" : 'Already have an account?');
+    setText('btn-login-switch', isSignIn ? 'Sign up' : 'Sign in');
+    setHidden('login-error', true);
+    setHidden('login-success', true);
 }
 
 // ── Search UI ─────────────────────────────────────────────────────────────────
 
 export function openSearch() {
-    document.getElementById('search-bar').classList.add('visible');
-    document.getElementById('app').classList.add('search-open');
-    document.getElementById('search-input').focus();
+    setVisible('search-bar', true);
+    byId('app')?.classList.add('search-open');
+    byId('search-input')?.focus();
 }
 
 export function closeSearch() {
-    document.getElementById('search-bar').classList.remove('visible');
-    document.getElementById('app').classList.remove('search-open');
-    document.getElementById('search-input').value = '';
-    document.getElementById('search-count').textContent = '';
+    setVisible('search-bar', false);
+    byId('app')?.classList.remove('search-open');
+    const input = byId('search-input');
+    if (input) input.value = '';
+    setText('search-count', '');
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
 export function showToast(message) {
-    const el = document.getElementById('toast');
+    const el = byId('toast');
     if (!el) return;
     el.textContent = message;
     el.classList.remove('hidden');
@@ -72,144 +85,83 @@ export function showToast(message) {
 
 // ── Sync indicator ────────────────────────────────────────────────────────────
 
-// SVG icons for each sync state (14×14 viewBox)
-function syncSvg(status) {
-    if (status === 'online') {
-        // Cloud icon: always-on indicator that sync is active
-        return `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10a2.5 2.5 0 0 1 0-5h.3A4 4 0 1 1 11 8"/><path d="M9 10l1.5 1.5 3-3" stroke-width="1.6"/></svg>`;
-    }
-    if (status === 'pending') {
-        // Cloud with upload arrow
-        return `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5a2.5 2.5 0 0 1 0-5h.3A4 4 0 1 1 11.5 9"/><line x1="7" y1="13" x2="7" y2="8"/><polyline points="5,10 7,8 9,10"/></svg>`;
-    }
-    if (status === 'synced') {
-        // Checkmark
-        return `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2,7 5.5,11 12,3.5"/></svg>`;
-    }
-    if (status === 'error') {
-        // Warning triangle
-        return `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 1L13 13H1L7 1Z"/><line x1="7" y1="5.5" x2="7" y2="8.5"/><circle cx="7" cy="11" r="0.5" fill="currentColor"/></svg>`;
-    }
-    if (status === 'conflict') {
-        // Lightning bolt
-        return `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8.5,1 5,7.5 8,7.5 5.5,13"/></svg>`;
-    }
-    return '';
-}
+const SYNC_TITLES = {
+    syncing: 'Syncing…', synced: 'Synced', pending: 'Pending sync',
+    error: 'Sync error', conflict: 'Conflict – click to resolve', online: 'Online sync active',
+};
 
 export function setSyncStatus(status) {
-    State.setSyncStatusVar(status);
-    const el = document.getElementById('sync-indicator');
+    State.syncStatus = status;
+    const el = byId('sync-indicator');
     if (!el) return;
     el.className = '';
-    el.innerHTML = '';
-    el.onclick = null;
     el.title = '';
+    el.onclick = null;
+    el.querySelectorAll('[id^="sync-svg-"]').forEach(s => s.classList.remove('active'));
     if (status === 'idle') return;
     el.classList.add('visible', status);
-    if (status === 'syncing') {
-        el.innerHTML = '<span class="sync-spinner" aria-hidden="true"></span>';
-        el.title = 'Syncing…';
-    } else if (status === 'synced') {
-        el.innerHTML = syncSvg('synced');
-        el.title = 'Synced';
-        setTimeout(() => { if (State.syncStatus === 'synced') setSyncStatus('online'); }, 3000);
-    } else if (status === 'pending') {
-        el.innerHTML = syncSvg('pending');
-        el.title = 'Pending sync';
-    } else if (status === 'error') {
-        el.innerHTML = syncSvg('error');
-        el.title = 'Sync error';
-    } else if (status === 'conflict') {
-        el.innerHTML = syncSvg('conflict');
-        el.title = 'Conflict – click to resolve';
-        el.onclick = () => openModal('modal-conflict');
-    } else if (status === 'online') {
-        el.innerHTML = syncSvg('online');
-        el.title = 'Online sync active';
-    }
+    el.title = SYNC_TITLES[status] || '';
+    const icon = byId(status === 'syncing' ? 'sync-svg-syncing' : 'sync-svg-' + status);
+    if (icon) icon.classList.add('active');
+    if (status === 'synced') setTimeout(() => { if (State.syncStatus === 'synced') setSyncStatus('online'); }, 3000);
+    if (status === 'conflict') el.onclick = () => openModal('modal-conflict');
     if (State.devMode) renderDevPanel();
 }
 
 // ── Storage indicator ─────────────────────────────────────────────────────────
 
-const STORAGE_LIMIT_BYTES = 20 * 1024; // 20 KB non-enforced limit
+const STORAGE_LIMIT_BYTES = 20 * 1024;
 
 export async function updateStorageIndicator() {
-    const el = document.getElementById('storage-indicator');
+    const el = byId('storage-indicator');
     if (!el) return;
     let bytes;
     try {
-        const encrypted = await State.encryptPayload(State.doc);
-        bytes = new TextEncoder().encode(encrypted).length;
-    } catch (e) {
-        console.error('updateStorageIndicator: failed to compute encrypted size', e);
-        const raw = localStorage.getItem(State.STORAGE_KEY) || '';
-        bytes = new TextEncoder().encode(raw).length;
+        bytes = new TextEncoder().encode(await State.encryptPayload(State.doc)).length;
+    } catch {
+        bytes = new TextEncoder().encode(localStorage.getItem(State.STORAGE_KEY) || '').length;
     }
     const ratio = Math.min(bytes / STORAGE_LIMIT_BYTES, 1);
     const pct = Math.round(ratio * 100);
     const kbUsed = (bytes / 1024).toFixed(1);
     const kbLimit = (STORAGE_LIMIT_BYTES / 1024).toFixed(0);
-
-    // Color: green < 60%, orange 60–85%, red > 85%
-    let color;
-    if (ratio < 0.6) color = '#4caf50';
-    else if (ratio < 0.85) color = '#ff9800';
-    else color = '#c0392b';
-
-    // Track color matches --border light theme; acceptable in both themes
-    const trackColor = '#ddd9d0';
-
-    // Mini pie chart using SVG circle stroke-dasharray trick
-    // Circle r=5, circumference ≈ 31.42
-    const r = 5;
-    const circ = 2 * Math.PI * r;
-    const filled = circ * ratio;
-    const empty = circ - filled;
+    const color = ratio < 0.6 ? '#4caf50' : ratio < 0.85 ? '#ff9800' : '#c0392b';
+    const r = 5, circ = 2 * Math.PI * r, filled = circ * ratio;
 
     el.classList.add('visible');
     el.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <circle cx="7" cy="7" r="${r}" fill="none" stroke="${trackColor}" stroke-width="2.5"/>
+      <circle cx="7" cy="7" r="${r}" fill="none" stroke="#ddd9d0" stroke-width="2.5"/>
       <circle cx="7" cy="7" r="${r}" fill="none" stroke="${color}" stroke-width="2.5"
-        stroke-dasharray="${filled.toFixed(2)} ${empty.toFixed(2)}"
+        stroke-dasharray="${filled.toFixed(2)} ${(circ - filled).toFixed(2)}"
         transform="rotate(-90 7 7)"/>
     </svg>`;
     el.title = `Data: ${kbUsed} KB / ${kbLimit} KB${ratio >= 1 ? ' – over limit!' : ` (${pct}%)`}`;
 }
 
-
 // ── Dev panel ─────────────────────────────────────────────────────────────────
 
 export function renderDevPanel() {
-    const content = document.getElementById('dev-panel-content');
+    const content = byId('dev-panel-content');
     if (!content) return;
-    function esc(s) {
-        return String(s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
     const rows = [
         ['syncStatus', State.syncStatus],
-        ['pendingSync', String(State.pendingSync)],
-        ['lastSyncedVersion', String(State.lastSyncedVersion)],
+        ['pendingSync', State.pendingSync],
+        ['lastSyncedVersion', State.lastSyncedVersion],
         ['zoomStack', JSON.stringify(State.zoomStack)],
         ['focusedId', State.focusedId || '—'],
         ['selectedIds', JSON.stringify(State.selectedIds)],
-        ['undoStack.length', String(State.undoStack.length)],
-        ['doc.version', String(State.doc.version || 1)],
-        ['total nodes', String(countNodes(State.doc.root))],
+        ['undoStack.length', State.undoStack.length],
+        ['doc.version', State.doc.version || 1],
+        ['total nodes', countNodes(State.doc.root)],
     ];
     content.innerHTML =
-        rows.map(([k, v]) =>
-            `<div class="dev-row"><span class="dev-key">${esc(k)}</span><span class="dev-val">${esc(v)}</span></div>`
-        ).join('') +
+        rows.map(([k, v]) => `<div class="dev-row"><span class="dev-key">${esc(k)}</span><span class="dev-val">${esc(v)}</span></div>`).join('') +
         `<details><summary>doc JSON</summary><pre>${esc(JSON.stringify(State.doc, null, 2))}</pre></details>`;
 }
 
 export function applyDevMode() {
-    const panel = document.getElementById('dev-panel');
-    const btn = document.getElementById('btn-toggle-dev');
+    const panel = byId('dev-panel');
+    const btn = byId('btn-toggle-dev');
     if (!panel) return;
     if (State.devMode) {
         panel.classList.remove('hidden');
@@ -221,6 +173,15 @@ export function applyDevMode() {
     }
 }
 
+export function renderAuthUI(user) {
+    const authUI = byId('auth-ui');
+    if (!authUI) return;
+    const content = cloneTemplate(user ? 'template-auth-user' : 'template-auth-guest');
+    if (!content) return;
+    if (user) within(content, '[data-auth-email]').textContent = user.email;
+    authUI.replaceChildren(content);
+}
+
 // ── Description helpers ───────────────────────────────────────────────────────
 
 export function autoResize(el) {
@@ -229,180 +190,125 @@ export function autoResize(el) {
 }
 
 export function showDescEditor(row) {
-    const descView = row.querySelector('.bullet-desc-view');
-    const descEl = row.querySelector('.bullet-desc');
-    descView.classList.remove('visible');
+    within(row, '.bullet-desc-view').classList.remove('visible');
+    const descEl = within(row, '.bullet-desc');
     descEl.classList.add('editing');
     autoResize(descEl);
-    const end = descEl.value.length;
-    descEl.setSelectionRange(end, end);
+    descEl.setSelectionRange(descEl.value.length, descEl.value.length);
+}
+
+export function renderDescView(row, node) {
+    const descView = within(row, '.bullet-desc-view');
+    descView.textContent = node.description || '';
+    descView.classList.toggle('visible', !!node.description);
+}
+
+// ── Cursor ────────────────────────────────────────────────────────────────────
+
+export function setCursor(el, toEnd) {
+    const sel = window.getSelection();
+    const range = document.createRange();
+    if (toEnd) { range.selectNodeContents(el); range.collapse(false); }
+    else { range.setStart(el, 0); range.collapse(true); }
+    sel.removeAllRanges();
+    sel.addRange(range);
 }
 
 // ── Bullet rows ───────────────────────────────────────────────────────────────
 
 export function buildRow(node, depth) {
-    const row = document.createElement('div');
-    row.className = 'bullet-row';
-    if (node.children.length > 0) row.classList.add('has-children');
-    if (node.collapsed) row.classList.add('collapsed');
+    const row = cloneTemplate('template-bullet-row');
+    if (!row) return h('div');
+    const hasKids = node.children.length > 0;
+
+    row.classList.toggle('has-children', hasKids);
+    row.classList.toggle('collapsed', node.collapsed);
     row.dataset.id = node.id;
     row.style.marginLeft = (depth * 20) + 'px';
 
-    const gutter = document.createElement('div');
-    gutter.className = 'bullet-gutter';
+    const toggle = within(row, '.collapse-toggle');
+    const textEl = within(row, '.bullet-text');
+    const descEl = within(row, '.bullet-desc');
+    const content = within(row, '.bullet-content');
 
-    const toggle = document.createElement('div');
-    toggle.className = 'collapse-toggle' + (node.children.length > 0 ? ' active' : '');
+    toggle.classList.toggle('active', hasKids);
     toggle.textContent = node.collapsed ? '▶' : '▼';
     toggle.title = node.collapsed ? 'Expand' : 'Collapse';
-
-    const dot = document.createElement('div');
-    dot.className = 'bullet-dot';
-    dot.title = 'Zoom in';
-
-    gutter.append(toggle, dot);
-
-    const content = document.createElement('div');
-    content.className = 'bullet-content';
-    const fsize = depth === 0 ? '100%' : depth === 1 ? '95%' : '90%';
-    content.style.fontSize = fsize;
-
-    const textEl = document.createElement('div');
-    textEl.className = 'bullet-text';
-    textEl.contentEditable = 'true';
-    textEl.spellcheck = true;
     textEl.dataset.id = node.id;
     textEl.dataset.placeholder = 'New item…';
     textEl.innerHTML = renderInline(node.text);
 
-    const descView = document.createElement('div');
-    descView.className = 'bullet-desc-view' + (node.description ? ' visible' : '');
-    descView.textContent = node.description || '';
-
-    const descEl = document.createElement('textarea');
-    descEl.className = 'bullet-desc';
+    content.style.fontSize = depthSize(depth);
     descEl.value = node.description || '';
-    descEl.rows = 1;
-    descEl.placeholder = 'Description…';
-
-    content.append(textEl, descView, descEl);
-    row.append(gutter, content);
+    renderDescView(row, node);
     return row;
 }
 
 export function buildGhostRow() {
-    const row = document.createElement('div');
-    row.className = 'ghost-row';
-    row.id = 'ghost-row';
-
-    const gutter = document.createElement('div');
-    gutter.className = 'bullet-gutter';
-
-    const toggle = document.createElement('div');
-    toggle.className = 'collapse-toggle';
-
-    const dot = document.createElement('div');
-    dot.className = 'bullet-dot';
-
-    gutter.append(toggle, dot);
-
-    const content = document.createElement('div');
-    content.className = 'bullet-content';
-
-    const textEl = document.createElement('div');
-    textEl.className = 'bullet-text';
-    textEl.contentEditable = 'true';
-    textEl.id = 'ghost-text';
-    textEl.dataset.placeholder = 'New item…';
-
-    content.append(textEl);
-    row.append(gutter, content);
+    const row = cloneTemplate('template-ghost-row');
+    if (!row) return h('div');
+    within(row, '.bullet-text').dataset.placeholder = 'New item…';
     return row;
 }
 
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
-// onZoomTo is injected by app.js to avoid a circular import
 let _onZoomTo = () => { };
 export function setZoomToCallback(fn) { _onZoomTo = fn; }
 
 export function renderBreadcrumb() {
-    const el = document.getElementById('breadcrumb');
-    if (State.zoomStack.length === 0) {
-        el.classList.remove('visible');
-        return;
-    }
+    const el = byId('breadcrumb');
+    if (State.zoomStack.length === 0) { el.classList.remove('visible'); return; }
     el.classList.add('visible');
     el.innerHTML = '';
 
-    const rootCrumb = document.createElement('span');
-    rootCrumb.className = 'crumb';
-    rootCrumb.textContent = 'Home';
-    rootCrumb.addEventListener('click', () => _onZoomTo([]));
-    el.appendChild(rootCrumb);
+    const addCrumb = (text, cls, onClick) => {
+        const crumb = h('span', cls, { textContent: text });
+        if (onClick) crumb.addEventListener('click', onClick);
+        el.appendChild(crumb);
+    };
+
+    addCrumb('Home', 'crumb', () => _onZoomTo([]));
 
     State.zoomStack.forEach((id, i) => {
-        const sep = document.createElement('span');
-        sep.className = 'crumb-sep';
-        sep.textContent = ' / ';
-        el.appendChild(sep);
-
+        el.appendChild(h('span', 'crumb-sep', { textContent: ' / ' }));
         const node = findNode(id, State.doc.root);
-        const crumb = document.createElement('span');
-        crumb.className = i === State.zoomStack.length - 1 ? 'crumb crumb-last' : 'crumb';
-        crumb.textContent = node ? (node.text || 'Untitled') : 'Untitled';
-        if (i < State.zoomStack.length - 1) {
-            crumb.addEventListener('click', () => _onZoomTo(State.zoomStack.slice(0, i + 1)));
-        }
-        el.appendChild(crumb);
+        const isLast = i === State.zoomStack.length - 1;
+        addCrumb(
+            node ? (node.text || 'Untitled') : 'Untitled',
+            isLast ? 'crumb crumb-last' : 'crumb',
+            isLast ? null : () => _onZoomTo(State.zoomStack.slice(0, i + 1))
+        );
     });
 }
 
 export function renderZoomHeader(zoomRoot) {
-    const descEl = document.getElementById('zoom-desc');
-    if (State.zoomStack.length === 0) {
-        descEl.classList.remove('visible');
-        return;
-    }
+    const descEl = byId('zoom-desc');
+    if (State.zoomStack.length === 0) { descEl.classList.remove('visible'); return; }
     descEl.classList.add('visible');
-
-    if (document.activeElement !== descEl) {
-        descEl.textContent = zoomRoot.description || '';
-    }
+    if (document.activeElement !== descEl) descEl.textContent = zoomRoot.description || '';
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
 
 export function render() {
-    const bulletsEl = document.getElementById('bullets');
+    const bulletsEl = byId('bullets');
     const zoomRoot = State.getZoomRoot();
     const flat = flatVisible(zoomRoot);
 
     bulletsEl.innerHTML = '';
+    for (const { node, depth } of flat) bulletsEl.appendChild(buildRow(node, depth));
 
-    for (const { node, depth } of flat) {
-        bulletsEl.appendChild(buildRow(node, depth));
-    }
-
-    if (State.searchMatches.length > 0) {
-        State.searchMatches.forEach((id, i) => {
-            const el = bulletsEl.querySelector(`.bullet-row[data-id="${id}"]`);
-            if (el) {
-                el.classList.add('search-match');
-                if (i === State.searchIdx) el.classList.add('search-current');
-            }
-        });
-    }
-
-    bulletsEl.appendChild(buildGhostRow());
-
-    renderBreadcrumb();
-    renderZoomHeader(zoomRoot);
-
-    // Resize all description textareas after DOM is built
-    requestAnimationFrame(() => {
-        bulletsEl.querySelectorAll('.bullet-desc').forEach(autoResize);
+    State.searchMatches.forEach((id, i) => {
+        const el = bulletsEl.querySelector(`.bullet-row[data-id="${id}"]`);
+        if (!el) return;
+        el.classList.add('search-match');
+        if (i === State.searchIdx) el.classList.add('search-current');
     });
 
+    bulletsEl.appendChild(buildGhostRow());
+    renderBreadcrumb();
+    renderZoomHeader(zoomRoot);
+    requestAnimationFrame(() => bulletsEl.querySelectorAll('.bullet-desc').forEach(autoResize));
     if (State.devMode) renderDevPanel();
 }

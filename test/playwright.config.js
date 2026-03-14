@@ -8,7 +8,7 @@ export default defineConfig({
   globalTeardown: './global-teardown.mjs',
   timeout: 120000, // 120 s per test — allows 600 000-iteration PBKDF2 key derivation even under CI load
   fullyParallel: true,
-  workers: process.env.CI ? 4 : 6,
+  workers: 6,
   forbidOnly: !!process.env.CI,
   retries: 0,
   outputDir: '../test-results/artifacts',
@@ -35,7 +35,7 @@ export default defineConfig({
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
     },
-  ],
+  ].filter(p => process.env.CI || p.name === 'chromium'),
   ...(!process.env.BASE_URL && {
     webServer: {
       command: 'npx serve -l 3000 ../source',

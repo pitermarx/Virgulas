@@ -1,75 +1,162 @@
 // ── App ───────────────────────────────────────────────────────────────────────
-// Entry point: initialises the app and wires up all DOM event listeners.
-// Events are handled via delegation on container elements where possible,
-// following the Elm-inspired architecture (view is pure; update handles events).
+// Entry point: DOM events in, update/view/sync calls out.
 
-import { makeNode, findNode, flatVisible, renderInline, exportMarkdown, seedDoc } from './model.js';
-import * as State from './state.js';
+import { findNode, flatVisible, renderInline, exportMarkdown, seedDoc } from './model.js';
+import State from './state.js';
 import {
-    render, setSyncStatus, applyDevMode,
-    applyTheme, openModal, closeModal, openSearch,
-    setLoginMode, loginMode, setZoomToCallback, showDescEditor, autoResize,
-    renderBreadcrumb, updateStorageIndicator
+    render, setSyncStatus, applyDevMode, applyTheme, openModal, closeModal, openSearch,
+    setLoginMode, loginMode, setZoomToCallback, showDescEditor, renderDescView, autoResize,
+    updateStorageIndicator, byId, setCursor
 } from './view.js';
 import {
-    focusNode, focusNodeAtStart, clearSelection, applySelectionHighlights,
+    focusNode, focusNodeAtStart, clearSelection,
     zoomInto, zoomOut, zoomTo, undo,
-    newBulletAfter, deleteNode, indentNode, unindentNode,
+    indentNode, unindentNode, appendGhostBullet, toggleCollapse,
     handleBulletKey, doSearch, nextMatch, endSearch, applyMarkdownImport
 } from './update.js';
 import {
-    initAuth, handleLoginSubmit, syncNow,
+    initAuth, handleLoginSubmit, syncNow, signOut, deleteAccount,
     handleConflictUseLocal, handleConflictUseRemote, handleConflictApply
 } from './sync.js';
+import { isCmdKey, isPlainKey, isArrowNoMods } from './keys.js';
 
-// ── Register zoom callback in view ────────────────────────────────────────────
+// ── Wire callbacks ────────────────────────────────────────────────────────────
 
 setZoomToCallback(zoomTo);
-State.setSyncStatusCallback(setSyncStatus);
-State.setDocSavedCallback(updateStorageIndicator);
+State.onSyncStatusUpdate = setSyncStatus;
+State.onDocSaved = updateStorageIndicator;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const bulletsEl = byId('bullets');
+const zoomDescEl = byId('zoom-desc');
+const MODAL_IDS = ['modal-login', 'modal-conflict', 'modal-markdown', 'modal-shortcuts', 'modal-options'];
+const EDIT_STATE = new WeakMap();
+const BULLET_TEXT = '.bullet-text[data-id]';
+const BULLET_DESC = '.bullet-desc';
+
+function on(id, event, handler) { byId(id)?.addEventListener(event, handler); }
+
+function focusGhostText() { byId('ghost-text')?.focus(); }
+
+function focusBoundary(edge, fallback) {
+    const flat = flatVisible(State.getZoomRoot());
+    const target = edge === 'first' ? flat[0]?.node.id : flat[flat.length - 1]?.node.id;
+    if (target) {
+        edge === 'first' ? focusNodeAtStart(target) : focusNode(target);
+        return true;
+    }
+    if (fallback === 'ghost') focusGhostText();
+    if (fallback === 'zoom' && State.zoomStack.length > 0) zoomDescEl?.focus();
+    return false;
+}
+
+function getRowAndNode(target) {
+    const row = target.closest('.bullet-row');
+    if (!row) return { row: null, id: null, node: null };
+    const id = row.dataset.id;
+    return { row, id, node: findNode(id, State.doc.root) };
+}
+
+function closeTopLayer() {
+    for (const id of MODAL_IDS) {
+        const modal = byId(id);
+        if (modal && !modal.classList.contains('hidden')) { closeModal(id); return true; }
+    }
+    if (byId('search-bar')?.classList.contains('visible')) { endSearch(); return true; }
+    return false;
+}
 
 // ── Bullet container delegation ───────────────────────────────────────────────
 
-const bulletsEl = document.getElementById('bullets');
-let _preFocusText = null;
+function beginEdit(target, value) {
+    EDIT_STATE.set(target, { value, changed: false });
+}
+
+function touchEdit(target, value) {
+    const session = EDIT_STATE.get(target);
+    if (!session) return false;
+    if (!session.changed && value !== session.value) {
+        State.pushUndo();
+        session.changed = true;
+    }
+    return session.changed;
+}
+
+function endEdit(target) {
+    const session = EDIT_STATE.get(target);
+    EDIT_STATE.delete(target);
+    return !!session?.changed;
+}
+
+function focusRowText(row) {
+    row?.querySelector(BULLET_TEXT)?.focus();
+}
+
+const clickActions = {
+    'apply-markdown': () => {
+        applyMarkdownImport(byId('markdown-text').value);
+        closeModal('modal-markdown');
+    },
+    'close-search': endSearch,
+    'conflict-apply': () => handleConflictApply(byId('conflict-resolved').value),
+    'conflict-use-local': handleConflictUseLocal,
+    'conflict-use-remote': handleConflictUseRemote,
+    'delete-account': deleteAccount,
+    'open-markdown': () => {
+        byId('markdown-text').value = exportMarkdown(State.doc.root).trim();
+        openModal('modal-markdown');
+        setTimeout(() => byId('markdown-text').focus(), 50);
+    },
+    'open-options': () => openModal('modal-options'),
+    'open-shortcuts': () => openModal('modal-shortcuts'),
+    'sign-in': () => {
+        setLoginMode('signin');
+        openModal('modal-login');
+    },
+    'sign-out': signOut,
+    'submit-login': () => handleLoginSubmit(loginMode),
+    'switch-login-mode': () => setLoginMode(loginMode === 'signin' ? 'signup' : 'signin'),
+    'toggle-dev': () => {
+        State.devMode = !State.devMode;
+        localStorage.setItem(State.DEV_MODE_KEY, String(State.devMode));
+        applyDevMode();
+    },
+    'toggle-theme': () => {
+        const next = (document.documentElement.getAttribute('data-theme') || 'light') === 'dark' ? 'light' : 'dark';
+        localStorage.setItem(State.THEME_KEY, next);
+        applyTheme(next);
+    },
+};
 
 bulletsEl.addEventListener('focusin', (e) => {
     const target = e.target;
 
-    if (target.matches('.bullet-text[data-id]')) {
+    if (target.matches(BULLET_TEXT)) {
         const id = target.dataset.id;
         const node = findNode(id, State.doc.root);
         if (!node) return;
-        if (!State._keepSelection) clearSelection();
-        State.setFocusedId(id);
+        if (!State.keepSelection) clearSelection();
+        State.focusedId = id;
         target.closest('.bullet-row').classList.add('focused');
         target.textContent = node.text;
-        _preFocusText = node.text;
-        State.pushUndo();
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(target);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        beginEdit(target, node.text);
+        setCursor(target, true);
         return;
     }
 
     if (target.id === 'ghost-text') {
-        if (!State._keepSelection) clearSelection();
-        State.setFocusedId(null);
+        if (!State.keepSelection) clearSelection();
+        State.focusedId = null;
         target.closest('.ghost-row').classList.add('focused');
         return;
     }
 
-    if (target.matches('.bullet-desc')) {
-        const row = target.closest('.bullet-row');
-        if (!row) return;
-        const id = row.dataset.id;
-        const node = findNode(id, State.doc.root);
-        if (!node) return;
-        State.setFocusedId(id);
-        State.pushUndo();
+    if (target.matches(BULLET_DESC)) {
+        const { row, id, node } = getRowAndNode(target);
+        if (!row || !node) return;
+        State.focusedId = id;
+        beginEdit(target, node.description || '');
         showDescEditor(row);
     }
 });
@@ -77,144 +164,81 @@ bulletsEl.addEventListener('focusin', (e) => {
 bulletsEl.addEventListener('focusout', (e) => {
     const target = e.target;
 
-    if (target.matches('.bullet-text[data-id]')) {
-        const id = target.dataset.id;
-        const node = findNode(id, State.doc.root);
+    if (target.matches(BULLET_TEXT)) {
+        const node = findNode(target.dataset.id, State.doc.root);
         target.closest('.bullet-row')?.classList.remove('focused');
         if (node) {
             node.text = target.textContent;
             target.innerHTML = renderInline(node.text);
-            if (node.text !== _preFocusText) {
-                State.saveDoc();
-            }
-            _preFocusText = null;
+            if (endEdit(target)) State.saveDoc();
         }
         return;
     }
 
     if (target.id === 'ghost-text') {
         target.closest('.ghost-row')?.classList.remove('focused');
-        const text = target.textContent.trim();
-        if (text) {
-            const newNode = makeNode(text);
-            State.pushUndo();
-            State.getZoomRoot().children.push(newNode);
-            State.saveDoc();
-            target.textContent = '';
-            render();
-        } else {
-            target.textContent = '';
-        }
+        appendGhostBullet(target.textContent);
+        target.textContent = '';
         return;
     }
 
-    if (target.matches('.bullet-desc')) {
-        const row = target.closest('.bullet-row');
+    if (target.matches(BULLET_DESC)) {
+        const { row, node } = getRowAndNode(target);
         if (!row) return;
-        const id = row.dataset.id;
-        const node = findNode(id, State.doc.root);
         target.classList.remove('editing');
-        if (node) {
-            const descView = row.querySelector('.bullet-desc-view');
-            descView.textContent = node.description || '';
-            if (node.description) {
-                descView.classList.add('visible');
-            } else {
-                descView.classList.remove('visible');
-            }
-        }
+        if (node) renderDescView(row, node);
+        if (endEdit(target)) State.saveDoc();
     }
 });
 
 bulletsEl.addEventListener('input', (e) => {
     const target = e.target;
 
-    if (target.matches('.bullet-text[data-id]')) {
-        const id = target.dataset.id;
-        const node = findNode(id, State.doc.root);
-        if (node) node.text = target.textContent;
+    if (target.matches(BULLET_TEXT)) {
+        const node = findNode(target.dataset.id, State.doc.root);
+        if (node) {
+            node.text = target.textContent;
+            touchEdit(target, node.text);
+        }
         return;
     }
 
-    if (target.matches('.bullet-desc')) {
-        const row = target.closest('.bullet-row');
-        if (!row) return;
-        const id = row.dataset.id;
-        const node = findNode(id, State.doc.root);
+    if (target.matches(BULLET_DESC)) {
+        const { node } = getRowAndNode(target);
         if (node) node.description = target.value;
+        touchEdit(target, target.value);
         autoResize(target);
-        State.saveDoc();
     }
 });
 
 bulletsEl.addEventListener('keydown', (e) => {
     const target = e.target;
 
-    if (target.matches('.bullet-text[data-id]')) {
-        const id = target.dataset.id;
-        const node = findNode(id, State.doc.root);
+    if (target.matches(BULLET_TEXT)) {
+        const node = findNode(target.dataset.id, State.doc.root);
         if (node) handleBulletKey(e, node);
         return;
     }
 
     if (target.id === 'ghost-text') {
-        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            e.preventDefault();
-            target.blur();
-            requestAnimationFrame(() => {
-                const ghostText = document.getElementById('ghost-text');
-                if (ghostText) ghostText.focus();
-            });
+        if (isPlainKey(e, 'Enter')) {
+            e.preventDefault(); target.blur(); requestAnimationFrame(focusGhostText);
         }
         if (e.key === 'Escape') {
-            e.preventDefault();
-            target.textContent = '';
-            target.blur();
+            e.preventDefault(); target.textContent = ''; target.blur();
         }
-        if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            const flat = flatVisible(State.getZoomRoot());
-            if (flat.length > 0) {
-                focusNode(flat[flat.length - 1].node.id);
-            } else if (State.zoomStack.length > 0) {
-                document.getElementById('zoom-desc').focus();
-            }
-        }
-        if (e.key === 'Backspace' && target.textContent === '') {
-            e.preventDefault();
-            const flat = flatVisible(State.getZoomRoot());
-            if (flat.length > 0) {
-                focusNode(flat[flat.length - 1].node.id);
-            } else if (State.zoomStack.length > 0) {
-                document.getElementById('zoom-desc').focus();
-            }
+        if (isArrowNoMods(e, 'ArrowUp') || (e.key === 'Backspace' && target.textContent === '')) {
+            e.preventDefault(); focusBoundary('last', 'zoom');
         }
         return;
     }
 
-    if (target.matches('.bullet-desc')) {
-        if (e.shiftKey && e.key === 'Enter') {
-            e.preventDefault();
-            target.blur();
-            const row = target.closest('.bullet-row');
-            if (row) {
-                const textEl = row.querySelector('.bullet-text');
-                if (textEl) textEl.focus();
-            }
+    if (target.matches(BULLET_DESC)) {
+        if (e.key === 'Escape' || (e.shiftKey && e.key === 'Enter')) {
+            e.preventDefault(); target.blur();
+            focusRowText(target.closest('.bullet-row'));
         }
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            target.blur();
-            const row = target.closest('.bullet-row');
-            if (row) {
-                const textEl = row.querySelector('.bullet-text');
-                if (textEl) textEl.focus();
-            }
-        }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-            e.preventDefault();
-            openSearch();
-        }
+        if (isCmdKey(e, 'f')) { e.preventDefault(); openSearch(); }
     }
 });
 
@@ -222,29 +246,20 @@ bulletsEl.addEventListener('click', (e) => {
     const target = e.target;
 
     if (target === bulletsEl) {
-        const flat = flatVisible(State.getZoomRoot());
-        if (flat.length > 0) focusNode(flat[flat.length - 1].node.id);
+        focusBoundary('last');
         return;
     }
 
     if (target.matches('.collapse-toggle.active')) {
         e.stopPropagation();
-        const row = target.closest('.bullet-row');
-        if (!row) return;
-        const id = row.dataset.id;
-        const node = findNode(id, State.doc.root);
-        if (!node) return;
-        node.collapsed = !node.collapsed;
-        State.saveDoc();
-        render();
+        const { id } = getRowAndNode(target);
+        if (id) toggleCollapse(id);
         return;
     }
 
     if (target.matches('.bullet-dot')) {
         e.stopPropagation();
-        const row = target.closest('.bullet-row');
-        if (!row) return;
-        const id = row.dataset.id;
+        const { id } = getRowAndNode(target);
         if (id) zoomInto(id);
         return;
     }
@@ -253,13 +268,12 @@ bulletsEl.addEventListener('click', (e) => {
         const row = target.closest('.bullet-row');
         if (!row) return;
         showDescEditor(row);
-        const descEl = row.querySelector('.bullet-desc');
-        if (descEl) descEl.focus();
+        row.querySelector('.bullet-desc')?.focus();
         return;
     }
 
     if (target.id === 'ghost-row' || (target !== bulletsEl && target.closest('#ghost-row'))) {
-        const ghostText = document.getElementById('ghost-text');
+        const ghostText = byId('ghost-text');
         if (ghostText && target !== ghostText) ghostText.focus();
     }
 });
@@ -275,19 +289,18 @@ bulletsEl.addEventListener('touchstart', (e) => {
 bulletsEl.addEventListener('touchend', (e) => {
     const row = e.target.closest('.bullet-row');
     if (row) {
-        const id = row.dataset.id;
         const dx = e.changedTouches[0].clientX - (row.dataset.touchStartX || 0);
         const dy = e.changedTouches[0].clientY - (row.dataset.touchStartY || 0);
         if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 2) {
-            if (dx > 0) indentNode(id, true);
-            else unindentNode(id, true);
+            if (dx > 0) indentNode(row.dataset.id, true);
+            else unindentNode(row.dataset.id, true);
         }
     }
 }, { passive: true });
 
 bulletsEl.addEventListener('pointerdown', (e) => {
     const link = e.target.closest('a');
-    const bulletText = e.target.closest('.bullet-text[data-id]');
+    const bulletText = e.target.closest(BULLET_TEXT);
     if (link && bulletText && document.activeElement !== bulletText) {
         window.open(link.href, '_blank', 'noopener,noreferrer');
         e.preventDefault();
@@ -296,53 +309,38 @@ bulletsEl.addEventListener('pointerdown', (e) => {
 
 // ── Zoom desc ─────────────────────────────────────────────────────────────────
 
-const zoomDescEl = document.getElementById('zoom-desc');
-
 zoomDescEl.addEventListener('blur', () => {
     const zoomRoot = State.getZoomRoot();
     if (zoomRoot && State.zoomStack.length > 0) {
         const newDesc = zoomDescEl.textContent;
         if (newDesc !== (zoomRoot.description || '')) {
             zoomRoot.description = newDesc;
-            State.saveDoc();
+            if (endEdit(zoomDescEl)) State.saveDoc();
+            return;
         }
     }
+    endEdit(zoomDescEl);
+});
+
+zoomDescEl.addEventListener('focus', () => {
+    if (State.zoomStack.length > 0) beginEdit(zoomDescEl, State.getZoomRoot().description || '');
+});
+
+zoomDescEl.addEventListener('input', () => {
+    touchEdit(zoomDescEl, zoomDescEl.textContent);
 });
 
 zoomDescEl.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        const flat = flatVisible(State.getZoomRoot());
-        if (flat.length > 0) {
-            focusNodeAtStart(flat[0].node.id);
-        } else {
-            const ghostText = document.getElementById('ghost-text');
-            if (ghostText) ghostText.focus();
-        }
-        return;
+    if (isArrowNoMods(e, 'ArrowDown')) {
+        e.preventDefault(); focusBoundary('first', 'ghost'); return;
     }
     if (e.shiftKey && e.key === 'Enter') {
-        e.preventDefault();
-        zoomDescEl.blur();
-        const flat = flatVisible(State.getZoomRoot());
-        if (flat.length > 0) {
-            focusNodeAtStart(flat[0].node.id);
-        } else {
-            const ghostText = document.getElementById('ghost-text');
-            if (ghostText) ghostText.focus();
-        }
-        return;
+        e.preventDefault(); zoomDescEl.blur(); focusBoundary('first', 'ghost'); return;
     }
     if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'Escape') {
-        e.preventDefault();
-        zoomDescEl.blur();
-        zoomOut();
-        return;
+        e.preventDefault(); zoomDescEl.blur(); zoomOut(); return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        openSearch();
-    }
+    if (isCmdKey(e, 'f')) { e.preventDefault(); openSearch(); }
 });
 
 // ── Global key handler ────────────────────────────────────────────────────────
@@ -351,57 +349,41 @@ document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
     const isEditing = active && (active.isContentEditable || active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
 
-    if (e.key === 'Escape') {
-        if (!document.getElementById('modal-login').classList.contains('hidden')) {
-            closeModal('modal-login'); return;
-        }
-        if (!document.getElementById('modal-conflict').classList.contains('hidden')) {
-            closeModal('modal-conflict'); return;
-        }
-        if (!document.getElementById('modal-markdown').classList.contains('hidden')) {
-            closeModal('modal-markdown'); return;
-        }
-        if (!document.getElementById('modal-shortcuts').classList.contains('hidden')) {
-            closeModal('modal-shortcuts'); return;
-        }
-        if (!document.getElementById('modal-options').classList.contains('hidden')) {
-            closeModal('modal-options'); return;
-        }
-        if (document.getElementById('search-bar').classList.contains('visible')) {
-            endSearch();
-            return;
-        }
-    }
+    if (e.key === 'Escape') { if (closeTopLayer()) return; }
 
     if (!isEditing) {
-        if (e.key === 'Enter' && !e.defaultPrevented && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            e.preventDefault();
-            const ghostText = document.getElementById('ghost-text');
-            if (ghostText) ghostText.focus();
-            return;
-        }
+        if (isPlainKey(e, 'Enter') && !e.defaultPrevented) { e.preventDefault(); focusGhostText(); return; }
         if (e.key === '?') { e.preventDefault(); openModal('modal-shortcuts'); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); openSearch(); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return; }
-        if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-            const flat = flatVisible(State.getZoomRoot());
-            if (flat.length > 0) { e.preventDefault(); focusNodeAtStart(flat[0].node.id); }
-            return;
-        }
-        if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-            const flat = flatVisible(State.getZoomRoot());
-            if (flat.length > 0) { e.preventDefault(); focusNode(flat[flat.length - 1].node.id); }
+        if (isCmdKey(e, 'f')) { e.preventDefault(); openSearch(); return; }
+        if (isCmdKey(e, 'z')) { e.preventDefault(); undo(); return; }
+        if (isArrowNoMods(e, 'ArrowDown') || isArrowNoMods(e, 'ArrowUp')) {
+            if (focusBoundary(e.key === 'ArrowDown' ? 'first' : 'last')) e.preventDefault();
             return;
         }
     }
 });
 
-// ── URL / history ─────────────────────────────────────────────────────────────
+document.addEventListener('click', (e) => {
+    const actionEl = e.target.closest('[data-action]');
+    if (actionEl) {
+        clickActions[actionEl.dataset.action]?.();
+        return;
+    }
 
-window.addEventListener('popstate', () => {
-    State.loadFromHash();
-    render();
+    const closeEl = e.target.closest('.modal-close, [data-modal]');
+    if (closeEl) {
+        const modal = closeEl.dataset.modal || closeEl.closest('.modal-overlay')?.id;
+        if (modal) closeModal(modal);
+        return;
+    }
+
+    const overlay = e.target.closest('.modal-overlay');
+    if (overlay && e.target === overlay) closeModal(overlay.id);
 });
+
+// ── URL / history (popstate means back/forward navigation or manual hash change) 
+
+window.addEventListener('popstate', () => { State.loadFromHash(); render(); });
 
 // ── Visibility ────────────────────────────────────────────────────────────────
 
@@ -409,111 +391,31 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden && State.syncIntervalId) syncNow();
 });
 
-// ── Toolbar ───────────────────────────────────────────────────────────────────
-
-document.getElementById('btn-markdown').addEventListener('click', () => {
-    document.getElementById('markdown-text').value = exportMarkdown(State.doc.root).trim();
-    openModal('modal-markdown');
-    setTimeout(() => document.getElementById('markdown-text').focus(), 50);
-});
-
-document.getElementById('btn-apply-markdown').addEventListener('click', () => {
-    const text = document.getElementById('markdown-text').value;
-    applyMarkdownImport(text);
-    closeModal('modal-markdown');
-});
-
-document.getElementById('btn-options').addEventListener('click', () => {
-    openModal('modal-options');
-});
-
-document.getElementById('btn-toggle-theme').addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
-    const next = current === 'dark' ? 'light' : 'dark';
-    localStorage.setItem(State.THEME_KEY, next);
-    applyTheme(next);
-});
-
-document.getElementById('btn-toggle-dev').addEventListener('click', () => {
-    State.setDevMode(!State.devMode);
-    localStorage.setItem(State.DEV_MODE_KEY, String(State.devMode));
-    applyDevMode();
-});
-
-// ── Modal close buttons ───────────────────────────────────────────────────────
-
-document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
-    el.addEventListener('click', () => {
-        const modal = el.dataset.modal || el.closest('.modal-overlay')?.id;
-        if (modal) closeModal(modal);
-    });
-});
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', (e) => {
-        if (e.target !== overlay) return;
-        closeModal(overlay.id);
-    });
-});
-
 // ── Search ────────────────────────────────────────────────────────────────────
 
-document.getElementById('search-input').addEventListener('input', (e) => {
-    doSearch(e.target.value);
-});
-document.getElementById('search-input').addEventListener('keydown', (e) => {
+on('search-input', 'input', (e) => doSearch(e.target.value));
+on('search-input', 'keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); nextMatch(); }
-    if (e.key === 'Escape') { endSearch(); }
-});
-document.getElementById('search-close').addEventListener('click', endSearch);
-
-// ── Toolbar hint ──────────────────────────────────────────────────────────────
-
-document.getElementById('btn-shortcuts').addEventListener('click', () => openModal('modal-shortcuts'));
-
-// ── Login modal ───────────────────────────────────────────────────────────────
-
-document.getElementById('btn-login-switch').addEventListener('click', () => {
-    setLoginMode(loginMode === 'signin' ? 'signup' : 'signin');
-});
-
-document.getElementById('btn-login-submit').addEventListener('click', () => {
-    handleLoginSubmit(loginMode);
-});
-
-// ── Conflict modal ────────────────────────────────────────────────────────────
-
-document.getElementById('btn-conflict-use-local').addEventListener('click', handleConflictUseLocal);
-document.getElementById('btn-conflict-use-remote').addEventListener('click', handleConflictUseRemote);
-document.getElementById('btn-conflict-apply').addEventListener('click', () => {
-    const text = document.getElementById('conflict-resolved').value;
-    handleConflictApply(text);
+    if (e.key === 'Escape') endSearch();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
     applyTheme(localStorage.getItem(State.THEME_KEY) || 'light');
-
-    // localStorage stores plain JSON — no passphrase needed on load.
-    const loaded = State.loadDoc();
-    if (!loaded) {
-        const splash = document.getElementById('splash');
-        if (splash) splash.classList.remove('hidden');
-        seedDoc(State.doc);
-        State.saveDocLocal();
-    }
+    if (!State.loadDoc()) { seedDoc(State.doc); State.saveDocLocal(); }
     State.loadFromHash();
     render();
     updateStorageIndicator();
     initAuth();
     applyDevMode();
 
-    const splash = document.getElementById('splash');
+    const splash = byId('splash');
     if (splash && !splash.classList.contains('hidden')) {
         setTimeout(() => {
             splash.classList.add('fade-out');
             setTimeout(() => splash.classList.add('hidden'), 700);
-        }, 800);
+        }, 400);
     }
 }
 

@@ -1,54 +1,102 @@
 // ── Update ────────────────────────────────────────────────────────────────────
-// State-modifying operations: the "Update" layer in the Elm-inspired
-// architecture. These functions apply a change to the state and re-render.
+// State-modifying operations.
 
 import { makeNode, findNode, flatVisible, findParentInSubtree, collectAllNodes, importMarkdown, exportMarkdown } from './model.js';
-import * as State from './state.js';
-import { render, setSyncStatus, openSearch, closeSearch, openModal, showToast } from './view.js';
+import State from './state.js';
+import { render, openSearch, closeSearch, openModal, showToast, showDescEditor, setCursor, byId } from './view.js';
+import { isCmdKey, isPlainKey, isArrowKey, isArrowNoMods } from './keys.js';
 
-// ── Cursor helpers ────────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-function moveCursorToEnd(el) {
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
+function getNodeCtx(id, zoomRoot = State.getZoomRoot()) {
+    const parent = findParentInSubtree(id, zoomRoot);
+    if (!parent) return null;
+    const idx = parent.children.findIndex(c => c.id === id);
+    return idx === -1 ? null : { zoomRoot, parent, idx, node: parent.children[idx] };
 }
 
-function moveCursorToStart(el) {
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.setStart(el, 0);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
+function persistAndRender(afterRender) {
+    State.saveDoc();
+    render();
+    if (afterRender) requestAnimationFrame(afterRender);
 }
 
-// ── Focus helpers ─────────────────────────────────────────────────────────────
+function mutateDoc(mutator, afterRender) {
+    State.pushUndo();
+    const result = mutator();
+    persistAndRender(afterRender ? () => afterRender(result) : null);
+    return result;
+}
 
-export function focusNode(id, toEnd = true) {
-    State.setFocusedId(id);
-    const el = document.querySelector(`.bullet-text[data-id="${id}"]`);
+function moveChild(children, from, to) {
+    children.splice(to, 0, children.splice(from, 1)[0]);
+}
+
+function getBulletTextEl(id) {
+    return document.querySelector(`.bullet-text[data-id="${id}"]`);
+}
+
+function syncNodeTextFromDom(node) {
+    const el = getBulletTextEl(node.id);
+    if (el) node.text = el.textContent;
+}
+
+function updateSearchCountText() {
+    const el = byId('search-count');
+    const total = State.searchMatches.length;
+    el.textContent = total === 0 ? 'No matches' : `${State.searchIdx + 1} / ${total}`;
+}
+
+function runOnTarget(nodeId, action) {
+    const ids = State.selectedIds.length > 1 ? State.selectedIds : [nodeId];
+    if (ids.length === 1) clearSelection();
+    action(ids);
+}
+
+function orderedIds(ids, flat) {
+    const idx = new Map(flat.map((x, i) => [x.node.id, i]));
+    return [...ids]
+        .map(id => ({ id, fi: idx.get(id) }))
+        .filter(x => Number.isInteger(x.fi))
+        .sort((a, b) => a.fi - b.fi);
+}
+
+function orderedSelection(ids, zoomRoot = State.getZoomRoot()) {
+    const flat = flatVisible(zoomRoot);
+    return { zoomRoot, flat, ordered: orderedIds(ids, flat) };
+}
+
+function focusSelectionHead() {
+    applySelectionHighlights();
+    State.keepSelection = true;
+    focusNode(State.selectionHead);
+    State.keepSelection = false;
+}
+
+// ── Cursor & focus ────────────────────────────────────────────────────────────
+
+function focusWithCursor(id, cursor) {
+    State.focusedId = id;
+    const el = getBulletTextEl(id);
     if (!el) return;
     el.focus();
-    if (toEnd) moveCursorToEnd(el);
+    if (cursor === 'end') setCursor(el, true);
+    if (cursor === 'start') setCursor(el, false);
+}
+
+export function focusNode(id, toEnd = true) {
+    focusWithCursor(id, toEnd ? 'end' : 'keep');
 }
 
 export function focusNodeAtStart(id) {
-    State.setFocusedId(id);
-    const el = document.querySelector(`.bullet-text[data-id="${id}"]`);
-    if (!el) return;
-    el.focus();
-    moveCursorToStart(el);
+    focusWithCursor(id, 'start');
 }
 
 export function focusPrev(id) {
     const flat = flatVisible(State.getZoomRoot());
     const idx = flat.findIndex(x => x.node.id === id);
     if (idx <= 0) {
-        if (State.zoomStack.length > 0) document.getElementById('zoom-desc').focus();
+        if (State.zoomStack.length > 0) byId('zoom-desc')?.focus();
         return;
     }
     focusNode(flat[idx - 1].node.id);
@@ -59,8 +107,7 @@ export function focusNext(id) {
     const idx = flat.findIndex(x => x.node.id === id);
     if (idx === -1) return;
     if (idx >= flat.length - 1) {
-        const ghostText = document.getElementById('ghost-text');
-        if (ghostText) ghostText.focus();
+        byId('ghost-text')?.focus();
         return;
     }
     focusNodeAtStart(flat[idx + 1].node.id);
@@ -69,69 +116,63 @@ export function focusNext(id) {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 export function clearSelection() {
-    State.setSelectedIds([]);
-    State.setSelectionAnchor(null);
-    State.setSelectionHead(null);
+    State.selectedIds = [];
+    State.selectionAnchor = null;
+    State.selectionHead = null;
     document.querySelectorAll('.bullet-row.selected').forEach(el => el.classList.remove('selected'));
 }
 
 export function applySelectionHighlights() {
     document.querySelectorAll('.bullet-row.selected').forEach(el => el.classList.remove('selected'));
     State.selectedIds.forEach(id => {
-        const el = document.querySelector(`.bullet-row[data-id="${id}"]`);
-        if (el) el.classList.add('selected');
+        document.querySelector(`.bullet-row[data-id="${id}"]`)?.classList.add('selected');
     });
 }
 
 export function extendSelection(currentId, dir) {
     const flat = flatVisible(State.getZoomRoot());
     if (!State.selectionAnchor) {
-        State.setSelectionAnchor(currentId);
-        State.setSelectionHead(currentId);
+        State.selectionAnchor = currentId;
+        State.selectionHead = currentId;
     }
     const headIdx = flat.findIndex(x => x.node.id === State.selectionHead);
     if (headIdx === -1) return;
-    const newHeadIdx = headIdx + dir;
-    if (newHeadIdx < 0 || newHeadIdx >= flat.length) return;
-    State.setSelectionHead(flat[newHeadIdx].node.id);
-    const newAnchorIdx = flat.findIndex(x => x.node.id === State.selectionAnchor);
-    const newHeadFlatIdx = flat.findIndex(x => x.node.id === State.selectionHead);
-    const from = Math.min(newAnchorIdx, newHeadFlatIdx);
-    const to = Math.max(newAnchorIdx, newHeadFlatIdx);
-    State.setSelectedIds(flat.slice(from, to + 1).map(x => x.node.id));
+    const newIdx = headIdx + dir;
+    if (newIdx < 0 || newIdx >= flat.length) return;
+    State.selectionHead = flat[newIdx].node.id;
+    const ai = flat.findIndex(x => x.node.id === State.selectionAnchor);
+    const hi = flat.findIndex(x => x.node.id === State.selectionHead);
+    State.selectedIds = flat.slice(Math.min(ai, hi), Math.max(ai, hi) + 1).map(x => x.node.id);
     applySelectionHighlights();
-    State.setKeepSelection(true);
+    State.keepSelection = true;
     focusNode(State.selectionHead);
-    State.setKeepSelection(false);
+    State.keepSelection = false;
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
 
 export function zoomInto(id) {
     State.zoomStack.push(id);
-    State.setFocusedId(null);
+    State.focusedId = null;
     State.updateHash();
     render();
     requestAnimationFrame(() => {
-        if (!('ontouchstart' in window)) {
-            document.getElementById('zoom-desc').focus();
-        }
+        if (!('ontouchstart' in window)) byId('zoom-desc')?.focus();
     });
 }
 
 export function zoomOut() {
     if (State.zoomStack.length === 0) return;
-    const prevId = State.zoomStack[State.zoomStack.length - 1];
-    State.zoomStack.pop();
-    State.setFocusedId(prevId);
+    const prevId = State.zoomStack.pop();
+    State.focusedId = prevId;
     State.updateHash();
     render();
     requestAnimationFrame(() => focusNode(prevId));
 }
 
 export function zoomTo(stack) {
-    State.setZoomStack(stack);
-    State.setFocusedId(null);
+    State.zoomStack = stack;
+    State.focusedId = null;
     State.updateHash();
     render();
 }
@@ -140,501 +181,258 @@ export function zoomTo(stack) {
 
 export function undo() {
     if (State.undoStack.length === 0) return;
-    const prev = State.undoStack.pop();
-    State.setDoc(JSON.parse(prev));
+    State.replaceDoc(JSON.parse(State.undoStack.pop()));
     State.saveDoc();
-    State.setZoomStack(State.zoomStack.filter(id => !!findNode(id, State.doc.root)));
     render();
 }
 
 // ── Node operations ───────────────────────────────────────────────────────────
 
 export function newBulletAfter(id) {
-    const zoomRoot = State.getZoomRoot();
-    const parent = findParentInSubtree(id, zoomRoot);
-    if (!parent) return;
-    const idx = parent.children.findIndex(c => c.id === id);
-    if (idx === -1) return;
-    const node = parent.children[idx];
-    const newNode = makeNode('');
-    State.pushUndo();
-    if (!node.collapsed && node.children.length > 0) {
-        node.children.unshift(newNode);
-    } else {
-        parent.children.splice(idx + 1, 0, newNode);
-    }
-    State.saveDoc();
-    render();
-    requestAnimationFrame(() => focusNode(newNode.id, false));
+    const ctx = getNodeCtx(id);
+    if (!ctx) return;
+    const { parent, idx, node } = ctx;
+    mutateDoc(() => {
+        const created = makeNode('');
+        if (!node.collapsed && node.children.length > 0) node.children.unshift(created);
+        else parent.children.splice(idx + 1, 0, created);
+        return created;
+    }, (newNode) => focusNode(newNode.id, false));
 }
 
-export function deleteNode(id) {
-    const zoomRoot = State.getZoomRoot();
-    const parent = findParentInSubtree(id, zoomRoot);
-    if (!parent) return;
-    const idx = parent.children.findIndex(c => c.id === id);
-    if (idx === -1) return;
-    const node = parent.children[idx];
-
-    if (node.children.length > 0) {
-        const label = node.text ? `"${node.text}"` : 'this bullet';
-        if (!window.confirm(`Delete ${label} and its ${node.children.length} child item(s)?`)) {
-            return;
-        }
-    }
-
-    let focusTarget = null;
-    if (idx > 0) {
-        focusTarget = parent.children[idx - 1].id;
-    } else if (parent !== zoomRoot) {
-        focusTarget = parent.id;
-    }
-
-    State.pushUndo();
-    parent.children.splice(idx, 1);
-    State.saveDoc();
-    State.setFocusedId(focusTarget);
-    render();
-    if (focusTarget) {
-        requestAnimationFrame(() => focusNode(focusTarget));
-    }
+export function appendGhostBullet(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    mutateDoc(() => State.getZoomRoot().children.push(makeNode(trimmed)));
+    return true;
 }
 
-export function deleteNodes(ids) {
-    const zoomRoot = State.getZoomRoot();
-    const flat = flatVisible(zoomRoot);
-
-    const ordered = [...ids]
-        .map(id => ({ id, flatIdx: flat.findIndex(x => x.node.id === id) }))
-        .filter(x => x.flatIdx >= 0)
-        .sort((a, b) => a.flatIdx - b.flatIdx);
-
+function deleteIds(ids) {
+    const { zoomRoot, flat, ordered } = orderedSelection(ids);
     if (ordered.length === 0) return;
-
     const nodes = ordered.map(x => findNode(x.id, zoomRoot)).filter(Boolean);
-    const nodesWithChildren = nodes.filter(n => n.children.length > 0);
-    if (nodesWithChildren.length > 0) {
-        if (!window.confirm(`Delete ${ordered.length} bullet(s) and their children?`)) return;
-    }
-
-    const firstFlatIdx = ordered[0].flatIdx;
+    const withChildren = nodes.filter(node => node.children.length > 0);
+    const label = ids.length === 1
+        ? nodes[0]?.text ? `"${nodes[0].text}"` : 'this bullet'
+        : `${ordered.length} bullet(s)`;
+    if (withChildren.length > 0 && !window.confirm(`Delete ${label}${ids.length === 1 ? ` and its ${withChildren[0].children.length} child item(s)?` : ' and their children?'}`)) return;
     let focusTarget = null;
-    for (let i = firstFlatIdx - 1; i >= 0; i--) {
-        if (!ids.includes(flat[i].node.id)) {
-            focusTarget = flat[i].node.id;
-            break;
+    for (let i = ordered[0].fi - 1; i >= 0; i--) {
+        if (!ids.includes(flat[i].node.id)) { focusTarget = flat[i].node.id; break; }
+    }
+    mutateDoc(() => {
+        for (const { id } of [...ordered].reverse()) {
+            const parent = findParentInSubtree(id, zoomRoot);
+            if (!parent) continue;
+            const idx = parent.children.findIndex(c => c.id === id);
+            if (idx !== -1) parent.children.splice(idx, 1);
         }
-    }
-
-    State.pushUndo();
-    for (const { id } of [...ordered].reverse()) {
-        const parent = findParentInSubtree(id, zoomRoot);
-        if (!parent) continue;
-        const idx = parent.children.findIndex(c => c.id === id);
-        if (idx !== -1) parent.children.splice(idx, 1);
-    }
-    clearSelection();
-    State.saveDoc();
-    State.setFocusedId(focusTarget);
-    render();
-    if (focusTarget) {
-        requestAnimationFrame(() => focusNode(focusTarget));
-    }
+    }, () => focusTarget && focusNode(focusTarget));
+    if (ids.length > 1) clearSelection();
+    State.focusedId = focusTarget;
 }
+
+export function deleteNode(id) { deleteIds([id]); }
+export function deleteNodes(ids) { deleteIds(ids); }
 
 export function copySelectionAsMarkdown(ids) {
     const zoomRoot = State.getZoomRoot();
     const flat = flatVisible(zoomRoot);
-    const orderedIds = [...ids].sort((a, b) =>
-        flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
-    );
-    const nodes = orderedIds.map(id => findNode(id, zoomRoot)).filter(Boolean);
-    const topLevelNodes = nodes.filter(node => !nodes.some(other => other !== node && findNode(node.id, other)));
-    const md = exportMarkdown({ children: topLevelNodes }).trim();
-    navigator.clipboard.writeText(md).then(() => {
-        showToast('Markdown copied');
-    }).catch(() => {
-        showToast('Copy failed');
-    });
+    const nodes = orderedIds(ids, flat).map(x => findNode(x.id, zoomRoot)).filter(Boolean);
+    const topLevel = nodes.filter(n => !nodes.some(o => o !== n && findNode(n.id, o)));
+    navigator.clipboard.writeText(exportMarkdown({ children: topLevel }).trim())
+        .then(() => showToast('Markdown copied'))
+        .catch(() => showToast('Copy failed'));
 }
 
-export function indentNode(id, noFocus = false) {
-    const zoomRoot = State.getZoomRoot();
-    const parent = findParentInSubtree(id, zoomRoot);
-    if (!parent) return;
-    const idx = parent.children.findIndex(c => c.id === id);
-    if (idx === 0) return;
-    const node = parent.children[idx];
-    const prevSibling = parent.children[idx - 1];
-    State.pushUndo();
-    parent.children.splice(idx, 1);
-    prevSibling.collapsed = false;
-    prevSibling.children.push(node);
-    State.saveDoc();
-    render();
-    if (!noFocus) requestAnimationFrame(() => focusNode(id));
+function indentIds(ids, noFocus = false) {
+    const { zoomRoot, ordered } = orderedSelection(ids);
+    mutateDoc(() => {
+        for (const { id } of ordered) {
+            const ctx = getNodeCtx(id, zoomRoot);
+            if (!ctx || ctx.idx === 0) continue;
+            const { parent, idx, node } = ctx;
+            parent.children.splice(idx, 1);
+            const prev = parent.children[idx - 1];
+            prev.collapsed = false;
+            prev.children.push(node);
+        }
+    }, ids.length > 1 ? applySelectionHighlights : noFocus ? null : () => focusNode(ids[0]));
 }
 
-export function unindentNode(id, noFocus = false) {
-    const zoomRoot = State.getZoomRoot();
-    const parent = findParentInSubtree(id, zoomRoot);
-    if (!parent || parent === zoomRoot) return;
-    const grandParent = findParentInSubtree(parent.id, zoomRoot);
-    if (!grandParent) return;
-    const nodeIdx = parent.children.findIndex(c => c.id === id);
-    const parentIdx = grandParent.children.findIndex(c => c.id === parent.id);
-    if (nodeIdx === -1 || parentIdx === -1) return;
-    State.pushUndo();
-    const [node, ...siblingsToAdopt] = parent.children.splice(nodeIdx);
-    node.children.push(...siblingsToAdopt);
-    grandParent.children.splice(parentIdx + 1, 0, node);
-    State.saveDoc();
-    render();
-    if (!noFocus) requestAnimationFrame(() => focusNode(id));
+function unindentIds(ids, noFocus = false) {
+    const { zoomRoot, ordered } = orderedSelection(ids);
+    const insertCount = new Map();
+    mutateDoc(() => {
+        for (const { id } of ordered) {
+            const ctx = getNodeCtx(id, zoomRoot);
+            if (!ctx || ctx.parent === zoomRoot) continue;
+            const { parent, idx: nodeIdx } = ctx;
+            const grandParent = findParentInSubtree(parent.id, zoomRoot);
+            if (!grandParent) continue;
+            const parentIdx = grandParent.children.findIndex(c => c.id === parent.id);
+            if (parentIdx === -1) continue;
+            const moved = ids.length === 1
+                ? parent.children.splice(nodeIdx)
+                : parent.children.splice(nodeIdx, 1);
+            const [node, ...siblings] = moved;
+            if (!node) continue;
+            if (siblings.length > 0) node.children.push(...siblings);
+            const prev = insertCount.get(parent.id) || 0;
+            grandParent.children.splice(parentIdx + 1 + prev, 0, node);
+            insertCount.set(parent.id, prev + 1);
+        }
+    }, ids.length > 1 ? applySelectionHighlights : noFocus ? null : () => focusNode(ids[0]));
 }
 
-export function moveNode(id, dir) {
-    const zoomRoot = State.getZoomRoot();
-    const parent = findParentInSubtree(id, zoomRoot);
-    if (!parent) return;
-    const idx = parent.children.findIndex(c => c.id === id);
-    if (idx === -1) return;
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= parent.children.length) return;
-    State.pushUndo();
-    const [node] = parent.children.splice(idx, 1);
-    parent.children.splice(newIdx, 0, node);
-    State.saveDoc();
-    render();
-    requestAnimationFrame(() => focusNode(id));
-}
-
-export function indentNodes(ids) {
-    const zoomRoot = State.getZoomRoot();
-    const flat = flatVisible(zoomRoot);
-    const ordered = [...ids].sort((a, b) =>
-        flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
-    );
-    State.pushUndo();
-    for (const id of ordered) {
-        const parent = findParentInSubtree(id, zoomRoot);
-        if (!parent) continue;
-        const idx = parent.children.findIndex(c => c.id === id);
-        if (idx === 0) continue;
-        const node = parent.children[idx];
-        const prevSibling = parent.children[idx - 1];
-        parent.children.splice(idx, 1);
-        prevSibling.collapsed = false;
-        prevSibling.children.push(node);
-    }
-    State.saveDoc();
-    render();
-    requestAnimationFrame(() => applySelectionHighlights());
-}
-
-export function unindentNodes(ids) {
-    const zoomRoot = State.getZoomRoot();
-    const flat = flatVisible(zoomRoot);
-    const ordered = [...ids].sort((a, b) =>
-        flat.findIndex(x => x.node.id === a) - flat.findIndex(x => x.node.id === b)
-    );
-    State.pushUndo();
-    const insertCountByParent = new Map();
-    for (const id of ordered) {
-        const parent = findParentInSubtree(id, zoomRoot);
-        if (!parent || parent === zoomRoot) continue;
-        const grandParent = findParentInSubtree(parent.id, zoomRoot);
-        if (!grandParent) continue;
-        const nodeIdx = parent.children.findIndex(c => c.id === id);
-        const parentIdx = grandParent.children.findIndex(c => c.id === parent.id);
-        if (nodeIdx === -1 || parentIdx === -1) continue;
-        const [node] = parent.children.splice(nodeIdx, 1);
-        const prevCount = insertCountByParent.get(parent.id) || 0;
-        grandParent.children.splice(parentIdx + 1 + prevCount, 0, node);
-        insertCountByParent.set(parent.id, prevCount + 1);
-    }
-    State.saveDoc();
-    render();
-    requestAnimationFrame(() => applySelectionHighlights());
-}
-
-export function moveNodes(ids, dir) {
-    const zoomRoot = State.getZoomRoot();
+function moveIds(ids, dir) {
+    const { zoomRoot } = orderedSelection(ids);
     if (ids.length === 0) return;
-    const parent = findParentInSubtree(ids[0], zoomRoot);
-    if (!parent) return;
+    const firstCtx = getNodeCtx(ids[0], zoomRoot);
+    if (!firstCtx) return;
+    const { parent } = firstCtx;
     const indices = ids.map(id => {
-        if (findParentInSubtree(id, zoomRoot) !== parent) return -1;
-        return parent.children.findIndex(c => c.id === id);
+        const ctx = getNodeCtx(id, zoomRoot);
+        return (!ctx || ctx.parent !== parent) ? -1 : ctx.idx;
     });
     if (indices.includes(-1)) return;
     indices.sort((a, b) => a - b);
-    for (let i = 1; i < indices.length; i++) {
-        if (indices[i] !== indices[i - 1] + 1) return;
-    }
-    const firstIdx = indices[0];
-    const lastIdx = indices[indices.length - 1];
-    State.pushUndo();
-    if (dir === -1) {
-        if (firstIdx === 0) return;
-        const [nodeToSwap] = parent.children.splice(firstIdx - 1, 1);
-        parent.children.splice(lastIdx, 0, nodeToSwap);
-    } else {
-        if (lastIdx === parent.children.length - 1) return;
-        const [nodeToSwap] = parent.children.splice(lastIdx + 1, 1);
-        parent.children.splice(firstIdx, 0, nodeToSwap);
-    }
-    State.saveDoc();
-    render();
-    requestAnimationFrame(() => {
-        applySelectionHighlights();
-        State.setKeepSelection(true);
-        focusNode(State.selectionHead);
-        State.setKeepSelection(false);
-    });
+    for (let i = 1; i < indices.length; i++) if (indices[i] !== indices[i - 1] + 1) return;
+    const [first, last] = [indices[0], indices[indices.length - 1]];
+    if (dir === -1 && first === 0) return;
+    if (dir === 1 && last === parent.children.length - 1) return;
+    mutateDoc(() => {
+        moveChild(parent.children, dir === -1 ? first - 1 : last + 1, dir === -1 ? last : first);
+    }, ids.length > 1 ? focusSelectionHead : () => focusNode(ids[0]));
+}
+
+export function indentNode(id, noFocus = false) { indentIds([id], noFocus); }
+export function indentNodes(ids) { indentIds(ids); }
+export function unindentNode(id, noFocus = false) { unindentIds([id], noFocus); }
+export function unindentNodes(ids) { unindentIds(ids); }
+export function moveNode(id, dir) { moveIds([id], dir); }
+export function moveNodes(ids, dir) { moveIds(ids, dir); }
+
+export function toggleCollapse(id) {
+    const node = findNode(id, State.doc.root);
+    if (!node || node.children.length === 0) return;
+    mutateDoc(() => { node.collapsed = !node.collapsed; });
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
 export function doSearch(query) {
     if (!query.trim()) {
-        State.setSearchMatches([]);
-        State.setSearchIdx(0);
-        document.getElementById('search-count').textContent = '';
+        State.searchMatches = [];
+        State.searchIdx = 0;
+        byId('search-count').textContent = '';
         render();
         return;
     }
     const q = query.toLowerCase();
-    const all = collectAllNodes(State.doc.root);
-    const matches = all
+    State.searchMatches = collectAllNodes(State.doc.root)
         .filter(n => n.text.toLowerCase().includes(q) || (n.description || '').toLowerCase().includes(q))
         .map(n => n.id);
-    State.setSearchMatches(matches);
-    State.setSearchIdx(0);
-    document.getElementById('search-count').textContent =
-        matches.length === 0 ? 'No matches' : `1 / ${matches.length}`;
+    State.searchIdx = 0;
+    updateSearchCountText();
     render();
-    if (matches.length > 0) scrollToMatch();
+    if (State.searchMatches.length > 0) scrollToMatch();
 }
 
 export function nextMatch() {
     if (State.searchMatches.length === 0) return;
-    State.setSearchIdx((State.searchIdx + 1) % State.searchMatches.length);
-    document.getElementById('search-count').textContent =
-        `${State.searchIdx + 1} / ${State.searchMatches.length}`;
+    State.searchIdx = (State.searchIdx + 1) % State.searchMatches.length;
+    updateSearchCountText();
     render();
     scrollToMatch();
 }
 
 export function scrollToMatch() {
     const id = State.searchMatches[State.searchIdx];
-    if (!id) return;
-    const el = document.querySelector(`.bullet-row[data-id="${id}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector(`.bullet-row[data-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 export function endSearch() {
-    const focusTarget = State.searchMatches.length > 0 ? State.searchMatches[State.searchIdx] : null;
-    State.setSearchMatches([]);
-    State.setSearchIdx(0);
+    const target = State.searchMatches.length > 0 ? State.searchMatches[State.searchIdx] : null;
+    State.searchMatches = [];
+    State.searchIdx = 0;
     closeSearch();
     render();
-    if (focusTarget) {
-        requestAnimationFrame(() => focusNode(focusTarget));
-    }
+    if (target) requestAnimationFrame(() => focusNode(target));
 }
 
-// ── Apply markdown import ─────────────────────────────────────────────────────
+// ── Markdown import ───────────────────────────────────────────────────────────
 
 export function applyMarkdownImport(text) {
     if (!text.trim()) return;
-    State.pushUndo();
-    const newRoot = importMarkdown(text);
-    State.doc.root.children = newRoot.children;
-    State.setZoomStack([]);
-    State.saveDoc();
-    render();
+    mutateDoc(() => {
+        State.doc.root.children = importMarkdown(text).children;
+        State.zoomStack = [];
+    });
 }
 
 // ── Keyboard handler ──────────────────────────────────────────────────────────
 
 export function handleBulletKey(e, node) {
-    if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-        clearSelection();
-        e.target.blur();
-        return;
+    if (isPlainKey(e, 'Escape')) {
+        e.preventDefault(); clearSelection(); e.target.blur(); return;
     }
-
-    if (e.shiftKey && e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        extendSelection(node.id, -1);
-        return;
+    if (e.shiftKey && (isArrowKey(e, 'ArrowUp') || isArrowKey(e, 'ArrowDown'))) {
+        e.preventDefault(); extendSelection(node.id, e.key === 'ArrowUp' ? -1 : 1); return;
     }
-
-    if (e.shiftKey && e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        extendSelection(node.id, 1);
-        return;
-    }
-
     if (e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
         const row = document.querySelector(`.bullet-row[data-id="${node.id}"]`);
-        if (!row) return;
-        const descEl = row.querySelector('.bullet-desc');
-        const descView = row.querySelector('.bullet-desc-view');
-        descView.classList.remove('visible');
-        descEl.classList.add('editing');
-        descEl.style.height = 'auto';
-        descEl.style.height = descEl.scrollHeight + 'px';
-        descEl.focus();
-        const end = descEl.value.length;
-        descEl.setSelectionRange(end, end);
+        if (row) { showDescEditor(row); row.querySelector('.bullet-desc').focus(); }
         return;
     }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === ' ') {
+    if (isCmdKey(e, ' ')) {
         e.preventDefault();
-        if (node.children.length > 0) {
-            State.pushUndo();
-            node.collapsed = !node.collapsed;
-            State.saveDoc();
-            render();
-            requestAnimationFrame(() => focusNode(node.id));
-        }
+        if (node.children.length > 0) toggleCollapse(node.id);
         return;
     }
-
     if (e.altKey && e.key === 'ArrowRight') {
-        e.preventDefault();
-        const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
-        if (textEl) node.text = textEl.textContent;
-        State.saveDoc();
-        zoomInto(node.id);
-        return;
+        e.preventDefault(); syncNodeTextFromDom(node); State.saveDoc(); zoomInto(node.id); return;
     }
-
     if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault(); zoomOut(); return;
+    }
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
-        zoomOut();
+        const dir = e.key === 'ArrowUp' ? -1 : 1;
+        runOnTarget(node.id, ids => moveIds(ids, dir));
         return;
     }
-
-    if (e.altKey && e.key === 'ArrowUp') {
+    if (e.key === 'Tab') {
         e.preventDefault();
-        if (State.selectedIds.length > 1) {
-            moveNodes(State.selectedIds, -1);
-        } else {
-            clearSelection();
-            moveNode(node.id, -1);
-        }
+        runOnTarget(node.id, ids => (e.shiftKey ? unindentIds(ids) : indentIds(ids)));
         return;
     }
-
-    if (e.altKey && e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (State.selectedIds.length > 1) {
-            moveNodes(State.selectedIds, 1);
-        } else {
-            clearSelection();
-            moveNode(node.id, 1);
-        }
+    if (isPlainKey(e, 'Enter')) {
+        e.preventDefault(); syncNodeTextFromDom(node); newBulletAfter(node.id); return;
+    }
+    if (isCmdKey(e, 'Backspace')) {
+        e.preventDefault(); syncNodeTextFromDom(node);
+        runOnTarget(node.id, deleteIds);
         return;
     }
-
-    if (!e.shiftKey && e.key === 'Tab') {
-        e.preventDefault();
-        if (State.selectedIds.length > 1) {
-            indentNodes(State.selectedIds);
-        } else {
-            clearSelection();
-            indentNode(node.id);
-        }
-        return;
+    if (isCmdKey(e, 'c') && State.selectedIds.length > 1) {
+        e.preventDefault(); copySelectionAsMarkdown(State.selectedIds); return;
     }
-
-    if (e.shiftKey && e.key === 'Tab') {
-        e.preventDefault();
-        if (State.selectedIds.length > 1) {
-            unindentNodes(State.selectedIds);
-        } else {
-            clearSelection();
-            unindentNode(node.id);
-        }
-        return;
-    }
-
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
-        if (textEl) node.text = textEl.textContent;
-        newBulletAfter(node.id);
-        return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Backspace') {
-        e.preventDefault();
-        const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
-        if (textEl) node.text = textEl.textContent;
-        if (State.selectedIds.length > 1) {
-            deleteNodes(State.selectedIds);
-        } else {
-            deleteNode(node.id);
-        }
-        return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (State.selectedIds.length > 1) {
-            e.preventDefault();
-            copySelectionAsMarkdown(State.selectedIds);
-        }
-        return;
-    }
-
     if (e.key === 'Backspace') {
-        const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
-        const currentText = textEl ? textEl.textContent : node.text;
-        if (currentText === '' && node.description === '') {
-            e.preventDefault();
-            deleteNode(node.id);
-            return;
-        }
+        const text = getBulletTextEl(node.id)?.textContent ?? node.text;
+        if (text === '' && node.description === '') { e.preventDefault(); deleteNode(node.id); return; }
     }
-
-    if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        clearSelection();
-        focusPrev(node.id);
+    if (isArrowNoMods(e, 'ArrowUp') || isArrowNoMods(e, 'ArrowDown')) {
+        e.preventDefault(); clearSelection();
+        e.key === 'ArrowUp' ? focusPrev(node.id) : focusNext(node.id);
         return;
     }
-
-    if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        clearSelection();
-        focusNext(node.id);
-        return;
-    }
-
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const textEl = document.querySelector(`.bullet-text[data-id="${node.id}"]`);
-        if (textEl && textEl.textContent === '') {
-            e.preventDefault();
-            openModal('modal-shortcuts');
-        }
+        const el = getBulletTextEl(node.id);
+        if (el?.textContent === '') { e.preventDefault(); openModal('modal-shortcuts'); }
         return;
     }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        openSearch();
-        return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        undo();
-        return;
-    }
+    if (isCmdKey(e, 'f')) { e.preventDefault(); openSearch(); return; }
+    if (isCmdKey(e, 'z')) { e.preventDefault(); undo(); return; }
 }
