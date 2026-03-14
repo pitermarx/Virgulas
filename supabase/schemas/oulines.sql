@@ -12,8 +12,10 @@ CREATE TABLE IF NOT EXISTS public.outlines (
 ALTER TABLE public.outlines ENABLE ROW LEVEL SECURITY;
 
 -- Single policy covering all operations (SELECT / INSERT / UPDATE / DELETE).
+-- Use (SELECT auth.uid()) so the function is evaluated once per statement,
+-- not once per row, avoiding the Supabase "direct auth call" performance warning.
 CREATE POLICY "Users can only access their own data"
   ON public.outlines FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 

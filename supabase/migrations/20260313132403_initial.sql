@@ -65,8 +65,8 @@ grant update on table "public"."outlines" to "service_role";
   as permissive
   for all
   to public
-using ((auth.uid() = user_id))
-with check ((auth.uid() = user_id));
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 
 
