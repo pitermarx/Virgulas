@@ -1,7 +1,5 @@
 drop extension if exists "pg_net";
 
-drop policy "Users can only access their own data" on "public"."outlines";
-
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.rls_auto_enable()
@@ -35,16 +33,12 @@ END;
 $function$
 ;
 
+CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length();
 
-  create policy "Users can only access their own data"
-  on "public"."outlines"
-  as permissive
-  for all
-  to public
-using ((( SELECT auth.uid() AS uid) = user_id))
-with check ((( SELECT auth.uid() AS uid) = user_id));
+CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete();
 
+CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete();
 
-CREATE TRIGGER tr_check_filters BEFORE INSERT OR UPDATE ON realtime.subscription FOR EACH ROW EXECUTE FUNCTION realtime.subscription_check_filters();
+CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column();
 
 

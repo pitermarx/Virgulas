@@ -14,6 +14,5 @@ ALTER TABLE public.outlines ENABLE ROW LEVEL SECURITY;
 -- Single policy covering all operations (SELECT / INSERT / UPDATE / DELETE).
 CREATE POLICY "Users can only access their own data"
   ON public.outlines FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-
+using ((( SELECT auth.uid() AS uid) = user_id))
+with check ((( SELECT auth.uid() AS uid) = user_id));

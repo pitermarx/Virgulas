@@ -1,10 +1,10 @@
 
-  create table "public"."outlines" (
-    "user_id" uuid not null,
-    "data" text not null,
-    "version" bigint not null default 0,
-    "updated_at" timestamp with time zone not null default now()
-      );
+create table "public"."outlines" (
+  "user_id" uuid not null,
+  "data" text not null,
+  "version" bigint not null default 0,
+  "updated_at" timestamp with time zone not null default now()
+);
 
 
 alter table "public"."outlines" enable row level security;
@@ -60,13 +60,14 @@ grant truncate on table "public"."outlines" to "service_role";
 grant update on table "public"."outlines" to "service_role";
 
 
-  create policy "Users can only access their own data"
+create policy "Users can only access their own data"
   on "public"."outlines"
   as permissive
   for all
   to public
-using ((auth.uid() = user_id))
-with check ((auth.uid() = user_id));
+using ((( SELECT auth.uid() AS uid) = user_id))
+with check ((( SELECT auth.uid() AS uid) = user_id));
+
 
 
 
