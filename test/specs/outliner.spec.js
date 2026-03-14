@@ -1895,9 +1895,8 @@ test.describe('Sync – login with seed user', () => {
     await page.click('#btn-login-submit');
 
     await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
-    // Options modal should now show Sign out
-    await page.click('#btn-options');
-    await expect(page.locator('#btn-sign-out')).toBeVisible();
+    // The options modal stays open after login; auth-ui updates in place
+    await expect(page.locator('#btn-sign-out')).toBeVisible({ timeout: 10000 });
   });
 
   test('sign out returns to unauthenticated state', async ({ page }) => {
@@ -1912,8 +1911,7 @@ test.describe('Sync – login with seed user', () => {
     await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
     await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
 
-    // Now sign out
-    await page.click('#btn-options');
+    // The options modal stays open after login; sign out button is already visible
     await page.click('#btn-sign-out');
 
     // Auth UI should revert to Sign in button
@@ -1927,6 +1925,8 @@ test.describe('Sync – login with seed user', () => {
     await page.click('#btn-sign-in');
     await page.fill('#login-email', 'tester@virgulas.com');
     await page.fill('#login-password', 'wrongpassword');
+    // Seed data is present so app asks to confirm before attempting sign-in
+    page.once('dialog', dialog => dialog.accept());
     await page.click('#btn-login-submit');
 
     await expect(page.locator('#login-error')).not.toHaveClass(/hidden/, { timeout: 15000 });

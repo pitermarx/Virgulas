@@ -169,13 +169,6 @@ jobs:
             # removes the leading "source/" prefix so files land directly in _site/.
             git fetch --depth=1 origin main
             git archive origin/main -- source | tar --strip-components=1 -C "_site/" -x
-
-            # Also build a preview for the current branch.
-            # Dots are excluded from SAFE to prevent ".." path traversal.
-            CURRENT="${{ github.ref_name }}"
-            SAFE=$(echo "$CURRENT" | sed 's/[^a-zA-Z0-9_-]/-/g')
-            mkdir -p "_site/preview/$SAFE"
-            cp -r source/. "_site/preview/$SAFE/"
           fi
 
           # Build previews for all open PRs.
