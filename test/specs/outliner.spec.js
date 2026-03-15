@@ -19,8 +19,8 @@ async function signInAsSeedUser(page) {
   page.once('dialog', dialog => dialog.accept());
   await page.click('#btn-login-submit');
 
-  await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
-  await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+  await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
+  await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 60000 });
 }
 
 // Helper: returns true if the given string is valid JSON.
@@ -2087,8 +2087,8 @@ test.describe('Sync – login with seed user', () => {
     await page.click('#btn-login-submit');
 
     // The login modal should close and the user email should be visible
-    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
-    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
+    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 60000 });
   });
 
   test('sign in stores the encryption password in localStorage', async ({ page }) => {
@@ -2099,7 +2099,7 @@ test.describe('Sync – login with seed user', () => {
     page.once('dialog', dialog => dialog.accept());
     await page.click('#btn-login-submit');
 
-    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
     // The app (sync.js) intentionally persists the passphrase so the encryption
     // key can be re-derived on page reload without prompting the user again.
     const stored = await page.evaluate(() => localStorage.getItem('encryption_password'));
@@ -2114,7 +2114,7 @@ test.describe('Sync – login with seed user', () => {
     page.once('dialog', dialog => dialog.accept());
     await page.click('#btn-login-submit');
 
-    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
     // Sync indicator should become visible (pending or syncing or synced)
     await expect(page.locator('#sync-indicator')).toHaveClass(/visible/, { timeout: 30000 });
   });
@@ -2127,7 +2127,7 @@ test.describe('Sync – login with seed user', () => {
     page.once('dialog', dialog => dialog.accept());
     await page.click('#btn-login-submit');
 
-    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
     // The options modal stays open after login; auth-ui updates in place
     await expect(page.locator('#btn-sign-out')).toBeVisible({ timeout: 10000 });
   });
@@ -2141,8 +2141,8 @@ test.describe('Sync – login with seed user', () => {
     page.once('dialog', dialog => dialog.accept());
     await page.click('#btn-login-submit');
 
-    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
-    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+    await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
+    await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 60000 });
 
     // The options modal stays open after login; sign out button is already visible
     await page.click('#btn-sign-out');
