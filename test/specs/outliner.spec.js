@@ -1757,7 +1757,13 @@ test.describe('Shortcuts button', () => {
   });
 });
 
-test.describe('Storage indicator', () => {
+// Serial mode prevents the three sign-in tests from running simultaneously.
+// Each calls signInAsSeedUser which performs a 600k-iteration PBKDF2 key
+// derivation.  With fullyParallel: true and 6 workers, all three would start
+// their PBKDF2 at the same time on the 2-core CI runner; under that 3-way
+// contention each derivation can take far longer than the test timeout.
+// Running the group serially guarantees only one PBKDF2 runs at a time.
+test.describe.serial('Storage indicator', () => {
   test('storage indicator element exists in toolbar', async ({ page }) => {
     await expect(page.locator('#storage-indicator')).toBeAttached();
   });
