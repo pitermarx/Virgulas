@@ -202,13 +202,7 @@ body {
     }
 
     #zoom-desc:empty {
-        min-height: 0;
-        padding: 0;
-        margin-bottom: 0;
-    }
-
-    #zoom-desc:empty::before {
-        display: none;
+        margin-bottom: var(--space-2);
     }
 }
 
@@ -267,6 +261,8 @@ body {
     margin-bottom: var(--space-10);
     padding: var(--space-2) 0;
     line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
     min-height: 28px;
 }
 
@@ -274,9 +270,17 @@ body {
     display: block;
 }
 
+#zoom-desc:empty {
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: var(--space-4);
+}
+
 #zoom-desc:empty::before {
     content: "Add a description…";
     color: var(--text-faint);
+    font-size: var(--text-sm);
 }
 
 /* ── Bullets ── */
@@ -475,6 +479,20 @@ body {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+/* Show a subtle placeholder for bullets with no description when the row is focused or hovered */
+.bullet-row:not(:has(.bullet-desc.editing)).focused .bullet-desc-view:not(.visible):empty,
+.bullet-row:not(:has(.bullet-desc.editing)):hover .bullet-desc-view:not(.visible):empty {
+    display: block;
+}
+
+.bullet-row:not(:has(.bullet-desc.editing)).focused .bullet-desc-view:not(.visible):empty::before,
+.bullet-row:not(:has(.bullet-desc.editing)):hover .bullet-desc-view:not(.visible):empty::before {
+    content: 'Add description…';
+    color: var(--text-faint);
+    font-style: italic;
+    pointer-events: none;
 }
 
 .bullet-desc {

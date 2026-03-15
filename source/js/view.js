@@ -1,7 +1,7 @@
 // ── View ──────────────────────────────────────────────────────────────────────
 // Pure DOM rendering. Reads state; does NOT add event listeners.
 
-import { renderInline, flatVisible, findNode, countNodes, escapeHtml } from './model.js';
+import { renderInline, flatVisible, findNode, findPath, countNodes, escapeHtml } from './model.js';
 import { encryptPayload } from './sync.js';
 import State from './state.js';
 
@@ -293,11 +293,11 @@ export function renderBreadcrumb() {
     el.classList.add('visible');
     el.replaceChildren();
 
-    const addCrumb = (text, cls, depth) => {
+    const addCrumb = (text, cls, targetStack) => {
         const crumb = cloneTemplate('template-crumb') || h('span', cls);
         crumb.className = cls;
         crumb.textContent = text;
-        if (depth !== null) crumb.dataset.zoomDepth = String(depth);
+        if (targetStack !== null) crumb.dataset.zoomStack = JSON.stringify(targetStack);
         el.appendChild(crumb);
     };
 
@@ -306,14 +306,23 @@ export function renderBreadcrumb() {
         el.appendChild(sep);
     };
 
-    addCrumb('Home', 'crumb', 0);
+    // Show the full ancestry path to the current zoom root (last item in zoomStack)
+    const currentZoomId = State.zoomStack[State.zoomStack.length - 1];
+    const path = findPath(currentZoomId, State.doc.root);
 
-    State.zoomStack.forEach((id, i) => {
+    addCrumb('Home', 'crumb', []);
+
+    if (path) {
+        path.forEach((node, i) => {
+            addSeparator();
+            const isLast = i === path.length - 1;
+            const targetStack = isLast ? null : path.slice(0, i + 1).map(n => n.id);
+            addCrumb(node.text || 'Untitled', isLast ? 'crumb crumb-last' : 'crumb', targetStack);
+        });
+    } else {
         addSeparator();
-        const node = findNode(id, State.doc.root);
-        const isLast = i === State.zoomStack.length - 1;
-        addCrumb(node ? (node.text || 'Untitled') : 'Untitled', isLast ? 'crumb crumb-last' : 'crumb', isLast ? null : i + 1);
-    });
+        addCrumb('Untitled', 'crumb crumb-last', null);
+    }
 }
 
 export function renderZoomHeader(zoomRoot) {

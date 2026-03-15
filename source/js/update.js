@@ -317,34 +317,45 @@ function moveIds(ids, dir) {
 }
 
 function applySyncResult(result) {
-    if (!result || result.kind === 'skip') return { effects: [] };
+    const prevFocusedId = State.focusedId;
+
+    const withFocus = (effects) => {
+        if (prevFocusedId && findNode(prevFocusedId, State.doc.root)) {
+            return [...effects, { type: 'focus-bullet', id: prevFocusedId }];
+        }
+        return effects;
+    };
+
+    if (!result || result.kind === 'skip') return { effects: withFocus([]) };
 
     if (result.kind === 'error') {
         State.syncPaused = false;
         State.syncStatus = 'error';
-        return { effects: [] };
+        return { effects: withFocus([]) };
     }
 
     if (result.kind === 'status') {
         State.syncPaused = false;
         State.syncStatus = result.status;
-        return result.status === 'synced' ? { effects: [{ type: 'schedule-online' }] } : { effects: [] };
+        return result.status === 'synced'
+            ? { effects: withFocus([{ type: 'schedule-online' }]) }
+            : { effects: withFocus([]) };
     }
 
     if (result.kind === 'pushed') {
         setSyncedSnapshot(result.doc, result.version);
         clearConflictState();
-        return { effects: [{ type: 'schedule-online' }] };
+        return { effects: withFocus([{ type: 'schedule-online' }]) };
     }
 
     if (result.kind === 'pulled') {
         setSyncedSnapshot(result.doc, result.version);
-        return { effects: [{ type: 'schedule-online' }] };
+        return { effects: withFocus([{ type: 'schedule-online' }]) };
     }
 
     if (result.kind === 'merged-pushed') {
         setSyncedSnapshot(result.doc, result.version);
-        return { effects: [{ type: 'schedule-online' }] };
+        return { effects: withFocus([{ type: 'schedule-online' }]) };
     }
 
     if (result.kind === 'conflict') {
@@ -550,7 +561,12 @@ export function update(msg) {
         case 'SYNC_REQUEST': {
             if (State.syncPaused || !State.encryptionKey) return { effects: [] };
             State.syncStatus = 'syncing';
-            return { effects: [{ type: 'sync-now' }] };
+            const syncEffects = [];
+            if (State.focusedId && findNode(State.focusedId, State.doc.root)) {
+                syncEffects.push({ type: 'focus-bullet', id: State.focusedId });
+            }
+            syncEffects.push({ type: 'sync-now' });
+            return { effects: syncEffects };
         }
 
         case 'SYNC_RESULT': {

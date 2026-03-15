@@ -20,7 +20,7 @@ Virgulas is built around one continuously editable outline.
 
 - The main list shows the current level of the outline.
 - Clicking a bullet dot zooms into that bullet.
-- The breadcrumb bar shows where you are and lets you jump back up.
+- The breadcrumb bar shows the full path from root to the current zoom level and lets you jump back up.
 - The zoom description area lets you keep notes about the current zoomed section.
 - The ghost row at the bottom is always ready for a new item.
 
