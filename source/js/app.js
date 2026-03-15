@@ -227,8 +227,12 @@ async function runEffect(effect) {
             return;
 
         case 'login-submit': {
-            const result = await submitLogin(effect.payload);
-            await dispatch({ type: 'LOGIN_RESULT', result });
+            try {
+                const result = await submitLogin(effect.payload);
+                await dispatch({ type: 'LOGIN_RESULT', result });
+            } catch (e) {
+                await dispatch({ type: 'LOGIN_RESULT', result: { kind: 'error', message: String(e) } });
+            }
             return;
         }
 

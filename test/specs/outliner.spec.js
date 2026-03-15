@@ -16,7 +16,12 @@ async function signInAsSeedUser(page) {
   await page.fill('#login-email', 'tester@virgulas.com');
   await page.fill('#login-password', 'virgulas');
 
-  page.once('dialog', dialog => dialog.accept());
+  // Override window.confirm so the "replace local data" prompt is accepted without a
+  // native browser dialog.  Using page.once('dialog', …) is unreliable on Chrome under
+  // CI load: the CDP round-trip can be delayed long enough for Chrome to auto-dismiss
+  // the confirm and return false, silently cancelling the login and leaving the modal
+  // open for the full 60 s timeout.
+  await page.evaluate(() => { window.confirm = () => true; });
   await page.click('#btn-login-submit');
 
   await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
