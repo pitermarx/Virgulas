@@ -20,12 +20,18 @@ async function signInAsSeedUser(page) {
   // native browser dialog.  Using page.once('dialog', …) is unreliable on Chrome under
   // CI load: the CDP round-trip can be delayed long enough for Chrome to auto-dismiss
   // the confirm and return false, silently cancelling the login and leaving the modal
-  // open for the full 60 s timeout.
+  // open for the full timeout.
+  //
+  // Use 90 s assertion timeouts: when the three storage-indicator tests that call this
+  // helper run in parallel they all start PBKDF2 (600 k iterations) simultaneously,
+  // which causes 3-way CPU contention on the 2-core CI runner and can push each
+  // derivation beyond 60 s.  90 s still fits inside the 120 s per-test limit after
+  // accounting for the other assertions in the most complex test (≤ 11 s).
   await page.evaluate(() => { window.confirm = () => true; });
   await page.click('#btn-login-submit');
 
-  await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 60000 });
-  await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 60000 });
+  await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 90000 });
+  await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 90000 });
 }
 
 // Helper: returns true if the given string is valid JSON.
