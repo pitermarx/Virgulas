@@ -613,10 +613,12 @@ bulletsEl.addEventListener('pointerdown', (event) => {
 });
 
 breadcrumbEl?.addEventListener('click', (event) => {
-    const crumb = event.target.closest('[data-zoom-depth]');
+    const crumb = event.target.closest('[data-zoom-stack]');
     if (!crumb) return;
-    const depth = Number.parseInt(crumb.dataset.zoomDepth, 10);
-    if (Number.isInteger(depth)) void dispatch({ type: 'ZOOM_TO', stack: State.zoomStack.slice(0, depth) });
+    try {
+        const stack = JSON.parse(crumb.dataset.zoomStack);
+        void dispatch({ type: 'ZOOM_TO', stack });
+    } catch { }
 });
 
 zoomDescEl.addEventListener('blur', () => {

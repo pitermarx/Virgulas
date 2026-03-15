@@ -68,6 +68,15 @@ export function findNode(id, node) {
     return null;
 }
 
+export function findPath(id, root) {
+    for (const child of (root.children || [])) {
+        if (child.id === id) return [child];
+        const sub = findPath(id, child);
+        if (sub) return [child, ...sub];
+    }
+    return null;
+}
+
 export function findParentInSubtree(id, subtreeRoot) {
     if (subtreeRoot.id === id) return null;
     for (const child of (subtreeRoot.children || [])) {
