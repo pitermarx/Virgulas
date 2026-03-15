@@ -102,6 +102,8 @@ html[data-theme='dark'] {
     --hover: #2e2c28;
     --selected: #1c2c46;
     --danger: #e05c4a;
+    --search-match: #473a18;
+    --search-current: #6a5318;
 }
 
 html,

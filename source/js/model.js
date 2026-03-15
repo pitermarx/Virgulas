@@ -61,7 +61,7 @@ export function seedDoc(doc) {
 
 export function findNode(id, node) {
     if (node.id === id) return node;
-    for (const child of node.children) {
+    for (const child of (node.children || [])) {
         const found = findNode(id, child);
         if (found) return found;
     }
@@ -70,7 +70,7 @@ export function findNode(id, node) {
 
 export function findParentInSubtree(id, subtreeRoot) {
     if (subtreeRoot.id === id) return null;
-    for (const child of subtreeRoot.children) {
+    for (const child of (subtreeRoot.children || [])) {
         if (child.id === id) return subtreeRoot;
         const found = findParentInSubtree(id, child);
         if (found) return found;
@@ -79,9 +79,9 @@ export function findParentInSubtree(id, subtreeRoot) {
 }
 
 export function flatVisible(zoomRoot, depth = 0, arr = []) {
-    for (const child of zoomRoot.children) {
+    for (const child of (zoomRoot?.children || [])) {
         arr.push({ node: child, depth });
-        if (!child.collapsed && child.children.length > 0) {
+        if (!child.collapsed && (child.children || []).length > 0) {
             flatVisible(child, depth + 1, arr);
         }
     }
@@ -89,7 +89,7 @@ export function flatVisible(zoomRoot, depth = 0, arr = []) {
 }
 
 export function collectAllNodes(root, arr = []) {
-    for (const child of root.children) {
+    for (const child of (root.children || [])) {
         arr.push(child);
         collectAllNodes(child, arr);
     }
@@ -98,7 +98,7 @@ export function collectAllNodes(root, arr = []) {
 
 export function exportMarkdown(node, depth = 0) {
     let out = '';
-    for (const child of node.children) {
+    for (const child of (node.children || [])) {
         const indent = '  '.repeat(depth);
         const bullet = child.collapsed ? '+' : '-';
         out += `${indent}${bullet} ${child.text}\n`;

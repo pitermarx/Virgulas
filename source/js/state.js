@@ -2,7 +2,6 @@
 // Single mutable state object and localStorage persistence.
 
 import { makeDoc, findNode } from './model.js';
-import { bytesToB64, b64ToBytes } from './crypto.js';
 
 const State = {
     // Constants
@@ -29,6 +28,14 @@ const State = {
     selectionAnchor: null,
     selectionHead: null,
     keepSelection: false,
+    activeModal: null,
+    searchOpen: false,
+    searchQuery: '',
+    markdownDraft: '',
+    loginError: '',
+    loginSuccess: '',
+    loginMode: 'signin',
+    currentUser: null,
 
     // Sync state
     pendingSync: false,
@@ -37,14 +44,12 @@ const State = {
     syncStatus: 'idle',
     syncIntervalId: null,
     syncPaused: false,
-    conflictRemoteDoc: null,
+    conflictLocal: null,
+    conflictRemote: null,
+    conflictResolved: null,
     conflictServerVersion: 0,
     devMode: localStorage.getItem('dev_mode') === 'true',
     encryptionKey: null,
-
-    // Callbacks (wired by app.js)
-    onSyncStatusUpdate: null,
-    onDocSaved: null,
 
     // Derived
     getZoomRoot() {
@@ -73,19 +78,12 @@ const State = {
     // Persistence
     saveDoc() {
         State.pendingSync = true;
-        if (State.syncStatus === 'synced' || State.syncStatus === 'idle') {
-            State.syncStatus = 'pending';
-            State.onSyncStatusUpdate?.('pending');
-        }
-        State._persist();
+        State.saveDocLocal();
     },
 
-    saveDocLocal() { State._persist(); },
-
-    _persist() {
+    saveDocLocal() {
         try {
             localStorage.setItem(State.STORAGE_KEY, JSON.stringify(State.doc));
-            State.onDocSaved?.();
         } catch { }
     },
 
@@ -103,44 +101,6 @@ const State = {
     pushUndo() {
         State.undoStack.push(JSON.stringify(State.doc));
         if (State.undoStack.length > 100) State.undoStack.shift();
-    },
-
-    // Compression
-    async compressData(obj) {
-        const stream = new ReadableStream({
-            start(c) { c.enqueue(new TextEncoder().encode(JSON.stringify(obj))); c.close(); }
-        }).pipeThrough(new CompressionStream('gzip'));
-        return bytesToB64(new Uint8Array(await new Response(stream).arrayBuffer()));
-    },
-
-    async decompressData(b64) {
-        try {
-            const stream = new ReadableStream({
-                start(c) { c.enqueue(b64ToBytes(b64)); c.close(); }
-            }).pipeThrough(new DecompressionStream('gzip'));
-            return JSON.parse(await new Response(stream).text());
-        } catch {
-            return JSON.parse(atob(b64));
-        }
-    },
-
-    async encryptPayload(obj) {
-        const compressed = await State.compressData(obj);
-        if (State.encryptionKey) {
-            const { encrypt } = await import('./crypto.js');
-            return encrypt(State.encryptionKey, compressed);
-        }
-        return compressed;
-    },
-
-    async decryptPayload(data) {
-        if (State.encryptionKey) {
-            try {
-                const { decrypt } = await import('./crypto.js');
-                return State.decompressData(await decrypt(State.encryptionKey, data));
-            } catch { }
-        }
-        return State.decompressData(data);
     },
 
     // URL / history

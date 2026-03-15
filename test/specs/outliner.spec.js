@@ -8,6 +8,21 @@ async function waitForApp(page) {
   await page.waitForSelector('#ghost-row');
 }
 
+async function signInAsSeedUser(page) {
+  await page.click('#btn-options');
+  await page.click('#btn-sign-in');
+  await expect(page.locator('#modal-login')).not.toHaveClass(/hidden/);
+
+  await page.fill('#login-email', 'tester@virgulas.com');
+  await page.fill('#login-password', 'virgulas');
+
+  page.once('dialog', dialog => dialog.accept());
+  await page.click('#btn-login-submit');
+
+  await expect(page.locator('#modal-login')).toHaveClass(/hidden/, { timeout: 30000 });
+  await expect(page.locator('#auth-ui')).toContainText('tester@virgulas.com', { timeout: 30000 });
+}
+
 // Helper: returns true if the given string is valid JSON.
 function isValidJson(str) {
   try { JSON.parse(str); return true; } catch { return false; }
@@ -193,6 +208,18 @@ test.describe('Indenting bullets', () => {
     const cMargin = await cRow.evaluate(el => parseInt(el.style.marginLeft) || 0);
     expect(cMargin).toBeGreaterThan(bMargin);
   });
+
+  test('Shift+Tab at root in multi-select keeps focus on selection head', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+ArrowDown');
+
+    const selectionHeadId = await page.locator('.bullet-row.selected').nth(1).getAttribute('data-id') ?? '';
+    await page.keyboard.press('Shift+Tab');
+
+    await expect(page.locator('.bullet-row.focused')).toHaveAttribute('data-id', selectionHeadId);
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+  });
 });
 
 test.describe('Swipe to indent/unindent (mobile)', () => {
@@ -301,6 +328,31 @@ test.describe('Zoom', () => {
     await expect(page.locator('.crumb-last')).toBeVisible();
   });
 
+  test('clicking a deeply nested bullet does not show breadcrumb until zoomed', async ({ page }) => {
+    await page.evaluate(() => {
+      let nodeCounter = 0;
+      const makeNode = (text, children = []) => ({
+        id: `crumb-node-${++nodeCounter}`,
+        text,
+        description: '',
+        children,
+        collapsed: false,
+      });
+      const grandchild = makeNode('Grandchild');
+      const child = makeNode('Child', [grandchild]);
+      const parent = makeNode('Parent', [child]);
+      localStorage.setItem('outline_v1', JSON.stringify({
+        root: { id: 'root', text: 'root', description: '', children: [parent], collapsed: false },
+        version: 1,
+      }));
+    });
+    await page.reload();
+    await waitForApp(page);
+
+    await page.locator('.bullet-text').nth(2).click();
+    await expect(page.locator('#breadcrumb')).not.toBeVisible();
+  });
+
   test('zooming into a bullet focuses the description, not a new item', async ({ page }) => {
     const firstDot = page.locator('.bullet-dot').first();
     await firstDot.click();
@@ -400,6 +452,18 @@ test.describe('Collapse / Expand', () => {
     const countAfter = await page.locator('.bullet-row').count();
     expect(countAfter).not.toBe(countBefore);
   });
+
+  test('Ctrl+Space keeps focus on the toggled bullet', async ({ page }) => {
+    const parentRow = page.locator('.bullet-row.has-children').first();
+    const parentText = parentRow.locator('.bullet-text');
+    const parentId = await parentRow.getAttribute('data-id') ?? '';
+
+    await parentText.click();
+    await page.keyboard.press('Control+Space');
+
+    await expect(page.locator('.bullet-row.focused')).toHaveAttribute('data-id', parentId);
+    await expect(parentText).toBeFocused();
+  });
 });
 
 test.describe('Description', () => {
@@ -433,6 +497,33 @@ test.describe('Description', () => {
     const descView = page.locator('.bullet-desc-view.visible').first();
     await expect(descView).toBeVisible();
     await expect(descView).toContainText('My description text');
+  });
+
+  test('description view renders inline markdown', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+Enter');
+
+    const descEl = page.locator('.bullet-desc.editing').first();
+    await descEl.fill('**bold** and `code` and [link](https://example.com)');
+    await descEl.press('Escape');
+
+    const descView = page.locator('.bullet-desc-view.visible').first();
+    await expect(descView.locator('strong')).toHaveText('bold');
+    await expect(descView.locator('code')).toHaveText('code');
+    await expect(descView.locator('a')).toHaveAttribute('href', 'https://example.com');
+  });
+
+  test('Shift+Enter from edited description returns focus to bullet text', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+Enter');
+
+    const descEl = page.locator('.bullet-desc.editing').first();
+    await descEl.fill('Description that should keep focus flow stable');
+    await descEl.press('Shift+Enter');
+
+    await expect(firstText).toBeFocused();
   });
 
   test('description top position does not shift between view and edit mode', async ({ page }) => {
@@ -1229,6 +1320,68 @@ test.describe('Multi-select', () => {
     expect(firstMarginAfter).toBe('0px');
   });
 
+  test('Tab indents a selected sibling block under the same previous bullet', async ({ page }) => {
+    /** @type {string[]} */
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.evaluate(() => {
+      let nextId = 0;
+      const makeNode = (/** @type {string} */ text) => ({
+        id: `multi-indent-${++nextId}`,
+        text,
+        description: '',
+        children: [],
+        collapsed: false,
+      });
+
+      localStorage.setItem('outline_v1', JSON.stringify({
+        root: {
+          id: 'root',
+          text: 'root',
+          description: '',
+          children: [makeNode('A'), makeNode('B'), makeNode('C'), makeNode('D')],
+          collapsed: false,
+        },
+        version: 1,
+      }));
+    });
+
+    await page.reload();
+    await waitForApp(page);
+
+    await page.locator('.bullet-text').nth(1).click();
+    await page.keyboard.press('Shift+ArrowDown');
+    await page.keyboard.press('Shift+ArrowDown');
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(3);
+
+    await page.keyboard.press('Tab');
+
+    const rows = page.locator('.bullet-row');
+    await expect(rows).toHaveCount(4);
+
+    const rootMargin = await rows.nth(0).evaluate(el => el.style.marginLeft);
+    const indentedMargins = await Promise.all([1, 2, 3].map(index => rows.nth(index).evaluate(el => el.style.marginLeft)));
+
+    expect(rootMargin).toBe('0px');
+    expect(indentedMargins).toEqual(['20px', '20px', '20px']);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('Tab at the indentation limit in multi-select keeps focus on selection head', async ({ page }) => {
+    const firstText = page.locator('.bullet-text').first();
+    await firstText.click();
+    await page.keyboard.press('Shift+ArrowDown');
+
+    const selectionHeadId = await page.locator('.bullet-row.selected').nth(1).getAttribute('data-id') ?? '';
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+
+    await expect(page.locator('.bullet-row.focused')).toHaveAttribute('data-id', selectionHeadId);
+    await expect(page.locator('.bullet-row.selected')).toHaveCount(2);
+  });
+
   test('Alt+ArrowDown moves selection down', async ({ page }) => {
     // Use the first two top-level bullets; select them and move down
     const rows = page.locator('.bullet-row');
@@ -1598,8 +1751,8 @@ test.describe('Storage indicator', () => {
     await expect(page.locator('#storage-indicator')).toBeAttached();
   });
 
-  test('storage indicator is visible after page load', async ({ page }) => {
-    await expect(page.locator('#storage-indicator')).toHaveClass(/visible/);
+  test('storage indicator is hidden after page load when signed out', async ({ page }) => {
+    await expect(page.locator('#storage-indicator')).not.toHaveClass(/visible/);
   });
 
   test('storage indicator is inside the toolbar', async ({ page }) => {
@@ -1611,12 +1764,31 @@ test.describe('Storage indicator', () => {
     await expect(page.locator('#storage-indicator svg')).toBeAttached();
   });
 
-  test('storage indicator has a tooltip with KB info', async ({ page }) => {
+  test('storage indicator becomes visible after sign in', async ({ page }) => {
+    test.skip(!SUPABASE_AVAILABLE, 'Supabase not configured - skipping authenticated storage tests');
+
+    await signInAsSeedUser(page);
+    await expect(page.locator('#storage-indicator')).toHaveClass(/visible/, { timeout: 30000 });
+  });
+
+  test('storage indicator has a tooltip with KB info after sign in', async ({ page }) => {
+    test.skip(!SUPABASE_AVAILABLE, 'Supabase not configured - skipping authenticated storage tests');
+
+    await signInAsSeedUser(page);
+    await expect(page.locator('#storage-indicator')).toHaveClass(/visible/, { timeout: 30000 });
+
     const title = await page.locator('#storage-indicator').getAttribute('title');
     expect(title).toMatch(/KB/);
   });
 
-  test('storage indicator updates after editing', async ({ page }) => {
+  test('storage indicator updates after editing when signed in', async ({ page }) => {
+    test.skip(!SUPABASE_AVAILABLE, 'Supabase not configured - skipping authenticated storage tests');
+
+    await signInAsSeedUser(page);
+    await expect(page.locator('#storage-indicator')).toHaveClass(/visible/, { timeout: 30000 });
+    await page.click('#modal-options .modal-close');
+    await expect(page.locator('#modal-options')).toHaveClass(/hidden/);
+
     const before = await page.locator('#storage-indicator').getAttribute('title');
     const firstText = page.locator('.bullet-text').first();
     await firstText.click();

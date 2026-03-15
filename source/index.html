@@ -38,7 +38,13 @@
     <div id="toolbar">
         <button class="toolbar-btn" id="btn-markdown" data-action="open-markdown">Markdown</button>
         <div class="toolbar-spacer"></div>
-        <span id="storage-indicator" title=""></span>
+        <span id="storage-indicator" title="">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <circle cx="7" cy="7" r="5" fill="none" stroke="#ddd9d0" stroke-width="2.5" />
+                <circle id="storage-fill" cx="7" cy="7" r="5" fill="none" stroke="#4caf50" stroke-width="2.5"
+                    stroke-dasharray="0 31.42" transform="rotate(-90 7 7)" />
+            </svg>
+        </span>
         <span id="sync-indicator" title="">
             <span class="sync-spinner" id="sync-svg-syncing" aria-hidden="true"></span>
             <svg id="sync-svg-online" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
@@ -96,6 +102,14 @@
                 <div class="bullet-text" id="ghost-text" contenteditable="true" data-placeholder="New item…"></div>
             </div>
         </div>
+    </template>
+
+    <template id="template-crumb">
+        <span class="crumb"></span>
+    </template>
+
+    <template id="template-crumb-sep">
+        <span class="crumb-sep"> / </span>
     </template>
 
     <template id="template-auth-guest">

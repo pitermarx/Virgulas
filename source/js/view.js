@@ -2,6 +2,7 @@
 // Pure DOM rendering. Reads state; does NOT add event listeners.
 
 import { renderInline, flatVisible, findNode, countNodes, escapeHtml } from './model.js';
+import { encryptPayload } from './sync.js';
 import State from './state.js';
 
 // ── DOM helpers (shared by app.js / sync.js) ──────────────────────────────────
@@ -31,18 +32,10 @@ export function applyTheme(theme) {
     if (btn) btn.textContent = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
-// ── Modals ────────────────────────────────────────────────────────────────────
-
-export function openModal(id) { setHidden(id, false); }
-export function closeModal(id) { setHidden(id, true); }
-
 // ── Login mode ────────────────────────────────────────────────────────────────
 
-export let loginMode = 'signin';
-
-export function setLoginMode(mode) {
-    loginMode = mode;
-    const isSignIn = mode === 'signin';
+export function renderLoginMode() {
+    const isSignIn = State.loginMode === 'signin';
     setText('login-modal-title', isSignIn ? 'Sign in' : 'Sign up');
     setText('btn-login-submit', isSignIn ? 'Sign in' : 'Sign up');
     setHidden('login-confirm-password', isSignIn);
@@ -54,18 +47,51 @@ export function setLoginMode(mode) {
 
 // ── Search UI ─────────────────────────────────────────────────────────────────
 
-export function openSearch() {
-    setVisible('search-bar', true);
-    byId('app')?.classList.add('search-open');
-    byId('search-input')?.focus();
+function renderSearchUI() {
+    setVisible('search-bar', State.searchOpen);
+    byId('app')?.classList.toggle('search-open', State.searchOpen);
+
+    const input = byId('search-input');
+    if (input && input.value !== State.searchQuery) input.value = State.searchQuery;
+
+    const total = State.searchMatches.length;
+    setText('search-count', State.searchQuery
+        ? (total === 0 ? 'No matches' : `${State.searchIdx + 1} / ${total}`)
+        : '');
 }
 
-export function closeSearch() {
-    setVisible('search-bar', false);
-    byId('app')?.classList.remove('search-open');
-    const input = byId('search-input');
-    if (input) input.value = '';
-    setText('search-count', '');
+function renderModals() {
+    document.querySelectorAll('.modal-overlay').forEach((modal) => {
+        modal.classList.toggle('hidden', modal.id !== State.activeModal);
+    });
+}
+
+function renderLoginFeedback() {
+    setText('login-error', State.loginError);
+    setText('login-success', State.loginSuccess);
+    setHidden('login-error', !State.loginError);
+    setHidden('login-success', !State.loginSuccess);
+}
+
+function renderDraftFields() {
+    const markdown = byId('markdown-text');
+    if (markdown && markdown.value !== State.markdownDraft) markdown.value = State.markdownDraft;
+
+    const localEl = byId('conflict-local');
+    if (localEl && localEl.value !== (State.conflictLocal || '')) localEl.value = State.conflictLocal || '';
+
+    const remoteEl = byId('conflict-remote');
+    if (remoteEl && remoteEl.value !== (State.conflictRemote || '')) remoteEl.value = State.conflictRemote || '';
+
+    const resolvedEl = byId('conflict-resolved');
+    if (resolvedEl && resolvedEl.value !== (State.conflictResolved || '')) resolvedEl.value = State.conflictResolved || '';
+}
+
+export function renderChrome() {
+    renderModals();
+    renderSearchUI();
+    renderLoginFeedback();
+    renderDraftFields();
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -90,21 +116,18 @@ const SYNC_TITLES = {
     error: 'Sync error', conflict: 'Conflict – click to resolve', online: 'Online sync active',
 };
 
-export function setSyncStatus(status) {
-    State.syncStatus = status;
+export function renderSyncStatus() {
+    const status = State.syncStatus;
     const el = byId('sync-indicator');
     if (!el) return;
     el.className = '';
     el.title = '';
-    el.onclick = null;
     el.querySelectorAll('[id^="sync-svg-"]').forEach(s => s.classList.remove('active'));
     if (status === 'idle') return;
     el.classList.add('visible', status);
     el.title = SYNC_TITLES[status] || '';
     const icon = byId(status === 'syncing' ? 'sync-svg-syncing' : 'sync-svg-' + status);
     if (icon) icon.classList.add('active');
-    if (status === 'synced') setTimeout(() => { if (State.syncStatus === 'synced') setSyncStatus('online'); }, 3000);
-    if (status === 'conflict') el.onclick = () => openModal('modal-conflict');
     if (State.devMode) renderDevPanel();
 }
 
@@ -114,13 +137,13 @@ const STORAGE_LIMIT_BYTES = 20 * 1024;
 
 export async function updateStorageIndicator() {
     const el = byId('storage-indicator');
+    const fill = byId('storage-fill');
     if (!el) return;
-    let bytes;
-    try {
-        bytes = new TextEncoder().encode(await State.encryptPayload(State.doc)).length;
-    } catch {
-        bytes = new TextEncoder().encode(localStorage.getItem(State.STORAGE_KEY) || '').length;
+    if (!State.encryptionKey) {
+        el.classList.remove('visible');
+        return;
     }
+    let bytes = new TextEncoder().encode(await encryptPayload(State.encryptionKey, State.doc)).length;
     const ratio = Math.min(bytes / STORAGE_LIMIT_BYTES, 1);
     const pct = Math.round(ratio * 100);
     const kbUsed = (bytes / 1024).toFixed(1);
@@ -129,13 +152,11 @@ export async function updateStorageIndicator() {
     const r = 5, circ = 2 * Math.PI * r, filled = circ * ratio;
 
     el.classList.add('visible');
-    el.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <circle cx="7" cy="7" r="${r}" fill="none" stroke="#ddd9d0" stroke-width="2.5"/>
-      <circle cx="7" cy="7" r="${r}" fill="none" stroke="${color}" stroke-width="2.5"
-        stroke-dasharray="${filled.toFixed(2)} ${(circ - filled).toFixed(2)}"
-        transform="rotate(-90 7 7)"/>
-    </svg>`;
     el.title = `Data: ${kbUsed} KB / ${kbLimit} KB${ratio >= 1 ? ' – over limit!' : ` (${pct}%)`}`;
+    if (fill) {
+        fill.setAttribute('stroke', color);
+        fill.setAttribute('stroke-dasharray', `${filled.toFixed(2)} ${(circ - filled).toFixed(2)}`);
+    }
 }
 
 // ── Dev panel ─────────────────────────────────────────────────────────────────
@@ -173,9 +194,10 @@ export function applyDevMode() {
     }
 }
 
-export function renderAuthUI(user) {
+export function renderAuthUI() {
     const authUI = byId('auth-ui');
     if (!authUI) return;
+    const user = State.currentUser;
     const content = cloneTemplate(user ? 'template-auth-user' : 'template-auth-guest');
     if (!content) return;
     if (user) within(content, '[data-auth-email]').textContent = user.email;
@@ -199,7 +221,7 @@ export function showDescEditor(row) {
 
 export function renderDescView(row, node) {
     const descView = within(row, '.bullet-desc-view');
-    descView.textContent = node.description || '';
+    descView.innerHTML = renderInline(node.description || '');
     descView.classList.toggle('visible', !!node.description);
 }
 
@@ -212,6 +234,13 @@ export function setCursor(el, toEnd) {
     else { range.setStart(el, 0); range.collapse(true); }
     sel.removeAllRanges();
     sel.addRange(range);
+}
+
+export function applySelectionHighlights() {
+    document.querySelectorAll('.bullet-row.selected').forEach(el => el.classList.remove('selected'));
+    State.selectedIds.forEach(id => {
+        document.querySelector(`.bullet-row[data-id="${id}"]`)?.classList.add('selected');
+    });
 }
 
 // ── Bullet rows ───────────────────────────────────────────────────────────────
@@ -253,32 +282,37 @@ export function buildGhostRow() {
 
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
-let _onZoomTo = () => { };
-export function setZoomToCallback(fn) { _onZoomTo = fn; }
-
 export function renderBreadcrumb() {
     const el = byId('breadcrumb');
-    if (State.zoomStack.length === 0) { el.classList.remove('visible'); return; }
+    if (!el) return;
+    if (State.zoomStack.length === 0) {
+        el.classList.remove('visible');
+        el.replaceChildren();
+        return;
+    }
     el.classList.add('visible');
-    el.innerHTML = '';
+    el.replaceChildren();
 
-    const addCrumb = (text, cls, onClick) => {
-        const crumb = h('span', cls, { textContent: text });
-        if (onClick) crumb.addEventListener('click', onClick);
+    const addCrumb = (text, cls, depth) => {
+        const crumb = cloneTemplate('template-crumb') || h('span', cls);
+        crumb.className = cls;
+        crumb.textContent = text;
+        if (depth !== null) crumb.dataset.zoomDepth = String(depth);
         el.appendChild(crumb);
     };
 
-    addCrumb('Home', 'crumb', () => _onZoomTo([]));
+    const addSeparator = () => {
+        const sep = cloneTemplate('template-crumb-sep') || h('span', 'crumb-sep', { textContent: ' / ' });
+        el.appendChild(sep);
+    };
+
+    addCrumb('Home', 'crumb', 0);
 
     State.zoomStack.forEach((id, i) => {
-        el.appendChild(h('span', 'crumb-sep', { textContent: ' / ' }));
+        addSeparator();
         const node = findNode(id, State.doc.root);
         const isLast = i === State.zoomStack.length - 1;
-        addCrumb(
-            node ? (node.text || 'Untitled') : 'Untitled',
-            isLast ? 'crumb crumb-last' : 'crumb',
-            isLast ? null : () => _onZoomTo(State.zoomStack.slice(0, i + 1))
-        );
+        addCrumb(node ? (node.text || 'Untitled') : 'Untitled', isLast ? 'crumb crumb-last' : 'crumb', isLast ? null : i + 1);
     });
 }
 
@@ -307,6 +341,7 @@ export function render() {
     });
 
     bulletsEl.appendChild(buildGhostRow());
+    applySelectionHighlights();
     renderBreadcrumb();
     renderZoomHeader(zoomRoot);
     requestAnimationFrame(() => bulletsEl.querySelectorAll('.bullet-desc').forEach(autoResize));
