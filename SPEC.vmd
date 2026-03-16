@@ -1,0 +1,135 @@
+- Virgulas Reference Document
+  This document is a human-readable map of "Virgulas" a local-first browser outliner.
+
+    + It is an infinite list of editable "Nodes".
+        - Each "Node" has a **single line** of text
+        - Can have an optional text called "Description".
+          Only the first 2 lines of the "Description" are visible when not editing, showing "..." otherwise
+        - Can have "Children", which in turn are other "Nodes"
+        - Each "Node" text and it's "Description" can have rendered markdown when not editing.
+          Markdown elements are limited to
+          **Bold**, __Italic__, [links](http://example.com), ![](https://images.png), `monospace code`
+
+    + Behaviors of a "Node"
+      All behaviors are "undo-able", on the current session, up to a stack of 100 actions. Press `Ctrl+Z` to undo, `Ctrl+Y` to redo
+        + FOCUS
+            - When focusing a "Node" or "Desciption"", the text becomes editable, and the raw markdown is visible
+            - (MOBILE ONLY) When focusing a "Node", it's "Description" field becomes visible, even when empty
+            - (DESKTOP ONLY) To toggle between "Node" and "Description" we can use `Shift+Enter`. Empty "Descriptions" are invisible
+            - (DESKTOP ONLY) When nothing is focused, `↑` focuses the last node and `↓` focuses the first node.
+            - (DESKTOP ONLY) `Enter` creates a new node below the focused node. 
+              If it already has children, the new node becomes the first child.
+              If it does not have children, it creates a node at the same level.
+
+        + (DESKTOP ONLY) MULTI-SELECT
+            - When a "Node" is focused, a multi-bullet selection can be expanded with the shortcuts `Shift+↑/↓`
+                - Arrow up, expands the selection to the previous "Node" of the same indentation level
+                - Arrow down, expands the selection to the next "Node" of the same indentation level
+            - Multi-select is only possible on a single indentation level
+                - Selecting a "Node", implicitly selects all it's children
+
+        + (DESKTOP ONLY) MOVE
+            - "Nodes" can be moved with the shortcuts `Alt+↑/↓`
+            - If multi-selection is active, Move also works as expected
+
+        + COLLAPSE
+          "Nodes" can hide and show it's children by collapsing and expanding
+            - When collapsed, the "Node" has a visual indicator on the bullet point that it contains children, but they are not visible
+            - (MOBILE ONLY) To toggle expand and collapse there will be a visible  ▶ or ▼ button
+            - (DESKTOP ONLY) To toggle expand and collapse we can use `Ctrl+Enter`
+            - (DESKTOP ONLY, MULTI-SELECT) When multi-selected, and we use the `Ctrl+Enter` shortcut
+                - If all "Nodes" are collapsed, then they all expand
+                - Otherwise they all collapse
+
+        + ZOOM
+          > When zoomed in, a "Node" and all it's parents are clearly seen in the "Breadcrumb"
+            - Each segment of the "Breadcrumb" is clickable and will zoom into that "Node"
+            - When zoomed, the text of the "Node" is not editable
+            - The description is also visible and editable
+            - The "Children" of the zoomed "Node" will behave the exact same way as if they were root "Nodes"
+            - Clicking the bullet point of a node zooms into it
+            - (DESKTOP ONLY) `Alt+→` zooms into a node, `Alt+←` zooms back out
+                - Most browsers use `Alt+←` to go back in history, so zooms are kept as browser navigation history
+                - The url has the ID of the "Node", so it can be directly referenced
+            - (DESKTOP ONLY) On zoom, the first child is automatically focused
+
+        + INDENT
+            - Each "Node" can be indented and unindented individually
+              `Tab` and `Shift+Tab` are the shortcuts for changin indentation level
+            - Tab and shift tab are the shortcuts on desktop, and on mobile a swipe left/right gesture is used for indentation
+            - Order will be kept when indenting and unindenting. Take this sequence as an example:
+              `     | INDENT B | INDENT C | UNINDENT B | INDENT B
+              - A  | - A      | - A      | - A        | - A    
+              - B  |  - B     |  - B     | - B        |  - B    
+              - C  | - C      |  - C     |  - C       |   - C `
+            - If multi-selection is active, indentation also works as expected
+
+        + DELETE
+            - "Nodes" can be deleted without confirmation when they don't have "Children"
+            - A confirmation is necessary when "Children" exist. Deleting a "Node" also deletes all its "Children"
+            - If multi-selection is active, delete also works as expected
+            - The node is deleted if a Backspace is pressed on a node that has no text
+              If there is text, the backspace functions as if the `↑` was pressed
+            - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
+
+    + RAW MODE
+        - Direct manipulation of the text is possible on a special "RAW" mode.
+        - This document is an example of a Raw Virgulas document, by convention has the extension .vmd
+        - Number of indentation spaces is non significant, siblings have the same indentation level
+        - the `+` char means a collapsed node and the `-` char means the expanded node
+        - To actually have the + or - char at the begining of a line use the escape char \
+          \\\ shows the \ character, \+ and \- shows the + and - characters. Escaping is only needed at the beggining of lines
+        - All lines with no + or -, are assumed to be descriptions of the previous node
+            - Indentation is not relevant on descriptions
+        - Empty lines are ignored
+        - When in RAW mode, the app is just a text editor with a "SAVE" and a "CANCEL" button
+        
+    + SEARCH
+        - Search can be done with simple substring matches
+        - Search is activated with `Ctrl+F` on desktop and with a scroll up on mobile
+          The search controls are hidden by default
+        - Search can be dismissed with `Esc` on desktop or with a `X` clear button
+        - When searching, the document becomes read-only
+        - When searching, there is a live highlight of all matched words
+        - When searching, all the nodes that match the search are expanded, and all the nodes that do not match are hidden
+          All nodes become temporarily expanded during the search
+        - (DESKTOP ONLY) Search is cycled with `Tab` and `Shift+Tab`
+        - When focusing a node by pressing `Enter` or clicking a node, the closest collapsed parent node of the selected search result becomes the root
+          An auto zoom-in happens
+        - Search is "smart case" sensitive
+          When using only lowercase letters, it's case insensitive, otherwise it's case sensitive
+        - An indicator of the number of results and the current index of the result is visible while searching
+
+    + Design considerations
+        - A splash screen is seen on load, and it is removed after the app is completely ready
+        - The text of the root nodes has a font-size of 1rem, the second level of 0.9rem and the remainder nodes are 0.85rem
+          The description has a more faded color and is 85% of the size of the node
+        - There is a "Status" toolbar at the bottom of the screen with
+            - "RAW" mode Button
+            - "?" Button to show all Shortcuts
+            - "Options" Button to see all configuration options
+                - Theme toggle
+                - A link to the source repository
+                - A button to purge all local data, and start fresh
+        - Google font Inter is the base typography. 1REM=14px
+          Base: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          Mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+    + Technical considerations
+        - The app is a static website. No server necessary to use it
+        - Document is stored in localstorage as a single JSON object
+        - Preact and Preact signals are the frameworks to be used
+        - Playwright E2E tests cover all the app's features and edge cases
+        - (DESKTOP ONLY) If a querystring parameter ?debug=true exists, Debug mode is activated
+            - There will be a panel with internal information about the state
+            - Console debug messages will be printed
+        - All style is configurable with css variables
+        + CI/CD
+            - The app is hosted on Github Pages
+            - On each commit, all E2E tests are ran and preview sites are generated
+            - On /preview, a page listing all the Open PRs will be seen, and a button to use preview version is shown
+              E.G. `virgulas.com/preview/my-feature` will allow me to use the code in the `my-feature` branch
+            - On the main branch, the pipeline will purge cloudflare cache
+            - Daily, a secondary workflow runs all tests agains the production version at `virgulas.com`
+
+            
