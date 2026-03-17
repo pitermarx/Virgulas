@@ -4,6 +4,7 @@ import { parseInline } from 'marked';
 import { state } from './state.js';
 import { storage } from './storage.js';
 import { AppCrypto } from './crypto.js';
+import { AppSync } from './sync.js';
 import { VMD, getNode, findPath } from './model.js';
 import { dispatch, undo, redo } from './update.js';
 
@@ -512,12 +513,82 @@ export const HelpModal = ({ onClose }) => (
 
 export const OptionsModal = ({ onClose }) => {
   const [theme, setTheme] = useState(state.theme.value);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState(null);
+  const [authMessage, setAuthMessage] = useState(null);
+  const user = state.user.value;
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
     state.theme.value = newTheme;
     localStorage.setItem('vmd_theme', newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
+  };
+
+  const syncAfterAuth = async () => {
+    const result = await AppSync.syncAfterUnlock(state.doc.value, state.key.value);
+    if (!result.success) {
+      setAuthError('Authentication succeeded, but initial sync failed.');
+    }
+  };
+
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) {
+      setAuthError('Email and password are required.');
+      return;
+    }
+
+    try {
+      setAuthBusy(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      await AppSync.signIn(email.trim(), password);
+      await syncAfterAuth();
+      setPassword('');
+    } catch (err) {
+      setAuthError(err?.message || 'Failed to sign in.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignUp = async () => {
+    if (!email.trim() || !password) {
+      setAuthError('Email and password are required.');
+      return;
+    }
+
+    try {
+      setAuthBusy(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      const result = await AppSync.signUp(email.trim(), password);
+      await syncAfterAuth();
+      setPassword('');
+      if (!result?.user) {
+        setAuthMessage('Sign-up submitted. Confirm your email if confirmation is enabled.');
+      }
+    } catch (err) {
+      setAuthError(err?.message || 'Failed to sign up.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setAuthBusy(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      await AppSync.signOut();
+      await AppSync.refreshSession();
+    } catch (err) {
+      setAuthError(err?.message || 'Failed to sign out.');
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
   return h(Modal, { title: 'Options', onClose }, [
@@ -541,6 +612,50 @@ export const OptionsModal = ({ onClose }) => {
         target: '_blank',
         className: 'repo-link'
       }, 'GitHub Repository ↗')
+    ]),
+    h('div', { className: 'options-section' }, [
+      h('h3', { className: 'options-section-heading' }, 'Account & Sync'),
+      !AppSync.client && h('div', { className: 'options-hint' },
+        'Sync is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY to enable account features.'
+      ),
+      AppSync.client && !user && h('div', { className: 'options-auth-form' }, [
+        h(InputField, {
+          label: 'Email',
+          type: 'email',
+          value: email,
+          onInput: e => setEmail(e.target.value),
+          placeholder: 'you@example.com'
+        }),
+        h(InputField, {
+          label: 'Password',
+          type: 'password',
+          value: password,
+          onInput: e => setPassword(e.target.value)
+        }),
+        authError && h('div', { className: 'form-error' }, authError),
+        authMessage && h('div', { className: 'form-success' }, authMessage),
+        h('div', { className: 'options-auth-actions' }, [
+          h(Button, {
+            variant: 'secondary',
+            disabled: authBusy,
+            onClick: handleSignUp
+          }, authBusy ? 'Working...' : 'Sign up'),
+          h(Button, {
+            variant: 'primary',
+            disabled: authBusy,
+            onClick: handleSignIn
+          }, authBusy ? 'Working...' : 'Sign in')
+        ])
+      ]),
+      AppSync.client && user && h('div', { className: 'options-auth-signed' }, [
+        h('div', { className: 'options-hint' }, `Signed in as ${user.email || user.id}`),
+        authError && h('div', { className: 'form-error' }, authError),
+        h(Button, {
+          variant: 'secondary',
+          disabled: authBusy,
+          onClick: handleSignOut
+        }, authBusy ? 'Signing out...' : 'Sign out')
+      ])
     ]),
     h('div', null, [
       h('h3', { className: 'options-section-heading' }, 'Data'),
@@ -655,6 +770,36 @@ export const MainView = () => {
   const searchMatchPathsRef = useRef([]);
   const [isEditingZoomDesc, setIsEditingZoomDesc] = useState(false);
   const zoomDescRef = useRef(null);
+  const [syncConflict, setSyncConflict] = useState(null);
+
+  useEffect(() => {
+    AppSync.conflictCallback = (serverData, localDoc) => {
+      return new Promise((resolve) => {
+        setSyncConflict({
+          resolve,
+          serverUpdatedAt: serverData?.updated_at || null,
+          localUpdatedAt: localDoc?.updated_at || null
+        });
+      });
+    };
+
+    return () => {
+      AppSync.conflictCallback = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const runInitialSync = async () => {
+      try {
+        await AppSync.syncAfterUnlock(state.doc.value, state.key.value);
+      } catch (err) {
+        console.error('Initial sync after unlock failed', err);
+        state.syncStatus.value = navigator.onLine ? 'error' : 'offline';
+      }
+    };
+
+    runInitialSync();
+  }, []);
 
   useEffect(() => {
     if (!doc) return;
@@ -844,7 +989,7 @@ export const MainView = () => {
           const el = document.querySelector(`[data-node-id="${match.id}"]`);
           if (el) el.scrollIntoView({ block: 'nearest' });
         }
-      } else if (e.key === 'Escape' && state.searchQuery.value) {
+      } else if (e.key === 'Escape' && document.querySelector('.search-bar')) {
         state.searchQuery.value = '';
         setShowSearch(false);
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !state.focusPath.value) {
@@ -1132,6 +1277,37 @@ export const MainView = () => {
             nodeCount: doc ? (doc.children || []).length : 0
           }, null, 2)
         )
+      ]),
+      syncConflict && h(Modal, {
+        title: 'Sync conflict',
+        onClose: () => {
+          syncConflict.resolve('local');
+          setSyncConflict(null);
+        }
+      }, [
+        h('div', { className: 'options-section' }, [
+          h('p', { className: 'options-hint' },
+            'A newer cloud version was found. Choose which version should win. Virgulas does not merge documents automatically.'
+          ),
+          h('div', { className: 'options-hint' }, `Local updated: ${syncConflict.localUpdatedAt || 'unknown'}`),
+          h('div', { className: 'options-hint' }, `Cloud updated: ${syncConflict.serverUpdatedAt || 'unknown'}`)
+        ]),
+        h('div', { className: 'options-auth-actions' }, [
+          h(Button, {
+            variant: 'secondary',
+            onClick: () => {
+              syncConflict.resolve('local');
+              setSyncConflict(null);
+            }
+          }, 'Keep local'),
+          h(Button, {
+            variant: 'primary',
+            onClick: () => {
+              syncConflict.resolve('server');
+              setSyncConflict(null);
+            }
+          }, 'Keep cloud')
+        ])
       ]),
     ]),
     h(StatusToolbar)

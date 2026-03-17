@@ -44,6 +44,75 @@ const installPrfStubs = async (page: Page) => {
   });
 };
 
+const unlockFreshApp = async (page: Page, passphrase = 'auth-passphrase') => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+
+  await page.getByLabel('Create Passphrase').fill(passphrase);
+  await page.getByLabel('Confirm Passphrase').fill(passphrase);
+  await page.getByRole('button', { name: 'Start Writing' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+};
+
+const openOptionsModal = async (page: Page) => {
+  await page.getByRole('button', { name: 'Options' }).click();
+  const modal = page.locator('.modal-dialog');
+  await expect(modal).toBeVisible();
+  return modal;
+};
+
+const installMockSupabase = async (page: Page, options?: { userEmail?: string; authErrorMessage?: string }) => {
+  await page.evaluate(({ userEmail, authErrorMessage }) => {
+    const sessionState = {
+      user: userEmail ? { id: 'user-1', email: userEmail } : null as any
+    };
+
+    const queryBuilder = {
+      select: () => queryBuilder,
+      eq: () => queryBuilder,
+      single: async () => ({ data: null, error: { code: 'PGRST116' } }),
+      upsert: async () => ({ error: null })
+    };
+
+    const client = {
+      auth: {
+        signInWithPassword: async ({ email }: { email: string }) => {
+          if (authErrorMessage) return { data: { user: null }, error: { message: authErrorMessage } };
+          sessionState.user = { id: 'user-1', email };
+          return { data: { user: sessionState.user }, error: null };
+        },
+        signUp: async ({ email }: { email: string }) => {
+          if (authErrorMessage) return { data: { user: null }, error: { message: authErrorMessage } };
+          sessionState.user = { id: 'user-1', email };
+          return { data: { user: sessionState.user }, error: null };
+        },
+        signOut: async () => {
+          sessionState.user = null;
+          return { error: null };
+        },
+        getUser: async () => ({ data: { user: sessionState.user }, error: null })
+      },
+      from: () => queryBuilder
+    };
+
+    (window as any).supabase = {
+      createClient: () => client
+    };
+
+    const configEl = document.querySelector('script[type="virgulas-config"]');
+    if (configEl) {
+      configEl.textContent = JSON.stringify({
+        supabaseUrl: 'http://127.0.0.1:54321',
+        supabaseAnonKey: 'anon'
+      });
+    }
+
+    (window as any).App.sync.init();
+    (window as any).App.sync.refreshSession();
+  }, options ?? {});
+};
+
 test.describe('Authentication', () => {
   test.beforeEach(async ({ page }) => {
     page.on('console', msg => console.log(`[Browser Console] ${msg.text()}`));
@@ -182,5 +251,68 @@ test.describe('Authentication', () => {
     // Verify internal state has the document (title is not rendered as a heading)
     const doc = await page.evaluate(() => (window as any).App.state.doc.value);
     expect(doc.text).toBe('Secret Doc');
+  });
+
+  test('account controls can sign up, sign in, and sign out against local Supabase', async ({ page }) => {
+    await unlockFreshApp(page);
+
+    const uniqueId = `${Date.now()}-${test.info().workerIndex}`;
+    const email = `playwright-${uniqueId}@example.com`;
+    const password = `pw-${uniqueId}-secure`;
+
+    const modal = await openOptionsModal(page);
+
+    await modal.getByLabel('Email').fill(email);
+    await modal.getByLabel('Password').fill(password);
+    await modal.getByRole('button', { name: 'Sign up' }).click();
+
+    const signedInMessage = modal.getByText(`Signed in as ${email}`);
+    const signUpMessage = modal.getByText('Sign-up submitted. Confirm your email if confirmation is enabled.');
+    await expect(signedInMessage.or(signUpMessage)).toBeVisible();
+
+    if (await signUpMessage.isVisible()) {
+      await modal.getByLabel('Password').fill(password);
+      await modal.getByRole('button', { name: 'Sign in' }).click();
+    }
+
+    await expect(signedInMessage).toBeVisible();
+    await expect(page.locator('.sync-dot')).toBeVisible();
+
+    await modal.getByRole('button', { name: 'Sign out' }).click();
+    await expect(modal.getByLabel('Email')).toBeVisible();
+    await expect(page.locator('.sync-dot')).toHaveCount(0);
+
+    await modal.getByLabel('Email').fill(email);
+    await modal.getByLabel('Password').fill(password);
+    await modal.getByRole('button', { name: 'Sign in' }).click();
+    await expect(signedInMessage).toBeVisible();
+  });
+
+  test('account controls can sign up with mocked sync', async ({ page }) => {
+    await unlockFreshApp(page, 'mock-signup-passphrase');
+    await installMockSupabase(page);
+
+    const modal = await openOptionsModal(page);
+
+    await modal.getByLabel('Email').fill('mock-signup@virgulas.com');
+    await modal.getByLabel('Password').fill('mock-password');
+    await modal.getByRole('button', { name: 'Sign up' }).click();
+
+    await expect(modal.getByText('Signed in as mock-signup@virgulas.com')).toBeVisible();
+    await expect(page.locator('.sync-dot')).toBeVisible();
+  });
+
+  test('account controls show auth provider errors with mocked sync', async ({ page }) => {
+    await unlockFreshApp(page, 'mock-auth-passphrase');
+    await installMockSupabase(page, { authErrorMessage: 'Invalid login credentials' });
+
+    const modal = await openOptionsModal(page);
+
+    await modal.getByLabel('Email').fill('test@virgulas.com');
+    await modal.getByLabel('Password').fill('wrong-password');
+    await modal.getByRole('button', { name: 'Sign in' }).click();
+
+    await expect(modal.getByText('Invalid login credentials')).toBeVisible();
+    await expect(page.locator('.sync-dot')).toHaveCount(0);
   });
 });

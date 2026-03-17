@@ -29,9 +29,9 @@ export default defineConfig({
     },
   ].filter(p => isCI || p.name === 'chromium'),
   webServer: useExternalBaseUrl ? undefined : {
-    command: 'npm run serve',
+    command: 'npm run local',
     url: 'http://127.0.0.1:3000',
-    reuseExistingServer: !isCI,
+    reuseExistingServer: false,
     stdout: 'ignore',
     stderr: 'pipe',
   },

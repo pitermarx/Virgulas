@@ -16,7 +16,9 @@ to run the app and tests locally. Read it completely before starting any task.
 
 ### Environment variables
 
-Create a `.env` file in the project root (gitignored, never commit it):
+For normal local development, `.env` is optional because `npm run local` injects local Supabase values automatically.
+
+If you want to point tests or the app to a specific external environment, create a `.env` file in the project root (gitignored, never commit it):
 
 ```
 SUPABASE_URL=https://<your-project-ref>.supabase.co
@@ -36,7 +38,21 @@ Set both to empty strings to run without Supabase — sync and auth features wil
 ### Running locally
 
 The app uses ES module imports and cannot be opened directly from the filesystem.
-Serve the `source/` folder with any static file server:
+
+Preferred local dev command (with local Supabase auth/sync enabled):
+
+```bash
+npm run local
+```
+
+`npm run local` will:
+- start local Supabase
+- patch `source/index.html` with local Supabase URL/key
+- serve `source/` on `http://localhost:3000`
+- restore `source/index.html` on exit
+- stop Supabase and remove local data volumes on exit
+
+Static-only mode (no automatic Supabase setup):
 
 ```bash
 npm run serve
@@ -68,16 +84,36 @@ Do not change these URLs or versions without updating this file.
 
 ### Database setup
 
-Apply the schema:
+Initialize local Supabase files (first time only):
 
 ```bash
-npm run db:migrate -- initial-schema
+npm run db:init
 ```
 
-Seed local data (creates one test user):
+Start local Supabase:
 
 ```bash
-npx supabase db seed
+npm run db:start
+```
+
+For day-to-day app + sync development, prefer `npm run local` over manual start/serve.
+
+Get local URL and anon key for `.env`:
+
+```bash
+npm exec supabase -- status
+```
+
+Generate a migration after editing `supabase/schemas/*.sql`:
+
+```bash
+npm run db:migrate -- <migration-name>
+```
+
+Apply migrations + seed locally:
+
+```bash
+npm run db:reset
 ```
 
 | Field      | Value                            |
@@ -88,6 +124,28 @@ npx supabase db seed
 
 The seed user's `salt` and `data` rows are pre-populated with a small encrypted document
 derived from that passphrase. Tests that require a signed-in state use these credentials.
+
+Stop local Supabase:
+
+```bash
+npm run db:stop
+```
+
+### Production migrations
+
+Link the hosted project and push migrations:
+
+```bash
+npm exec supabase -- login
+npm exec supabase -- link --project-ref <your-project-ref>
+npm exec supabase -- db push --linked
+```
+
+Preview migration application without applying:
+
+```bash
+npm exec supabase -- db push --linked --dry-run
+```
 
 ### Running tests
 
@@ -105,7 +163,18 @@ Playwright starts a local static server automatically — no separate `npx serve
 
 ### CI/CD
 
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` must be set as repository secrets for sync and auth tests to pass in CI.
+Required repository secrets for CI:
+
+- `SUPABASE_PROJECT` and `SUPABASE_PUBLISHABLE_DEFAULT_KEY` for deploy-time config injection
+- `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT` for main-branch migration publishing
+
+Main-branch CI must always run migration publish before deploy:
+
+```bash
+SUPABASE_PROJECT_REF="$SUPABASE_PROJECT"
+supabase link --project-ref "$SUPABASE_PROJECT_REF"
+supabase db push --linked --include-all
+```
 
 ---
 

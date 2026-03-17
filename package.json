@@ -4,7 +4,15 @@
     "description": "Local-first browser outliner",
     "scripts": {
         "test": "playwright test",
-        "serve": "serve -p 3000 source"
+        "serve": "serve -p 3000 source",
+        "local": "node scripts/serve-local.js",
+        "db:init": "supabase init",
+        "db:start": "supabase start --ignore-health-check",
+        "db:stop": "supabase stop --no-backup --yes",
+        "db:diff": "supabase db diff -s public",
+        "db:migrate": "supabase db diff -f",
+        "db:push:local": "supabase db push --local",
+        "db:reset": "supabase db reset --local"
     },
     "devDependencies": {
         "@playwright/test": "^1.58.2",

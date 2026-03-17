@@ -37,8 +37,6 @@ jobs:
         run: npm test
         env:
           CI: true
-        #   SUPABASE_URL: https://${{ secrets.SUPABASE_PROJECT }}.supabase.co
-        #   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
 
       - name: Upload test artifacts
         if: always()
@@ -50,9 +48,49 @@ jobs:
             test-results/
           if-no-files-found: warn
 
+  publish-db:
+    name: Publish Database Migrations
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT: ${{ secrets.SUPABASE_PROJECT }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required Supabase secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || (echo "Missing SUPABASE_ACCESS_TOKEN" && exit 1)
+          test -n "$SUPABASE_PROJECT" || (echo "Missing SUPABASE_PROJECT" && exit 1)
+
+      - name: Derive project ref
+        id: project
+        run: |
+          PROJECT_REF="$SUPABASE_PROJECT"
+          test -n "$PROJECT_REF" || (echo "SUPABASE_PROJECT is empty" && exit 1)
+          echo "project_ref=$PROJECT_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Link Supabase project
+        run: npm exec supabase -- link --project-ref "${{ steps.project.outputs.project_ref }}"
+
+      - name: Publish latest migrations
+        run: npm exec supabase -- db push --linked --include-all
+
   deploy:
     name: Deploy to GitHub Pages
-    needs: test
+    needs: [test, publish-db]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -73,8 +111,8 @@ jobs:
       - name: Build static site bundle
         env:
           GH_TOKEN: ${{ github.token }}
-        #   SUPABASE_URL: https://${{ secrets.SUPABASE_PROJECT }}.supabase.co
-        #   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+          SUPABASE_URL: https://${{ secrets.SUPABASE_PROJECT }}.supabase.co
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
         run: |
           mkdir -p _site
           cp -r source/. _site/

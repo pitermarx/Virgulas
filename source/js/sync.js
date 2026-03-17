@@ -1,3 +1,7 @@
+import { state } from './state.js';
+import { storage } from './storage.js';
+import { AppCrypto } from './crypto.js';
+
 // --- SYNC MODULE ---
 export const AppSync = {
   client: null,
@@ -49,6 +53,60 @@ export const AppSync = {
     if (!AppSync.client) return null;
     const { data: { user } } = await AppSync.client.auth.getUser();
     return user;
+  },
+
+  refreshSession: async () => {
+    if (!AppSync.client) {
+      state.user.value = null;
+      state.syncStatus.value = 'offline';
+      return null;
+    }
+
+    const user = await AppSync.getUser();
+    state.user.value = user;
+    state.syncStatus.value = user ? 'synced' : 'offline';
+    return user;
+  },
+
+  syncAfterUnlock: async (localDoc, localKey) => {
+    if (!AppSync.client) {
+      state.user.value = null;
+      state.syncStatus.value = 'offline';
+      return { success: true, action: 'none' };
+    }
+
+    const user = await AppSync.getUser();
+    state.user.value = user;
+
+    if (!user) {
+      state.syncStatus.value = 'offline';
+      return { success: true, action: 'none' };
+    }
+
+    if (!localDoc || !localKey) {
+      state.syncStatus.value = 'synced';
+      return { success: true, action: 'none' };
+    }
+
+    state.syncStatus.value = 'syncing';
+    const result = await AppSync.checkAndSync(localDoc, localKey);
+
+    if (!result.success) {
+      if (result.action === 'conflict_pending') {
+        state.syncStatus.value = 'error';
+      } else {
+        state.syncStatus.value = navigator.onLine ? 'error' : 'offline';
+      }
+      return result;
+    }
+
+    if (result.action === 'applied_server' && result.data) {
+      state.doc.value = result.data;
+      await storage.set('vmd_data', result.data, localKey);
+    }
+
+    state.syncStatus.value = 'synced';
+    return result;
   },
 
   // Compare local vs server timestamps and handle conflicts

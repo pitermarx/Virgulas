@@ -70,13 +70,24 @@ const initApp = async () => {
     state.theme.value = 'dark';
   }
 
-  // Init sync
-  if (window.supabase) {
+  // Init sync and session state
+  const initSync = async () => {
     AppSync.init();
+    try {
+      await AppSync.refreshSession();
+    } catch (err) {
+      console.warn('Failed to refresh sync session', err);
+    }
+  };
+
+  if (window.supabase) {
+    await initSync();
   } else {
     window.addEventListener('load', () => {
-      if (window.supabase) AppSync.init();
-    });
+      if (window.supabase) {
+        initSync();
+      }
+    }, { once: true });
   }
 };
 
