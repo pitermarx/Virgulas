@@ -57,7 +57,7 @@ jobs:
       contents: read
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT: ${{ secrets.SUPABASE_PROJECT }}
+      SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -111,7 +111,7 @@ jobs:
       - name: Build static site bundle
         env:
           GH_TOKEN: ${{ github.token }}
-          SUPABASE_URL: https://${{ secrets.SUPABASE_PROJECT }}.supabase.co
+          SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT }}.supabase.co
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
         run: |
           mkdir -p _site
