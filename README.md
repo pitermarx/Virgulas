@@ -23,10 +23,12 @@ Virgulas is a local-first browser outliner.
 - Theme toggle (light/dark) persisted in localStorage
 - Client-side AES-GCM encryption (passphrase never stored or transmitted)
 - Optional quick unlock with device passkey (WebAuthn PRF) after passphrase unlock
+  - Optimistic capability detection with automatic local disable after failed PRF registration/unlock
+  - Reset quick unlock keys from Unlock screen or Options -> Data
 - Account controls in Options modal (sign up, sign in, sign out)
 - Optional cloud sync via Supabase (end-to-end encrypted)
 - Keyboard shortcuts modal (`?` button)
-- Options panel (theme, source link, purge data)
+- Options panel (theme, source link, reset quick unlock keys, purge data)
 
 ## Setup
 
@@ -40,10 +42,11 @@ Virgulas is a local-first browser outliner.
     npm run serve
     ```
 
-  For full local auth/sync development (auto-starts Supabase, injects local URL/key, and cleans up DB on exit):
-  ```bash
-  npm run local
-  ```
+  The app reads Supabase settings from `localStorage.supabaseconfig` and seeds it automatically on first run with hosted defaults:
+  - `url`: `https://gcpdascpdrakecpknrtt.supabase.co`
+  - `key`: `sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc`
+
+  To point the browser to local Supabase, set `localStorage.supabaseconfig` to a JSON object with `url` and `key`.
 
 3.  Run tests:
     ```bash
@@ -61,41 +64,35 @@ All Supabase commands in this repository use the locally pinned CLI (`supabase` 
   npm run db:init
   ```
 
-2. Start the full local dev stack with automatic config injection:
-  ```bash
-  npm run local
-  ```
-
-  What `npm run local` does:
-  - Starts local Supabase services
-  - Reads local `Project URL` and `Publishable` key from `supabase status`
-  - Backs up and patches `source/index.html` placeholders
-  - Serves the app on port 3000
-  - On exit, restores `source/index.html` and runs `supabase stop --no-backup --yes`
-
-3. Optional manual Supabase control (without serving app):
+2. Start local Supabase manually:
   ```bash
   npm run db:start
+  ```
+
+3. Serve the app:
+  ```bash
+  npm run serve
+  ```
+
+4. Stop local Supabase when finished:
+  ```bash
   npm run db:stop
   ```
 
-4. Get local API URL and anon key from CLI output:
+5. Get local API URL and anon key from CLI output:
   ```bash
   npm exec supabase -- status
   ```
 
-5. Reset local DB to migrations + seed data:
+6. Reset local DB to migrations only:
   ```bash
   npm run db:reset
   ```
 
-6. Seed test account credentials:
+Playwright local tests assume local Supabase is already running and `.env` exists (created by `npm run db:start`).
+The test fixture overrides `localStorage.supabaseconfig` from `.env` before each page load.
 
-| Field      | Value                            |
-|------------|----------------------------------|
-| Email      | `test@virgulas.com`              |
-| Password   | `testpassword`                   |
-| Passphrase | `correct horse battery staple`   |
+Auth tests that require a specific account attempt sign-in first and create the user only when it does not exist.
 
 ### Schema and migration workflow
 
@@ -141,8 +138,7 @@ All Supabase commands in this repository use the locally pinned CLI (`supabase` 
 
 Repository secrets expected by workflows:
 
-- `SUPABASE_PROJECT` (project ref; used for deploy config injection and DB publish)
-- `SUPABASE_PUBLISHABLE_DEFAULT_KEY` (used for deploy config injection)
+- `SUPABASE_PROJECT` (project ref; used for DB migration publish)
 - `SUPABASE_ACCESS_TOKEN` (for CI migration publish)
 - `CLOUDFLARE_ZONE_ID` (optional, for cache purge)
 - `CLOUDFLARE_API_TOKEN` (optional, for cache purge)

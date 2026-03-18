@@ -30,5 +30,6 @@ export const state = {
   quickUnlockOfferVisible: signal(false),
   quickUnlockDismissedSession: signal(false),
   quickUnlockPassphrase: signal(null),
-  quickUnlockError: signal(null)
+  quickUnlockError: signal(null),
+  quickUnlockFallbackVisible: signal(false)
 };

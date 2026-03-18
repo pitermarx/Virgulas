@@ -2,6 +2,33 @@ import { state } from './state.js';
 import { storage } from './storage.js';
 import { AppCrypto } from './crypto.js';
 
+const SUPABASE_CONFIG_KEY = 'supabaseconfig';
+const DEFAULT_SUPABASE_CONFIG = {
+  url: 'https://gcpdascpdrakecpknrtt.supabase.co',
+  key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc'
+};
+
+function getSupabaseConfig() {
+  const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
+
+  if (!raw) {
+    localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(DEFAULT_SUPABASE_CONFIG));
+    return DEFAULT_SUPABASE_CONFIG;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const url = parsed.url || parsed.supabaseUrl;
+    const key = parsed.key || parsed.supabaseAnonKey;
+    if (!url || !key) throw new Error('Invalid config format');
+    return { url, key };
+  } catch (error) {
+    console.warn('Failed to parse Supabase config, resetting to default', error);
+    localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(DEFAULT_SUPABASE_CONFIG));
+    return DEFAULT_SUPABASE_CONFIG;
+  }
+}
+
 // --- SYNC MODULE ---
 export const AppSync = {
   client: null,
@@ -9,22 +36,14 @@ export const AppSync = {
 
   init: () => {
     try {
-      const configEl = document.querySelector('script[type="virgulas-config"]');
-      if (configEl) {
-        const config = JSON.parse(configEl.textContent);
-        if (config.supabaseUrl && config.supabaseAnonKey &&
-          config.supabaseUrl !== '%%SUPABASE_URL%%') {
-          // Assuming supabase is available globally via CDN script in index.html
-          if (window.supabase) {
-            AppSync.client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-            console.log('Supabase initialized');
-          } else {
-            console.error('Supabase library not loaded');
-          }
-        } else {
-          console.log('Supabase config missing or placeholder');
-        }
+      if (!window.supabase) {
+        console.error('Supabase library not loaded');
+        return;
       }
+
+      const config = getSupabaseConfig();
+      AppSync.client = window.supabase.createClient(config.url, config.key);
+      console.log('Supabase initialized');
     } catch (e) {
       console.error('Failed to init Supabase', e);
     }

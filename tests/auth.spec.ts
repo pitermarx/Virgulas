@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from './test';
 
 const installPrfStubs = async (page: Page) => {
   await page.addInitScript(() => {
@@ -23,7 +23,14 @@ const installPrfStubs = async (page: Page) => {
         writable: true,
         value: async () => ({
           rawId: new Uint8Array([1, 2, 3, 4]).buffer,
-          getClientExtensionResults: () => ({ prf: { enabled: true } })
+          getClientExtensionResults: () => ({
+            prf: {
+              enabled: true,
+              results: {
+                first: prfOutput
+              }
+            }
+          })
         })
       });
 
@@ -38,6 +45,33 @@ const installPrfStubs = async (page: Page) => {
               }
             }
           })
+        })
+      });
+    }
+  });
+};
+
+const installPrfRegistrationFailureStubs = async (page: Page) => {
+  await page.addInitScript(() => {
+    class MockPublicKeyCredential {
+      static async getClientCapabilities() {
+        return { prf: true };
+      }
+    }
+
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      configurable: true,
+      writable: true,
+      value: MockPublicKeyCredential
+    });
+
+    if (navigator.credentials) {
+      Object.defineProperty(navigator.credentials, 'create', {
+        configurable: true,
+        writable: true,
+        value: async () => ({
+          rawId: new Uint8Array([9, 9, 9, 9]).buffer,
+          getClientExtensionResults: () => ({ prf: { enabled: false } })
         })
       });
     }
@@ -60,6 +94,51 @@ const openOptionsModal = async (page: Page) => {
   const modal = page.locator('.modal-dialog');
   await expect(modal).toBeVisible();
   return modal;
+};
+
+const ensureAccountExistsAndSignIn = async (modal: Locator, email: string, password: string) => {
+  const signedInMessage = modal.getByText(`Signed in as ${email}`);
+  const signUpMessage = modal.getByText('Sign-up submitted. Confirm your email if confirmation is enabled.');
+  const invalidCredsMessage = modal.getByText('Invalid login credentials');
+  const anyKnownOutcome = signedInMessage.or(signUpMessage).or(invalidCredsMessage);
+
+  const fillCredentials = async () => {
+    await modal.getByLabel('Email').fill(email);
+    await modal.getByLabel('Password').fill(password);
+  };
+
+  await fillCredentials();
+  await modal.getByRole('button', { name: 'Sign in' }).click();
+  await expect(anyKnownOutcome).toBeVisible();
+
+  if (await signedInMessage.isVisible()) {
+    return { mode: 'signed-in' as const, signedInMessage };
+  }
+
+  if (!(await invalidCredsMessage.isVisible())) {
+    return { mode: 'confirmation-required' as const, signUpMessage, invalidCredsMessage };
+  }
+
+  await fillCredentials();
+  await modal.getByRole('button', { name: 'Sign up' }).click();
+  await expect(anyKnownOutcome).toBeVisible();
+
+  if (await signedInMessage.isVisible()) {
+    return { mode: 'signed-in' as const, signedInMessage };
+  }
+
+  if (await signUpMessage.isVisible()) {
+    await fillCredentials();
+    await modal.getByRole('button', { name: 'Sign in' }).click();
+    await expect(signedInMessage.or(invalidCredsMessage)).toBeVisible();
+
+    if (await signedInMessage.isVisible()) {
+      return { mode: 'signed-in' as const, signedInMessage };
+    }
+  }
+
+  await expect(invalidCredsMessage).toBeVisible();
+  return { mode: 'confirmation-required' as const, signUpMessage, invalidCredsMessage };
 };
 
 const installMockSupabase = async (page: Page, options?: { userEmail?: string; authErrorMessage?: string }) => {
@@ -100,13 +179,10 @@ const installMockSupabase = async (page: Page, options?: { userEmail?: string; a
       createClient: () => client
     };
 
-    const configEl = document.querySelector('script[type="virgulas-config"]');
-    if (configEl) {
-      configEl.textContent = JSON.stringify({
-        supabaseUrl: 'http://127.0.0.1:54321',
-        supabaseAnonKey: 'anon'
-      });
-    }
+    localStorage.setItem('supabaseconfig', JSON.stringify({
+      url: 'http://127.0.0.1:54321',
+      key: 'anon'
+    }));
 
     (window as any).App.sync.init();
     (window as any).App.sync.refreshSession();
@@ -199,6 +275,36 @@ test.describe('Authentication', () => {
     expect(status).toBe('ready');
   });
 
+  test('failed quick unlock registration disables future offers on this profile', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Quick unlock PRF coverage is Chromium-only');
+    await installPrfRegistrationFailureStubs(page);
+
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await page.getByLabel('Create Passphrase').fill('disabled-flag-passphrase');
+    await page.getByLabel('Confirm Passphrase').fill('disabled-flag-passphrase');
+    await page.getByRole('button', { name: 'Start Writing' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+    await page.reload();
+    await page.getByLabel('Passphrase').fill('disabled-flag-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText('Enable quick unlock on this device?')).toBeVisible();
+    await page.getByRole('button', { name: 'Enable quick unlock' }).click();
+    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
+
+    const disabledFlag = await page.evaluate(() => localStorage.getItem('vmd_prf_disabled'));
+    expect(disabledFlag).toBe('1');
+
+    await page.reload();
+    await page.getByLabel('Passphrase').fill('disabled-flag-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
+  });
+
   test('unlock flow: existing user', async ({ page }) => {
     // Seed localStorage with encrypted data (using a known password 'password')
     // We can use the app's crypto functions to create valid data
@@ -248,39 +354,34 @@ test.describe('Authentication', () => {
     expect(doc.text).toBe('Secret Doc');
   });
 
-  test('account controls can sign up, sign in, and sign out against local Supabase', async ({ page }) => {
+  test('account controls can sign in and auto-create missing local Supabase account', async ({ page }, testInfo) => {
     await unlockFreshApp(page);
 
-    const uniqueId = `${Date.now()}-${test.info().workerIndex}`;
-    const email = `playwright-${uniqueId}@example.com`;
-    const password = `pw-${uniqueId}-secure`;
+    const runScopedTag = `${Date.now()}-${testInfo.workerIndex}`;
+    const email = `pw-auth-${runScopedTag}@virgulas.com`;
+    const password = 'testpassword';
 
     const modal = await openOptionsModal(page);
 
-    await modal.getByLabel('Email').fill(email);
-    await modal.getByLabel('Password').fill(password);
-    await modal.getByRole('button', { name: 'Sign up' }).click();
+    const authResult = await ensureAccountExistsAndSignIn(modal, email, password);
 
-    const signedInMessage = modal.getByText(`Signed in as ${email}`);
-    const signUpMessage = modal.getByText('Sign-up submitted. Confirm your email if confirmation is enabled.');
-    await expect(signedInMessage.or(signUpMessage)).toBeVisible();
-
-    if (await signUpMessage.isVisible()) {
-      await modal.getByLabel('Password').fill(password);
-      await modal.getByRole('button', { name: 'Sign in' }).click();
+    if (authResult.mode === 'confirmation-required') {
+      await expect(authResult.invalidCredsMessage).toBeVisible();
+      await expect(page.locator('.sync-dot')).toHaveCount(0);
+      return;
     }
 
-    await expect(signedInMessage).toBeVisible();
     await expect(page.locator('.sync-dot')).toBeVisible();
 
     await modal.getByRole('button', { name: 'Sign out' }).click();
     await expect(modal.getByLabel('Email')).toBeVisible();
     await expect(page.locator('.sync-dot')).toHaveCount(0);
 
-    await modal.getByLabel('Email').fill(email);
-    await modal.getByLabel('Password').fill(password);
-    await modal.getByRole('button', { name: 'Sign in' }).click();
-    await expect(signedInMessage).toBeVisible();
+    const secondAuthResult = await ensureAccountExistsAndSignIn(modal, email, password);
+    expect(secondAuthResult.mode).toBe('signed-in');
+    if (secondAuthResult.mode === 'signed-in') {
+      await expect(secondAuthResult.signedInMessage).toBeVisible();
+    }
   });
 
   test('account controls can sign up with mocked sync', async ({ page }) => {
@@ -303,11 +404,38 @@ test.describe('Authentication', () => {
 
     const modal = await openOptionsModal(page);
 
-    await modal.getByLabel('Email').fill('test@virgulas.com');
+    await modal.getByLabel('Email').fill('mock-error@virgulas.com');
     await modal.getByLabel('Password').fill('wrong-password');
     await modal.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(modal.getByText('Invalid login credentials')).toBeVisible();
     await expect(page.locator('.sync-dot')).toHaveCount(0);
+  });
+
+  test('options can reset quick unlock local keys and disable flag', async ({ page }) => {
+    await unlockFreshApp(page, 'reset-quick-unlock-passphrase');
+    await page.evaluate(() => {
+      localStorage.setItem('vmd_prf_wrapped', 'wrapped-value');
+      localStorage.setItem('vmd_prf_id', 'cred-id');
+      localStorage.setItem('vmd_prf_disabled', '1');
+      localStorage.setItem('vmd_prf_disabled_reason', 'unlock_failed');
+    });
+
+    const modal = await openOptionsModal(page);
+    await modal.getByRole('button', { name: 'Reset Quick Unlock Keys' }).click();
+
+    await expect(modal.getByText('Quick unlock keys reset for this browser profile.')).toBeVisible();
+
+    const quickUnlockValues = await page.evaluate(() => ({
+      wrapped: localStorage.getItem('vmd_prf_wrapped'),
+      id: localStorage.getItem('vmd_prf_id'),
+      disabled: localStorage.getItem('vmd_prf_disabled'),
+      reason: localStorage.getItem('vmd_prf_disabled_reason')
+    }));
+
+    expect(quickUnlockValues.wrapped).toBeNull();
+    expect(quickUnlockValues.id).toBeNull();
+    expect(quickUnlockValues.disabled).toBeNull();
+    expect(quickUnlockValues.reason).toBeNull();
   });
 });

@@ -16,7 +16,7 @@ to run the app and tests locally. Read it completely before starting any task.
 
 ### Environment variables
 
-For normal local development, `.env` is optional because `npm run local` injects local Supabase values automatically.
+For normal local development, `.env` is optional.
 
 If you want to point tests or the app to a specific external environment, create a `.env` file in the project root (gitignored, never commit it):
 
@@ -25,34 +25,23 @@ SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
-The app reads these at runtime from an inline config block in `index.html`:
+The app reads Supabase settings from `localStorage.supabaseconfig`.
+On first run, it seeds this key with hosted defaults:
 
-```html
-<script type="virgulas-config">
-{ "supabaseUrl": "%%SUPABASE_URL%%", "supabaseAnonKey": "%%SUPABASE_ANON_KEY%%" }
-</script>
+```json
+{
+  "url": "https://gcpdascpdrakecpknrtt.supabase.co",
+  "key": "sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc"
+}
 ```
 
-Set both to empty strings to run without Supabase — sync and auth features will be disabled.
+To use local Supabase in the browser, set `localStorage.supabaseconfig` with your local URL/key.
 
 ### Running locally
 
 The app uses ES module imports and cannot be opened directly from the filesystem.
 
-Preferred local dev command (with local Supabase auth/sync enabled):
-
-```bash
-npm run local
-```
-
-`npm run local` will:
-- start local Supabase
-- patch `source/index.html` with local Supabase URL/key
-- serve `source/` on `http://localhost:3000`
-- restore `source/index.html` on exit
-- stop Supabase and remove local data volumes on exit
-
-Static-only mode (no automatic Supabase setup):
+Serve the app locally:
 
 ```bash
 npm run serve
@@ -96,7 +85,8 @@ Start local Supabase:
 npm run db:start
 ```
 
-For day-to-day app + sync development, prefer `npm run local` over manual start/serve.
+Playwright local tests assume `npm run db:start` has been run and `.env` exists.
+Tests override `localStorage.supabaseconfig` from `.env` before every page load.
 
 Get local URL and anon key for `.env`:
 
@@ -110,20 +100,13 @@ Generate a migration after editing `supabase/schemas/*.sql`:
 npm run db:migrate -- <migration-name>
 ```
 
-Apply migrations + seed locally:
+Apply migrations locally (no seed):
 
 ```bash
 npm run db:reset
 ```
 
-| Field      | Value                            |
-|------------|----------------------------------|
-| Email      | `test@virgulas.com`              |
-| Password   | `testpassword`                   |
-| Passphrase | `correct horse battery staple`   |
-
-The seed user's `salt` and `data` rows are pre-populated with a small encrypted document
-derived from that passphrase. Tests that require a signed-in state use these credentials.
+Tests that require a signed-in state should first attempt sign-in and create the user if it does not exist.
 
 Stop local Supabase:
 
@@ -157,7 +140,7 @@ npm test -- --headed            # visible browser
 
 Playwright starts a local static server automatically — no separate `npx serve` needed.
 
-- Tests covering **Supabase auth and sync** require valid values in `.env`; they are skipped with a warning if absent
+- Local Playwright runs require local Supabase credentials (`.env` or `supabase status`) and fail fast if missing
 - Tests covering **WebAuthn PRF** use Playwright's virtual authenticator API — no hardware required; Chromium only
 - All other tests run in Chromium and Firefox.
 
@@ -165,8 +148,8 @@ Playwright starts a local static server automatically — no separate `npx serve
 
 Required repository secrets for CI:
 
-- `SUPABASE_PROJECT` and `SUPABASE_PUBLISHABLE_DEFAULT_KEY` for deploy-time config injection
-- `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT` for main-branch migration publishing
+- `SUPABASE_PROJECT` for main-branch migration publishing
+- `SUPABASE_ACCESS_TOKEN` for main-branch migration publishing
 
 Main-branch CI must always run migration publish before deploy:
 
@@ -216,7 +199,6 @@ update the corresponding file in `supabase/schemas/` in the same commit.
   ```
 - Checklist for schema changes:
   - [ ] The relevant `supabase/schemas/*.sql` file is updated
-  - [ ] `supabase/seed.sql` is updated if the change affects seed data
 
 ### Rule 5 — File structure
 
@@ -233,7 +215,7 @@ Do not create files outside these locations without explicit instruction:
 │   └── *.spec.ts           — Playwright tests
 ├── supabase/
 │   ├── schemas/            — SQL schema files, one per table
-│   └── seed.sql            — seed data for local development
+│   └── seed.sql            — optional local seed script (currently no-op)
 └── docs/
     ├── SPEC.vmd            — source of truth, do not modify unless instructed
     ├── AGENTS.md           — this file, do not modify unless instructed

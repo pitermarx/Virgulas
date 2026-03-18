@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test';
 
 async function setupApp(page, nodeTexts = ['Node 1', 'Node 2', 'Node 3', 'Node 4']) {
   await page.goto('/');

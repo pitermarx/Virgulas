@@ -33,10 +33,17 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
+      - name: Start local Supabase
+        run: npm run db:start
+
       - name: Run E2E tests
         run: npm test
         env:
           CI: true
+
+      - name: Stop local Supabase
+        if: always()
+        run: npm run db:stop
 
       - name: Upload test artifacts
         if: always()
@@ -111,8 +118,6 @@ jobs:
       - name: Build static site bundle
         env:
           GH_TOKEN: ${{ github.token }}
-          SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT }}.supabase.co
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
         run: |
           mkdir -p _site
           cp -r source/. _site/
@@ -124,11 +129,6 @@ jobs:
             git fetch --depth=1 origin "$branch"
             git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE" -x
           done
-
-          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ]; then
-            find _site -name "index.html" -exec sed -i "s|%%SUPABASE_URL%%|$SUPABASE_URL|g" {} \;
-            find _site -name "index.html" -exec sed -i "s|%%SUPABASE_ANON_KEY%%|$SUPABASE_ANON_KEY|g" {} \;
-          fi
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

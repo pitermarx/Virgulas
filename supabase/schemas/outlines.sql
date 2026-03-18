@@ -11,17 +11,17 @@ drop policy if exists "Users can read their own outline" on public.outlines;
 create policy "Users can read their own outline"
   on public.outlines
   for select
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 drop policy if exists "Users can insert their own outline" on public.outlines;
 create policy "Users can insert their own outline"
   on public.outlines
   for insert
-  with check (auth.uid() = user_id);
+  with check ((select auth.uid()) = user_id);
 
 drop policy if exists "Users can update their own outline" on public.outlines;
 create policy "Users can update their own outline"
   on public.outlines
   for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);

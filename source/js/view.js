@@ -54,6 +54,15 @@ const updateQuickUnlockOffer = async (passphrase) => {
     !state.quickUnlockDismissedSession.value;
 };
 
+const resetQuickUnlockLocalState = () => {
+  AppCrypto.resetQuickUnlockLocalData();
+  state.quickUnlockSupported.value = false;
+  state.quickUnlockOfferVisible.value = false;
+  state.quickUnlockPassphrase.value = null;
+  state.quickUnlockError.value = null;
+  state.quickUnlockFallbackVisible.value = false;
+};
+
 export const SetupView = () => {
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -125,6 +134,10 @@ export const UnlockView = () => {
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState(null);
 
+  const resetQuickUnlock = () => {
+    resetQuickUnlockLocalState();
+  };
+
   const handleUnlock = async (e) => {
     e.preventDefault();
     setError(null);
@@ -155,6 +168,14 @@ export const UnlockView = () => {
 
   return h('div', { className: 'auth-card' }, [
     h('h1', { className: 'auth-title' }, 'Welcome Back'),
+    state.quickUnlockFallbackVisible.value && h('div', { className: 'options-section' }, [
+      h('div', { className: 'options-hint' },
+        'Quick unlock is unavailable on this device/browser. You can continue with passphrase unlock or reset quick unlock keys.'),
+      h(Button, {
+        variant: 'secondary',
+        onClick: resetQuickUnlock
+      }, 'Reset Quick Unlock Keys')
+    ]),
     h('form', { onSubmit: handleUnlock }, [
       h(InputField, {
         label: 'Passphrase',
@@ -197,7 +218,12 @@ export const QuickUnlockBanner = () => {
       state.quickUnlockPassphrase.value = null;
     } catch (err) {
       console.error('Quick unlock registration failed', err);
-      state.quickUnlockError.value = 'Passkey setup failed. You can try again.';
+      AppCrypto.markQuickUnlockUnsupported('registration_failed');
+      state.quickUnlockSupported.value = false;
+      state.quickUnlockOfferVisible.value = false;
+      state.quickUnlockPassphrase.value = null;
+      state.quickUnlockFallbackVisible.value = true;
+      state.quickUnlockError.value = null;
     } finally {
       setIsBusy(false);
     }
@@ -518,6 +544,7 @@ export const OptionsModal = ({ onClose }) => {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [authMessage, setAuthMessage] = useState(null);
+  const [dataMessage, setDataMessage] = useState(null);
   const user = state.user.value;
 
   const handleThemeChange = (newTheme) => {
@@ -591,6 +618,11 @@ export const OptionsModal = ({ onClose }) => {
     }
   };
 
+  const handleResetQuickUnlockKeys = () => {
+    resetQuickUnlockLocalState();
+    setDataMessage('Quick unlock keys reset for this browser profile.');
+  };
+
   return h(Modal, { title: 'Options', onClose }, [
     h('div', { className: 'options-section' }, [
       h('h3', { className: 'options-section-heading' }, 'Theme'),
@@ -659,6 +691,11 @@ export const OptionsModal = ({ onClose }) => {
     ]),
     h('div', null, [
       h('h3', { className: 'options-section-heading' }, 'Data'),
+      dataMessage && h('div', { className: 'form-success' }, dataMessage),
+      h(Button, {
+        variant: 'secondary',
+        onClick: handleResetQuickUnlockKeys
+      }, 'Reset Quick Unlock Keys'),
       h(Button, { variant: 'secondary', onClick: () => { if (confirm('Are you sure? This will clear all data and reload.')) { localStorage.clear(); window.location.reload(); } } }, 'Purge All Data')
     ])
   ]);

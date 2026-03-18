@@ -1,6 +1,11 @@
 // --- CRYPTO MODULE ---
 export const AppCrypto = {
   PRF_EVAL_LABEL: 'virgulas-prf-v1',
+  PRF_WRAPPED_KEY: 'vmd_prf_wrapped',
+  PRF_ID_KEY: 'vmd_prf_id',
+  PRF_DISABLED_KEY: 'vmd_prf_disabled',
+  PRF_DISABLED_REASON_KEY: 'vmd_prf_disabled_reason',
+  QUICK_UNLOCK_AUTO_TIMEOUT_MS: 8000,
 
   // Returns a random 16-byte salt, base64 encoded
   generateSalt: () => {
@@ -28,10 +33,27 @@ export const AppCrypto = {
 
   getPrfEvalInput: () => new TextEncoder().encode(AppCrypto.PRF_EVAL_LABEL),
 
+  isQuickUnlockLocallyDisabled: () => localStorage.getItem(AppCrypto.PRF_DISABLED_KEY) === '1',
+
+  markQuickUnlockUnsupported: (reason = 'unknown') => {
+    localStorage.setItem(AppCrypto.PRF_DISABLED_KEY, '1');
+    localStorage.setItem(AppCrypto.PRF_DISABLED_REASON_KEY, reason);
+  },
+
+  clearQuickUnlockUnsupported: () => {
+    localStorage.removeItem(AppCrypto.PRF_DISABLED_KEY);
+    localStorage.removeItem(AppCrypto.PRF_DISABLED_REASON_KEY);
+  },
+
+  resetQuickUnlockLocalData: () => {
+    localStorage.removeItem(AppCrypto.PRF_WRAPPED_KEY);
+    localStorage.removeItem(AppCrypto.PRF_ID_KEY);
+    AppCrypto.clearQuickUnlockUnsupported();
+  },
+
   isQuickUnlockSupported: async () => {
+    if (AppCrypto.isQuickUnlockLocallyDisabled()) return false;
     if (!window.PublicKeyCredential || !navigator.credentials) return false;
-    const ua = navigator.userAgent || '';
-    if (/Firefox/i.test(ua)) return false;
 
     if (typeof window.PublicKeyCredential.getClientCapabilities === 'function') {
       try {
@@ -42,6 +64,7 @@ export const AppCrypto = {
       }
     }
 
+    // Optimistic fallback: may support PRF via extension/bridge paths.
     return true;
   },
 
@@ -67,12 +90,12 @@ export const AppCrypto = {
     return await AppCrypto.decrypt(wrappedPassphrase, key);
   },
 
-  getPrfOutput: async (credentialIdBytes) => {
+  getPrfOutput: async (credentialIdBytes, timeoutMs = 60000) => {
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: AppCrypto.randomBytes(32),
         userVerification: 'preferred',
-        timeout: 60000,
+        timeout: timeoutMs,
         allowCredentials: [{
           id: credentialIdBytes,
           type: 'public-key'
@@ -130,8 +153,23 @@ export const AppCrypto = {
       throw new Error('Passkey registration failed');
     }
 
+    if (typeof credential.getClientExtensionResults !== 'function') {
+      throw new Error('Passkey registration missing extension results');
+    }
+
+    // Use PRF output returned by create(); a follow-up get() can be unreliable.
+    const extensionResults = credential.getClientExtensionResults();
+    if (!extensionResults?.prf?.enabled) {
+      throw new Error('PRF extension not supported or not enabled on this authenticator');
+    }
+
+    const prfFirst = extensionResults?.prf?.results?.first;
+    if (!prfFirst) {
+      throw new Error('WebAuthn PRF output unavailable during registration');
+    }
+
     const credentialIdBytes = new Uint8Array(credential.rawId);
-    const prfOutput = await AppCrypto.getPrfOutput(credentialIdBytes);
+    const prfOutput = prfFirst instanceof Uint8Array ? prfFirst : new Uint8Array(prfFirst);
     const wrapped = await AppCrypto.wrapPassphraseWithPrf(passphrase, prfOutput);
 
     return {
@@ -140,9 +178,10 @@ export const AppCrypto = {
     };
   },
 
-  quickUnlockPassphrase: async (wrappedPassphrase, credentialId) => {
+  quickUnlockPassphrase: async (wrappedPassphrase, credentialId, options = {}) => {
     const credentialIdBytes = AppCrypto.fromBase64Url(credentialId);
-    const prfOutput = await AppCrypto.getPrfOutput(credentialIdBytes);
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 60000;
+    const prfOutput = await AppCrypto.getPrfOutput(credentialIdBytes, timeoutMs);
     return await AppCrypto.unwrapPassphraseWithPrf(wrappedPassphrase, prfOutput);
   },
 

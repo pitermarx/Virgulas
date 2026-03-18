@@ -20,6 +20,7 @@ const initApp = async () => {
   console.log('initApp called');
   // storage.init() is already called in index.html or should be called here
   storage.init();
+  state.quickUnlockFallbackVisible.value = false;
 
   try {
     state.quickUnlockSupported.value = await AppCrypto.isQuickUnlockSupported();
@@ -29,12 +30,17 @@ const initApp = async () => {
   }
 
   if (storage.hasRaw('vmd_data')) {
-    const hasQuickUnlockData = storage.hasRaw('vmd_prf_wrapped') && storage.hasRaw('vmd_prf_id');
+    const hasQuickUnlockData = storage.hasRaw(AppCrypto.PRF_WRAPPED_KEY) && storage.hasRaw(AppCrypto.PRF_ID_KEY);
+    if (hasQuickUnlockData && AppCrypto.isQuickUnlockLocallyDisabled()) {
+      state.quickUnlockFallbackVisible.value = true;
+    }
+
     if (state.quickUnlockSupported.value && hasQuickUnlockData) {
       try {
         const passphrase = await AppCrypto.quickUnlockPassphrase(
-          storage.getRaw('vmd_prf_wrapped'),
-          storage.getRaw('vmd_prf_id')
+          storage.getRaw(AppCrypto.PRF_WRAPPED_KEY),
+          storage.getRaw(AppCrypto.PRF_ID_KEY),
+          { timeoutMs: AppCrypto.QUICK_UNLOCK_AUTO_TIMEOUT_MS }
         );
         const key = await AppCrypto.deriveKey(passphrase, storage.getSalt());
         const doc = await storage.get('vmd_data', key);
@@ -44,12 +50,19 @@ const initApp = async () => {
           state.doc.value = doc;
           state.quickUnlockOfferVisible.value = false;
           state.quickUnlockPassphrase.value = null;
+          state.quickUnlockFallbackVisible.value = false;
           state.status.value = 'ready';
         } else {
+          AppCrypto.markQuickUnlockUnsupported('unlock_doc_unavailable');
+          state.quickUnlockSupported.value = false;
+          state.quickUnlockFallbackVisible.value = true;
           state.status.value = 'unlock';
         }
       } catch (err) {
         console.warn('Quick unlock failed, falling back to passphrase', err);
+        AppCrypto.markQuickUnlockUnsupported('unlock_failed');
+        state.quickUnlockSupported.value = false;
+        state.quickUnlockFallbackVisible.value = true;
         state.status.value = 'unlock';
       }
     } else {
