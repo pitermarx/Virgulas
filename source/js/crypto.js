@@ -4,24 +4,19 @@ export const AppCrypto = {
   PRF_WRAPPED_KEY: 'vmd_prf_wrapped',
   PRF_ID_KEY: 'vmd_prf_id',
   PRF_DISABLED_KEY: 'vmd_prf_disabled',
-  PRF_DISABLED_REASON_KEY: 'vmd_prf_disabled_reason',
   QUICK_UNLOCK_AUTO_TIMEOUT_MS: 8000,
 
   // Returns a random 16-byte salt, base64 encoded
-  generateSalt: () => {
-    const bytes = window.crypto.getRandomValues(new Uint8Array(16));
-    return btoa(String.fromCharCode(...bytes));
-  },
-
+  generateSalt: () => AppCrypto.toBase64(AppCrypto.randomBytes(16)),
   randomBytes: (size) => window.crypto.getRandomValues(new Uint8Array(size)),
 
   toBase64: (bytes) => btoa(String.fromCharCode(...bytes)),
   fromBase64: (base64) => Uint8Array.from(atob(base64), c => c.charCodeAt(0)),
 
-  compress: (jsonString) => {
+  compress: (string) => {
     const compressionStream = new CompressionStream('gzip');
     const writer = compressionStream.writable.getWriter();
-    writer.write(new TextEncoder().encode(jsonString));
+    writer.write(new TextEncoder().encode(string));
     writer.close();
     return new Response(compressionStream.readable).arrayBuffer();
   },
@@ -51,22 +46,7 @@ export const AppCrypto = {
   getPrfEvalInput: () => new TextEncoder().encode(AppCrypto.PRF_EVAL_LABEL),
 
   isQuickUnlockLocallyDisabled: () => localStorage.getItem(AppCrypto.PRF_DISABLED_KEY) === '1',
-
-  markQuickUnlockUnsupported: (reason = 'unknown') => {
-    localStorage.setItem(AppCrypto.PRF_DISABLED_KEY, '1');
-    localStorage.setItem(AppCrypto.PRF_DISABLED_REASON_KEY, reason);
-  },
-
-  clearQuickUnlockUnsupported: () => {
-    localStorage.removeItem(AppCrypto.PRF_DISABLED_KEY);
-    localStorage.removeItem(AppCrypto.PRF_DISABLED_REASON_KEY);
-  },
-
-  resetQuickUnlockLocalData: () => {
-    localStorage.removeItem(AppCrypto.PRF_WRAPPED_KEY);
-    localStorage.removeItem(AppCrypto.PRF_ID_KEY);
-    AppCrypto.clearQuickUnlockUnsupported();
-  },
+  markQuickUnlockUnsupported: () => localStorage.setItem(AppCrypto.PRF_DISABLED_KEY, '1'),
 
   isQuickUnlockSupported: async () => {
     if (AppCrypto.isQuickUnlockLocallyDisabled()) return false;

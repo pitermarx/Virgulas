@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virgulas — tests</title>
+    <link rel="icon" type="image/png" href="media/favicon-96x96.png" sizes="96x96" />
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            background: #f4f4f2;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+
+        header {
+            background: #1a1a1a;
+            color: #f4f4f2;
+            padding: 20px 28px;
+            display: flex;
+            align-items: baseline;
+            gap: 20px;
+        }
+
+        header h1 {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        #summary {
+            font-size: 13px;
+            opacity: 0.55;
+        }
+
+        #summary.ready {
+            opacity: 1;
+        }
+
+        .pass {
+            color: #6fcf97;
+        }
+
+        .fail {
+            color: #eb5757;
+        }
+
+        main {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 28px 28px 60px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .tab {
+            border: 1px solid #d7d7d2;
+            background: #f6f6f2;
+            color: #4a4a47;
+            padding: 8px 12px;
+            font-size: 12px;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .tab-title {
+            text-transform: uppercase;
+        }
+
+        .tab-meta {
+            font-size: 11px;
+            letter-spacing: 0;
+            text-transform: none;
+            color: #777;
+        }
+
+        .tab.active .tab-meta {
+            color: #e0e0dc;
+        }
+
+        .tab:hover {
+            background: #ecece7;
+        }
+
+        .tab.active {
+            background: #1a1a1a;
+            color: #f4f4f2;
+            border-color: #1a1a1a;
+        }
+
+        .suite-note {
+            border: 1px solid #e0e0dc;
+            background: #fff;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .section-block {
+            background: #fff;
+            border: 1px solid #e0e0dc;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: #f0f0ec;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid transparent;
+        }
+
+        .section-header:hover {
+            background: #e8e8e4;
+        }
+
+        .section-block.open .section-header {
+            border-bottom-color: #e0e0dc;
+        }
+
+        .section-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chevron {
+            font-size: 10px;
+            color: #999;
+            width: 10px;
+            display: inline-block;
+            transition: transform 0.15s ease;
+            transform: rotate(-90deg);
+        }
+
+        .section-block.open .chevron {
+            transform: rotate(0deg);
+        }
+
+        .section-name {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #555;
+        }
+
+        .section-tally {
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+            color: #888;
+            white-space: nowrap;
+        }
+
+        .test-list {
+            list-style: none;
+            display: none;
+        }
+
+        .section-block.open .test-list {
+            display: block;
+        }
+
+        .test-item {
+            display: grid;
+            grid-template-columns: 18px 1fr;
+            gap: 0 10px;
+            padding: 8px 16px;
+            align-items: baseline;
+            border-bottom: 1px solid #f0f0ec;
+        }
+
+        .test-item:last-child {
+            border-bottom: none;
+        }
+
+        .test-item.failed {
+            background: #fff8f8;
+        }
+
+        .indicator {
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        .test-name {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        .test-error {
+            grid-column: 2;
+            margin-top: 4px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #c0392b;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #fff0f0;
+            padding: 6px 8px;
+            border-left: 3px solid #c0392b;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Virgulas — tests</h1>
+        <span id="summary">…</span>
+    </header>
+
+    <main id="app"></main>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "preact":          "https://esm.sh/preact@10.29.0",
+        "preact/hooks":    "https://esm.sh/preact@10.29.0/hooks",
+        "preact/":         "https://esm.sh/preact@10.29.0/",
+        "@preact/signals": "https://esm.sh/@preact/signals@2.8.2?external=preact",
+        "htm/preact":      "https://esm.sh/htm@3.1.1/preact?external=preact"
+      }
+    }
+    </script>
+    <script type="module">
+        import { h, render } from 'preact'
+        import { useEffect, useState } from 'preact/hooks'
+        import { html } from 'htm/preact'
+        import { summary as outlineSummary, streamOutlineTests } from './js/outlineTests.js'
+        import { crypto2Total, runCrypto2Tests } from './js/crypto2Tests.js'
+
+        function Section({ section }) {
+            const allPassed = section.tests.every(t => t.ok)
+            const [open, setOpen] = useState(!allPassed)
+            const passed = section.tests.filter(t => t.ok).length
+            const failed = section.tests.length - passed
+
+            useEffect(() => {
+                if (section.tests.some(t => !t.ok)) {
+                    setOpen(true)
+                }
+            }, [section.tests])
+
+            const tally = failed === 0
+                ? html`<span class="section-tally"><span class="pass">${passed} passed</span></span>`
+                : html`<span class="section-tally"><span class="pass">${passed}</span> / <span class="fail">${failed} failed</span></span>`
+
+            return html`
+    <div class=${'section-block' + (open ? ' open' : '')}>
+      <div class="section-header" onClick=${() => setOpen(o => !o)}>
+        <span class="section-left">
+          <span class="chevron">▼</span>
+          <span class="section-name">${section.name}</span>
+        </span>
+        ${tally}
+      </div>
+      <ul class="test-list">
+        ${section.tests.map(t => html`
+          <li class=${'test-item' + (t.ok ? '' : ' failed')}>
+            <span class=${'indicator ' + (t.ok ? 'pass' : 'fail')}>${t.ok ? '✔' : '✘'}</span>
+            <span class="test-name">${t.name}</span>
+            ${!t.ok && t.error && html`<pre class="test-error">${t.error}</pre>`}
+            ${!t.ok && t.errorDetails && html`<pre class="test-error">${JSON.stringify(t.errorDetails, null, 2)}</pre>`}
+          </li>
+        `)}
+      </ul>
+    </div>
+  `
+        }
+
+        function getRunningCount(state) {
+            if (state.status !== 'running') return 0
+            return Math.max(state.expectedTotal - state.summary.total, 0)
+        }
+
+        function formatSuiteMeta(state) {
+            return `${state.expectedTotal} total | ${getRunningCount(state)} running | ${state.summary.failed} failed`
+        }
+
+        function setSummarySummary(outlineState, cryptoState) {
+            const summaryEl = document.getElementById('summary')
+            if (!summaryEl) return
+
+            summaryEl.className = 'ready'
+
+            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal
+            const passed = outlineState.summary.passed + cryptoState.summary.passed
+            const failed = outlineState.summary.failed + cryptoState.summary.failed
+            const completed = outlineState.summary.total + cryptoState.summary.total
+            const running = getRunningCount(outlineState) + getRunningCount(cryptoState)
+
+            if (outlineState.status === 'error' || cryptoState.status === 'error') {
+                const message = outlineState.error || cryptoState.error || 'Unknown error'
+                summaryEl.innerHTML = `<span class="fail">Failed to run tests</span>: ${message}`
+                return
+            }
+
+            if (running > 0) {
+                summaryEl.innerHTML = `<span class="pass">${passed}</span> / ${expectedTotal} complete · ${running} running · <span class="fail">${failed} failed</span>`
+                return
+            }
+
+            summaryEl.innerHTML = failed === 0
+                ? `<span class="pass">${passed} / ${expectedTotal} passed</span>`
+                : `<span class="pass">${passed}</span> / <span class="fail">${failed} failed</span> of ${expectedTotal}`
+        }
+
+        function App() {
+            const [activeSuite, setActiveSuite] = useState('outline')
+            const [outlineState, setOutlineState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: outlineSummary().total
+            })
+            const [cryptoState, setCryptoState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: crypto2Total
+            })
+
+            useEffect(() => {
+                if (outlineState.status !== 'idle') return
+
+                setOutlineState(state => ({ ...state, status: 'running', error: null }))
+                streamOutlineTests(progress => {
+                    setOutlineState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setOutlineState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setOutlineState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [outlineState.status])
+
+            useEffect(() => {
+                if (cryptoState.status !== 'idle') return
+
+                setCryptoState(state => ({ ...state, status: 'running', error: null }))
+                runCrypto2Tests(progress => {
+                    setCryptoState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        expectedTotal: state.expectedTotal,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setCryptoState({
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null,
+                            expectedTotal: crypto2Total
+                        })
+                    })
+                    .catch(error => {
+                        setCryptoState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [cryptoState.status])
+
+            const suite = activeSuite === 'outline'
+                ? {
+                    status: outlineState.status,
+                    sections: outlineState.sections,
+                    summary: outlineState.summary,
+                    error: outlineState.error,
+                    expectedTotal: outlineState.expectedTotal
+                }
+                : {
+                    status: cryptoState.status,
+                    sections: cryptoState.sections,
+                    summary: cryptoState.summary,
+                    error: cryptoState.error,
+                    expectedTotal: cryptoState.expectedTotal
+                }
+
+            const completed = suite.summary.total
+            const expected = suite.expectedTotal || suite.summary.total
+            const progressText = expected > 0
+                ? `${completed} / ${expected} complete`
+                : `${completed} complete`
+
+            useEffect(() => {
+                setSummarySummary(outlineState, cryptoState)
+            }, [outlineState, cryptoState])
+
+            return html`
+    <div class="tabs">
+      <button
+        class=${'tab' + (activeSuite === 'outline' ? ' active' : '')}
+        onClick=${() => setActiveSuite('outline')}
+        aria-pressed=${activeSuite === 'outline'}
+      >
+                <span class="tab-title">Outline</span>
+                <span class="tab-meta">${formatSuiteMeta(outlineState)}</span>
+      </button>
+      <button
+        class=${'tab' + (activeSuite === 'crypto2' ? ' active' : '')}
+        onClick=${() => setActiveSuite('crypto2')}
+        aria-pressed=${activeSuite === 'crypto2'}
+      >
+                <span class="tab-title">Crypto2</span>
+                <span class="tab-meta">${formatSuiteMeta(cryptoState)}</span>
+      </button>
+    </div>
+
+    ${suite.status === 'running' && html`<div class="suite-note">Running ${activeSuite} tests... ${progressText}</div>`}
+    ${suite.status === 'error' && html`<div class="suite-note fail">${activeSuite} test run failed: ${suite.error}</div>`}
+
+    ${suite.sections.map(s => html`<${Section} key=${activeSuite + ':' + s.name} section=${s} />`)}
+  `
+        }
+
+        render(html`<${App} />`, document.getElementById('app'))
+    </script>
+</body>
+
+</html>

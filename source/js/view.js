@@ -60,12 +60,14 @@ const updateQuickUnlockOffer = async (passphrase) => {
 };
 
 const resetQuickUnlockLocalState = () => {
-  AppCrypto.resetQuickUnlockLocalData();
   state.quickUnlockSupported.value = false;
   state.quickUnlockOfferVisible.value = false;
   state.quickUnlockPassphrase.value = null;
   state.quickUnlockError.value = null;
   state.quickUnlockFallbackVisible.value = false;
+  localStorage.removeItem(AppCrypto.PRF_WRAPPED_KEY);
+  localStorage.removeItem(AppCrypto.PRF_ID_KEY);
+  localStorage.removeItem(AppCrypto.PRF_DISABLED_KEY);
 };
 
 const createInitialDoc = () => ({
@@ -571,9 +573,6 @@ export const Node = ({ node, path, onUpdate, onAction, readOnly }) => {
       requestAnimationFrame(() => {
         if (!descRef.current) return;
         descRef.current.focus();
-        const el = descRef.current;
-        el.style.height = 'auto';
-        el.style.height = `${el.scrollHeight}px`;
       });
     }
   }, [isEditingText, isEditingDesc, pathKey]);
@@ -771,8 +770,6 @@ export const Node = ({ node, path, onUpdate, onAction, readOnly }) => {
                       onInput=${(e) => {
             if (!readOnly) {
               onUpdate(path, { description: e.target.value });
-              e.target.style.height = 'auto';
-              e.target.style.height = `${e.target.scrollHeight}px`;
             }
           }}
                       onClick=${() => {

@@ -617,7 +617,6 @@ a:hover {
 .node-body {
   flex: 1;
   min-width: 0;
-  line-height: 1.5rem;
 }
 
 /* ── Node text: read mode (markdown) ── */
@@ -665,8 +664,6 @@ a:hover {
   color: var(--color-text-muted);
   resize: none;
   display: block;
-  min-height: 1.4em;
-  height: auto;
   overflow-y: hidden;
   box-sizing: border-box;
 }
@@ -865,7 +862,8 @@ a:hover {
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
+  scrollbar-width: none;
   max-width: 800px;
   margin: 0 auto;
   width: 100%;

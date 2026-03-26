@@ -61,7 +61,7 @@ const initApp = async () => {
       const doc = await storage.get('vmd_data', key);
 
       if (!doc) {
-        AppCrypto.markQuickUnlockUnsupported('unlock_doc_unavailable');
+        AppCrypto.markQuickUnlockUnsupported();
         state.quickUnlockSupported.value = false;
         state.quickUnlockFallbackVisible.value = true;
         return false;
@@ -76,7 +76,7 @@ const initApp = async () => {
       return true;
     } catch (err) {
       console.warn('Quick unlock failed, falling back to passphrase', err);
-      AppCrypto.markQuickUnlockUnsupported('unlock_failed');
+      AppCrypto.markQuickUnlockUnsupported();
       state.quickUnlockSupported.value = false;
       state.quickUnlockFallbackVisible.value = true;
       return false;
