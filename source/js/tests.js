@@ -33,7 +33,7 @@ function NodeView({ id }) {
     return html`
         <div class="node">
             <div class="node-header">
-                <button onClick=${() => outline.addNewNode(id)}>+</button>
+                <button onClick=${() => outline.addChild(id)}>+</button>
                 ${id !== undefined && html`
                     <button onClick=${() => outline.deleteNode(id)}>x</button>
                     <button onClick=${() => outline.moveUp(id)}>↑</button>
@@ -79,7 +79,7 @@ function App() {
                 <button id="testBtn" class="debug-only" onClick=${() => runTests()}>TEST</button>
 
                 <hr />
-                <button onClick=${() => outline.addNewNode()}>+</button>
+                <button onClick=${() => outline.addChild()}>+</button>
 
                 <${NodeView} />
                 <div id="testOutput" class="debug-only"></div>
@@ -159,29 +159,29 @@ async function runTests() {
     // ------------------ TREE TESTS ------------------
 
     await test("Create single node", () => {
-        const n = outline.addNewNode()
+        const n = outline.addChild()
         assert(n !== null, "Node not created")
     })
 
     await test("Multiple children order preserved", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode()
+        const a = outline.addChild()
+        const b = outline.addChild()
         const root = outline.getRoot()
         assert(root.children[0] === a.id, "Order broken")
         assert(root.children[1] === b.id, "Order broken")
     })
 
     await test("Indent moves node under previous sibling", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode()
+        const a = outline.addChild()
+        const b = outline.addChild()
         outline.indent(b.id)
         const parent = outline.get(b.parentId)
         assert(parent.id === a.id, "Indent failed")
     })
 
     await test("Outdent restores to grandparent", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode()
+        const a = outline.addChild()
+        const b = outline.addChild()
         outline.indent(b.id)
         outline.outdent(b.id)
         const parent = outline.get(b.parentId)
@@ -189,24 +189,24 @@ async function runTests() {
     })
 
     await test("MoveUp swaps siblings", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode()
+        const a = outline.addChild()
+        const b = outline.addChild()
         outline.moveUp(b.id)
         const root = outline.getRoot()
         assert(root.value.children[0] === b.id, "MoveUp failed")
     })
 
     await test("MoveDown swaps siblings", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode()
+        const a = outline.addChild()
+        const b = outline.addChild()
         outline.moveDown(a.id)
         const root = outline.getRoot()
         assert(root.value.children[1] === a.id, "MoveDown failed")
     })
 
     await test("Recursive delete removes subtree", () => {
-        const a = outline.addNewNode()
-        const b = outline.addNewNode(a.id)
+        const a = outline.addChild()
+        const b = outline.addChild(a.id)
         outline.deleteNode(a.id)
         assert(!outline.get(a.id), "Parent not deleted")
         assert(!outline.get(b.id), "Child not deleted")
@@ -215,13 +215,13 @@ async function runTests() {
     await test("Deep tree structure integrity", () => {
         let parent = undefined
         for (let i = 0; i < 20; i++) {
-            const n = outline.addNewNode(parent)
+            const n = outline.addChild(parent)
             parent = n.id
         }
     })
 
     await test("Serialization roundtrip", () => {
-        const a = outline.addNewNode()
+        const a = outline.addChild()
         outline.setNodeTxt(a.id, "Hello")
         const json = outline.serialize()
         outline.reset(json)

@@ -22,13 +22,6 @@ export async function runCrypto2Tests(onProgress) {
 
     section('Identifiers and salt')
 
-    await test('randomId returns a UUID-like value', async () => {
-        const id = randomId()
-        assert(typeof id === 'string', 'randomId should return a string')
-        const uuidV4Like = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-        assert(uuidV4Like.test(id), 'randomId should match UUID format')
-    })
-
     await test('randomId values are unique across multiple calls', async () => {
         const ids = new Set()
         for (let i = 0; i < 24; i++) ids.add(randomId())

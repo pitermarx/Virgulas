@@ -37,38 +37,6 @@ export function cloneSections(sections) {
     }))
 }
 
-export function createSyncSectionHarness(options = {}) {
-    const sections = []
-    let currentSection = null
-    const beforeEach = options.beforeEach || (() => { })
-
-    function section(name) {
-        currentSection = { name, tests: [] }
-        sections.push(currentSection)
-    }
-
-    function test(name, fn) {
-        beforeEach()
-        const entry = { name, ok: false, error: null, errorDetails: null }
-        currentSection.tests.push(entry)
-
-        try {
-            fn()
-            entry.ok = true
-        } catch (e) {
-            entry.error = e && e.message ? e.message : String(e)
-            entry.errorDetails = e && e.details ? e.details : null
-        }
-    }
-
-    return {
-        sections,
-        section,
-        test,
-        summary: () => summaryFromSections(sections)
-    }
-}
-
 export function createAsyncSectionHarness(options = {}) {
     const sections = []
     let currentSection = null
@@ -94,7 +62,7 @@ export function createAsyncSectionHarness(options = {}) {
         currentSection.tests.push(entry)
 
         try {
-            await fn()
+            await (fn() || Promise.resolve())
             entry.ok = true
         } catch (e) {
             entry.error = e && e.message ? e.message : String(e)

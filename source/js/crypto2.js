@@ -47,7 +47,11 @@ async function deriveKey(passphrase, saltBase64) {
     )
 }
 
-const randomId = () => crypto.randomUUID()
+function randomId() {
+    // this generates a 8-character random string, which is sufficient for our use case and more efficient than generating a full UUID
+    // it is the responsibility of the caller to ensure uniqueness if generating multiple IDs in a short time frame
+    return Math.random().toString(36).substr(2, 8)
+}
 
 const generateSalt = () => toBase64(window.crypto.getRandomValues(new Uint8Array(16)))
 
