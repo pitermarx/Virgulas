@@ -12,7 +12,8 @@ async function compress(string) {
 async function decompress(bytes) {
     const decompressionStream = new DecompressionStream('gzip')
     const writer = decompressionStream.writable.getWriter()
-    writer.write(bytes)
+    const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+    writer.write(input)
     writer.close()
     const decompressed = await new Response(decompressionStream.readable).arrayBuffer()
     return new TextDecoder().decode(decompressed)

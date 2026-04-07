@@ -255,6 +255,7 @@
         import { html } from 'htm/preact'
         import { summary as outlineSummary, streamOutlineTests } from './js/outlineTests.js'
         import { crypto2Total, runCrypto2Tests } from './js/crypto2Tests.js'
+        import { shortcutsTotal, runShortcutsTests } from './js/shortcutsTests.js'
 
         function Section({ section }) {
             const allPassed = section.tests.every(t => t.ok)
@@ -304,20 +305,20 @@
             return `${state.expectedTotal} total | ${getRunningCount(state)} running | ${state.summary.failed} failed`
         }
 
-        function setSummarySummary(outlineState, cryptoState) {
+        function setSummarySummary(outlineState, cryptoState, shortcutsState) {
             const summaryEl = document.getElementById('summary')
             if (!summaryEl) return
 
             summaryEl.className = 'ready'
 
-            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal
-            const passed = outlineState.summary.passed + cryptoState.summary.passed
-            const failed = outlineState.summary.failed + cryptoState.summary.failed
-            const completed = outlineState.summary.total + cryptoState.summary.total
-            const running = getRunningCount(outlineState) + getRunningCount(cryptoState)
+            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal + shortcutsState.expectedTotal
+            const passed = outlineState.summary.passed + cryptoState.summary.passed + shortcutsState.summary.passed
+            const failed = outlineState.summary.failed + cryptoState.summary.failed + shortcutsState.summary.failed
+            const completed = outlineState.summary.total + cryptoState.summary.total + shortcutsState.summary.total
+            const running = getRunningCount(outlineState) + getRunningCount(cryptoState) + getRunningCount(shortcutsState)
 
-            if (outlineState.status === 'error' || cryptoState.status === 'error') {
-                const message = outlineState.error || cryptoState.error || 'Unknown error'
+            if (outlineState.status === 'error' || cryptoState.status === 'error' || shortcutsState.status === 'error') {
+                const message = outlineState.error || cryptoState.error || shortcutsState.error || 'Unknown error'
                 summaryEl.innerHTML = `<span class="fail">Failed to run tests</span>: ${message}`
                 return
             }
@@ -347,6 +348,13 @@
                 summary: { passed: 0, failed: 0, total: 0 },
                 error: null,
                 expectedTotal: crypto2Total
+            })
+            const [shortcutsState, setShortcutsState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: shortcutsTotal
             })
 
             useEffect(() => {
@@ -412,6 +420,38 @@
                     })
             }, [cryptoState.status])
 
+            useEffect(() => {
+                if (shortcutsState.status !== 'idle') return
+
+                setShortcutsState(state => ({ ...state, status: 'running', error: null }))
+                runShortcutsTests(progress => {
+                    setShortcutsState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        expectedTotal: state.expectedTotal,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setShortcutsState({
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null,
+                            expectedTotal: shortcutsTotal
+                        })
+                    })
+                    .catch(error => {
+                        setShortcutsState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [shortcutsState.status])
+
             const suite = activeSuite === 'outline'
                 ? {
                     status: outlineState.status,
@@ -420,13 +460,21 @@
                     error: outlineState.error,
                     expectedTotal: outlineState.expectedTotal
                 }
-                : {
-                    status: cryptoState.status,
-                    sections: cryptoState.sections,
-                    summary: cryptoState.summary,
-                    error: cryptoState.error,
-                    expectedTotal: cryptoState.expectedTotal
-                }
+                : activeSuite === 'crypto2'
+                    ? {
+                        status: cryptoState.status,
+                        sections: cryptoState.sections,
+                        summary: cryptoState.summary,
+                        error: cryptoState.error,
+                        expectedTotal: cryptoState.expectedTotal
+                    }
+                    : {
+                        status: shortcutsState.status,
+                        sections: shortcutsState.sections,
+                        summary: shortcutsState.summary,
+                        error: shortcutsState.error,
+                        expectedTotal: shortcutsState.expectedTotal
+                    }
 
             const completed = suite.summary.total
             const expected = suite.expectedTotal || suite.summary.total
@@ -435,8 +483,8 @@
                 : `${completed} complete`
 
             useEffect(() => {
-                setSummarySummary(outlineState, cryptoState)
-            }, [outlineState, cryptoState])
+                setSummarySummary(outlineState, cryptoState, shortcutsState)
+            }, [outlineState, cryptoState, shortcutsState])
 
             return html`
     <div class="tabs">
@@ -456,6 +504,14 @@
                 <span class="tab-title">Crypto2</span>
                 <span class="tab-meta">${formatSuiteMeta(cryptoState)}</span>
       </button>
+            <button
+                class=${'tab' + (activeSuite === 'shortcuts' ? ' active' : '')}
+                onClick=${() => setActiveSuite('shortcuts')}
+                aria-pressed=${activeSuite === 'shortcuts'}
+            >
+                                <span class="tab-title">Shortcuts</span>
+                                <span class="tab-meta">${formatSuiteMeta(shortcutsState)}</span>
+            </button>
     </div>
 
     ${suite.status === 'running' && html`<div class="suite-note">Running ${activeSuite} tests... ${progressText}</div>`}

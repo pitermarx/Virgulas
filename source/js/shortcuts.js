@@ -93,10 +93,10 @@ async function handleKeyDownOnFocusedNode(k, focus) {
             outline.moveUp(focus.Id.value)
             return true
         case 'Alt+ArrowLeft':
-            zoomOut()
+            zoomOut(focus)
             return true
         case 'Alt+ArrowRight':
-            zoomIn(focus.Id.value)
+            zoomIn(focus.Id.value, focus)
             return true
         case 'Ctrl+c':
             navigator.clipboard.writeText(outline.getVMD(focus.Id.value))
@@ -164,7 +164,7 @@ async function handleKeyDow(e, focus) {
             toggleSearchMode(focus)
             return true
         case 'Alt+ArrowLeft':
-            zoomOut()
+            zoomOut(focus)
             return true
     }
 }

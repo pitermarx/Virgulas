@@ -123,7 +123,6 @@ const NodeModel = createModel((model = {}) => {
                 }
                 return peek[index + 1]
             }
-            getChild
         },
     }
 });
@@ -212,7 +211,7 @@ const OutlineModel = createModel(() => {
             if (parent.children.peek().length === 1 && parent.id === zoomId.value && !force) {
                 log('Cannot delete the only child of the root node, skipping deletion to prevent empty outline')
                 node.text.value = '' // instead of deleting the node, just clear its text to keep the outline from being empty
-                var ch = node.children.peek()
+                const ch = node.children.peek()
                 if (ch)
                     ch.map(i => map.get(i)).forEach(deleteNode)
             }
@@ -595,7 +594,7 @@ const OutlineModel = createModel(() => {
     })
 
     function smartCaseIncludes(text, query) {
-        if (!query) return false;
+        if (!query || !text) return false;
         const hasUppercase = /[A-Z]/.test(query);
         if (hasUppercase) {
             return text.includes(query);
