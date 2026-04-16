@@ -133,10 +133,14 @@ npm exec supabase -- db push --linked --dry-run
 ### Running tests
 
 ```bash
-npm test                        # all tests
-npm test -- tests/sync.spec.ts  # single file
-npm test -- --headed            # visible browser
+npm test                         # e2e + unit harness
+npm run test:e2e                 # e2e specs only
+npm run test:e2e -- tests/sync.spec.ts
+npm run test:e2e -- --headed     # visible browser
+npm run test:unit                # source/test.html harness via Playwright
 ```
+
+`npm test` always runs both suites and returns non-zero if either suite fails.
 
 Playwright starts a local static server automatically — no separate `npx serve` needed.
 
@@ -160,6 +164,43 @@ supabase db push --linked --include-all
 ```
 
 ---
+
+## Frontend module map (`source/js`)
+
+Use this as the default responsibility split. Keep files focused and avoid mixing concerns.
+
+- `app.js`:
+  App bootstrap, lock screen/auth flow, top-level render tree, modal orchestration.
+- `ui.js` (renamed from `node.js`):
+  Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, raw/debug panels).
+- `search.js`:
+  Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
+- `shortcuts.js`:
+  Keyboard interaction and focus/navigation behaviour (including search key handling).
+- `outline.js`:
+  Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+- `persistence.js`:
+  Persistence orchestration for Local/Remote/File modes, unlock/sign-in flows, autosave wiring.
+- `sync.js`:
+  Remote sync protocol logic (timestamp checks, merge/conflict resolution, background upload scheduling).
+- `crypto2.js`:
+  Cryptographic primitives and key derivation.
+- `utils.js`:
+  Tiny shared utilities only.
+- `testing.js` and `*Tests.js`:
+  In-browser unit harness helpers and unit test modules.
+
+### Naming and splitting rules
+
+- Name files by responsibility, not by historical scope.
+  Example: `ui.js` is preferred over `node.js` because it owns multiple UI surfaces, not only one node component.
+- If a module exceeds ~350-450 lines and mixes unrelated concerns, split it.
+  Preferred split order:
+  1. shared state/helpers into a focused module
+  2. feature-specific logic into that feature module
+  3. keep orchestration in the original module
+- Avoid circular dependencies.
+  If two modules need shared state, extract that state into a third module (as done with `search.js`).
 
 ## Rules
 

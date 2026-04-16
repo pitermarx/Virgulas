@@ -236,7 +236,7 @@ export async function runShortcutsTests(onProgress) {
         assert(document.body.focused, 'Escape should move focus to document body')
     })
 
-    await test('Enter on focused text creates a sibling after the focused node', async () => {
+    await test('Enter on focused text without children creates a sibling after the focused node', async () => {
         outline.addChild('root', { id: 'A', text: 'A' })
         outline.addChild('root', { id: 'B', text: 'B' })
         const focus = createFocus('A', 'text')
@@ -250,6 +250,21 @@ export async function runShortcutsTests(onProgress) {
         assertEqual(children[0], 'A', 'Original first child should remain in place')
         assertEqual(children[2], 'B', 'Original next sibling should still be after inserted node')
         assert(children[1] === focus.Id.value, 'Focus should point to the newly inserted node')
+    })
+
+    await test('Enter on focused text with children creates first child', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('A', { id: 'A1', text: 'A1' })
+        const focus = createFocus('A', 'text')
+        const handle = keydown(focus)
+        const event = createKeyEvent({ key: 'Enter' })
+
+        await handle(event)
+
+        const children = outline.get('A').children.peek()
+        assertEqual(children.length, 2, 'A new child should be added under the focused node')
+        assertEqual(children[1], 'A1', 'Existing child should be pushed to second position')
+        assert(children[0] === focus.Id.value, 'Focus should point to the newly inserted first child')
     })
 
     await test('Alt+ArrowRight zooms in from focused node and consumes event', async () => {
@@ -343,6 +358,33 @@ export async function runShortcutsTests(onProgress) {
 
         await handle(createKeyEvent({ key: 'Backspace' }))
         assertEqual(focus.Type.value, 'text', 'Backspace in empty description should return to text mode')
+    })
+
+    await test('Backspace on non-empty focused text moves focus to previous node', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('root', { id: 'B', text: 'B' })
+        const focus = createFocus('B', 'text')
+        const handle = keydown(focus)
+
+        await handle(createKeyEvent({ key: 'Backspace' }))
+
+        const children = outline.get('root').children.peek()
+        assertEqual(children.length, 2, 'Backspace on non-empty should not delete the node')
+        assertEqual(focus.Id.value, 'A', 'Focus should move to previous node')
+    })
+
+    await test('Ctrl+Backspace on non-empty focused text deletes node and focuses previous', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('root', { id: 'B', text: 'B' })
+        const focus = createFocus('B', 'text')
+        const handle = keydown(focus)
+
+        await handle(createKeyEvent({ key: 'Backspace', ctrlKey: true }))
+
+        const children = outline.get('root').children.peek()
+        assertEqual(children.length, 1, 'Ctrl+Backspace should delete the node even with text')
+        assertEqual(children[0], 'A', 'Remaining node should be previous sibling')
+        assertEqual(focus.Id.value, 'A', 'Focus should move to previous sibling after delete')
     })
 
     await test('Ctrl+Backspace on empty focused text deletes node and focuses previous', async () => {

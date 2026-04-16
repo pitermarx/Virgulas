@@ -1,38 +1,20 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Raw Mode', () => {
   test.beforeEach(async ({ page }) => {
-    // Setup fresh state
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-
-      const initialDoc = {
-        id: 'root',
-        text: 'Root',
-        children: [
-          { id: '1', text: 'Item 1', children: [] },
-          {
-            id: '2', text: 'Item 2', children: [
-              { id: '2.1', text: 'Child 2.1', children: [] }
-            ]
-          }
-        ]
-      };
-
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(initialDoc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Item 1', children: [] },
+        {
+          id: '2', text: 'Item 2', children: [
+            { id: '2.1', text: 'Child 2.1', children: [] }
+          ]
+        }
+      ]
     });
-
-    // Unlock
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
   });
 
   test('Switch to Raw Mode and back', async ({ page }) => {

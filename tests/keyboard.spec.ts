@@ -1,53 +1,36 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Keyboard', () => {
   test.beforeEach(async ({ page }) => {
-
-    // Setup fresh state
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-
-      const initialDoc = {
-        id: 'root',
-        text: 'Root',
-        children: [
-          { id: '1', text: 'Node 1', children: [] }
-        ]
-      };
-
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(initialDoc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Node 1', children: [] }
+      ]
     });
-
-    // Unlock
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
   });
 
-  test('manual dispatch adds node', async ({ page }) => {
+  test('Enter from focused node adds a new node', async ({ page }) => {
     // Wait for nodes (Divs)
     await expect(page.locator('.node-content').nth(0)).toBeVisible();
 
     // Check marker
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
-    // Manually dispatch add action for path [0]
-    await page.evaluate(() => {
-      if (typeof window.App.dispatch !== 'function') throw new Error('dispatch is not a function');
-      window.App.dispatch('add', [0]);
-    });
+    const node1Div = page.locator('.node-content').nth(0);
+    await node1Div.click();
+    const node1Input = node1Div.locator('input');
+    await expect(node1Input).toBeFocused();
+    await node1Input.press('Enter');
 
     // Expect 2 nodes
     await expect(page.locator('.node-content')).toHaveCount(2);
 
-    // The new node (index 1) should be focused (Input)
-    await expect(page.locator('.node-content input').nth(0)).toBeVisible(); // Only 1 input
-    await expect(page.locator('.node-content input').nth(0)).toBeFocused();
+    // The new node (index 1) should be focused
+    await expect(page.locator('.node-content').nth(1).locator('input')).toBeVisible();
+    await expect(page.locator('.node-content').nth(1).locator('input')).toBeFocused();
   });
 
   test('Enter creates new sibling node', async ({ page }) => {
@@ -96,24 +79,25 @@ test.describe('Keyboard', () => {
     await expect(node1Input).toBeFocused();
   });
 
-  test('Backspace at start of non-empty node focuses previous', async ({ page }) => {    // Create a second node
+  test('Backspace on non-empty node deletes characters normally', async ({ page }) => {
+    // Create a second node
     const node1Div = page.locator('.node-content').nth(0);
     await node1Div.click();
     await node1Div.locator('input').press('Enter');
     const node2Input = page.locator('.node-content').nth(1).locator('input');
     await node2Input.fill('Node 2');
 
-    // Move cursor to beginning
-    await node2Input.press('Home');
-    // Backspace at start of non-empty node → should focus Node 1 (not delete)
+    // Backspace on non-empty node → deletes last character, stays on node 2
     await node2Input.press('Backspace');
 
-    // Node 2 should still exist
+    // Node 2 should still exist (only a char was deleted)
     await expect(page.locator('.node-content')).toHaveCount(2);
 
-    // Focus should be on Node 1
-    const node1Input = page.locator('.node-content').nth(0).locator('input');
-    await expect(node1Input).toBeFocused();
+    // Focus should remain on Node 2
+    await expect(node2Input).toBeFocused();
+
+    // The text should have one fewer character
+    await expect(node2Input).toHaveValue('Node ');
   });
 
   test('Arrow keys navigate nodes', async ({ page }) => {
@@ -176,25 +160,13 @@ test.describe('Keyboard', () => {
   });
 
   test('Ctrl+Space toggles collapse on focused node', async ({ page }) => {
-    // Setup a node with children
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [
-          { id: '1', text: 'Parent', children: [{ id: '1.1', text: 'Child', children: [] }] }
-        ]
-      };
-      localStorage.setItem('vmd_data', await window.App.crypto.encrypt(JSON.stringify(doc), key));
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Parent', children: [{ id: '1.1', text: 'Child', children: [] }] }
+      ]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
     // Focus Parent
     await page.locator('.node-content').nth(0).click();
@@ -213,25 +185,14 @@ test.describe('Keyboard', () => {
   });
 
   test('Ctrl+Backspace deletes focused node', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [
-          { id: '1', text: 'Node 1', children: [] },
-          { id: '2', text: 'Node 2', children: [] }
-        ]
-      };
-      localStorage.setItem('vmd_data', await window.App.crypto.encrypt(JSON.stringify(doc), key));
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Node 1', children: [] },
+        { id: '2', text: 'Node 2', children: [] }
+      ]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
     // Focus Node 2
     await page.locator('.node-content').nth(1).click();
@@ -240,33 +201,26 @@ test.describe('Keyboard', () => {
     // Ctrl+Backspace deletes
     await page.keyboard.press('Control+Backspace');
 
-    // Node 2 and its child should be gone (only Node 1 remains)
+    // Node 2 should be gone (only Node 1 remains)
     await expect(page.locator('.node-content')).toHaveCount(1);
-    // Node 1 may be focused as input after delete
-    const remaining = await page.evaluate(() => window.App.state.doc.value.children[0].text);
+    const remaining = await page.locator('.node-content').nth(0).evaluate((el) => {
+      const input = el.querySelector('input');
+      if (input) return input.value;
+      const text = el.querySelector('.node-text-md');
+      return text ? text.textContent?.trim() : '';
+    });
     expect(remaining).toBe('Node 1');
   });
 
   test('Arrow ↓ when nothing focused goes to first node', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [
-          { id: '1', text: 'First', children: [] },
-          { id: '2', text: 'Last', children: [] }
-        ]
-      };
-      localStorage.setItem('vmd_data', await window.App.crypto.encrypt(JSON.stringify(doc), key));
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'First', children: [] },
+        { id: '2', text: 'Last', children: [] }
+      ]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
     // Nothing focused — press ↓
     await page.keyboard.press('ArrowDown');
@@ -274,25 +228,14 @@ test.describe('Keyboard', () => {
   });
 
   test('Arrow ↑ when nothing focused goes to last node', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [
-          { id: '1', text: 'First', children: [] },
-          { id: '2', text: 'Last', children: [] }
-        ]
-      };
-      localStorage.setItem('vmd_data', await window.App.crypto.encrypt(JSON.stringify(doc), key));
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'First', children: [] },
+        { id: '2', text: 'Last', children: [] }
+      ]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
     // Nothing focused — press ↑
     await page.keyboard.press('ArrowUp');

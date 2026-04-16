@@ -8,35 +8,30 @@ Virgulas is a local-first browser outliner.
 - Markdown rendering (bold, italic, links, images, inline code)
 - Optional description field per node (auto-growing textarea when editing)
 - Node collapse/expand (button click or `Ctrl+Space`)
+- Multi-select with `Shift+↑/↓`; `Delete`, `Tab`/`Shift+Tab`, `Ctrl+Space` all work on selection
 - Node indent/unindent (`Tab` / `Shift+Tab`)
 - Node move (`Alt+↑` / `Alt+↓`)
-- Node delete (`Ctrl+Backspace` or `Backspace` on empty node)
+- Node delete (`Ctrl+Backspace` or `Backspace` on empty node); `Backspace` on non-empty node deletes the character (normal text editor behaviour)
 - Zoom into a node (`Alt+→`) with breadcrumb navigation
   - Zoomed node description is visible and editable with placeholder when empty
   - Zoomed node with no children shows an empty state to create the first child
-- Undo/Redo stack (`Ctrl+Z` / `Ctrl+Y`)
-- Smart-case search with result counter and `Tab`/`Shift+Tab` cycling
-  - `Escape` clears search; `Enter` zooms to the closest collapsed ancestor of the current result
-- Raw mode editor (`.vmd` format) with SAVE/CANCEL
+- Raw mode editor (`.vmd` format) with Save / Cancel
+- Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, `Enter` zooms to the match; current result highlighted distinctly
+- Debug panel (visible with `?debug=true`, shows internal state)
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage
-- Client-side AES-GCM encryption (passphrase never stored or transmitted)
-- Unified lock screen with Local/Remote mode switch
-  - Local mode: passphrase-only create/unlock flow
-  - Remote mode: account credentials + passphrase when session is stale; passphrase-only when session is valid
-  - Destructive mode switches require confirmation (local data loss or sign-out)
-- Optional quick unlock with device passkey (WebAuthn PRF) after passphrase unlock
-  - Quick unlock enables passphrase-less unlock on later visits by locally storing only a wrapped passphrase (`vmd_prf_wrapped` + `vmd_prf_id`)
-  - Optimistic capability detection with automatic local disable after failed PRF registration/unlock
-  - Quick unlock key reset lives on the lock screen
-- Lock-screen account controls (sign up, sign in, sign out)
-- Remote decrypt failure recovery on lock screen: reset remote encrypted data with a new passphrase (destructive)
+- Three storage modes selectable on the lock screen:
+  - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage
+  - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
+  - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase
+- Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
+- Destructive mode switches (clearing local data, signing out) require confirmation
 - Optional cloud sync via Supabase (end-to-end encrypted)
   - Field-level auto-merge on conflicts (same-node different-field changes merge automatically)
   - Node-level conflict resolution when the same field is edited differently
 - Keyboard shortcuts modal (`?` button)
-- Options panel (theme, source link, reset quick unlock keys, purge data)
+- Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
 
 ## Setup
 
@@ -57,9 +52,12 @@ Virgulas is a local-first browser outliner.
   To point the browser to local Supabase, set `localStorage.supabaseconfig` to a JSON object with `url` and `key`.
 
 3.  Run tests:
-    ```bash
-    npm test
-    ```
+  ```bash
+  npm test
+  ```
+  `npm test` runs both suites in sequence (always executes both; exits non-zero if either fails):
+  - E2E Playwright specs (`npm run test:e2e`)
+  - Browser unit harness via `source/test.html` (`npm run test:unit`)
 
 ## Supabase Workflows
 
@@ -99,6 +97,14 @@ All Supabase commands in this repository use the locally pinned CLI (`supabase` 
 
 Playwright local tests assume local Supabase is already running and `.env` exists (created by `npm run db:start`).
 The test fixture overrides `localStorage.supabaseconfig` from `.env` before each page load.
+
+Available test commands:
+
+```bash
+npm run test:e2e   # Playwright feature/E2E specs only
+npm run test:unit  # Browser unit harness spec only
+npm test           # Runs e2e, then unit harness
+```
 
 Auth tests that require a specific account attempt sign-in first and create the user only when it does not exist.
 

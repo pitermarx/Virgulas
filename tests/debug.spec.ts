@@ -1,24 +1,12 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Debug mode', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [{ id: '1', text: 'Node 1', children: [], collapsed: false }]
-      };
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(doc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root', text: 'Root',
+      children: [{ id: '1', text: 'Node 1', children: [] }]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
   });
 
   test('debug panel not visible without ?debug=true', async ({ page }) => {

@@ -24,18 +24,21 @@ const setupSyncHarness = async (page: Page, options: {
     await page.evaluate(async ({ baseDoc, localDoc, serverDoc }) => {
         localStorage.clear();
 
-        const salt = (window as any).App.crypto.generateSalt();
-        localStorage.setItem('vmd_salt', salt);
+        const passphrase = 'merge-passphrase';
+        const { encrypt } = await import('/js/crypto2.js');
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+        const salt = btoa(String.fromCharCode(...saltBytes));
 
-        const key = await (window as any).App.crypto.deriveKey('merge-passphrase', salt);
+        const encryptedLocal = await encrypt(JSON.stringify(localDoc), passphrase, salt);
+        const encryptedBase = await encrypt(JSON.stringify(baseDoc), passphrase, salt);
 
-        await (window as any).App.storage.set('vmd_data', localDoc, key);
-        await (window as any).App.storage.set('vmd_sync_base', baseDoc, key);
+        localStorage.setItem('vmd_data_enc', `${salt}|${encryptedLocal}`);
+        localStorage.setItem('vmd_sync_base_enc', `${salt}|${encryptedBase}`);
 
-        (window as any).App.state.key.value = key;
-        (window as any).App.state.doc.value = localDoc;
+        // Store test state in simple window variables (no signals needed)
+        (window as any).__testState = { key: passphrase, doc: localDoc };
 
-        const encryptedServer = await (window as any).App.crypto.encrypt(JSON.stringify(serverDoc), key);
+        const encryptedServer = await encrypt(JSON.stringify(serverDoc), passphrase, salt);
 
         (window as any).__mockSupabaseState = {
             serverRecord: {
@@ -85,8 +88,10 @@ const setupSyncHarness = async (page: Page, options: {
             createClient: () => client
         };
 
-        (window as any).App.sync.init();
-        await (window as any).App.sync.refreshSession();
+        const syncMod = await import('/js/sync.js');
+        (window as any).__testSync = syncMod.default;
+        (window as any).__testSync.init();
+        await (window as any).__testSync.refreshSession();
     }, options);
 };
 
@@ -144,7 +149,7 @@ test.describe('Sync merge behavior', () => {
         await setupSyncHarness(page, { baseDoc, localDoc, serverDoc });
 
         const result = await page.evaluate(async () => {
-            return await (window as any).App.sync.checkAndSync((window as any).App.state.doc.value, (window as any).App.state.key.value);
+            return await (window as any).__testSync.checkAndSync((window as any).__testState.doc, (window as any).__testState.key);
         });
 
         expect(result.success).toBe(true);
@@ -247,7 +252,7 @@ test.describe('Sync merge behavior', () => {
         await setupSyncHarness(page, { baseDoc, localDoc, serverDoc });
 
         const result = await page.evaluate(async () => {
-            return await (window as any).App.sync.checkAndSync((window as any).App.state.doc.value, (window as any).App.state.key.value);
+            return await (window as any).__testSync.checkAndSync((window as any).__testState.doc, (window as any).__testState.key);
         });
 
         expect(result.success).toBe(true);
@@ -310,14 +315,14 @@ test.describe('Sync merge behavior', () => {
         await setupSyncHarness(page, { baseDoc, localDoc, serverDoc });
 
         const result = await page.evaluate(async () => {
-            (window as any).App.sync.conflictCallback = async (payload: any) => {
+            (window as any).__testSync.conflictCallback = async (payload: any) => {
                 if (payload?.type === 'field-merge') {
                     return { choice: 'merge', choices: { 'node-1': 'server' } };
                 }
                 return 'local';
             };
 
-            return await (window as any).App.sync.checkAndSync((window as any).App.state.doc.value, (window as any).App.state.key.value);
+            return await (window as any).__testSync.checkAndSync((window as any).__testState.doc, (window as any).__testState.key);
         });
 
         expect(result.success).toBe(true);
@@ -342,12 +347,12 @@ test.describe('Sync merge behavior', () => {
         // Monkey-patch download to detect if it is called.
         const result = await page.evaluate(async () => {
             let downloadCalled = false;
-            const originalDownload = (window as any).App.sync.download;
-            (window as any).App.sync.download = async () => { downloadCalled = true; return originalDownload(); };
+            const originalDownload = (window as any).__testSync.download;
+            (window as any).__testSync.download = async () => { downloadCalled = true; return originalDownload(); };
 
-            const r = await (window as any).App.sync.checkAndSync(
-                (window as any).App.state.doc.value,
-                (window as any).App.state.key.value
+            const r = await (window as any).__testSync.checkAndSync(
+                (window as any).__testState.doc,
+                (window as any).__testState.key
             );
             return { action: r.action, downloadCalled };
         });
@@ -368,8 +373,8 @@ test.describe('Sync merge behavior', () => {
         const result = await page.evaluate(async () => {
             let fullRowFetched = false;
             // Spy: if the full record (including 'data') is returned, the select was not lightweight.
-            const origFrom = (window as any).App.sync.client.from.bind((window as any).App.sync.client);
-            (window as any).App.sync.client.from = (...args: any[]) => {
+            const origFrom = (window as any).__testSync.client.from.bind((window as any).__testSync.client);
+            (window as any).__testSync.client.from = (...args: any[]) => {
                 const qb = origFrom(...args);
                 const origSingle = qb.single.bind(qb);
                 qb.single = async () => {
@@ -380,7 +385,7 @@ test.describe('Sync merge behavior', () => {
                 return qb;
             };
 
-            const ts = await (window as any).App.sync.fetchServerTimestamp();
+            const ts = await (window as any).__testSync.fetchServerTimestamp();
             return { ts, fullRowFetched };
         });
 
@@ -398,12 +403,12 @@ test.describe('Sync merge behavior', () => {
         await setupSyncHarness(page, { baseDoc: doc, localDoc: doc, serverDoc: doc });
 
         const lastTs = await page.evaluate(async () => {
-            (window as any).App.sync._lastServerUpdatedAt = null;
-            await (window as any).App.sync.checkAndSync(
-                (window as any).App.state.doc.value,
-                (window as any).App.state.key.value
+            (window as any).__testSync._lastServerUpdatedAt = null;
+            await (window as any).__testSync.checkAndSync(
+                (window as any).__testState.doc,
+                (window as any).__testState.key
             );
-            return (window as any).App.sync._lastServerUpdatedAt;
+            return (window as any).__testSync._lastServerUpdatedAt;
         });
 
         expect(lastTs).toBe(ts);
@@ -421,9 +426,9 @@ test.describe('Sync merge behavior', () => {
         // Reset upsertCount, then fire 5 rapid uploads.
         await page.evaluate(async () => {
             (window as any).__mockSupabaseState.upsertCount = 0;
-            const sync = (window as any).App.sync;
-            const key = (window as any).App.state.key.value;
-            const d = (window as any).App.state.doc.value;
+            const sync = (window as any).__testSync;
+            const key = (window as any).__testState.key;
+            const d = (window as any).__testState.doc;
             sync.triggerBackgroundUpload(d, key);
             sync.triggerBackgroundUpload(d, key);
             sync.triggerBackgroundUpload(d, key);
@@ -438,3 +443,4 @@ test.describe('Sync merge behavior', () => {
         expect(upsertCount).toBe(1);
     });
 });
+

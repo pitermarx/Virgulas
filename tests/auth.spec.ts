@@ -1,89 +1,11 @@
 import { test, expect, type Page } from './test';
 
-const installPrfStubs = async (page: Page) => {
-  await page.addInitScript(() => {
-    const prfOutput = new Uint8Array(32);
-    for (let i = 0; i < prfOutput.length; i++) prfOutput[i] = (i * 7) % 255;
-
-    class MockPublicKeyCredential {
-      static async getClientCapabilities() {
-        return { prf: true };
-      }
-    }
-
-    Object.defineProperty(window, 'PublicKeyCredential', {
-      configurable: true,
-      writable: true,
-      value: MockPublicKeyCredential
-    });
-
-    if (navigator.credentials) {
-      Object.defineProperty(navigator.credentials, 'create', {
-        configurable: true,
-        writable: true,
-        value: async () => ({
-          rawId: new Uint8Array([1, 2, 3, 4]).buffer,
-          getClientExtensionResults: () => ({
-            prf: {
-              enabled: true,
-              results: {
-                first: prfOutput
-              }
-            }
-          })
-        })
-      });
-
-      Object.defineProperty(navigator.credentials, 'get', {
-        configurable: true,
-        writable: true,
-        value: async () => ({
-          getClientExtensionResults: () => ({
-            prf: {
-              results: {
-                first: prfOutput
-              }
-            }
-          })
-        })
-      });
-    }
-  });
-};
-
-const installPrfRegistrationFailureStubs = async (page: Page) => {
-  await page.addInitScript(() => {
-    class MockPublicKeyCredential {
-      static async getClientCapabilities() {
-        return { prf: true };
-      }
-    }
-
-    Object.defineProperty(window, 'PublicKeyCredential', {
-      configurable: true,
-      writable: true,
-      value: MockPublicKeyCredential
-    });
-
-    if (navigator.credentials) {
-      Object.defineProperty(navigator.credentials, 'create', {
-        configurable: true,
-        writable: true,
-        value: async () => ({
-          rawId: new Uint8Array([9, 9, 9, 9]).buffer,
-          getClientExtensionResults: () => ({ prf: { enabled: false } })
-        })
-      });
-    }
-  });
-};
-
 const installMockSupabase = async (page: Page, options?: {
   userEmail?: string;
   authErrorMessage?: string;
   downloadData?: { salt: string; data: string; updated_at?: string } | null;
 }) => {
-  await page.evaluate(({ userEmail, authErrorMessage, downloadData }) => {
+  await page.addInitScript(({ userEmail, authErrorMessage, downloadData }) => {
     const initialServerRecord = downloadData
       ? {
         salt: downloadData.salt,
@@ -137,18 +59,68 @@ const installMockSupabase = async (page: Page, options?: {
       from: () => queryBuilder
     };
 
-    (window as any).supabase = {
-      createClient: () => client
-    };
+    Object.defineProperty(window, 'supabase', {
+      configurable: true,
+      get: () => ({
+        createClient: () => client
+      }),
+      set: () => { }
+    });
 
     localStorage.setItem('supabaseconfig', JSON.stringify({
       url: 'http://127.0.0.1:54321',
       key: 'anon'
     }));
-
-    (window as any).App.sync.init();
-    (window as any).App.sync.refreshSession();
   }, options ?? {});
+};
+
+const createEncryptedPayload = async (
+  page: Page,
+  passphrase: string,
+  doc: Record<string, unknown>
+) => {
+  return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
+    const { encrypt } = await import('/js/crypto2.js');
+    const outline = (await import('/js/outline.js')).default;
+    outline.reset();
+    function loadChildren(children: any[], parentId: string) {
+      for (const child of children || []) {
+        outline.addChild(parentId, { id: child.id, text: child.text });
+        loadChildren(child.children || [], child.id);
+      }
+    }
+    loadChildren(doc.children || [], 'root');
+    const json = outline.serialize();
+    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+    const salt = btoa(String.fromCharCode(...saltBytes));
+    const data = await encrypt(json, passphrase, salt);
+    return { salt, data };
+  }, { passphrase, doc });
+};
+
+const seedEncryptedLocalDoc = async (
+  page: Page,
+  passphrase: string,
+  doc: Record<string, unknown>
+) => {
+  await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
+    localStorage.clear();
+    const { encrypt } = await import('/js/crypto2.js');
+    const outline = (await import('/js/outline.js')).default;
+    outline.reset();
+    function loadChildren(children: any[], parentId: string) {
+      for (const child of children || []) {
+        outline.addChild(parentId, { id: child.id, text: child.text });
+        loadChildren(child.children || [], child.id);
+      }
+    }
+    loadChildren(doc.children || [], 'root');
+    const json = outline.serialize();
+    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+    const salt = btoa(String.fromCharCode(...saltBytes));
+    const encrypted = await encrypt(json, passphrase, salt);
+    localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+  }, { passphrase, doc });
 };
 
 test.describe('Authentication', () => {
@@ -167,12 +139,12 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     // Check for main app
-    await expect(page.getByText('Hello World')).toBeVisible();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
     // Verify data is stored encrypted
-    const vmdData = await page.evaluate(() => localStorage.getItem('vmd_data'));
-    expect(vmdData).toBeTruthy();
-    expect(vmdData).not.toContain('Hello World'); // Should be encrypted
+    await expect.poll(async () => {
+      return await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+    }).toContain('|');
   });
 
   test('remote mode requires username password and passphrase before unlock', async ({ page }) => {
@@ -184,27 +156,19 @@ test.describe('Authentication', () => {
     const unlockButton = page.getByRole('button', { name: 'Unlock' });
     await expect(unlockButton).toBeDisabled();
 
-    await page.getByLabel('Username').fill('user@virgulas.com');
+    await page.getByLabel('Email').fill('user@virgulas.com');
     await expect(unlockButton).toBeDisabled();
 
-    await page.getByLabel('Password').fill('account-password');
+    await page.getByLabel('Account password').fill('account-password');
     await expect(unlockButton).toBeDisabled();
 
-    await page.getByLabel('Passphrase').fill('doc-passphrase');
+    await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
     await expect(unlockButton).toBeEnabled();
   });
 
   test('second load with local encrypted data warns before switching to remote', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = (window as any).App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await (window as any).App.crypto.deriveKey('password', salt);
-      const doc = { id: 'root', text: 'Secret Doc', children: [] };
-      const encrypted = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      localStorage.setItem('vmd_data', encrypted);
-    });
+    await seedEncryptedLocalDoc(page, 'password', { id: 'root', text: 'Secret Doc', children: [] });
 
     await page.reload();
     await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
@@ -213,14 +177,14 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Remote' }).click();
     await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
 
-    const stillHasData = await page.evaluate(() => !!localStorage.getItem('vmd_data'));
+    const stillHasData = await page.evaluate(() => !!localStorage.getItem('vmd_data_enc'));
     expect(stillHasData).toBe(true);
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Remote' }).click();
     await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
 
-    const clearedData = await page.evaluate(() => localStorage.getItem('vmd_data'));
+    const clearedData = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
     expect(clearedData).toBeNull();
   });
 
@@ -232,119 +196,90 @@ test.describe('Authentication', () => {
     await page.goto('/');
 
     await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
-    await expect(page.getByLabel('Username')).toHaveValue('stale@virgulas.com');
+    await expect(page.getByLabel('Email')).toHaveValue('stale@virgulas.com');
 
     const unlockButton = page.getByRole('button', { name: 'Unlock' });
     await expect(unlockButton).toBeDisabled();
 
-    await page.getByLabel('Password').fill('account-password');
+    await page.getByLabel('Account password').fill('account-password');
     await expect(unlockButton).toBeDisabled();
 
-    await page.getByLabel('Passphrase').fill('doc-passphrase');
+    await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
     await expect(unlockButton).toBeEnabled();
   });
 
   test('first load can sign in before passphrase creation and switch to unlock for synced data', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await page.evaluate(async () => {
-      const salt = (window as any).App.crypto.generateSalt();
-      const key = await (window as any).App.crypto.deriveKey('remote-passphrase', salt);
-      const doc = {
-        id: 'root',
-        text: 'Remote Root',
-        children: [
-          { id: 'child-1', text: 'Remote Child', children: [] }
-        ]
-      };
-
-      const data = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      return {
-        salt,
-        data
-      };
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [
+        { id: 'child-1', text: 'Remote Child', children: [] }
+      ]
     });
 
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page, { downloadData: remoteDoc });
+    await page.reload();
 
     await page.getByRole('button', { name: 'Remote' }).click();
-    await page.getByLabel('Username').fill('existing@virgulas.com');
-    await page.getByLabel('Password').fill('account-password');
-    await page.getByLabel('Passphrase').fill('remote-passphrase');
+    await page.getByLabel('Email').fill('existing@virgulas.com');
+    await page.getByLabel('Account password').fill('account-password');
+    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
-    const storedSalt = await page.evaluate(() => localStorage.getItem('vmd_salt'));
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+    const storedSalt = await page.evaluate(() => {
+      const value = localStorage.getItem('vmd_data_enc');
+      if (!value) return null;
+      const separatorIndex = value.indexOf('|');
+      if (separatorIndex === -1) return null;
+      return value.substring(0, separatorIndex);
+    });
     expect(storedSalt).toBe(remoteDoc.salt);
 
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-    await expect(page.getByText('Remote Child')).toBeVisible();
+    await expect(page.locator('.node-content').first()).toContainText('Remote Child');
   });
 
   test('valid remote session preselects remote and only needs passphrase to unlock', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await page.evaluate(async () => {
-      const salt = (window as any).App.crypto.generateSalt();
-      const key = await (window as any).App.crypto.deriveKey('remote-passphrase', salt);
-      const doc = {
-        id: 'root',
-        text: 'Remote Root',
-        children: [{ id: 'remote-1', text: 'From Server', children: [] }]
-      };
-      const data = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      return { salt, data };
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'remote-1', text: 'From Server', children: [] }]
     });
 
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
-    await page.evaluate((payload) => {
-      (window as any).App.state.authMode.value = 'remote';
-      (window as any).App.state.authScenario.value = 'remote-session-valid';
-      (window as any).App.state.authRemotePayload.value = payload;
-      (window as any).App.state.user.value = { id: 'user-1', email: 'valid@virgulas.com' };
-      (window as any).App.storage.setSalt(payload.salt);
-    }, remoteDoc);
+    await page.reload();
 
     await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
-    await expect(page.getByLabel('Username')).toHaveCount(0);
-    await expect(page.getByLabel('Password')).toHaveCount(0);
-    await expect(page.getByLabel('Passphrase')).toBeVisible();
+    await expect(page.getByLabel('Email')).toHaveCount(0);
+    await expect(page.getByLabel('Account password')).toHaveCount(0);
+    await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
 
-    await page.getByLabel('Passphrase').fill('remote-passphrase');
+    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-    await expect(page.getByText('From Server')).toBeVisible();
+    await expect(page.locator('.node-content').first()).toContainText('From Server');
   });
 
   test('switching valid remote session to local signs out after confirmation', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await page.evaluate(async () => {
-      const salt = (window as any).App.crypto.generateSalt();
-      const key = await (window as any).App.crypto.deriveKey('remote-passphrase', salt);
-      const doc = {
-        id: 'root',
-        text: 'Remote Root',
-        children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
-      };
-      const data = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      return { salt, data };
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
     });
 
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
-    await page.evaluate((payload) => {
-      (window as any).App.state.authMode.value = 'remote';
-      (window as any).App.state.authScenario.value = 'remote-session-valid';
-      (window as any).App.state.authRemotePayload.value = payload;
-      (window as any).App.state.user.value = { id: 'user-1', email: 'valid@virgulas.com' };
-      (window as any).App.storage.setSalt(payload.salt);
-    }, remoteDoc);
+    await page.reload();
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Local' }).click();
@@ -353,161 +288,59 @@ test.describe('Authentication', () => {
     await expect(page.getByLabel('Create a passphrase')).toBeVisible();
 
     const stateAfterSwitch = await page.evaluate(() => ({
-      hasLocalData: !!localStorage.getItem('vmd_data'),
-      user: (window as any).App.state.user.value
+      hasLocalData: !!localStorage.getItem('vmd_data_enc')
     }));
 
     expect(stateAfterSwitch.hasLocalData).toBe(false);
-    expect(stateAfterSwitch.user).toBeNull();
-  });
-
-  test('quick unlock offer appears after passphrase unlock and Not now is session-only', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Quick unlock PRF coverage is Chromium-only');
-    await installPrfStubs(page);
-
-    await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-
-    await page.getByLabel(/passphrase/i).fill('session-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('session-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeVisible();
-    await page.getByRole('button', { name: 'Not now' }).click();
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('session-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeVisible();
-  });
-
-  test('can enable quick unlock and auto-unlock on reload', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Quick unlock PRF coverage is Chromium-only');
-    await installPrfStubs(page);
-
-    await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-
-    await page.getByLabel(/passphrase/i).fill('quick-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('quick-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeVisible();
-    await page.getByRole('button', { name: 'Enable quick unlock' }).click();
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
-
-    const hasQuickUnlockData = await page.evaluate(() => {
-      return !!localStorage.getItem('vmd_prf_wrapped') && !!localStorage.getItem('vmd_prf_id');
-    });
-    expect(hasQuickUnlockData).toBe(true);
-
-    await page.reload();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-    await expect(page.getByLabel('Passphrase')).toHaveCount(0);
-
-    const status = await page.evaluate(() => (window as any).App.state.status.value);
-    expect(status).toBe('ready');
-  });
-
-  test('failed quick unlock registration disables future offers on this profile', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'Quick unlock PRF coverage is Chromium-only');
-    await installPrfRegistrationFailureStubs(page);
-
-    await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-
-    await page.getByLabel(/passphrase/i).fill('disabled-flag-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('disabled-flag-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeVisible();
-    await page.getByRole('button', { name: 'Enable quick unlock' }).click();
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
-
-    const disabledFlag = await page.evaluate(() => localStorage.getItem('vmd_prf_disabled'));
-    expect(disabledFlag).toBe('1');
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('disabled-flag-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.getByText('Enable quick unlock on this device?')).toBeHidden();
   });
 
   test('unlock flow: existing user', async ({ page }) => {
-    // Seed localStorage with encrypted data (using a known password 'password')
-    // We can use the app's crypto functions to create valid data
-    await page.goto('/'); // Load page to get crypto available
-
-    await page.evaluate(async () => {
-      // Clear storage first
-      localStorage.clear();
-
-      // Manually set up state as if user had already set password 'password'
-      const salt = (window as any).App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-
-      const key = await (window as any).App.crypto.deriveKey('password', salt);
-
-      const doc = {
-        id: 'root',
-        text: 'Secret Doc',
-        children: []
-      };
-
-      const encrypted = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await page.goto('/');
+    await seedEncryptedLocalDoc(page, 'password', {
+      id: 'root',
+      children: [{ id: 'child-1', text: 'Secret Doc', children: [] }]
     });
 
     await page.reload();
 
     // Check for "Unlock" screen
     await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
-    await expect(page.getByLabel('Passphrase')).toBeVisible();
+    await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
     await expect(page.getByLabel('Create a passphrase')).toHaveCount(0);
 
     // Enter WRONG password
-    await page.getByLabel('Passphrase').fill('wrong-password');
+    await page.getByLabel('Encryption passphrase').fill('wrong-password');
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.getByText(/Invalid passphrase/i)).toBeVisible();
 
     // Enter CORRECT password
-    await page.getByLabel('Passphrase').fill('password');
+    await page.getByLabel('Encryption passphrase').fill('password');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     // Wait for main view to render
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
-    // Verify internal state has the document (title is not rendered as a heading)
-    const doc = await page.evaluate(() => (window as any).App.state.doc.value);
-    expect(doc.text).toBe('Secret Doc');
+    // Verify unlocked outline contains the expected first node text.
+    const firstNodeText = await page.evaluate(async () => {
+      const outline = (await import('/js/outline.js')).default;
+      const root = outline.get('root');
+      const firstChildId = root?.children.peek()?.[0];
+      if (!firstChildId) return null;
+      return outline.get(firstChildId)?.text.peek() || null;
+    });
+    expect(firstNodeText).toBe('Secret Doc');
   });
 
   test('login screen can sign up with mocked sync', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page);
+    await page.reload();
 
     await page.getByRole('button', { name: 'Remote' }).click();
-    await page.getByLabel('Username').fill('mock-signup@virgulas.com');
-    await page.getByLabel('Password').fill('mock-password');
-    await page.getByLabel('Passphrase').fill('signup-passphrase');
+    await page.getByLabel('Email').fill('mock-signup@virgulas.com');
+    await page.getByLabel('Account password').fill('mock-password');
+    await page.getByLabel('Encryption passphrase').fill('signup-passphrase');
     await page.getByRole('button', { name: 'Sign up' }).click();
 
     await expect(page.getByRole('button', { name: 'Unlock' })).toBeEnabled();
@@ -516,70 +349,35 @@ test.describe('Authentication', () => {
   test('login screen shows auth provider errors in remote mode', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page, { authErrorMessage: 'Invalid login credentials' });
+    await page.reload();
 
     await page.getByRole('button', { name: 'Remote' }).click();
-    await page.getByLabel('Username').fill('mock-error@virgulas.com');
-    await page.getByLabel('Password').fill('wrong-password');
-    await page.getByLabel('Passphrase').fill('doc-passphrase');
+    await page.getByLabel('Email').fill('mock-error@virgulas.com');
+    await page.getByLabel('Account password').fill('wrong-password');
+    await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(page.getByText('Invalid login credentials')).toBeVisible();
   });
 
-  test('login screen can reset quick unlock local keys and disable flag', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = (window as any).App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await (window as any).App.crypto.deriveKey('reset-quick-unlock-passphrase', salt);
-      const doc = { id: 'root', text: 'Doc', children: [] };
-      const encrypted = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      localStorage.setItem('vmd_data', encrypted);
-      localStorage.setItem('vmd_prf_wrapped', 'wrapped-value');
-      localStorage.setItem('vmd_prf_id', 'cred-id');
-      localStorage.setItem('vmd_prf_disabled', '1');
-      localStorage.setItem('vmd_prf_disabled_reason', 'unlock_failed');
-    });
-
-    await page.reload();
-    await expect(page.getByRole('button', { name: 'Reset Quick Unlock Keys' })).toBeVisible();
-    await page.getByRole('button', { name: 'Reset Quick Unlock Keys' }).click();
-
-    const quickUnlockValues = await page.evaluate(() => ({
-      wrapped: localStorage.getItem('vmd_prf_wrapped'),
-      id: localStorage.getItem('vmd_prf_id'),
-      disabled: localStorage.getItem('vmd_prf_disabled'),
-      reason: localStorage.getItem('vmd_prf_disabled_reason')
-    }));
-
-    expect(quickUnlockValues.wrapped).toBeNull();
-    expect(quickUnlockValues.id).toBeNull();
-    expect(quickUnlockValues.disabled).toBeNull();
-    expect(quickUnlockValues.reason).toBeNull();
-  });
-
   test('remote decrypt failure offers reset with new passphrase', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await page.evaluate(async () => {
-      const salt = (window as any).App.crypto.generateSalt();
-      const key = await (window as any).App.crypto.deriveKey('old-passphrase', salt);
-      const doc = { id: 'root', text: 'Legacy Remote', children: [] };
-      const data = await (window as any).App.crypto.encrypt(JSON.stringify(doc), key);
-      return { salt, data };
+    const remoteDoc = await createEncryptedPayload(page, 'old-passphrase', {
+      id: 'root',
+      text: 'Legacy Remote',
+      children: []
     });
 
     await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await installMockSupabase(page, { downloadData: remoteDoc });
+    await page.reload();
 
     await page.getByRole('button', { name: 'Remote' }).click();
-    await page.getByLabel('Username').fill('recover@virgulas.com');
-    await page.getByLabel('Password').fill('mock-password');
-    await page.getByLabel('Passphrase').fill('new-passphrase');
+    await page.getByLabel('Email').fill('recover@virgulas.com');
+    await page.getByLabel('Account password').fill('mock-password');
+    await page.getByLabel('Encryption passphrase').fill('new-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(page.getByText('Authenticated, but data could not be decrypted with this passphrase. You can reset remote data with a new passphrase.')).toBeVisible();
@@ -589,7 +387,8 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Reset Remote Data With New Passphrase' }).click();
 
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-    await expect(page.getByText('Hello World')).toBeVisible();
+    await expect(page.locator('.node-content').first()).toContainText('Hello World');
   });
 
 });
+

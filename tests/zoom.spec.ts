@@ -1,38 +1,20 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Zoom', () => {
   test.beforeEach(async ({ page }) => {
-    // Setup fresh state
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-
-      const initialDoc = {
-        id: 'root',
-        text: 'Root',
-        children: [
-          {
-            id: '1', text: 'Parent', children: [
-              { id: '1.1', text: 'Child', children: [] }
-            ]
-          },
-          { id: '2', text: 'Sibling', children: [] }
-        ]
-      };
-
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(initialDoc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent', children: [
+            { id: '1.1', text: 'Child', children: [] }
+          ]
+        },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
     });
-
-    // Unlock
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
   });
 
   test('Alt+Right zooms into node', async ({ page }) => {
@@ -127,17 +109,21 @@ test.describe('Zoom', () => {
 
     await expect(page.locator('.node-content')).toHaveCount(1);
 
-    // URL should contain ?node=<id>
+    // URL should contain #<id> hash
     const url = page.url();
-    expect(url).toContain('node=');
+    expect(url).toContain('#');
   });
 
-  test('URL node parameter zooms on load', async ({ page }) => {
-    // Get the ID of the Parent node
-    const nodeId = await page.evaluate(() => window.App.state.doc.value.children[0].id);
+  test('URL hash zooms on load', async ({ page }) => {
+    // Get the ID of the Parent node from the rendered DOM
+    const nodeId = await page.locator('.node-content').nth(0).getAttribute('data-node-id');
+    if (!nodeId) {
+      throw new Error('Expected parent node id in data-node-id');
+    }
 
-    // Navigate to URL with node param
-    await page.goto(`/?node=${nodeId}`);
+    // Navigate away first so the hash navigation triggers a full reload
+    await page.goto('about:blank');
+    await page.goto(`/#${nodeId}`);
 
     // Need to unlock again
     await page.getByLabel('Passphrase').fill('password');
@@ -149,8 +135,9 @@ test.describe('Zoom', () => {
     await expect(page.locator('.node-content').nth(0)).toContainText('Child');
   });
 
-  test('Invalid URL node param falls back to root', async ({ page }) => {
-    await page.goto('/?node=nonexistent-id-xyz');
+  test('Invalid URL hash falls back to root', async ({ page }) => {
+    await page.goto('about:blank');
+    await page.goto('/#nonexistent-id-xyz');
     await page.getByLabel('Passphrase').fill('password');
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');

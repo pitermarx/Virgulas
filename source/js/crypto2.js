@@ -49,12 +49,12 @@ async function deriveKey(passphrase, saltBase64) {
 }
 
 function randomId() {
-    // this generates a 8-character random string, which is sufficient for our use case and more efficient than generating a full UUID
-    // it is the responsibility of the caller to ensure uniqueness if generating multiple IDs in a short time frame
-    return Math.random().toString(36).substr(2, 8)
+    return Math.random().toString(36).substring(2, 10)
 }
 
-const generateSalt = () => toBase64(window.crypto.getRandomValues(new Uint8Array(16)))
+function generateSalt() {
+    return toBase64(window.crypto.getRandomValues(new Uint8Array(16)))
+}
 
 function toBase64(bytes) {
     if (bytes.length > 65536) {
@@ -68,7 +68,6 @@ function fromBase64(base64) {
     }
     return Uint8Array.from(atob(base64), c => c.charCodeAt(0))
 }
-
 
 // Encrypts text with AES-GCM-256
 // Returns base64 encoded string: IV (12 bytes) + Ciphertext

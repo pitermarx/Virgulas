@@ -147,7 +147,8 @@ Usage guidance:
 ### Search UI
 
 - Hidden by default, shown as fixed horizontal panel.
-- Includes text input, result counter, and close action.
+- Toggled by `Escape` when no node is focused; `Escape` again dismisses it.
+- Includes text input, result counter (`x/y`), and close action.
 - Focus ring uses accent-tinted halo.
 
 ### Buttons

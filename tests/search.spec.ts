@@ -1,38 +1,20 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Search', () => {
   test.beforeEach(async ({ page }) => {
-    // Setup fresh state
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-
-      const initialDoc = {
-        id: 'root',
-        text: 'Root',
-        children: [
-          {
-            id: '1', text: 'Parent Node', children: [
-              { id: '1.1', text: 'Child Match', children: [] }
-            ]
-          },
-          { id: '2', text: 'Unrelated Node', children: [] }
-        ]
-      };
-
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(initialDoc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent Node', children: [
+            { id: '1.1', text: 'Child Match', children: [] }
+          ]
+        },
+        { id: '2', text: 'Unrelated Node', children: [] }
+      ]
     });
-
-    // Unlock
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
   });
 
   test('Search filters nodes and makes read-only', async ({ page }) => {
@@ -41,8 +23,8 @@ test.describe('Search', () => {
     await expect(nodes).toHaveCount(3);
     await expect(nodes.nth(0)).toContainText('Parent Node');
 
-    // Open search with Ctrl+F
-    await page.keyboard.press('Control+f');
+    // Open search with Escape (from no-focus state)
+    await page.keyboard.press('Escape');
     const searchInput = page.getByPlaceholder('Search...');
     await expect(searchInput).toBeVisible();
     await searchInput.fill('Match');
@@ -72,8 +54,8 @@ test.describe('Search', () => {
   });
 
   test('Smart case: lowercase is case-insensitive, uppercase is case-sensitive', async ({ page }) => {
-    // Open search with Ctrl+F
-    await page.keyboard.press('Control+f');
+    // Open search with Escape (from no-focus state)
+    await page.keyboard.press('Escape');
     const searchInput = page.getByPlaceholder('Search...');
     await expect(searchInput).toBeVisible();
     const nodes = page.locator('.node-content');
@@ -92,8 +74,8 @@ test.describe('Search', () => {
   });
 
   test('Result counter shows x/y during search', async ({ page }) => {
-    // Open search with Ctrl+F
-    await page.keyboard.press('Control+f');
+    // Open search with Escape (from no-focus state)
+    await page.keyboard.press('Escape');
     const searchInput = page.getByPlaceholder('Search...');
     await expect(searchInput).toBeVisible();
 
@@ -105,8 +87,8 @@ test.describe('Search', () => {
   });
 
   test('Tab cycles through search results', async ({ page }) => {
-    // Open search with Ctrl+F
-    await page.keyboard.press('Control+f');
+    // Open search with Escape (from no-focus state)
+    await page.keyboard.press('Escape');
     const searchInput = page.getByPlaceholder('Search...');
     await expect(searchInput).toBeVisible();
     await searchInput.fill('Node');
@@ -127,16 +109,16 @@ test.describe('Search', () => {
     await expect(page.getByText('2/2')).toBeVisible();
   });
 
-  test('Escape clears search', async ({ page }) => {
-    // Open search with Ctrl+F
-    await page.keyboard.press('Control+f');
+  test('Escape toggles search closed', async ({ page }) => {
+    // Open search with Escape (from no-focus state)
+    await page.keyboard.press('Escape');
     const searchInput = page.getByPlaceholder('Search...');
     await expect(searchInput).toBeVisible();
     const nodes = page.locator('.node-content');
     await searchInput.fill('Match');
     await expect(nodes).toHaveCount(2);
 
-    // Press Escape to clear search and close search bar
+    // Press Escape to close search bar
     await page.keyboard.press('Escape');
     await expect(nodes).toHaveCount(3);
     await expect(searchInput).not.toBeVisible();

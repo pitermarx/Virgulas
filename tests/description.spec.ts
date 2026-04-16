@@ -1,29 +1,15 @@
 import { test, expect } from './test';
+import { setupDoc } from './test';
 
 test.describe('Description', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-
-      const initialDoc = {
-        id: 'root',
-        text: 'Root',
-        children: [
-          { id: '1', text: 'Node 1', description: 'Desc 1', children: [] }
-        ]
-      };
-
-      const encrypted = await window.App.crypto.encrypt(JSON.stringify(initialDoc), key);
-      localStorage.setItem('vmd_data', encrypted);
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Node 1', description: 'Desc 1', children: [] }
+      ]
     });
-
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
   });
 
   test('renders description', async ({ page }) => {
@@ -53,21 +39,10 @@ test.describe('Description', () => {
   });
 
   test('description with more than 2 lines truncates to 2 lines with ellipsis', async ({ page }) => {
-    await page.evaluate(async () => {
-      localStorage.clear();
-      const salt = window.App.crypto.generateSalt();
-      localStorage.setItem('vmd_salt', salt);
-      const key = await window.App.crypto.deriveKey('password', salt);
-      const doc = {
-        id: 'root', text: 'Root',
-        children: [{ id: '1', text: 'Node', description: 'Line 1\nLine 2\nLine 3', children: [] }]
-      };
-      const enc = await window.App.crypto.encrypt(JSON.stringify(doc), key);
-      localStorage.setItem('vmd_data', enc);
+    await setupDoc(page, {
+      id: 'root', text: 'Root',
+      children: [{ id: '1', text: 'Node', description: 'Line 1\nLine 2\nLine 3', children: [] }]
     });
-    await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
 
     const descDiv = page.locator('.node-description div');
     await expect(descDiv).toBeVisible();

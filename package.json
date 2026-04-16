@@ -4,7 +4,9 @@
     "description": "Local-first browser outliner",
     "type": "module",
     "scripts": {
-        "test": "playwright test",
+        "test": "node tests/run-all-tests.mjs",
+        "test:e2e": "playwright test --grep-invert @unit",
+        "test:unit": "playwright test --grep @unit",
         "serve": "serve -p 3000 source",
         "db:start": "supabase start --ignore-health-check",
         "db:stop": "supabase stop --no-backup --yes"

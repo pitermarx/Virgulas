@@ -1,5 +1,5 @@
 import { signal, effect, createModel } from "@preact/signals"
-import { randomId } from "./crypto2.js";
+import { randomId } from "./crypto2.js"
 import { log } from './utils.js';
 
 // The document structure is an infinite tree of nodes
@@ -177,8 +177,13 @@ const OutlineModel = createModel(() => {
         })
         map.set(node.id, node)
 
-        const baseIndex = parent.children.peek().indexOf(previousSiblingId)
-        const idx = baseIndex === -1 ? -1 : baseIndex + 1
+        let idx
+        if (previousSiblingId === false) {
+            idx = 0
+        } else {
+            const baseIndex = parent.children.peek().indexOf(previousSiblingId)
+            idx = baseIndex === -1 ? -1 : baseIndex + 1
+        }
         parent.addChild(node.id, idx)
 
         dirtyWrites.value = dirtyWrites.peek() + 1
@@ -614,6 +619,60 @@ const OutlineModel = createModel(() => {
         return getMatches(rootNodeId)
     }
 
+    function nextSibling(id) {
+        const node = map.get(id)
+        if (!node) return null
+        const parent = map.get(node.parentId)
+        if (!parent) return null
+        return parent.getChild(id, 'next')
+    }
+
+    function prevSibling(id) {
+        const node = map.get(id)
+        if (!node) return null
+        const parent = map.get(node.parentId)
+        if (!parent) return null
+        return parent.getChild(id, 'prev')
+    }
+
+    function setRootVMD(text) {
+        const root = map.get(zoomId.value)
+        if (!root) return
+        // Delete all existing children of the zoom root
+        const existingChildren = [...root.children.peek()]
+        existingChildren.forEach(id => deleteNode(id, true))
+        const stack = [{ node: root, indentLen: -1 }]
+        const lines = text.split(/\r?\n/)
+        for (const line of lines) {
+            if (!line.trim()) continue
+            const match = line.match(/^(\s*)([-+])\s?(.*)$/)
+            if (match) {
+                const [, indentStr, bullet, nodeText] = match
+                const indentLen = indentStr.length
+                const nodeData = { text: nodeText.trim(), open: bullet === '-' }
+                // Pop stack until we find the right parent level
+                while (stack.length > 1 && stack[stack.length - 1].indentLen >= indentLen) {
+                    stack.pop()
+                }
+                const parentNode = stack[stack.length - 1].node
+                const prevSiblingId = parentNode.children.peek().slice(-1)[0]
+                const newNode = addChild(parentNode.id, nodeData, prevSiblingId)
+                stack.push({ node: newNode, indentLen })
+            } else {
+                // Description line
+                const lastNode = stack[stack.length - 1].node
+                if (lastNode !== root) {
+                    const existing = lastNode.description.peek()
+                    const trimmed = line.trim()
+                    if (trimmed) {
+                        lastNode.description.value = existing ? `${existing}\n${trimmed}` : trimmed
+                    }
+                }
+            }
+        }
+        dirtyWrites.value = dirtyWrites.peek() + 1
+    }
+
     return {
         get dirtyDebounceTimeout() {
             return dirtyDebounceTimeout
@@ -627,6 +686,9 @@ const OutlineModel = createModel(() => {
         version: dataVersion,
         get isDirty() {
             return dirtyWrites.value > 0
+        },
+        get nodeCount() {
+            return map.size
         },
 
         // search operations
@@ -643,9 +705,12 @@ const OutlineModel = createModel(() => {
         },
         next: (id) => next(id, true),
         prev,
+        nextSibling,
+        prevSibling,
 
         getVMD: (id) => getVMD(id || zoomId.value),
         setVMD,
+        setRootVMD,
         serialize,
         deserialize,
 

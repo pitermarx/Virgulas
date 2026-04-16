@@ -2,7 +2,8 @@ import { html } from 'htm/preact';
 import { signal } from '@preact/signals';
 import outline from "./outline.js"
 import { log, isMobile } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, handleSearchKeyDown } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
+import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches } from './search.js';
 
 const focusId = signal(null)
 const focusType = signal(null)

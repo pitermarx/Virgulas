@@ -1,197 +1,405 @@
-import { render } from 'preact';
-import { useEffect } from 'preact/hooks';
-import { html } from 'htm/preact';
-import { state } from './state.js';
-import { storage } from './storage.js';
-import { AppSync } from './sync.js';
-import { AppCrypto } from './crypto.js';
-import { UnifiedLockView, RawView, MainView } from './view.js';
-import { dispatch } from './update.js';
+import { html, render } from 'htm/preact';
+import { signal } from '@preact/signals';
+import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen } from "./ui.js";
+import persistence from './persistence.js';
 
-// Expose for testing and global access
-window.App = window.App || {};
-window.App.crypto = AppCrypto;
-window.App.storage = storage;
-window.App.state = state;
-window.App.sync = AppSync;
-window.App.dispatch = dispatch; // Will be overwritten by View but good default
+const splashVisible = signal(true);
 
-// Check initial state
-const initApp = async () => {
-  console.log('initApp called');
-  storage.init();
-  state.quickUnlockFallbackVisible.value = false;
-  state.authRemotePayload.value = null;
-  state.authHasLocalData.value = storage.hasRaw('vmd_data');
-  state.authLastUsername.value = localStorage.getItem('vmd_last_username') || '';
+// B4: Restore persisted theme preference on load
+const savedTheme = localStorage.getItem('vmd_theme');
+if (savedTheme) {
+  document.documentElement.setAttribute('data-theme', savedTheme);
+}
 
+const authMode = signal('local');
+const authScenario = signal('empty-local');
+const authHasLocalData = signal(false);
+const authHasSupabase = signal(false);
+const authHasFilesystem = signal(false);
+const username = signal('');
+const password = signal('');
+const passphrase = signal('');
+const unlockError = signal('');
+const unlockMessage = signal('');
+const canResetRemoteData = signal(false);
+const isBusy = signal(false);
+const authUser = signal(null);
+
+const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
+const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
+
+async function initAuthState() {
+  const bootstrap = await persistence.getAuthBootstrap();
+  authMode.value = bootstrap.mode;
+  authScenario.value = bootstrap.scenario;
+  authHasLocalData.value = bootstrap.hasLocalData;
+  authHasSupabase.value = bootstrap.hasSupabase;
+  authHasFilesystem.value = bootstrap.hasFilesystem || false;
+  username.value = bootstrap.lastUsername || '';
+  authUser.value = bootstrap.user || null;
+}
+
+setTimeout(async () => {
+  await initAuthState();
+  splashVisible.value = false;
+}, 300);
+
+async function switchMode(nextMode) {
+  if (nextMode === authMode.value) return;
+
+  if (nextMode === 'filesystem' && !persistence.hasFilesystem()) {
+    unlockError.value = 'File System Access API is not supported in this browser.';
+    return;
+  }
+
+  if (authMode.value === 'local' && nextMode !== 'local' && authHasLocalData.value) {
+    const confirmed = confirm('Switching away from local will remove local encrypted data on this device. Continue?');
+    if (!confirmed) return;
+    persistence.clearLocalData();
+    authHasLocalData.value = false;
+    unlockMessage.value = 'Local encrypted data was cleared.';
+  }
+
+  if (authMode.value === 'remote' && nextMode !== 'remote' && authUser.value) {
+    const confirmed = confirm('Switching away from remote signs you out and clears local session data. Continue?');
+    if (!confirmed) return;
+    await persistence.signOut();
+    persistence.clearLocalData();
+    authHasLocalData.value = false;
+    authUser.value = null;
+    unlockMessage.value = 'Signed out.';
+  }
+
+  authMode.value = nextMode;
+  authScenario.value = nextMode === 'local' && !authHasLocalData.value
+    ? 'empty-local'
+    : 'remote-session-expired';
+  unlockError.value = '';
+  canResetRemoteData.value = false;
+  password.value = '';
+  passphrase.value = '';
+}
+
+async function submitUnlock(e) {
+  e.preventDefault();
+  unlockError.value = '';
+  unlockMessage.value = '';
+  canResetRemoteData.value = false;
+  isBusy.value = true;
   try {
-    state.quickUnlockSupported.value = await AppCrypto.isQuickUnlockSupported();
-  } catch (err) {
-    console.warn('Quick unlock support detection failed', err);
-    state.quickUnlockSupported.value = false;
-  }
-
-  const hasQuickUnlockData = storage.hasRaw(AppCrypto.PRF_WRAPPED_KEY) && storage.hasRaw(AppCrypto.PRF_ID_KEY);
-  if (hasQuickUnlockData && AppCrypto.isQuickUnlockLocallyDisabled()) {
-    state.quickUnlockFallbackVisible.value = true;
-  }
-
-  // Init theme
-  const storedTheme = localStorage.getItem('vmd_theme');
-  if (storedTheme) {
-    state.theme.value = storedTheme;
-    document.documentElement.setAttribute('data-theme', storedTheme);
-  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    state.theme.value = 'dark';
-  }
-
-  const tryQuickUnlockWithLocalData = async () => {
-    if (!state.authHasLocalData.value || !hasQuickUnlockData || !state.quickUnlockSupported.value) {
-      return false;
-    }
-
-    try {
-      const passphrase = await AppCrypto.quickUnlockPassphrase(
-        storage.getRaw(AppCrypto.PRF_WRAPPED_KEY),
-        storage.getRaw(AppCrypto.PRF_ID_KEY),
-        { timeoutMs: AppCrypto.QUICK_UNLOCK_AUTO_TIMEOUT_MS }
-      );
-      const key = await AppCrypto.deriveKey(passphrase, storage.getSalt());
-      const doc = await storage.get('vmd_data', key);
-
-      if (!doc) {
-        AppCrypto.markQuickUnlockUnsupported();
-        state.quickUnlockSupported.value = false;
-        state.quickUnlockFallbackVisible.value = true;
-        return false;
-      }
-
-      state.key.value = key;
-      state.doc.value = doc;
-      state.quickUnlockOfferVisible.value = false;
-      state.quickUnlockPassphrase.value = null;
-      state.quickUnlockFallbackVisible.value = false;
-      state.status.value = 'ready';
-      return true;
-    } catch (err) {
-      console.warn('Quick unlock failed, falling back to passphrase', err);
-      AppCrypto.markQuickUnlockUnsupported();
-      state.quickUnlockSupported.value = false;
-      state.quickUnlockFallbackVisible.value = true;
-      return false;
-    }
-  };
-
-  const classifyAndSetAuthState = async () => {
-    let user = null;
-    let remote = null;
-
-    AppSync.init();
-
-    try {
-      user = await AppSync.refreshSession();
-    } catch (err) {
-      console.warn('Failed to refresh sync session', err);
-    }
-
-    if (user?.email) {
-      state.authLastUsername.value = user.email;
-      localStorage.setItem('vmd_last_username', user.email);
-    }
-
-    if (user) {
-      try {
-        remote = await AppSync.download();
-      } catch (err) {
-        console.warn('Failed to fetch remote encrypted payload', err);
-      }
-    }
-
-    if (user && remote?.salt && remote?.data) {
-      storage.setSalt(remote.salt);
-      state.authMode.value = 'remote';
-      state.authScenario.value = 'remote-session-valid';
-      state.authRemotePayload.value = remote;
-      state.status.value = 'unlock';
+    if (authMode.value === 'filesystem') {
+      await persistence.unlock('', { mode: 'filesystem' });
+      document.body.setAttribute('data-main-view', 'rendered');
       return;
     }
 
-    if (state.authHasLocalData.value) {
-      state.authMode.value = 'local';
-      state.authScenario.value = 'local-present-no-session';
-      state.status.value = 'unlock';
+    if (!passphrase.value.trim()) {
+      unlockError.value = 'Passphrase cannot be empty.';
       return;
     }
 
-    if (!user && state.authLastUsername.value) {
-      state.authMode.value = 'remote';
-      state.authScenario.value = 'remote-session-expired';
-      state.status.value = 'unlock';
+    if (authMode.value === 'remote' && !authHasSupabase.value) {
+      unlockError.value = 'Remote mode is unavailable because sync is not configured.';
       return;
     }
 
-    state.authMode.value = 'local';
-    state.authScenario.value = 'empty-local';
-    state.status.value = 'setup';
-  };
-
-  if (window.supabase) {
-    await classifyAndSetAuthState();
-    if (state.status.value !== 'ready' && state.authHasLocalData.value) {
-      await tryQuickUnlockWithLocalData();
-    }
-  } else {
-    state.syncConfigured.value = false;
-
-    if (state.authHasLocalData.value) {
-      state.authMode.value = 'local';
-      state.authScenario.value = 'local-present-no-session';
-      state.status.value = 'unlock';
-      await tryQuickUnlockWithLocalData();
-    } else if (state.authLastUsername.value) {
-      state.authMode.value = 'remote';
-      state.authScenario.value = 'remote-session-expired';
-      state.status.value = 'unlock';
+    const success = await persistence.unlock(passphrase.value, {
+      mode: authMode.value,
+      username: username.value,
+      password: password.value,
+      trustSession: isRemoteSessionValid()
+    });
+    if (success) {
+      document.body.setAttribute('data-main-view', 'rendered');
     } else {
-      state.authMode.value = 'local';
-      state.authScenario.value = 'empty-local';
-      state.status.value = 'setup';
+      unlockError.value = 'Invalid passphrase.';
     }
-
-    window.addEventListener('load', async () => {
-      if (window.supabase) {
-        await classifyAndSetAuthState();
-        if (state.status.value !== 'ready' && state.authHasLocalData.value) {
-          await tryQuickUnlockWithLocalData();
-        }
-      }
-    }, { once: true });
+  } catch (error) {
+    const message = String(error?.message || 'Failed to unlock.');
+    unlockError.value = message;
+    canResetRemoteData.value = authMode.value === 'remote' && message.includes('Authenticated, but data could not be decrypted');
+  } finally {
+    isBusy.value = false;
   }
+}
 
-  // Hide splash screen
-  const splash = document.getElementById('splash');
-  if (splash) {
-    splash.classList.add('hidden');
-    setTimeout(() => splash.remove(), 700);
+async function submitSignUp() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  if (!username.value.trim() || !password.value) {
+    unlockError.value = 'Username and password are required.';
+    return;
   }
+  isBusy.value = true;
+  try {
+    const result = await persistence.signUp(username.value, password.value);
+    authUser.value = await persistence.getUser();
+    if (!result?.user) {
+      unlockMessage.value = 'Sign-up submitted. Confirm your email if confirmation is enabled.';
+    }
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Failed to sign up.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function submitSignOut() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  isBusy.value = true;
+  try {
+    await persistence.signOut();
+    authUser.value = null;
+    authScenario.value = 'remote-session-expired';
+    authMode.value = 'remote';
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Failed to sign out.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function submitResetRemoteData() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  if (!passphrase.value.trim()) {
+    unlockError.value = 'Enter a new passphrase before resetting remote data.';
+    return;
+  }
+  const confirmed = confirm('This replaces your remote encrypted data with a new empty document. Continue?');
+  if (!confirmed) return;
+
+  isBusy.value = true;
+  try {
+    await persistence.resetRemoteData(passphrase.value, {
+      username: username.value,
+      password: password.value
+    });
+    canResetRemoteData.value = false;
+    document.body.setAttribute('data-main-view', 'rendered');
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Failed to reset remote data.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+const LockScreen = () => {
+  const mode = authMode.value;
+  const isFilesystem = mode === 'filesystem';
+  const isRemote = mode === 'remote';
+  const isLocal = mode === 'local';
+  const isSessionValid = isRemoteSessionValid();
+
+  const unlockDisabled = isBusy.value
+    || (!isFilesystem && !passphrase.value.trim())
+    || (isRemote && !isSessionValid && (!username.value.trim() || !password.value));
+
+  // Mode descriptions
+  const modeDescriptions = {
+    local: isLocalCreate() ? 'Encrypted local storage — create a passphrase to get started.' : 'Encrypted local storage — enter your passphrase to unlock.',
+    remote: isSessionValid
+      ? `Encrypted sync — signed in as ${authUser.value?.email || ''}. Enter your passphrase to decrypt.`
+      : 'Encrypted sync via Supabase — sign in then enter your passphrase.',
+    filesystem: 'Open a local file — no encryption, no passphrase needed.'
+  };
+
+  return html`
+    <div class="auth-card">
+      <h1 class="auth-title">Unlock Virgulas</h1>
+
+      <div class="auth-mode-switch" role="group" aria-label="Storage mode">
+        <button type="button" class=${`auth-mode-btn ${isLocal ? 'is-active' : ''}`}
+          onClick=${() => switchMode('local')}>
+          Local
+        </button>
+        <button type="button" class=${`auth-mode-btn ${isRemote ? 'is-active' : ''}`}
+          onClick=${() => switchMode('remote')}>
+          Remote
+        </button>
+        <button type="button" class=${`auth-mode-btn ${isFilesystem ? 'is-active' : ''}`}
+          onClick=${() => switchMode('filesystem')}>
+          File
+        </button>
+      </div>
+
+      <p class="auth-subtitle">${modeDescriptions[mode]}</p>
+
+      ${isRemote && !isSessionValid && html`
+        <div class="input-group">
+          <label for="auth-username" class="input-label">Email</label>
+          <input value=${username.value} onInput=${(e) => username.value = e.target.value}
+            id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
+        </div>
+        <div class="input-group">
+          <label for="auth-password" class="input-label">Account password</label>
+          <input value=${password.value} onInput=${(e) => password.value = e.target.value}
+            id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
+        </div>
+      `}
+
+      ${isRemote && isSessionValid && html`
+        <div class="auth-secondary-actions">
+          <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
+            ${isBusy.value ? 'Signing out...' : 'Sign out'}
+          </button>
+        </div>
+      `}
+
+      <form onSubmit=${submitUnlock}>
+        ${!isFilesystem && html`
+          <div class="input-group">
+            <label for="auth-passphrase" class="input-label">
+              ${isLocalCreate() ? 'Create a passphrase' : 'Encryption passphrase'}
+            </label>
+            <input value=${passphrase.value} onInput=${(e) => passphrase.value = e.target.value}
+              id="auth-passphrase" type="password"
+              placeholder=${isLocalCreate() ? 'Choose a passphrase' : 'Enter your passphrase'}
+              class="input-field" autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'} />
+          </div>
+        `}
+        ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
+        ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+        ${canResetRemoteData.value && html`
+          <div class="auth-secondary-actions">
+            <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
+              onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
+          </div>
+        `}
+        <button type="submit" class="lock-submit-btn" disabled=${unlockDisabled} aria-label="Unlock" title="Unlock">
+          ${isBusy.value ? '...' : isFilesystem ? '📂' : '🔒'}
+        </button>
+      </form>
+
+      ${isRemote && !isSessionValid && html`
+        <div class="auth-secondary-actions">
+          <button type="button" class="toolbar-btn" disabled=${isBusy.value || !username.value.trim() || !password.value}
+            onClick=${submitSignUp}>
+            ${isBusy.value ? '...' : 'Sign up'}
+          </button>
+        </div>
+      `}
+    </div>
+  `;
 };
 
-const App = () => {
-  useEffect(() => initApp(), []);
-  const viewMode = state.viewMode.value;
+const REPO_URL = 'https://github.com/pnunes30/Virgulas';
 
-  switch (state.status.value) {
-    case 'loading':
-      return null;
-    case 'setup':
-    case 'unlock':
-      return html`<${UnifiedLockView} />`;
-    case 'ready':
-      return viewMode === 'raw' ? html`<${RawView} />` : html`<${MainView} />`;
-    default:
-      return html`<div>Unknown state</div>`;
+const OptionsModal = () => {
+  if (!optionsOpen.value) return null;
+
+  const currentMode = persistence.getMode();
+
+  function handleThemeToggle() {
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const fallback = prefersDark ? 'dark' : 'light';
+    const current = document.documentElement.getAttribute('data-theme') || fallback;
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('vmd_theme', next);
   }
+
+  function handleLock() {
+    optionsOpen.value = false;
+    persistence.lock();
+  }
+
+  async function handleSignOut() {
+    optionsOpen.value = false;
+    isBusy.value = true;
+    try {
+      await persistence.signOut();
+      authUser.value = null;
+      authScenario.value = 'remote-session-expired';
+    } catch (err) {
+      unlockError.value = String(err?.message || 'Failed to sign out.');
+    } finally {
+      isBusy.value = false;
+    }
+  }
+
+  async function handleChangeFile() {
+    optionsOpen.value = false;
+    await persistence.pickNewFile();
+  }
+
+  async function handlePurge() {
+    if (!confirm('Delete all local data and sign out? This cannot be undone.')) return;
+    optionsOpen.value = false;
+    persistence.reset();
+    authHasLocalData.value = false;
+    authUser.value = null;
+    authMode.value = 'local';
+    authScenario.value = 'empty-local';
+  }
+
+  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+  const themeAttr = document.documentElement.getAttribute('data-theme') || (prefersDark ? 'dark' : 'light');
+  const themeLabel = themeAttr === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme';
+
+  return html`
+    <div class="modal-overlay" onClick=${e => { if (e.target === e.currentTarget) optionsOpen.value = false; }}>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="options-title">
+        <div class="modal-header">
+          <h2 class="modal-title" id="options-title">Options</h2>
+          <button class="modal-close" onClick=${() => optionsOpen.value = false} aria-label="Close">×</button>
+        </div>
+        <div class="modal-body options-body">
+          <div class="options-row">
+            <button class="btn btn-secondary" onClick=${handleThemeToggle}>${themeLabel}</button>
+          </div>
+          <div class="options-row">
+            <a href=${REPO_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Source repository ↗</a>
+          </div>
+          ${currentMode === 'remote' && html`
+            <div class="options-row">
+              <button class="btn btn-secondary" onClick=${handleSignOut} disabled=${isBusy.value}>Sign out</button>
+            </div>
+          `}
+          ${currentMode === 'local' && html`
+            <div class="options-row">
+              <button class="btn btn-secondary" onClick=${handleLock}>Lock</button>
+            </div>
+          `}
+          ${currentMode === 'filesystem' && html`
+            <div class="options-row">
+              <button class="btn btn-secondary" onClick=${handleChangeFile}>Change file</button>
+            </div>
+          `}
+          <div class="options-row options-row-danger">
+            <button class="btn btn-danger" onClick=${handlePurge}>Purge all local data</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
 };
 
-render(html`<${App} />`, document.getElementById('app'));
+const Splash = () => {
+  if (splashVisible.value) return html`
+    <div id="splash">
+      <div class="logo">Virgulas</div>
+      <div class="tagline">Local-first browser outliner</div>
+    </div>`;
+
+  if (persistence.isLocked()) {
+    document.body.removeAttribute('data-main-view');
+    return html`<${LockScreen} />`;
+  }
+
+  document.body.setAttribute('data-main-view', 'rendered');
+  return html`<div class="main-view">
+    ${rawMode.value
+      ? html`<${RawEditor} />`
+      : html`<div class="main-content">
+          <${MainToolbar} />
+          <${Outline} />
+          <${DebugPanel} />
+        </div>`
+    }
+    <${StatusToolbar} />
+    <${OptionsModal} />
+  </div>`;
+};
+
+render(html`<${Splash} />`, document.getElementById('app'));

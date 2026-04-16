@@ -35,15 +35,18 @@ const readSupabaseStatusEnv = (): Record<string, string> => {
 };
 
 if (!useExternalBaseUrl) {
-  const envPath = path.resolve(__dirname, '.env');
+  const envPath = path.resolve(import.meta.dirname, '.env');
   const dotenv = existsSync(envPath) ? parseDotEnv(readFileSync(envPath, 'utf8')) : {};
   const statusEnv = readSupabaseStatusEnv();
 
   const url = dotenv.SUPABASE_URL || env.SUPABASE_URL || statusEnv.SUPABASE_URL || statusEnv.API_URL;
   const key = dotenv.SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || statusEnv.SUPABASE_ANON_KEY || statusEnv.ANON_KEY;
   if (!url || !key) {
-    throw new Error('Missing local Supabase credentials. Run `npm run db:start` first so .env (or supabase status) is available.');
+    throw new Error(
+      'Missing local Supabase credentials for Playwright. Run "npm run db:start" and ensure ".env" exists or "npm exec supabase -- status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
+    );
   }
+
   env.PLAYWRIGHT_SUPABASE_CONFIG = JSON.stringify({ url, key });
 }
 

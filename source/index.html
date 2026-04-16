@@ -15,10 +15,8 @@
       "imports": {
         "preact":          "https://esm.sh/preact@10.19.3",
         "preact/hooks":    "https://esm.sh/preact@10.19.3/hooks",
-        "preact/":         "https://esm.sh/preact@10.19.3/",
-        "@preact/signals": "https://esm.sh/@preact/signals@1.2.3?external=preact",
-        "htm/preact":      "https://esm.sh/htm@3.1.1/preact?external=preact",
-        "marked":          "https://esm.sh/marked@12.0.0"
+        "@preact/signals": "https://esm.sh/@preact/signals@2.8.2?external=preact",
+        "htm/preact":      "https://esm.sh/htm@3.1.1/preact?external=preact"
       }
     }
   </script>
@@ -33,15 +31,39 @@
 </head>
 
 <body>
-
-  <div id="splash">
-    <div class="logo">Virgulas</div>
-    <div class="tagline">Local-first browser outliner</div>
-  </div>
-
   <div id="app"></div>
-
   <script type="module" src="js/app.js"></script>
+  <script>
+    function closeModals(e) {
+      const isTargetModal = e.target.classList.contains('modal-overlay') || e.target.classList.contains('modal-close')
+      if (!isTargetModal) return
+      document.querySelectorAll('.modal-overlay').forEach(modal => modal.style.display = 'none')
+    }
+    function openModal(id) {
+      document.getElementById(id).style.display = ''
+    }
+  </script>
+  <div id="keyboard-shortcuts" class="modal-overlay" style="display: none;" onclick="closeModals(event)">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Keyboard Shortcuts</h2><button class="modal-close" aria-label="Close"
+          onclick="closeModals(event)">×</button>
+      </div>
+      <ul class="shortcut-list">
+        <li class="shortcut-row"><kbd>Enter</kbd><span class="shortcut-desc">Add sibling</span></li>
+        <li class="shortcut-row"><kbd>Backspace</kbd><span class="shortcut-desc">Delete empty node</span></li>
+        <li class="shortcut-row"><kbd>Tab</kbd><span class="shortcut-desc">Indent</span></li>
+        <li class="shortcut-row"><kbd>Shift+Tab</kbd><span class="shortcut-desc">Outdent</span></li>
+        <li class="shortcut-row"><kbd>↑ / ↓</kbd><span class="shortcut-desc">Navigate</span></li>
+        <li class="shortcut-row"><kbd>Alt+↑/↓</kbd><span class="shortcut-desc">Move node</span></li>
+        <li class="shortcut-row"><kbd>Alt+→</kbd><span class="shortcut-desc">Zoom in</span></li>
+        <li class="shortcut-row"><kbd>Alt+←</kbd><span class="shortcut-desc">Zoom out</span></li>
+        <li class="shortcut-row"><kbd>Esc</kbd><span class="shortcut-desc">Toggle Search</span></li>
+        <li class="shortcut-row"><kbd>Ctrl+Space</kbd><span class="shortcut-desc">Collapse / expand</span></li>
+        <li class="shortcut-row"><kbd>Shift+Enter</kbd><span class="shortcut-desc">Edit description</span></li>
+      </ul>
+    </div>
+  </div>
 </body>
 
 </html>

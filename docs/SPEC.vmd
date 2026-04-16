@@ -1,232 +1,270 @@
 - Virgulas Reference Document
   This document is the source of truth for "Virgulas", a local-first browser outliner.
+  + It is an infinite list of editable "Nodes".
+    - Each "Node" has a **single line** of text
+    - Can have an optional text called "Description".
+      Only the first 2 lines of the "Description" are visible when not editing, showing "..." otherwise
+    - Can have "Children", which in turn are other "Nodes"
+    - Each "Node" text and its "Description" can have rendered markdown when not editing.
+      Markdown elements are limited to
+      **Bold**, __Italic__, [links](http://example.com), ![](https://images.png), `monospace code`
+  + Behaviors of a "Node"
+    + FOCUS
+      - When focusing a "Node" or "Description", the text becomes editable, and the raw markdown is visible
+      - (MOBILE ONLY) When focusing a "Node", its "Description" field becomes visible, even when empty
+      - (DESKTOP ONLY) To toggle between "Node" and "Description" we can use `Shift+Enter`. Empty "Descriptions" are invisible
+      - (DESKTOP ONLY) When nothing is focused, `↑` focuses the last node and `↓` focuses the first node.
+      - (DESKTOP ONLY) `Enter` creates a new node below the focused node.
+        If it already has children, the new node becomes the first child.
+        If it does not have children, it creates a node at the same level.
+    + (DESKTOP ONLY) MULTI-SELECT
+      - When a "Node" is focused, a multi-bullet selection can be expanded with the shortcuts `Shift+↑/↓`
+        - Arrow up expands the selection to the previous "Node" of the same indentation level
+        - Arrow down expands the selection to the next "Node" of the same indentation level
+      - Multi-select is only possible on a single indentation level
+        - Selecting a "Node" implicitly selects all its children
+    + (DESKTOP ONLY) MOVE
+      - "Nodes" can be moved with the shortcuts `Alt+↑/↓`
+      - If multi-selection is active, Move also works as expected
+    + COLLAPSE
+      "Nodes" can hide and show their children by collapsing and expanding
+      - When collapsed, the "Node" has a visual indicator on the bullet point that it contains children, but they are not visible
+        Collapsed and has children: ○ (hollow circle, rendered as SVG)
+        Otherwise: ● (filled circle, rendered as SVG)
+      - To toggle expand and collapse there will be a visible ▶ or ▼ button at the end of each line
+        Always visible on mobile, visible on hover for desktop
+      - (DESKTOP ONLY) To toggle expand and collapse we can use `Ctrl+Space`
+      - (DESKTOP ONLY, MULTI-SELECT) When multi-selected, and we use the `Ctrl+Space` shortcut
+        - If all "Nodes" are collapsed, then they all expand
+        - Otherwise they all collapse
+    + ZOOM
+      When zoomed in, a "Node" and all its parents are clearly seen in the "Breadcrumb"
+      - Each segment of the "Breadcrumb" is clickable and will zoom into that "Node"
+      - When zoomed, the text of the "Node" is not editable
+      - The description is also visible and editable
+      - The "Children" of the zoomed "Node" will behave the exact same way as if they were root "Nodes"
+      - Clicking the bullet point of a node zooms into it
+      - (DESKTOP ONLY) `Alt+→` zooms into a node, `Alt+←` zooms back out
+        - Most browsers use `Alt+←` to go back in history, so zooms are kept as browser navigation history entries
+        - The URL carries the ID of the zoomed "Node" as a hash fragment so it can be directly referenced
+        - If the URL contains a node ID hash on load, the app zooms into that node automatically after unlock
+        - If the node no longer exists, the hash is ignored and the root is shown
+      - (DESKTOP ONLY) On zoom, the first child is automatically focused
+    + INDENT
+      - Each "Node" can be indented and unindented individually
+        `Tab` and `Shift+Tab` are the shortcuts for changing indentation level
+      - (MOBILE ONLY) A swipe right/left gesture can be used for indentation
+      - Order will be kept when indenting and unindenting. Take this sequence as an example:
+        `     | INDENT B | INDENT C | UNINDENT B | INDENT B`
+        `- A  | - A      | - A      | - A        | - A`
+        `- B  |  - B     |  - B     | - B        |  - B`
+        `- C  | - C      |  - C     |  - C       |   - C `
+      - If multi-selection is active, indentation also works as expected
+    + DELETE
+      - "Nodes" can be deleted without confirmation when they don't have "Children"
+      - A confirmation is necessary when "Children" exist. Deleting a "Node" also deletes all its "Children"
+      - If multi-selection is active, delete also works as expected
+      - The node is deleted if Backspace is pressed on a node that has no text
+        If there is text, the backspace functions as if `↑` was pressed
+      - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
+  + STORAGE MODES
+    Three storage modes are selectable on the lock screen.
+    - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
+    - Remote — document encrypted and synced to the cloud via Supabase.
+      Account email, account password, and passphrase are required.
+    - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
+      No passphrase or account needed. Only available in browsers that support the API.
+      The lock screen pre-selects the most appropriate mode on each visit:
+    - Local encrypted data present, no valid session → Local preselected, passphrase required
+    - Expired session with known account → Remote preselected, email prefilled, password + passphrase required
+    - Valid remote session → Remote preselected, only passphrase needed
+      Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
+  + FILE MODE
+    - The user opens or creates a `.vmd` file on disk using the browser File System Access API
+    - The document is read and written as plain VMD text — no encryption, no JSON wrapper
+    - The last opened file handle is remembered in IndexedDB; on next visit the app tries to reopen it silently
+    - Every write is debounced: changes are flushed to disk ~1 second after the last edit
+    - If the API is not supported in the current browser, the File mode button shows an error
+  + RAW MODE
+    - Direct manipulation of the text is possible in a special "RAW" mode
+    - This document is an example of a raw Virgulas document; by convention it has the extension .vmd
+    - The `+` char means a collapsed node and the `-` char means an expanded node
+    - To actually have the + or - char at the beginning of a line, use the escape char \
+      \\ shows the \ character, \+ and \- show the + and - characters. Escaping is only needed at the beginning of lines
+    - Hierarchy is determined by relative indentation, not absolute column numbers
+      A child node must have more leading whitespace than its parent; the exact amount is not significant
+      Sibling nodes share the same indentation level relative to their parent
+    - All lines that do not begin with + or - (after stripping leading whitespace) are descriptions of the previous node
+      Indentation is not relevant on description lines; empty lines are ignored
+    - When in RAW mode, the app is a plain text editor with a "SAVE" and a "CANCEL" button
+  + SEARCH
+    - Search can be done with simple substring matches
+    - Search is activated with `Escape` when no node is focused on desktop and with a scroll up on mobile
+      The search controls are hidden by default
+    - Search can be dismissed with `Escape` again on desktop or with an `X` clear button
+    - When searching, the document becomes read-only
+    - When searching, there is a live highlight of all matched words
+    - When searching, all nodes that match are expanded and visible; non-matching nodes are hidden
+    - (DESKTOP ONLY) Search results are cycled with `Tab` and `Shift+Tab`
+    - When focusing a result by pressing `Enter` or clicking it, the app auto-zooms into the closest
+      collapsed ancestor of the matched node
+    - Search is "smart case": lowercase-only input is case-insensitive; any uppercase letter makes it case-sensitive
+    - A result counter showing current index and total is visible while searching
+  + ENCRYPTION
+    Applies to Local and Remote modes. File mode is unencrypted (plain VMD on disk).
+    The passphrase is the single secret the user must know. It is never stored or transmitted.
+    - A random PBKDF2 salt is generated once and stored in localStorage under `vmd_salt`
+      This is the only value in localStorage stored in plaintext, as it is required to derive the key
+    - The encryption key is derived from the passphrase and the salt via PBKDF2 (310,000 iterations, SHA-256, 256-bit output)
+      The derived key is never stored — it is re-derived on each unlock
+    - All document data is encrypted with the derived key using AES-GCM with a unique IV per write operation
+      The IV is prepended to the ciphertext and stored together, base64-encoded
+    - The encrypted document is stored in localStorage under `vmd_data`
+    - If the passphrase is forgotten, encrypted data is unrecoverable. There is no cryptographic recovery path.
+      A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
+  + ACCOUNTS AND SYNC
+    Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
+    The server stores only ciphertext and cannot decrypt user data.
+    - The account password is only used for Supabase Auth — it is unrelated to the encryption passphrase
+      The passphrase is set independently and never sent to any server
+    - To create an account the user provides an email and password for Supabase Auth
+      The PBKDF2 salt already in localStorage is uploaded to the `outlines` table
+      From this point, any device that knows the passphrase can re-derive the same key
+    - Signing in on a new device fetches encrypted payload + salt from the `outlines` table
+      The user enters their passphrase, the key is re-derived, and the document is decrypted
+      If account auth succeeds but decryption fails, the lock screen offers a destructive reset to replace remote encrypted data using a new passphrase
+    - The derived key lives only in memory for the duration of the session
+      On page close or sign-out, the key is gone and must be re-derived on the next visit
+    + SYNC BEHAVIOUR
+      - After every local write, the app attempts a background upload to the server
+      - If the upload fails it is retried a few times with increasing delays, then abandoned until the next write
+      - On sign-in or page load (when a session exists), the server and local copies are compared by timestamp
+        - If only one side has data, that side wins
+        - If local is newer, it is uploaded silently
+        - If the server is newer, a three-way merge is attempted using the last-synced base as the common ancestor
+          Non-conflicting field changes are merged automatically
+          Fields changed on both sides are presented to the user for per-node resolution
+      - The status toolbar shows a sync indicator when the user is signed in
+        Possible states: synced, syncing, error, offline
+    + DATABASE SCHEMA
+      - `outlines` table
+        - `user_id` uuid primary key — references auth.users
+        - `salt` text — PBKDF2 salt, base64-encoded, generated on first use and never changed
+        - `data` text — AES-GCM encrypted document, base64-encoded
+          The first 12 bytes of the decoded value are the IV, the remainder is the ciphertext
+        - `updated_at` timestamptz
+      - Row Level Security enabled
+        All policies restrict read and write to `auth.uid() = user_id`
+  + Design considerations
+    - A splash screen is seen on load, and it is removed after the app is completely ready
+    - The text of root nodes has a font-size of 1rem, the second level 0.9rem, and remaining nodes 0.85rem
+      The description has a more faded colour and is 85% of the size of the node text
+    - There is a "Status" toolbar at the bottom of the screen with
+      - "RAW" mode button
+      - "?" button to show all keyboard shortcuts
+      - "Options" button to see all configuration options
+        - Theme toggle
+        - A link to the source repository
+        - A button to purge all local data and start fresh
+      - A sync status indicator, visible only when the user is signed in
+    - Google font Inter is the base typography. 1rem = 14px
+      Base: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      Mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  + Technical considerations
+    - The app is a static website. No server is necessary to use it
+    - The document is stored in localStorage as a single JSON object, always encrypted
+    - Preact and Preact Signals are the UI frameworks, loaded via CDN import map
+    - The Supabase JS client is loaded via CDN
+    - All crypto operations use the native Web Crypto API
+    - Playwright E2E tests cover all the app's features and edge cases
+    - (DESKTOP ONLY) If a querystring parameter ?debug=true exists, debug mode is activated
+      - A panel with internal state information is shown
+      - Console debug messages are printed
+    + CI/CD
+      - The app is hosted on GitHub Pages
+      - On each commit, all E2E tests are run and a preview site is generated
+      - On /preview, a page listing all open PRs is shown with a button to use that preview version
+        E.g. `virgulas.com/preview/my-feature` will serve the code from the `my-feature` branch
+      - On the main branch, the pipeline purges the Cloudflare cache after a successful deploy
+      - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
 
-    + It is an infinite list of editable "Nodes".
-        - Each "Node" has a **single line** of text
-        - Can have an optional text called "Description".
-          Only the first 2 lines of the "Description" are visible when not editing, showing "..." otherwise
-        - Can have "Children", which in turn are other "Nodes"
-        - Each "Node" text and its "Description" can have rendered markdown when not editing.
-          Markdown elements are limited to
-          **Bold**, __Italic__, [links](http://example.com), ![](https://images.png), `monospace code`
+    + ROADMAP
+      Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
 
-    + Behaviors of a "Node"
-      All behaviors are "undo-able", on the current session, up to a stack of 100 actions. Press `Ctrl+Z` to undo, `Ctrl+Y` to redo
-        + FOCUS
-            - When focusing a "Node" or "Description", the text becomes editable, and the raw markdown is visible
-            - (MOBILE ONLY) When focusing a "Node", its "Description" field becomes visible, even when empty
-            - (DESKTOP ONLY) To toggle between "Node" and "Description" we can use `Shift+Enter`. Empty "Descriptions" are invisible
-            - (DESKTOP ONLY) When nothing is focused, `↑` focuses the last node and `↓` focuses the first node.
-            - (DESKTOP ONLY) `Enter` creates a new node below the focused node.
-              If it already has children, the new node becomes the first child.
-              If it does not have children, it creates a node at the same level.
+        + In-memory mode (zero-friction first use)
+          The app should be usable immediately on first load with no lock screen, no mode selection, and no passphrase.
+            - On the very first visit, the default storage mode is "Memory" — the document lives only in JS memory and is lost on navigation or tab close
+            - On first visit, the app loads a built-in introductory document (INTRO.VMD) that walks the user through every feature
+              The intro document is embedded in the source code; it is not fetched from a server
+            - The lock screen is still reachable: an "Upgrade storage" action (e.g. in Options) lets the user switch to Local, Remote, or File mode at any time
+              Switching from Memory to another mode preserves the current document — no data loss on upgrade
+            - The status toolbar shows a clear indicator that the document is ephemeral (e.g. "In memory — not saved")
+            - The Memory mode has no encryption, no passphrase, and no sync — it is purely transient
 
-        + (DESKTOP ONLY) MULTI-SELECT
-            - When a "Node" is focused, a multi-bullet selection can be expanded with the shortcuts `Shift+↑/↓`
-                - Arrow up expands the selection to the previous "Node" of the same indentation level
-                - Arrow down expands the selection to the next "Node" of the same indentation level
-            - Multi-select is only possible on a single indentation level
-                - Selecting a "Node" implicitly selects all its children
+        + Resume last used mode
+          After the user explicitly chooses a persistent mode once, that choice should become the startup default on later visits.
+            - Local: show the local unlock screen directly and ask only for the encryption passphrase
+            - Remote: remember the account identity and, when the auth session can be refreshed, ask only for the encryption passphrase
+            - Remote fallback: if the auth session cannot be refreshed, prefill the remembered email and ask for sign-in again
+            - File: try to reopen the same file handle immediately; if permission is gone or the handle is invalid, fall back to the file picker
+            - The raw account password is never stored locally; "remember login" means session persistence or account prefill, not password persistence
+            - First-ever visitors still start in transient Memory mode with INTRO.VMD
 
-        + (DESKTOP ONLY) MOVE
-            - "Nodes" can be moved with the shortcuts `Alt+↑/↓`
-            - If multi-selection is active, Move also works as expected
+        + Bugs to fix
+            - Markdown attribute injection: `renderInlineMarkdown` escapes `<`, `>`, `&` but not `"`, allowing attribute breakout in image alt text and link href
+              E.g. `![" onerror="alert(1)](https://x.com)` produces a working XSS payload
+              Fix: also escape `"` to `&quot;` before applying markdown regex replacements
+            - Breadcrumb text not reactive: `BreadcrumbItem` reads `item.text.peek()` instead of `item.text.value`, so breadcrumbs don't update when a node's text changes
+            - localStorage operations not wrapped in try-catch: private browsing mode or a full quota causes unhandled exceptions and silent data loss
+            - Race condition in unlock: rapid double-click on Unlock can fire two concurrent `persistence.unlock()` calls with unpredictable state results
+            - Raw mode save with invalid VMD: `setRootVMD` has no error handling — malformed raw input silently corrupts the document
+            - Search match ID not reset on query change: after clicking a search result and then changing the query, the highlight stays on the old (now irrelevant) node
+            - `getFirstClosedParent` crashes if the target node was deleted between search and click — needs a null guard
+            - Startup bootstrap does not remember the last used mode: it infers from local encrypted data or last remote username, which can reopen the wrong mode for returning users
+            - File mode already remembers the last file handle in IndexedDB, but startup ignores that signal and never preselects/resumes File mode automatically
+            - Switching to File mode sets the auth scenario to `remote-session-expired`, which is the wrong internal state and risks later UI drift
 
-        + COLLAPSE
-          "Nodes" can hide and show their children by collapsing and expanding
-            - When collapsed, the "Node" has a visual indicator on the bullet point that it contains children, but they are not visible
-              Collapsed and has children: ○
-              Otherwise: ●
-            - To toggle expand and collapse there will be a visible ▶ or ▼ button at the end of each line
-              Always visible on mobile, visible on hover for desktop
-            - (DESKTOP ONLY) To toggle expand and collapse we can use `Ctrl+Space`
-            - (DESKTOP ONLY, MULTI-SELECT) When multi-selected, and we use the `Ctrl+Space` shortcut
-                - If all "Nodes" are collapsed, then they all expand
-                - Otherwise they all collapse
+        + Missing test coverage
+          Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
+            - File mode: no tests for open, save, debounced write, IndexedDB handle persistence, or unsupported-browser error
+            - Startup resume matrix: no tests for first-ever Memory mode, remembered Local mode, remembered Remote mode, remembered File mode, or the fallback path when a remembered file/session can no longer be reopened
+            - Search auto-zoom: pressing Enter or clicking a search result should zoom into the closest collapsed ancestor — untested
+            - Multi-select cross-level prevention: SPEC says multi-select is single-level only — no test verifies the constraint
+            - Multi-select implicit children: selecting a parent should implicitly select its children — untested
+            - Multi-select move: Alt+Up/Down with an active multi-selection — untested
+            - Markdown links, images, and inline code rendering — only bold and italic are tested
+            - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
+            - Sync status indicator state transitions (synced, syncing, error, offline) — untested
+            - Delete confirmation dialog for nodes with children — dialog content and Escape-to-dismiss not verified
+            - Zoomed node text is non-editable per SPEC — never asserted
+            - Indent ordering sequence from SPEC ("INDENT B | INDENT C | UNINDENT B | INDENT B") — no E2E test
+            - Description rendering: empty descriptions should be invisible (not just hidden) — untested
 
-        + ZOOM
-          When zoomed in, a "Node" and all its parents are clearly seen in the "Breadcrumb"
-            - Each segment of the "Breadcrumb" is clickable and will zoom into that "Node"
-            - When zoomed, the text of the "Node" is not editable
-            - The description is also visible and editable
-            - The "Children" of the zoomed "Node" will behave the exact same way as if they were root "Nodes"
-            - Clicking the bullet point of a node zooms into it
-            - (DESKTOP ONLY) `Alt+→` zooms into a node, `Alt+←` zooms back out
-                - Most browsers use `Alt+←` to go back in history, so zooms are kept as browser navigation history entries
-                - The URL carries the ID of the zoomed "Node" as a query parameter so it can be directly referenced
-                - If the URL contains a node ID on load, the app zooms into that node automatically after unlock
-                - If the node no longer exists, the parameter is ignored and the root is shown
-            - (DESKTOP ONLY) On zoom, the first child is automatically focused
+        + Hardening ideas
+            - Cycle detection after merge: if a sync merge creates a parent-child cycle, tree traversal hangs forever
+            - `randomId()` uses `Math.random` with only 5 collision retries — large outlines could exhaust retries; consider `crypto.randomUUID()`
+            - `CompressionStream` is not available on older browsers — no feature detection or fallback
+            - Base64 helpers may fail on very large documents (>64K char limit in `String.fromCharCode`) — needs chunked encoding
+            - Document size limits: enforce a strict 2.5MB text limit for both local storage and remote sync. Prevent sync/save if exceeded, and show a visual donut chart indicating percentage usage (e.g. in Options or Status bar).
+            - Timestamp-based sync comparison is unreliable with clock skew — consider version counters or tolerance windows
+            - Merge conflict default silently keeps local and discards server changes when no conflict callback is set
+            - Make startup precedence explicit and user-intent-based: remembered mode should win over incidental signals like leftover local ciphertext or a cached email address
 
-        + INDENT
-            - Each "Node" can be indented and unindented individually
-              `Tab` and `Shift+Tab` are the shortcuts for changing indentation level
-            - On mobile, a swipe right/left gesture is used for indentation
-            - Order will be kept when indenting and unindenting. Take this sequence as an example:
-              `     | INDENT B | INDENT C | UNINDENT B | INDENT B`
-              ``- A  | - A      | - A      | - A        | - A``
-              ``- B  |  - B     |  - B     | - B        |  - B``
-              ``- C  | - C      |  - C     |  - C       |   - C ``
-            - If multi-selection is active, indentation also works as expected
-
-        + DELETE
-            - "Nodes" can be deleted without confirmation when they don't have "Children"
-            - A confirmation is necessary when "Children" exist. Deleting a "Node" also deletes all its "Children"
-            - If multi-selection is active, delete also works as expected
-            - The node is deleted if Backspace is pressed on a node that has no text
-              If there is text, the backspace functions as if `↑` was pressed
-            - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
-
-    + RAW MODE
-        - Direct manipulation of the text is possible in a special "RAW" mode
-        - This document is an example of a raw Virgulas document; by convention it has the extension .vmd
-        - The `+` char means a collapsed node and the `-` char means an expanded node
-        - To actually have the + or - char at the beginning of a line, use the escape char \
-          \\ shows the \ character, \+ and \- show the + and - characters. Escaping is only needed at the beginning of lines
-        - Hierarchy is determined by relative indentation, not absolute column numbers
-          A child node must have more leading whitespace than its parent; the exact amount is not significant
-          Sibling nodes share the same indentation level relative to their parent
-        - All lines that do not begin with + or - (after stripping leading whitespace) are descriptions of the previous node
-          Indentation is not relevant on description lines; empty lines are ignored
-        - When in RAW mode, the app is a plain text editor with a "SAVE" and a "CANCEL" button
-
-    + SEARCH
-        - Search can be done with simple substring matches
-        - Search is activated with `Ctrl+F` on desktop and with a scroll up on mobile
-          The search controls are hidden by default
-        - Search can be dismissed with `Esc` on desktop or with an `X` clear button
-        - When searching, the document becomes read-only
-        - When searching, there is a live highlight of all matched words
-        - When searching, all nodes that match are expanded and visible; non-matching nodes are hidden
-        - (DESKTOP ONLY) Search results are cycled with `Tab` and `Shift+Tab`
-        - When focusing a result by pressing `Enter` or clicking it, the app auto-zooms into the closest
-          collapsed ancestor of the matched node
-        - Search is "smart case": lowercase-only input is case-insensitive; any uppercase letter makes it case-sensitive
-        - A result counter showing current index and total is visible while searching
-
-    + ENCRYPTION
-      All document data is always encrypted, both in localStorage and in the cloud.
-      The passphrase is the single secret the user must know. It is never stored or transmitted.
-
-        - On first use, the app is locked and shows a storage mode switch: Local or Remote
-          In Local mode, the user creates a passphrase (single passphrase field)
-          In Remote mode, the user provides account email, account password, and passphrase
-        - A random PBKDF2 salt is generated once and stored in localStorage under `vmd_salt`
-          This is the only value in localStorage stored in plaintext, as it is required to derive the key
-        - The encryption key is derived from the passphrase and the salt via PBKDF2 (310,000 iterations, SHA-256, 256-bit output)
-          The derived key is never stored — it is re-derived on each unlock
-        - All document data is encrypted with the derived key using AES-GCM with a unique IV per write operation
-          The IV is prepended to the ciphertext and stored together, base64-encoded
-        - The encrypted document is stored in localStorage under `vmd_data`
-        - All other localStorage values are also encrypted with the derived key
-          This prevents XSS attacks from reading any useful data from localStorage. Theme can be the exception
-        - On subsequent visits, the app stays locked and chooses a default mode based on available local data and session state
-            - local encrypted data + no valid session: Local preselected, passphrase unlock
-              Switching to Remote warns that local encrypted data will be lost
-            - expired session with known account: Remote preselected, username prefilled, password + passphrase required
-            - valid remote session with retrievable payload: Remote preselected, encrypted payload is fetched, passphrase required to decrypt
-              Switching to Local warns that this signs out and clears local session state
-        - If the passphrase is forgotten, encrypted data is unrecoverable. There is no cryptographic recovery path.
-          A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
-
-        + QUICK UNLOCK (PASSKEY / PRF)
-          Quick unlock is optional. The user may choose to type their passphrase on every visit instead.
-            - After unlocking with a passphrase, the user is offered the option to register a passkey for that device
-              The offer is a non-blocking banner. "Not now" dismisses it for the session; it reappears on the next unlock
-              If the browser does not support WebAuthn PRF, the offer is silently suppressed
-            - The passkey uses the WebAuthn PRF extension to derive a device-local secret from the authenticator
-              That secret wraps the passphrase and the wrapped value is stored in localStorage under `vmd_prf_wrapped`
-              The credential ID is stored under `vmd_prf_id`
-              The PRF eval input is a fixed, versioned constant — it must never change after deployment
-            - On subsequent visits the user authenticates with their device (fingerprint, Face ID, PIN)
-              The PRF output unwraps the passphrase, the key is re-derived, and the document is decrypted
-              This supports passphrase-less unlock on that device while keeping passphrase fallback
-            - The passphrase remains the fallback if the passkey is unavailable or the device is new
-
-    + ACCOUNTS AND SYNC
-      Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
-      The server stores only ciphertext and cannot decrypt user data.
-
-        - The account password is only used for Supabase Auth — it is unrelated to the encryption passphrase
-          The passphrase is set independently and never sent to any server
-        - To create an account the user provides an email and password for Supabase Auth
-          The PBKDF2 salt already in localStorage is uploaded to the `outlines` table
-          From this point, any device that knows the passphrase can re-derive the same key
-        - Signing in on a new device fetches encrypted payload + salt from the `outlines` table
-          The user enters their passphrase, the key is re-derived, and the document is decrypted
-          If account auth succeeds but decryption fails, the lock screen offers a destructive reset to replace remote encrypted data using a new passphrase
-          The user may then optionally register a passkey for quick unlock on that device
-        - The Supabase session token is encrypted and stored in localStorage under `vmd_session` when quick unlock is active
-          On passphrase-only visits the session token is kept in memory only
-        - The derived key lives only in memory for the duration of the session
-          On page close or sign-out, the key is gone and must be re-derived on the next visit
-
-        + SYNC BEHAVIOUR
-            - After every local write, the app attempts a background upload to the server
-            - If the upload fails it is retried a few times with increasing delays, then abandoned until the next write
-            - On sign-in or page load (when a session exists), the server and local copies are compared by timestamp
-                - If only one side has data, that side wins
-                - If local is newer, it is uploaded silently
-                - If the server is newer, the user is prompted to choose which version to keep
-                  There is no automatic merge — one version wins entirely
-            - The status toolbar shows a sync indicator when the user is signed in
-              Possible states: synced, syncing, error, offline
-
-        + DATABASE SCHEMA
-            - `outlines` table
-                - `user_id` uuid primary key — references auth.users
-                - `salt` text — PBKDF2 salt, base64-encoded, generated on first use and never changed
-                - `data` text — AES-GCM encrypted document, base64-encoded
-                  The first 12 bytes of the decoded value are the IV, the remainder is the ciphertext
-                - `updated_at` timestamptz
-            - Row Level Security enabled
-              All policies restrict read and write to `auth.uid() = user_id`
-
-    + Design considerations
-        - A splash screen is seen on load, and it is removed after the app is completely ready
-        - The text of root nodes has a font-size of 1rem, the second level 0.9rem, and remaining nodes 0.85rem
-          The description has a more faded colour and is 85% of the size of the node text
-        - There is a "Status" toolbar at the bottom of the screen with
-            - "RAW" mode button
-            - "?" button to show all keyboard shortcuts
-            - "Options" button to see all configuration options
-                - Theme toggle
-                - A link to the source repository
-                - A button to purge all local data and start fresh
-            - A sync status indicator, visible only when the user is signed in
-
-        - Google font Inter is the base typography. 1rem = 14px
-          Base: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-          Mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-
-    + Technical considerations
-        - The app is a static website. No server is necessary to use it
-        - The document is stored in localStorage as a single JSON object, always encrypted
-        - Preact and Preact Signals are the UI frameworks, loaded via CDN import map
-        - The Supabase JS client is loaded via CDN
-        - All crypto operations use the native Web Crypto API
-        - Playwright E2E tests cover all the app's features and edge cases
-        - (DESKTOP ONLY) If a querystring parameter ?debug=true exists, debug mode is activated
-            - A panel with internal state information is shown
-            - Console debug messages are printed
-        + CI/CD
-            - The app is hosted on GitHub Pages
-            - On each commit, all E2E tests are run and a preview site is generated
-            - On /preview, a page listing all open PRs is shown with a button to use that preview version
-              E.g. `virgulas.com/preview/my-feature` will serve the code from the `my-feature` branch
-            - On the main branch, the pipeline purges the Cloudflare cache after a successful deploy
-            - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
-- Virgulas TODO
-  - move ? to right, hide on mobile
-  - shortcut to toggle theme
-  - wide mode
-  - bugs
-    - from nothing focused, up should focus last, down should focus first
-    - Enter should create a new node at the end
-      Always show a button at the end of the list "Create a new node"
-    - escape when search is focused, closes the search bar
-  - search is always global. full document
-  - Enter when the next node is empty focuses it
-  - When cursor is at the begining of a non-empty line, enter creates an item before it
-  - escape should unfocus, and remove highlight
-  - npm test is not stopping the server after
+        + Feature ideas
+            - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
+            - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip
+            - Image attachments: support pasting or dragging images directly into nodes, uploading them to Supabase Storage (for Remote mode) or persisting as compressed base64 (for Local/File modes).
+            - Tags (#) and Mentions (@): 
+              - **Autocomplete**: Typing `#` or `@` opens a dropdown suggesting existing tags/users to prevent typos.
+              - **Sidebar/Dashboard**: A dedicated view showing tag frequencies and allowing complex filtering (e.g., show `#todo` AND `@alice`).
+              - **Task Management**: Mentions can act as assignments, rolling up into a "My Tasks" or "Assigned to X" view.
+              - **Collaboration hooks**: If multi-player sync is added, `@user` could trigger email/push notifications.
+            - Multi-document workspaces: allow saving and easily switching between multiple named outlines, rather than forcing everything into a single monolithic document tree.
+            - Drag-and-drop reordering: complement keyboard move with pointer-based reorder (current DnD tests use internal helpers, not real drag events)
+            - Accessibility: ARIA tree roles, screen-reader announcements for focus, collapse, and zoom changes
+            - Virtual scrolling: for outlines with thousands of nodes, render only the visible portion to keep the UI responsive
+            - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
+            - Restore intro walkthrough: add an Options action that reloads INTRO.VMD so users can revisit onboarding later
+            - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
+            - Revamped Debug Panel: expand the `?debug=true` panel to show real-time storage quota usage, sync latency, timestamp of the last successful upload, cryptographic execution times, active signal dependencies, and a live raw JSON view of the currently focused node.
+            - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
