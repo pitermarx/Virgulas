@@ -63,7 +63,7 @@ export function zoomOut(focus) {
     focus.Type.value = 'text'
 }
 
-async function handleKeyDownOnFocusedNode(k, focus) {
+function handleKeyDownOnFocusedNode(k, focus) {
     switch (k) {
         case 'Shift+Enter':
             focus.Type.value = focus.Type.value === 'text' ? 'description' : 'text'
@@ -257,7 +257,7 @@ async function handleKeyDownOnFocusedNode(k, focus) {
     }
 }
 
-async function handleKeyDown(e, focus) {
+function handleKeyDown(e, focus) {
 
     const k =
         e.ctrlKey && e.altKey ? `Ctrl+Alt+${e.key}` :
@@ -288,7 +288,7 @@ async function handleKeyDown(e, focus) {
     }
 
     if (focus.Id.value) {
-        return await handleKeyDownOnFocusedNode(k, focus)
+        return handleKeyDownOnFocusedNode(k, focus)
     }
 
     switch (k) {
@@ -324,8 +324,8 @@ async function handleKeyDown(e, focus) {
 }
 
 export function keydown(focus) {
-    return async function keydownHandler(e) {
-        if (await handleKeyDown(e, focus)) {
+    return function keydownHandler(e) {
+        if (handleKeyDown(e, focus)) {
             e.preventDefault()
             e.stopPropagation()
         }
