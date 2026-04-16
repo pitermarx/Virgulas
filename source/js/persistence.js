@@ -140,7 +140,7 @@ const remoteSync = (function () {
     }
     if (client) return client
     const config = readConfig()
-    client = window.supabase.createClient(config.url, config.key)
+    client = window.supabase.createClient(config.url, config.key, { realtime: { enabled: false } })
     mainTable = client.from('outlines')
     return client
   }
