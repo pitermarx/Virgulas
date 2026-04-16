@@ -122,7 +122,13 @@ test.describe('Keyboard', () => {
 
     // Arrow Down -> Focus Node 2
     await node1Input.press('ArrowDown');
-    await expect(page.locator('.node-content').nth(1).locator('input')).toBeFocused();
+    await expect.poll(async () => {
+      return await page.evaluate(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLInputElement)) return null;
+        return active.value;
+      });
+    }).toBe('Node 2');
   });
 
   test('Tab indents/unindents nodes', async ({ page }) => {
@@ -157,6 +163,48 @@ test.describe('Keyboard', () => {
     const siblingNode2Input = page.locator('.node-content').nth(1).locator('input');
     await expect(siblingNode2Input).toBeVisible();
     await expect(siblingNode2Input).toBeFocused();
+  });
+
+  test('Indent ordering sequence matches SPEC example', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: 'A', text: 'A', children: [] },
+        { id: 'B', text: 'B', children: [] },
+        { id: 'C', text: 'C', children: [] }
+      ]
+    });
+
+    await page.locator('[data-node-id="B"]').click();
+    await page.keyboard.press('Tab'); // INDENT B
+
+    await page.locator('[data-node-id="C"]').click();
+    await page.keyboard.press('Tab'); // INDENT C
+
+    await page.locator('[data-node-id="B"]').click();
+    await page.keyboard.press('Shift+Tab'); // UNINDENT B
+
+    await page.locator('[data-node-id="B"]').click();
+    await page.keyboard.press('Tab'); // INDENT B
+
+    const structure = await page.evaluate(async () => {
+      const outlineModulePath: string = '/js/outline.js';
+      const outline = (await import(outlineModulePath)).default;
+      return {
+        rootChildren: outline.get('root')?.children.peek() || [],
+        aChildren: outline.get('A')?.children.peek() || [],
+        bChildren: outline.get('B')?.children.peek() || [],
+        cParent: outline.get('C')?.parentId || null,
+        bParent: outline.get('B')?.parentId || null
+      };
+    });
+
+    expect(structure.rootChildren).toEqual(['A']);
+    expect(structure.aChildren).toEqual(['B']);
+    expect(structure.bChildren).toEqual(['C']);
+    expect(structure.bParent).toBe('A');
+    expect(structure.cParent).toBe('B');
   });
 
   test('Ctrl+Space toggles collapse on focused node', async ({ page }) => {
@@ -210,6 +258,28 @@ test.describe('Keyboard', () => {
       return text ? text.textContent?.trim() : '';
     });
     expect(remaining).toBe('Node 1');
+  });
+
+  test('Ctrl+Backspace asks confirmation for nodes with children and supports dismiss', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Parent', children: [{ id: '1.1', text: 'Child', children: [] }] },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
+    });
+
+    await page.locator('[data-node-id="1"]').click();
+
+    page.once('dialog', (dialog) => {
+      expect(dialog.message()).toBe('Delete this node and all its children?');
+      dialog.dismiss();
+    });
+    await page.keyboard.press('Control+Backspace');
+
+    await expect(page.locator('[data-node-id="1"]')).toBeVisible();
+    await expect(page.locator('[data-node-id="1.1"]')).toBeVisible();
   });
 
   test('Arrow ↓ when nothing focused goes to first node', async ({ page }) => {

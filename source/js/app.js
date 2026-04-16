@@ -2,11 +2,12 @@ import { html, render } from 'htm/preact';
 import { signal } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen } from "./ui.js";
 import persistence from './persistence.js';
+import { store } from './utils.js';
 
 const splashVisible = signal(true);
 
 // B4: Restore persisted theme preference on load
-const savedTheme = localStorage.getItem('vmd_theme');
+const savedTheme = store.theme.get();
 if (savedTheme) {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }
@@ -71,9 +72,12 @@ async function switchMode(nextMode) {
   }
 
   authMode.value = nextMode;
-  authScenario.value = nextMode === 'local' && !authHasLocalData.value
-    ? 'empty-local'
-    : 'remote-session-expired';
+  authScenario.value = nextMode === 'local'
+    ? (authHasLocalData.value ? 'local-present-no-session' : 'empty-local')
+    : nextMode === 'filesystem'
+      ? 'filesystem-ready'
+      : 'remote-session-expired';
+  persistence.setPreferredMode(nextMode);
   unlockError.value = '';
   canResetRemoteData.value = false;
   password.value = '';
@@ -82,6 +86,7 @@ async function switchMode(nextMode) {
 
 async function submitUnlock(e) {
   e.preventDefault();
+  if (isBusy.value) return;
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
@@ -297,7 +302,7 @@ const OptionsModal = () => {
     const current = document.documentElement.getAttribute('data-theme') || fallback;
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('vmd_theme', next);
+    store.theme.set(next);
   }
 
   function handleLock() {

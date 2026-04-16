@@ -97,4 +97,19 @@ test.describe('Raw Mode', () => {
     const text2 = await page.locator('.node-content').nth(2).innerText();
     expect(text2).toContain('-');
   });
+
+  test('invalid raw save shows error and keeps previous outline', async ({ page }) => {
+    await page.getByRole('button', { name: 'Raw' }).click();
+    const textarea = page.locator('textarea');
+
+    await textarea.fill('Description without node\n- Valid Node');
+    await page.getByRole('button', { name: 'Back to Outline' }).click();
+
+    await expect(page.getByText('Invalid VMD: each description line must belong to a node.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Raw Editor' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.locator('.node-content').nth(0)).toContainText('Item 1');
+    await expect(page.locator('.node-content').nth(1)).toContainText('Item 2');
+  });
 });

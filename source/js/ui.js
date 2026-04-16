@@ -1,9 +1,10 @@
 import { html } from 'htm/preact';
 import { signal } from '@preact/signals';
 import outline from "./outline.js"
+import persistence from './persistence.js';
 import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
-import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches } from './search.js';
+import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -19,6 +20,7 @@ function renderInlineMarkdown(text) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
     return escaped
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/__(.+?)__/g, '<em>$1</em>')
@@ -89,7 +91,7 @@ function NodeDesc({ node }) {
 
     let text = lines.slice(0, 2).join('\n')
     let style = ''
-    if (!text && focusId.value === id) {
+    if (!text && focusId.value === id && isMobile) {
         text = 'Add description...'
         style = fadedText
     }
@@ -271,11 +273,17 @@ function Node({ node, indent = 0 }) {
 
 export const rawMode = signal(false)
 const rawContent = signal('')
+const rawError = signal('')
 
 export function RawEditor() {
     function save() {
-        outline.setRootVMD(rawContent.value)
-        rawMode.value = false
+        rawError.value = ''
+        try {
+            outline.setRootVMD(rawContent.value)
+            rawMode.value = false
+        } catch (error) {
+            rawError.value = String(error?.message || 'Invalid VMD document.')
+        }
     }
     return html`<div class="raw-view">
         <div class="raw-container">
@@ -283,9 +291,13 @@ export function RawEditor() {
                 <h2 class="raw-title">Raw Editor</h2>
                 <div class="raw-toolbar-actions">
                     <button class="btn btn-primary" onClick=${save}>Back to Outline</button>
-                    <button class="btn btn-secondary" onClick=${() => rawMode.value = false}>Cancel</button>
+                    <button class="btn btn-secondary" onClick=${() => {
+            rawError.value = ''
+            rawMode.value = false
+        }}>Cancel</button>
                 </div>
             </div>
+            ${rawError.value ? html`<div class="form-error">${rawError.value}</div>` : null}
             <textarea class="raw-editor"
                 value=${rawContent.value}
                 onInput=${e => rawContent.value = e.currentTarget.value}></textarea>
@@ -297,10 +309,14 @@ export const optionsOpen = signal(false)
 
 export function StatusToolbar() {
     const color = outline.isDirty ? 'var(--color-danger)' : 'var(--color-synced)'
+    const mode = persistence.getMode()
+    const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : 'Local'
+    const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
             <button class="toolbar-btn" onClick=${() => {
+            rawError.value = ''
             rawContent.value = outline.getVMD()
             rawMode.value = true
         }}>Raw</button>
@@ -309,6 +325,8 @@ export function StatusToolbar() {
         <div class="toolbar-brand">
             <button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>
             <span class="sync-dot" style="background-color: ${color};" title="Sync: ${outline.isDirty.value ? 'unsynced' : 'synced'}"></span>
+            <span class="status-mode" title="Current storage mode">${modeLabel}</span>
+            ${mode === 'remote' && remoteIdentity ? html`<span class="status-user" title=${remoteIdentity}>${remoteIdentity}</span>` : null}
             <span class="status-brand">${isMobile ? "V" : "Virgulas"}</span>
         </div>
     </div>`
@@ -328,7 +346,10 @@ export function MainToolbar() {
                 <div class="search-bar-inner">
                     <input placeholder="Search..." ...${focusMe} class="search-input"
                         value=${searchQuery}
-                        onInput=${e => { searchQuery.value = e.currentTarget.value; searchResultIndex.value = 0 }}
+                        onInput=${e => {
+                searchQuery.value = e.currentTarget.value
+                resetSearchNavigation()
+            }}
                         onKeyDown=${e => handleSearchKeyDown(e, focus)} />
                     ${counterText ? html`<span class="search-counter">${counterText}</span>` : null}
                     <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)}>×</button>
@@ -344,7 +365,7 @@ export function MainToolbar() {
 
 function BreadcrumbItem({ item, active }) {
     return html`<span class="breadcrumb-item ${active ? 'active' : ''}" onClick=${() => zoomIn(item.id, focus)}>
-        ${item.parentId ? item.text.peek() : 'Home'}
+        ${item.parentId ? item.text.value : 'Home'}
     </span>`
 }
 
@@ -433,7 +454,12 @@ function SearchNode({ node, indent = 0 }) {
         ? 'background-color: var(--color-search-current);'
         : isMatch ? 'background-color: var(--color-search-match);' : ''
     function clickResult(e) {
+        const zoomTarget = getFirstClosedParent(id)
+        if (!zoomTarget) return
         currentSearchMatchId.value = id
+        zoomIn(zoomTarget, focus)
+        focus.Id.value = id
+        focus.Type.value = 'text'
         e.stopPropagation()
     }
     return html`<div key=${id} class="node" style="font-size: ${fontSize};">

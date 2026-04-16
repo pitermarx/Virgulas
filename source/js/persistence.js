@@ -1,7 +1,11 @@
 import { signal, effect, batch } from '@preact/signals'
 import { encrypt, decrypt, randomId, generateSalt } from "./crypto2.js"
 import outline from "./outline.js"
-import { log } from './utils.js'
+import { log, store } from './utils.js'
+
+function normalizeMode(mode) {
+  return mode === 'local' || mode === 'remote' || mode === 'filesystem' ? mode : null
+}
 
 // ── Filesystem (File System Access API, no encryption) ──────────────────────
 const filesystemStorage = (function () {
@@ -94,6 +98,11 @@ const filesystemStorage = (function () {
       } catch { return null }
     },
 
+    async hasSavedHandle() {
+      const handle = await getSavedHandle()
+      return !!handle
+    },
+
     async write(json) {
       if (!_handle) throw new Error('No file open')
       const writable = await _handle.createWritable()
@@ -122,7 +131,7 @@ const remoteSync = (function () {
 
   function readConfig() {
     try {
-      const raw = localStorage.getItem('supabaseconfig')
+      const raw = store.supabase.get()
       if (!raw) return DEFAULT_CONFIG
       const parsed = JSON.parse(raw)
       const url = parsed.url || parsed.supabaseUrl
@@ -187,7 +196,7 @@ const remoteSync = (function () {
 
 const localEncryptedData = {
   get() {
-    const v = localStorage.getItem('vmd_data_enc')
+    const v = store.data.get()
     if (!v) {
       return { salt: null, data: null }
     }
@@ -199,18 +208,33 @@ const localEncryptedData = {
     return { salt: v.substring(0, idx), data: v.substring(idx + 1) }
   },
   reset() {
-    localStorage.removeItem('vmd_data_enc')
+    store.data.del()
   },
   set(value, salt) {
     if (value && salt) {
-      localStorage.setItem('vmd_data_enc', salt + '|' + value)
+      store.data.set(salt + '|' + value)
     }
     else if (value || salt) {
       throw new Error('Both value and salt are required to set encrypted data')
     }
     else {
-      localStorage.removeItem('vmd_data_enc')
+      store.data.del()
     }
+  }
+}
+
+function rememberMode(mode) {
+  const normalized = normalizeMode(mode)
+  if (!normalized) return
+  store.mode.set(normalized)
+}
+
+function applyHashZoomIfPresent() {
+  const nodeParam = window.location.hash.replace('#', '')
+  if (!nodeParam) return
+  const node = outline.get(nodeParam)
+  if (node) {
+    outline.zoomIn(nodeParam)
   }
 }
 
@@ -303,6 +327,7 @@ async function unlockLocal(code) {
     outline.reset()
     authMode.value = 'local'
     passphrase.value = code
+    rememberMode('local')
     return true
   }
 
@@ -313,14 +338,10 @@ async function unlockLocal(code) {
       authMode.value = 'local'
       passphrase.value = code
       outline.deserialize(json)
-      const nodeParam = window.location.hash.replace('#', '')
-      if (nodeParam) {
-        const node = outline.get(nodeParam)
-        if (node) {
-          outline.zoomIn(nodeParam)
-        }
-      }
+      applyHashZoomIfPresent()
     })
+
+    rememberMode('local')
 
     return true
   }
@@ -337,12 +358,15 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
   if (hasCredentials) {
     await remoteSync.signIn(username.trim(), password)
-    localStorage.setItem('vmd_last_username', username.trim())
+    store.user.set(username.trim())
   }
 
   const user = await remoteSync.getUser()
   if (!user) {
     throw new Error('Could not validate remote session. Please sign in again.')
+  }
+  if (user.email) {
+    store.user.set(user.email)
   }
 
   const remoteData = await remoteSync.read()
@@ -358,6 +382,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
       authMode.value = 'remote'
       passphrase.value = code
     })
+    rememberMode('remote')
     return true
   }
 
@@ -372,8 +397,10 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
       authMode.value = 'remote'
       passphrase.value = code
       outline.deserialize(json)
+      applyHashZoomIfPresent()
     })
     localEncryptedData.set(remoteData.data, remoteSalt)
+    rememberMode('remote')
     return true
   } catch (error) {
     throw parseRemoteDecryptError(error)
@@ -396,6 +423,7 @@ async function unlockFilesystem() {
   if (json && json.trim()) {
     outline.reset()
     outline.setRootVMD(json)
+    applyHashZoomIfPresent()
   } else {
     outline.reset()
     // Write initial empty doc to file
@@ -406,6 +434,7 @@ async function unlockFilesystem() {
     authMode.value = 'filesystem'
     filesystemReady.value = true
   })
+  rememberMode('filesystem')
   return true
 }
 
@@ -429,7 +458,11 @@ export default {
   hasData: () => !!localEncryptedData.get().data,
   isLocked: () => !passphrase.value && !filesystemReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
-  getLastUsername: () => localStorage.getItem('vmd_last_username') || '',
+  getLastUsername: () => store.user.get('') || '',
+  getPreferredMode: () => normalizeMode(store.mode.get(null)),
+  setPreferredMode(mode) {
+    rememberMode(mode)
+  },
   hasSupabase: () => !!window.supabase?.createClient,
   getMode: () => authMode.value,
   getUser: async () => {
@@ -443,7 +476,9 @@ export default {
     const hasLocalData = !!localEncryptedData.get().data
     const hasSupabase = !!window.supabase?.createClient
     const hasFilesystem = filesystemStorage.isSupported()
-    const lastUsername = localStorage.getItem('vmd_last_username') || ''
+    const hasSavedFileHandle = hasFilesystem ? await filesystemStorage.hasSavedHandle() : false
+    const lastUsername = store.user.get('') || ''
+    const preferredMode = normalizeMode(store.mode.get(null))
     let user = null
     let hasRemoteData = false
 
@@ -459,15 +494,42 @@ export default {
       }
     }
 
-    if (user && hasRemoteData) return { mode: 'remote', scenario: 'remote-session-valid', hasLocalData, user, hasSupabase, hasFilesystem, lastUsername }
-    if (hasLocalData) return { mode: 'local', scenario: 'local-present-no-session', hasLocalData, user: null, hasSupabase, hasFilesystem, lastUsername }
-    if (lastUsername) return { mode: 'remote', scenario: 'remote-session-expired', hasLocalData, user: null, hasSupabase, hasFilesystem, lastUsername }
-    return { mode: 'local', scenario: 'empty-local', hasLocalData, user: null, hasSupabase, hasFilesystem, lastUsername }
+    const bootstrapBase = {
+      hasLocalData,
+      hasSupabase,
+      hasFilesystem,
+      hasSavedFileHandle,
+      lastUsername,
+      preferredMode
+    }
+
+    if (preferredMode === 'filesystem' && hasFilesystem) {
+      return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
+    }
+
+    if (preferredMode === 'remote') {
+      if (hasSupabase && user && hasRemoteData) {
+        return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
+      }
+      return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
+    }
+
+    if (preferredMode === 'local') {
+      const scenario = hasLocalData ? 'local-present-no-session' : 'empty-local'
+      return { mode: 'local', scenario, user: null, ...bootstrapBase }
+    }
+
+    if (user && hasRemoteData) return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
+    if (hasSavedFileHandle && hasFilesystem) return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
+    if (hasLocalData) return { mode: 'local', scenario: 'local-present-no-session', user: null, ...bootstrapBase }
+    if (lastUsername) return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
+    return { mode: 'local', scenario: 'empty-local', user: null, ...bootstrapBase }
   },
   clearLocalData: () => localEncryptedData.set(null, null),
   async signUp(email, password) {
     const res = await remoteSync.signUp(email.trim(), password)
-    localStorage.setItem('vmd_last_username', email.trim())
+    store.user.set(email.trim())
+    rememberMode('remote')
     return res
   },
   async resetRemoteData(newPassphrase, options = {}) {
@@ -479,7 +541,7 @@ export default {
     let user = await this.getUser()
     if (!user && username && password) {
       await remoteSync.signIn(username, password)
-      localStorage.setItem('vmd_last_username', username)
+      store.user.set(username)
       user = await this.getUser()
     }
     if (!user) {
@@ -497,6 +559,7 @@ export default {
       authMode.value = 'remote'
       passphrase.value = newPassphrase
     })
+    rememberMode('remote')
     return true
   },
   lock() {
@@ -508,16 +571,19 @@ export default {
     authMode.value = 'remote'
     passphrase.value = ''
     filesystemReady.value = false
+    rememberMode('remote')
   },
   async pickNewFile() {
     const text = await filesystemStorage.pickNewFile()
     if (text && text.trim()) {
       outline.reset()
       outline.setRootVMD(text)
+      applyHashZoomIfPresent()
     } else {
       outline.reset()
       await filesystemStorage.write(outline.getVMD('root'))
     }
+    rememberMode('filesystem')
   },
   reset() {
     outline.reset()
@@ -525,6 +591,8 @@ export default {
     authMode.value = 'local'
     passphrase.value = ''
     filesystemReady.value = false
+    store.mode.del()
+    store.user.del()
     filesystemStorage.clear()
   },
   unlock

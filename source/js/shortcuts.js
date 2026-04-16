@@ -1,6 +1,6 @@
 import outline from "./outline.js"
-import { searchQuery, searchResultIndex, flatMatches, getFirstClosedParent } from './search.js'
-import { log } from './utils.js';
+import { searchQuery, searchResultIndex, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js'
+import { log, store } from './utils.js';
 
 export function handleSearchKeyDown(e, focus) {
     const results = searchQuery.value ? outline.search(searchQuery.value) : null
@@ -18,18 +18,24 @@ export function handleSearchKeyDown(e, focus) {
 
     if (e.key === 'Tab') {
         e.preventDefault()
+        e.stopPropagation()
         cycleNext(e.shiftKey)
     } else if (e.key === 'ArrowDown') {
         e.preventDefault()
+        e.stopPropagation()
         cycleNext(false)
     } else if (e.key === 'ArrowUp') {
         e.preventDefault()
+        e.stopPropagation()
         cycleNext(true)
     } else if (e.key === 'Enter') {
         e.preventDefault()
+        e.stopPropagation()
         if (matches.length > 0 && matches[idx]) {
             const targetId = matches[idx]
-            zoomIn(getFirstClosedParent(targetId), focus)
+            const zoomTarget = getFirstClosedParent(targetId)
+            if (!zoomTarget) return
+            zoomIn(zoomTarget, focus)
             focus.Id.value = targetId
             focus.Type.value = 'text'
         }
@@ -240,9 +246,23 @@ function handleKeyDownOnFocusedNode(k, focus) {
             }
             break;
         case 'Alt+ArrowDown':
+            if (focus.SelectedIds?.value?.length > 0) {
+                const ids = [...focus.SelectedIds.value]
+                for (let i = ids.length - 1; i >= 0; i--) {
+                    outline.moveDown(ids[i])
+                }
+                return true
+            }
             outline.moveDown(focus.Id.value)
             return true
         case 'Alt+ArrowUp':
+            if (focus.SelectedIds?.value?.length > 0) {
+                const ids = [...focus.SelectedIds.value]
+                for (const id of ids) {
+                    outline.moveUp(id)
+                }
+                return true
+            }
             outline.moveUp(focus.Id.value)
             return true
         case 'Alt+ArrowLeft':
@@ -276,7 +296,7 @@ function handleKeyDown(e, focus) {
             const currentTheme = document.documentElement.getAttribute('data-theme') || defaultTheme
             const newTheme = currentTheme === 'light' ? 'dark' : 'light'
             document.documentElement.setAttribute('data-theme', newTheme)
-            localStorage.setItem('vmd_theme', newTheme)
+            store.theme.set(newTheme)
             return true
         case 'Ctrl+Alt+w':
             // Toggle wide mode. norma = .main-content max-width: 800px, wide = max-width: none
@@ -336,9 +356,11 @@ let prevFocusType = {}
 export function toggleSearchMode(focus) {
     if (focus.Type.value === 'search') {
         focus.Type.value = prevFocusType
+        resetSearchNavigation()
     }
     else {
         prevFocusType = focus.Type.value
         focus.Type.value = 'search'
+        resetSearchNavigation()
     }
 }

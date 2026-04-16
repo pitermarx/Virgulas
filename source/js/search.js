@@ -9,6 +9,11 @@ export const searchQuery = signal('')
 export const searchResultIndex = signal(0)
 export const currentSearchMatchId = signal(null)
 
+export function resetSearchNavigation() {
+    searchResultIndex.value = 0
+    currentSearchMatchId.value = null
+}
+
 /** Flatten a nested search-result tree to an array of matching node IDs. */
 export function flatMatches(node) {
     const acc = []
@@ -23,7 +28,9 @@ export function flatMatches(node) {
  * result is clicked or confirmed with Enter.
  */
 export function getFirstClosedParent(id) {
+    if (!id) return null
     const node = outline.get(id)
-    if (!node || !node.open.value || !node.parentId) return node.id
+    if (!node) return null
+    if (!node.open.value || !node.parentId) return node.id
     return getFirstClosedParent(node.parentId)
 }

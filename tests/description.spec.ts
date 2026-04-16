@@ -78,4 +78,24 @@ test.describe('Description', () => {
     await node.click();
     await expect(node).toHaveClass(/node-focused/);
   });
+
+  test('empty descriptions are invisible on desktop until description edit is requested', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{ id: '1', text: 'Node 1', description: '', children: [] }]
+    });
+
+    const node = page.locator('.node-content').first();
+    const description = node.locator('.node-desc-md');
+
+    await expect(description).toHaveText('');
+    await expect(description).not.toContainText('Add description...');
+
+    await node.click();
+    await expect(description).not.toContainText('Add description...');
+
+    await node.locator('input').press('Shift+Enter');
+    await expect(node.locator('textarea')).toBeVisible();
+  });
 });

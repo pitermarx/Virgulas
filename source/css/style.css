@@ -524,6 +524,23 @@ kbd {
   text-transform: uppercase;
 }
 
+.status-mode {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+}
+
+.status-user {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Options section heading ── */
 .options-section-heading {
   font-size: 0.75rem;
@@ -792,6 +809,12 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+@media (max-width: 700px) {
+  .status-user {
+    display: none;
+  }
 }
 
 /* ── Options modal ── */

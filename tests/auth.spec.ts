@@ -140,6 +140,7 @@ test.describe('Authentication', () => {
 
     // Check for main app
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.status-mode')).toHaveText('Local');
 
     // Verify data is stored encrypted
     await expect.poll(async () => {
@@ -230,6 +231,8 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.status-mode')).toHaveText('Remote');
+    await expect(page.locator('.status-user')).toHaveText('existing@virgulas.com');
 
     const storedSalt = await page.evaluate(() => {
       const value = localStorage.getItem('vmd_data_enc');
@@ -388,6 +391,131 @@ test.describe('Authentication', () => {
 
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.node-content').first()).toContainText('Hello World');
+  });
+
+  test('selected unlock mode is remembered across reloads', async ({ page }) => {
+    await installMockSupabase(page);
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.reload();
+    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
+
+    await page.getByRole('button', { name: 'Local' }).click();
+    await page.reload();
+    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+  });
+
+  test('remembered filesystem mode is preselected when supported', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'filesystem');
+    });
+
+    await page.goto('/');
+
+    const fileModeSupported = await page.evaluate(() => typeof (window as any).showOpenFilePicker === 'function');
+    if (!fileModeSupported) {
+      await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+      return;
+    }
+
+    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('File');
+  });
+
+  test('file mode shows unsupported API error when File System Access API is unavailable', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.clear();
+      Object.defineProperty(window, 'showOpenFilePicker', {
+        configurable: true,
+        value: undefined
+      });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'File' }).click();
+    await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
+  });
+
+  test('lock screen still renders when localStorage access throws', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalGetItem = Storage.prototype.getItem;
+      Storage.prototype.getItem = function (key: string) {
+        if (String(key).startsWith('vmd_')) {
+          throw new Error('Storage unavailable');
+        }
+        return originalGetItem.call(this, key);
+      };
+    });
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+  });
+
+  test('rapid double submit only performs one unlock attempt', async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
+    await page.goto('/');
+
+    await page.getByLabel('Create a passphrase').fill('double-submit-pass');
+
+    await page.evaluate(async () => {
+      const persistence = (await import('/js/persistence.js')).default as any;
+      const originalUnlock = persistence.unlock.bind(persistence);
+      let unlockCalls = 0;
+
+      persistence.unlock = async (...args: any[]) => {
+        unlockCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return originalUnlock(...args);
+      };
+
+      (window as any).__unlockCallCount = () => unlockCalls;
+    });
+
+    const unlockButton = page.getByRole('button', { name: 'Unlock' });
+    await Promise.allSettled([unlockButton.click(), unlockButton.click()]);
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    const unlockCalls = await page.evaluate(() => (window as any).__unlockCallCount());
+    expect(unlockCalls).toBe(1);
+  });
+
+  test('remote unlock applies URL hash zoom target', async ({ page }) => {
+    await page.goto('/');
+
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [
+        {
+          id: 'remote-parent',
+          text: 'Remote Parent',
+          children: [{ id: 'remote-child', text: 'Remote Child', children: [] }]
+        }
+      ]
+    });
+
+    await page.evaluate(() => localStorage.clear());
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.goto('about:blank');
+    await page.goto('/#remote-parent');
+
+    const unlockResult = await page.evaluate(async () => {
+      const persistence = (await import('/js/persistence.js')).default as any;
+      const outline = (await import('/js/outline.js')).default;
+      const success = await persistence.unlock('remote-passphrase', { mode: 'remote', trustSession: true });
+      return {
+        success,
+        zoomId: outline.zoomId.value,
+        firstChildId: outline.get('remote-parent')?.children.peek()?.[0] || null
+      };
+    });
+
+    expect(unlockResult.success).toBe(true);
+    expect(unlockResult.zoomId).toBe('remote-parent');
+    expect(unlockResult.firstChildId).toBe('remote-child');
   });
 
 });

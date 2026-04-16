@@ -15,8 +15,8 @@ Virgulas is a local-first browser outliner.
 - Zoom into a node (`Alt+→`) with breadcrumb navigation
   - Zoomed node description is visible and editable with placeholder when empty
   - Zoomed node with no children shows an empty state to create the first child
-- Raw mode editor (`.vmd` format) with Save / Cancel
-- Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, `Enter` zooms to the match; current result highlighted distinctly
+- Raw mode editor (`.vmd` format) with Save / Cancel; invalid VMD saves are rejected with an inline error and no data loss
+- Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly
 - Debug panel (visible with `?debug=true`, shows internal state)
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
@@ -25,6 +25,8 @@ Virgulas is a local-first browser outliner.
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase
+- The last selected storage mode is remembered and preselected on the next visit when available
+- Status toolbar shows the current storage mode; in Remote mode it also shows the signed-in email/username
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
 - Destructive mode switches (clearing local data, signing out) require confirmation
 - Optional cloud sync via Supabase (end-to-end encrypted)

@@ -9,7 +9,11 @@ test.describe('Markdown Rendering', () => {
       children: [
         { id: '1', text: 'Normal Item', children: [] },
         { id: '2', text: '**Bold Item**', children: [] },
-        { id: '3', text: '_Italic Item_', children: [] }
+        { id: '3', text: '_Italic Item_', children: [] },
+        { id: '4', text: '[Virgulas](https://example.com)', children: [] },
+        { id: '5', text: '![Logo](https://example.com/logo.png)', children: [] },
+        { id: '6', text: '`const x = 1`', children: [] },
+        { id: '7', text: '![" onerror="alert(1)](https://x.com)', children: [] }
       ]
     });
   });
@@ -76,5 +80,20 @@ test.describe('Markdown Rendering', () => {
     // Normal Item should be input
     const normalInput = normalNodeWrapper.locator('input');
     await expect(normalInput).toBeVisible();
+  });
+
+  test('Renders links, images, and inline code', async ({ page }) => {
+    await expect(page.locator('a[href="https://example.com"]')).toHaveText('Virgulas');
+    await expect(page.locator('img[src="https://example.com/logo.png"][alt="Logo"]')).toBeVisible();
+    await expect(page.locator('code', { hasText: 'const x = 1' })).toBeVisible();
+  });
+
+  test('Escapes markdown quotes to prevent attribute injection', async ({ page }) => {
+    const image = page.locator('img[src="https://x.com"]');
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute('alt', '" onerror="alert(1)');
+
+    const hasInlineOnError = await image.evaluate((el) => el.hasAttribute('onerror'));
+    expect(hasInlineOnError).toBe(false);
   });
 });

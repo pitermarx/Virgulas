@@ -199,6 +199,31 @@ test.describe('Zoom', () => {
     await expect(newInput).toBeFocused();
   });
 
+  test('breadcrumb text reacts when zoomed node text changes', async ({ page }) => {
+    const parent = page.locator('.node-content').nth(0);
+    await parent.click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    const activeBreadcrumb = page.locator('.breadcrumbs span').nth(1);
+    await expect(activeBreadcrumb).toHaveText('Parent');
+
+    await page.evaluate(async () => {
+      const outline = (await import('/js/outline.js')).default;
+      outline.update('1', { text: 'Parent Renamed' });
+    });
+
+    await expect(activeBreadcrumb).toHaveText('Parent Renamed');
+  });
+
+  test('zoomed node text is not directly editable', async ({ page }) => {
+    const parent = page.locator('.node-content').nth(0);
+    await parent.click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await expect(page.locator('.breadcrumbs span').nth(1)).toHaveText('Parent');
+    await expect(page.locator('input[value="Parent"]')).toHaveCount(0);
+  });
+
   test('pressing Enter in empty zoomed node creates first child', async ({ page }) => {
     // Zoom into 'Sibling' (which has no children)
     const sibling = page.locator('.node-content').nth(2);

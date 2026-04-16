@@ -17,7 +17,7 @@ test.describe('Search', () => {
     });
   });
 
-  test('Search filters nodes and makes read-only', async ({ page }) => {
+  test('Search filters nodes and stays read-only until a result is activated', async ({ page }) => {
     // Check initial state (Divs)
     const nodes = page.locator('.node-content');
     await expect(nodes).toHaveCount(3);
@@ -35,15 +35,12 @@ test.describe('Search', () => {
     await expect(nodes.nth(0)).toContainText('Parent Node');
     await expect(nodes.nth(1)).toContainText('Child Match');
 
-    // Verify Read-Only (no inputs should appear even if clicked)
-    // Click Parent Node
-    await nodes.nth(0).click();
+    // While searching, rendered results are read-only (no editable inputs).
+    await expect(page.locator('.search-results input')).toHaveCount(0);
 
-    // Should still be Div (no input) because readOnly prevents editing
-    await expect(nodes.nth(0).locator('input')).toHaveCount(0);
-
-    // Clear search
-    await searchInput.fill('');
+    // Exit search.
+    await page.keyboard.press('Escape');
+    await expect(searchInput).not.toBeVisible();
 
     // Expect all visible
     await expect(nodes).toHaveCount(3);
@@ -107,6 +104,84 @@ test.describe('Search', () => {
     // Press Shift+Tab -> goes back to 2/2
     await page.keyboard.press('Shift+Tab');
     await expect(page.getByText('2/2')).toBeVisible();
+  });
+
+  test('Enter auto-zooms to the closest collapsed ancestor', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent Node', collapsed: true, children: [
+            { id: '1.1', text: 'Child Match', children: [] }
+          ]
+        },
+        { id: '2', text: 'Unrelated Node', children: [] }
+      ]
+    });
+
+    await page.keyboard.press('Escape');
+    const searchInput = page.getByPlaceholder('Search...');
+    await searchInput.fill('Child Match');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('.node-content')).toHaveCount(1);
+    await expect(page.locator('.node-content').first().locator('input')).toHaveValue('Child Match');
+    await expect(page).toHaveURL(/#1$/);
+  });
+
+  test('Clicking a search result auto-zooms to the closest collapsed ancestor', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent Node', collapsed: true, children: [
+            { id: '1.1', text: 'Child Match', children: [] }
+          ]
+        },
+        { id: '2', text: 'Unrelated Node', children: [] }
+      ]
+    });
+
+    await page.keyboard.press('Escape');
+    const searchInput = page.getByPlaceholder('Search...');
+    await searchInput.fill('Child Match');
+    await page.getByText('Child Match', { exact: true }).click();
+
+    await expect(page.locator('.node-content')).toHaveCount(1);
+    await expect(page.locator('.node-content').first().locator('input')).toHaveValue('Child Match');
+    await expect(page).toHaveURL(/#1$/);
+  });
+
+  test('changing search query resets current highlighted match to the new result set', async ({ page }) => {
+    await page.keyboard.press('Escape');
+    const searchInput = page.getByPlaceholder('Search...');
+    await searchInput.fill('Node');
+
+    await page.keyboard.press('Tab');
+
+    const selectedBeforeChange = await page.evaluate(async () => {
+      const { currentSearchMatchId } = await import('/js/search.js');
+      return currentSearchMatchId.value;
+    });
+    expect(selectedBeforeChange).toBe('2');
+
+    await searchInput.fill('Child Match');
+
+    const currentMatchId = await page.evaluate(async () => {
+      const { currentSearchMatchId } = await import('/js/search.js');
+      return currentSearchMatchId.value;
+    });
+    expect(currentMatchId).toBe('1.1');
+  });
+
+  test('getFirstClosedParent is null-safe for deleted or missing nodes', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { getFirstClosedParent } = await import('/js/search.js');
+      return getFirstClosedParent('missing-node-id');
+    });
+    expect(result).toBeNull();
   });
 
   test('Escape toggles search closed', async ({ page }) => {

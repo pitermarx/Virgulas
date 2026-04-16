@@ -207,44 +207,34 @@
       - The raw account password is never stored locally; "remember login" means session persistence or account prefill, not password persistence
       - First-ever visitors still start in transient Memory mode with INTRO.VMD
     + Bugs to fix
-      - The "add description" should only appear on mobile
-      - Markdown attribute injection: `renderInlineMarkdown` escapes `<`, `>`, `&` but not `"`, allowing attribute breakout in image alt text and link href
-        E.g. `![" onerror="alert(1)](https://x.com)` produces a working XSS payload
-        Fix: also escape `"` to `&quot;` before applying markdown regex replacements
-      - Breadcrumb text not reactive: `BreadcrumbItem` reads `item.text.peek()` instead of `item.text.value`, so breadcrumbs don't update when a node's text changes
-      - localStorage operations not wrapped in try-catch: private browsing mode or a full quota causes unhandled exceptions and silent data loss
-      - Race condition in unlock: rapid double-click on Unlock can fire two concurrent `persistence.unlock()` calls with unpredictable state results
-      - Raw mode save with invalid VMD: `setRootVMD` has no error handling — malformed raw input silently corrupts the document
-      - Search match ID not reset on query change: after clicking a search result and then changing the query, the highlight stays on the old (now irrelevant) node
-      - `getFirstClosedParent` crashes if the target node was deleted between search and click — needs a null guard
-      - Startup bootstrap does not remember the last used mode: it infers from local encrypted data or last remote username, which can reopen the wrong mode for returning users
-      - File mode already remembers the last file handle in IndexedDB, but startup ignores that signal and never preselects/resumes File mode automatically
-      - Switching to File mode sets the auth scenario to `remote-session-expired`, which is the wrong internal state and risks later UI drift
-      - refresh with a hash on the URL does not restore the zoom state
       - sync conflict resolution is non-existent
+    + Questions to clarify
+      - In-memory mode bootstrap
+        - Should first-ever visitors always bypass the lock screen, or only when no persistent data signal exists at all?
+        - Should INTRO.VMD be embedded as a JS constant, or stored as a plain `.vmd` asset loaded at runtime?
+      - Resume-last-mode precedence
+        - If Memory mode is introduced, does remembered persistent mode override Memory on subsequent visits, or only after explicit upgrade action?
+        - If remembered File mode cannot be reopened (permission denied/invalid handle), should startup stay in File with an inline error, or fallback to Local?
+      - Sync conflict resolution UX
+        - Should per-node conflict resolution be blocking (modal) or non-blocking (side panel/work queue)?
+        - What should happen if the user closes the resolver with unresolved conflicts: block save/sync, keep local, or keep remote?
+      - File mode filename visibility
+        - Should status/lock/options show full path or basename only?
+        - After switching away from File mode, should the last filename remain visible as context or be hidden?
     + Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
-      - File mode: no tests for open, save, debounced write, IndexedDB handle persistence, or unsupported-browser error
-      - Startup resume matrix: no tests for first-ever Memory mode, remembered Local mode, remembered Remote mode, remembered File mode, or the fallback path when a remembered file/session can no longer be reopened
-      - Search auto-zoom: pressing Enter or clicking a search result should zoom into the closest collapsed ancestor — untested
-      - Multi-select cross-level prevention: SPEC says multi-select is single-level only — no test verifies the constraint
-      - Multi-select implicit children: selecting a parent should implicitly select its children — untested
-      - Multi-select move: Alt+Up/Down with an active multi-selection — untested
-      - Markdown links, images, and inline code rendering — only bold and italic are tested
+      - File mode: no tests for open, save, debounced write, or IndexedDB handle persistence in supported browsers (unsupported-browser path is covered)
+      - Startup resume matrix: no tests for first-ever Memory mode, and no tests for fallback behavior when remembered File/Remote sessions cannot be resumed
       - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
       - Sync status indicator state transitions (synced, syncing, error, offline) — untested
-      - Delete confirmation dialog for nodes with children — dialog content and Escape-to-dismiss not verified
-      - Zoomed node text is non-editable per SPEC — never asserted
-      - Indent ordering sequence from SPEC ("INDENT B | INDENT C | UNINDENT B | INDENT B") — no E2E test
-      - Description rendering: empty descriptions should be invisible (not just hidden) — untested
     + Hardening ideas
       - Cycle detection after merge: if a sync merge creates a parent-child cycle, tree traversal hangs forever
+      - localStorage helper sprawl: multiple read/write wrappers should be consolidated in `utils.js` behind a concise API (`store.<name>.get|set|del`)
       - `randomId()` uses `Math.random` with only 5 collision retries — large outlines could exhaust retries; consider `crypto.randomUUID()`
       - `CompressionStream` is not available on older browsers — no feature detection or fallback
       - Base64 helpers may fail on very large documents (>64K char limit in `String.fromCharCode`) — needs chunked encoding
       - Document size limits: enforce a strict 2.5MB text limit for both local storage and remote sync. Prevent sync/save if exceeded, and show a visual donut chart indicating percentage usage (e.g. in Options or Status bar).
       - Timestamp-based sync comparison is unreliable with clock skew — consider version counters or tolerance windows
-      - Merge conflict default silently keeps local and discards server changes when no conflict callback is set
       - Make startup precedence explicit and user-intent-based: remembered mode should win over incidental signals like leftover local ciphertext or a cached email address
     + Feature ideas
       - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.

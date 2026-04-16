@@ -638,39 +638,57 @@ const OutlineModel = createModel(() => {
     function setRootVMD(text) {
         const root = map.get(zoomId.value)
         if (!root) return
-        // Delete all existing children of the zoom root
-        const existingChildren = [...root.children.peek()]
-        existingChildren.forEach(id => deleteNode(id, true))
-        const stack = [{ node: root, indentLen: -1 }]
-        const lines = text.split(/\r?\n/)
-        for (const line of lines) {
-            if (!line.trim()) continue
-            const match = line.match(/^(\s*)([-+])\s?(.*)$/)
-            if (match) {
-                const [, indentStr, bullet, nodeText] = match
-                const indentLen = indentStr.length
-                const nodeData = { text: nodeText.trim(), open: bullet === '-' }
-                // Pop stack until we find the right parent level
-                while (stack.length > 1 && stack[stack.length - 1].indentLen >= indentLen) {
-                    stack.pop()
-                }
-                const parentNode = stack[stack.length - 1].node
-                const prevSiblingId = parentNode.children.peek().slice(-1)[0]
-                const newNode = addChild(parentNode.id, nodeData, prevSiblingId)
-                stack.push({ node: newNode, indentLen })
-            } else {
-                // Description line
-                const lastNode = stack[stack.length - 1].node
-                if (lastNode !== root) {
-                    const existing = lastNode.description.peek()
-                    const trimmed = line.trim()
-                    if (trimmed) {
-                        lastNode.description.value = existing ? `${existing}\n${trimmed}` : trimmed
+        const serializedBeforeChange = serialize()
+        try {
+            // Delete all existing children of the zoom root
+            const existingChildren = [...root.children.peek()]
+            existingChildren.forEach(id => deleteNode(id, true))
+
+            const stack = [{ node: root, indentLen: -1 }]
+            const lines = text.split(/\r?\n/)
+            for (const line of lines) {
+                if (!line.trim()) continue
+
+                const match = line.match(/^(\s*)([-+])\s?(.*)$/)
+                if (match) {
+                    const [, indentStr, bullet, nodeText] = match
+                    const indentLen = indentStr.length
+                    const nodeData = { text: nodeText.trim(), open: bullet === '-' }
+
+                    // Pop stack until we find the right parent level
+                    while (stack.length > 1 && stack[stack.length - 1].indentLen >= indentLen) {
+                        stack.pop()
                     }
+
+                    const parentNode = stack[stack.length - 1].node
+                    const prevSiblingId = parentNode.children.peek().slice(-1)[0]
+                    const newNode = addChild(parentNode.id, nodeData, prevSiblingId)
+                    stack.push({ node: newNode, indentLen })
+                    continue
+                }
+
+                // Description lines must belong to a previously parsed node.
+                if (stack.length === 1) {
+                    throw new Error('Description line must follow a node bullet.')
+                }
+
+                const lastNode = stack[stack.length - 1].node
+                const existing = lastNode.description.peek()
+                let trimmed = line.trim()
+                if (trimmed.startsWith('\\-') || trimmed.startsWith('\\+') || trimmed.startsWith('\\\\')) {
+                    trimmed = trimmed.substring(1)
+                }
+                if (trimmed) {
+                    lastNode.description.value = existing ? `${existing}\n${trimmed}` : trimmed
                 }
             }
+
+            dirtyWrites.value = dirtyWrites.peek() + 1
+        } catch (error) {
+            log('Error parsing root VMD, reverting to previous state', error)
+            deserialize(serializedBeforeChange)
+            throw new Error('Invalid VMD: each description line must belong to a node.')
         }
-        dirtyWrites.value = dirtyWrites.peek() + 1
     }
 
     return {
