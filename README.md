@@ -9,7 +9,7 @@ Virgulas is a local-first browser outliner.
 - Optional description field per node (auto-growing textarea when editing)
 - Node collapse/expand (button click or `Ctrl+Space`)
 - Multi-select with `Shift+↑/↓`; `Delete`, `Tab`/`Shift+Tab`, `Ctrl+Space` all work on selection
-- Node indent/unindent (`Tab` / `Shift+Tab`)
+- Node indent/unindent (`Tab` / `Shift+Tab`), plus mobile swipe right/left to indent/outdent
 - Node move (`Alt+↑` / `Alt+↓`)
 - Node delete (`Ctrl+Backspace` or `Backspace` on empty node); `Backspace` on non-empty node deletes the character (normal text editor behaviour)
 - Zoom into a node (`Alt+→`) with breadcrumb navigation

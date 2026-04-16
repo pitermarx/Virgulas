@@ -37,6 +37,24 @@ function renderInlineMarkdown(text) {
 
 const hasClosedChildrenBullet = html`<circle cx="25" cy="25" r="10" fill="none" stroke="currentColor" stroke-width="5"/>`
 const NormalBullet = html`<circle cx="25" cy="25" r="10" fill="currentColor"/>`
+const SWIPE_MIN_DISTANCE_PX = 56
+const SWIPE_AXIS_RATIO = 1.35
+
+function firstTouch(list) {
+    if (!list || list.length === 0) return null
+    return list[0]
+}
+
+function isSwipeGesture(deltaX, deltaY) {
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+    return absX >= SWIPE_MIN_DISTANCE_PX && absX > absY * SWIPE_AXIS_RATIO
+}
+
+function isSwipeBlockedTarget(target) {
+    if (!(target instanceof Element)) return false
+    return !!target.closest('input, textarea, a, button, .bullet, .collapse-toggle')
+}
 
 function NodeDesc({ node }) {
     const { description, id } = node.value // subscribe to changes on node
@@ -119,6 +137,18 @@ function NodeBody({ node }) {
     const hasChildren = children.length > 0
     const isFocused = focusId.value === id
     const isSelected = selectedIds.value.includes(id)
+    const swipeState = {
+        active: false,
+        startX: 0,
+        startY: 0
+    }
+
+    function resetSwipeState() {
+        swipeState.active = false
+        swipeState.startX = 0
+        swipeState.startY = 0
+    }
+
     function focusTextIfOnlyClickedThisElement(e) {
         if (e.target === e.currentTarget) {
             selectedIds.value = []
@@ -127,8 +157,84 @@ function NodeBody({ node }) {
             e.stopPropagation()
         }
     }
+
+    function handleTouchStart(e) {
+        if (!isMobile) return
+        if (isSwipeBlockedTarget(e.target)) {
+            resetSwipeState()
+            return
+        }
+        if (e.touches?.length !== 1) {
+            resetSwipeState()
+            return
+        }
+
+        const touch = firstTouch(e.touches)
+        if (!touch) {
+            resetSwipeState()
+            return
+        }
+
+        swipeState.active = true
+        swipeState.startX = touch.clientX
+        swipeState.startY = touch.clientY
+    }
+
+    function handleTouchMove(e) {
+        if (!isMobile || !swipeState.active) return
+
+        const touch = firstTouch(e.touches)
+        if (!touch) {
+            resetSwipeState()
+            return
+        }
+
+        const deltaX = touch.clientX - swipeState.startX
+        const deltaY = touch.clientY - swipeState.startY
+        // Prevent accidental page panning only when movement is clearly horizontal.
+        if (Math.abs(deltaX) > 12 && Math.abs(deltaX) > Math.abs(deltaY) * 1.15) {
+            e.preventDefault()
+        }
+    }
+
+    function handleTouchEnd(e) {
+        if (!isMobile || !swipeState.active) return
+
+        const touch = firstTouch(e.changedTouches) || firstTouch(e.touches)
+        const startX = swipeState.startX
+        const startY = swipeState.startY
+        resetSwipeState()
+        if (!touch) return
+
+        const deltaX = touch.clientX - startX
+        const deltaY = touch.clientY - startY
+        if (!isSwipeGesture(deltaX, deltaY)) return
+
+        e.preventDefault()
+        e.stopPropagation()
+
+        selectedIds.value = []
+        focusId.value = id
+        focusType.value = 'text'
+
+        if (deltaX > 0) {
+            outline.indent(id)
+        } else {
+            outline.outdent(id)
+        }
+    }
+
+    function handleTouchCancel() {
+        resetSwipeState()
+    }
+
     return html`
-    <div class="node-content ${isFocused ? 'node-focused' : ''} ${isSelected ? 'node-selected' : ''}" data-node-id=${id} onClick=${focusTextIfOnlyClickedThisElement}>
+    <div class="node-content ${isFocused ? 'node-focused' : ''} ${isSelected ? 'node-selected' : ''}" data-node-id=${id}
+        onClick=${focusTextIfOnlyClickedThisElement}
+        onTouchStart=${handleTouchStart}
+        onTouchMove=${handleTouchMove}
+        onTouchEnd=${handleTouchEnd}
+        onTouchCancel=${handleTouchCancel}>
         <span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
             <svg viewBox="0 0 50 50">
                 ${hasChildren && !open ? hasClosedChildrenBullet : NormalBullet}
