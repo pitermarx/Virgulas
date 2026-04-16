@@ -9,7 +9,7 @@ const focusId = signal(null)
 const focusType = signal(null)
 const selectedIds = signal([])
 const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
-const focusMe = { ref: (el) => el && el.focus() }
+const focusMe = { ref: (el) => el && setTimeout(() => el.focus(), 0) }
 
 const fadedText = "color: var(--color-text-muted);"
 
