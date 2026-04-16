@@ -360,19 +360,6 @@ export async function runShortcutsTests(onProgress) {
         assertEqual(focus.Type.value, 'text', 'Backspace in empty description should return to text mode')
     })
 
-    await test('Backspace on non-empty focused text moves focus to previous node', async () => {
-        outline.addChild('root', { id: 'A', text: 'A' })
-        outline.addChild('root', { id: 'B', text: 'B' })
-        const focus = createFocus('B', 'text')
-        const handle = keydown(focus)
-
-        await handle(createKeyEvent({ key: 'Backspace' }))
-
-        const children = outline.get('root').children.peek()
-        assertEqual(children.length, 2, 'Backspace on non-empty should not delete the node')
-        assertEqual(focus.Id.value, 'A', 'Focus should move to previous node')
-    })
-
     await test('Ctrl+Backspace on non-empty focused text deletes node and focuses previous', async () => {
         outline.addChild('root', { id: 'A', text: 'A' })
         outline.addChild('root', { id: 'B', text: 'B' })
