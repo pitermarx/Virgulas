@@ -221,6 +221,7 @@
       - File mode already remembers the last file handle in IndexedDB, but startup ignores that signal and never preselects/resumes File mode automatically
       - Switching to File mode sets the auth scenario to `remote-session-expired`, which is the wrong internal state and risks later UI drift
       - refresh with a hash on the URL does not restore the zoom state
+      - sync conflict resolution is non-existent
     + Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
       - File mode: no tests for open, save, debounced write, IndexedDB handle persistence, or unsupported-browser error
@@ -263,3 +264,4 @@
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
       - Revamped Debug Panel: expand the `?debug=true` panel to show real-time storage quota usage, sync latency, timestamp of the last successful upload, cryptographic execution times, active signal dependencies, and a live raw JSON view of the currently focused node.
       - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
+      - on file mode, show name of file in the status bar, on the lock screen (last chosen file) and on the options popup

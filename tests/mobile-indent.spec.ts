@@ -2,6 +2,8 @@ import { test, expect, type Page } from './test';
 import { setupDoc } from './test';
 
 test.describe('Mobile swipe indentation', () => {
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support Playwright mobile contexts (isMobile).');
+
     test.use({
         viewport: { width: 390, height: 844 },
         isMobile: true,
