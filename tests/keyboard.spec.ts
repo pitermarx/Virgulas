@@ -241,4 +241,18 @@ test.describe('Keyboard', () => {
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('.node-content').nth(1).locator('input')).toBeFocused();
   });
+
+  test('Shortcuts popup includes multi-select and search shortcuts', async ({ page }) => {
+    await page.getByRole('button', { name: '?' }).click();
+
+    const shortcutsModal = page.locator('#keyboard-shortcuts');
+    await expect(shortcutsModal).toBeVisible();
+
+    await expect(shortcutsModal).toContainText('Ctrl+Backspace');
+    await expect(shortcutsModal).toContainText('Shift+↑/↓');
+    await expect(shortcutsModal).toContainText('Delete selected nodes');
+    await expect(shortcutsModal).toContainText('Clear focus / toggle search');
+    await expect(shortcutsModal).toContainText('Search: Tab / Shift+Tab or ↑ / ↓');
+    await expect(shortcutsModal).toContainText('Search: Enter');
+  });
 });

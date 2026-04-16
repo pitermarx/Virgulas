@@ -67,7 +67,7 @@
       - The node is deleted if Backspace is pressed on a node that has no text
         If there is text, the backspace functions as if `↑` was pressed
       - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
-  + STORAGE MODES
+  - STORAGE MODES
     Three storage modes are selectable on the lock screen.
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
     - Remote — document encrypted and synced to the cloud via Supabase.
@@ -79,12 +79,12 @@
     - Expired session with known account → Remote preselected, email prefilled, password + passphrase required
     - Valid remote session → Remote preselected, only passphrase needed
       Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
-  + FILE MODE
-    - The user opens or creates a `.vmd` file on disk using the browser File System Access API
-    - The document is read and written as plain VMD text — no encryption, no JSON wrapper
-    - The last opened file handle is remembered in IndexedDB; on next visit the app tries to reopen it silently
-    - Every write is debounced: changes are flushed to disk ~1 second after the last edit
-    - If the API is not supported in the current browser, the File mode button shows an error
+    + FILE MODE
+      - The user opens or creates a `.vmd` file on disk using the browser File System Access API
+      - The document is read and written as plain VMD text — no encryption, no JSON wrapper
+      - The last opened file handle is remembered in IndexedDB; on next visit the app tries to reopen it silently
+      - Every write is debounced: changes are flushed to disk ~1 second after the last edit
+      - If the API is not supported in the current browser, the File mode button shows an error
   + RAW MODE
     - Direct manipulation of the text is possible in a special "RAW" mode
     - This document is an example of a raw Virgulas document; by convention it has the extension .vmd
@@ -187,84 +187,79 @@
         E.g. `virgulas.com/preview/my-feature` will serve the code from the `my-feature` branch
       - On the main branch, the pipeline purges the Cloudflare cache after a successful deploy
       - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
-
-    + ROADMAP
-      Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
-
-        + In-memory mode (zero-friction first use)
-          The app should be usable immediately on first load with no lock screen, no mode selection, and no passphrase.
-            - On the very first visit, the default storage mode is "Memory" — the document lives only in JS memory and is lost on navigation or tab close
-            - On first visit, the app loads a built-in introductory document (INTRO.VMD) that walks the user through every feature
-              The intro document is embedded in the source code; it is not fetched from a server
-            - The lock screen is still reachable: an "Upgrade storage" action (e.g. in Options) lets the user switch to Local, Remote, or File mode at any time
-              Switching from Memory to another mode preserves the current document — no data loss on upgrade
-            - The status toolbar shows a clear indicator that the document is ephemeral (e.g. "In memory — not saved")
-            - The Memory mode has no encryption, no passphrase, and no sync — it is purely transient
-
-        + Resume last used mode
-          After the user explicitly chooses a persistent mode once, that choice should become the startup default on later visits.
-            - Local: show the local unlock screen directly and ask only for the encryption passphrase
-            - Remote: remember the account identity and, when the auth session can be refreshed, ask only for the encryption passphrase
-            - Remote fallback: if the auth session cannot be refreshed, prefill the remembered email and ask for sign-in again
-            - File: try to reopen the same file handle immediately; if permission is gone or the handle is invalid, fall back to the file picker
-            - The raw account password is never stored locally; "remember login" means session persistence or account prefill, not password persistence
-            - First-ever visitors still start in transient Memory mode with INTRO.VMD
-
-        + Bugs to fix
-            - Markdown attribute injection: `renderInlineMarkdown` escapes `<`, `>`, `&` but not `"`, allowing attribute breakout in image alt text and link href
-              E.g. `![" onerror="alert(1)](https://x.com)` produces a working XSS payload
-              Fix: also escape `"` to `&quot;` before applying markdown regex replacements
-            - Breadcrumb text not reactive: `BreadcrumbItem` reads `item.text.peek()` instead of `item.text.value`, so breadcrumbs don't update when a node's text changes
-            - localStorage operations not wrapped in try-catch: private browsing mode or a full quota causes unhandled exceptions and silent data loss
-            - Race condition in unlock: rapid double-click on Unlock can fire two concurrent `persistence.unlock()` calls with unpredictable state results
-            - Raw mode save with invalid VMD: `setRootVMD` has no error handling — malformed raw input silently corrupts the document
-            - Search match ID not reset on query change: after clicking a search result and then changing the query, the highlight stays on the old (now irrelevant) node
-            - `getFirstClosedParent` crashes if the target node was deleted between search and click — needs a null guard
-            - Startup bootstrap does not remember the last used mode: it infers from local encrypted data or last remote username, which can reopen the wrong mode for returning users
-            - File mode already remembers the last file handle in IndexedDB, but startup ignores that signal and never preselects/resumes File mode automatically
-            - Switching to File mode sets the auth scenario to `remote-session-expired`, which is the wrong internal state and risks later UI drift
-
-        + Missing test coverage
-          Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
-            - File mode: no tests for open, save, debounced write, IndexedDB handle persistence, or unsupported-browser error
-            - Startup resume matrix: no tests for first-ever Memory mode, remembered Local mode, remembered Remote mode, remembered File mode, or the fallback path when a remembered file/session can no longer be reopened
-            - Search auto-zoom: pressing Enter or clicking a search result should zoom into the closest collapsed ancestor — untested
-            - Multi-select cross-level prevention: SPEC says multi-select is single-level only — no test verifies the constraint
-            - Multi-select implicit children: selecting a parent should implicitly select its children — untested
-            - Multi-select move: Alt+Up/Down with an active multi-selection — untested
-            - Markdown links, images, and inline code rendering — only bold and italic are tested
-            - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
-            - Sync status indicator state transitions (synced, syncing, error, offline) — untested
-            - Delete confirmation dialog for nodes with children — dialog content and Escape-to-dismiss not verified
-            - Zoomed node text is non-editable per SPEC — never asserted
-            - Indent ordering sequence from SPEC ("INDENT B | INDENT C | UNINDENT B | INDENT B") — no E2E test
-            - Description rendering: empty descriptions should be invisible (not just hidden) — untested
-
-        + Hardening ideas
-            - Cycle detection after merge: if a sync merge creates a parent-child cycle, tree traversal hangs forever
-            - `randomId()` uses `Math.random` with only 5 collision retries — large outlines could exhaust retries; consider `crypto.randomUUID()`
-            - `CompressionStream` is not available on older browsers — no feature detection or fallback
-            - Base64 helpers may fail on very large documents (>64K char limit in `String.fromCharCode`) — needs chunked encoding
-            - Document size limits: enforce a strict 2.5MB text limit for both local storage and remote sync. Prevent sync/save if exceeded, and show a visual donut chart indicating percentage usage (e.g. in Options or Status bar).
-            - Timestamp-based sync comparison is unreliable with clock skew — consider version counters or tolerance windows
-            - Merge conflict default silently keeps local and discards server changes when no conflict callback is set
-            - Make startup precedence explicit and user-intent-based: remembered mode should win over incidental signals like leftover local ciphertext or a cached email address
-
-        + Feature ideas
-            - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
-            - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip
-            - Image attachments: support pasting or dragging images directly into nodes, uploading them to Supabase Storage (for Remote mode) or persisting as compressed base64 (for Local/File modes).
-            - Tags (#) and Mentions (@): 
-              - **Autocomplete**: Typing `#` or `@` opens a dropdown suggesting existing tags/users to prevent typos.
-              - **Sidebar/Dashboard**: A dedicated view showing tag frequencies and allowing complex filtering (e.g., show `#todo` AND `@alice`).
-              - **Task Management**: Mentions can act as assignments, rolling up into a "My Tasks" or "Assigned to X" view.
-              - **Collaboration hooks**: If multi-player sync is added, `@user` could trigger email/push notifications.
-            - Multi-document workspaces: allow saving and easily switching between multiple named outlines, rather than forcing everything into a single monolithic document tree.
-            - Drag-and-drop reordering: complement keyboard move with pointer-based reorder (current DnD tests use internal helpers, not real drag events)
-            - Accessibility: ARIA tree roles, screen-reader announcements for focus, collapse, and zoom changes
-            - Virtual scrolling: for outlines with thousands of nodes, render only the visible portion to keep the UI responsive
-            - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
-            - Restore intro walkthrough: add an Options action that reloads INTRO.VMD so users can revisit onboarding later
-            - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
-            - Revamped Debug Panel: expand the `?debug=true` panel to show real-time storage quota usage, sync latency, timestamp of the last successful upload, cryptographic execution times, active signal dependencies, and a live raw JSON view of the currently focused node.
-            - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
+  + ROADMAP
+    Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
+    + In-memory mode (zero-friction first use)
+      The app should be usable immediately on first load with no lock screen, no mode selection, and no passphrase.
+      - On the very first visit, the default storage mode is "Memory" — the document lives only in JS memory and is lost on navigation or tab close
+      - On first visit, the app loads a built-in introductory document (INTRO.VMD) that walks the user through every feature
+        The intro document is embedded in the source code; it is not fetched from a server
+      - The lock screen is still reachable: an "Upgrade storage" action (e.g. in Options) lets the user switch to Local, Remote, or File mode at any time
+        Switching from Memory to another mode preserves the current document — no data loss on upgrade
+      - The status toolbar shows a clear indicator that the document is ephemeral (e.g. "In memory — not saved")
+      - The Memory mode has no encryption, no passphrase, and no sync — it is purely transient
+    + Resume last used mode
+      After the user explicitly chooses a persistent mode once, that choice should become the startup default on later visits.
+      - Local: show the local unlock screen directly and ask only for the encryption passphrase
+      - Remote: remember the account identity and, when the auth session can be refreshed, ask only for the encryption passphrase
+      - Remote fallback: if the auth session cannot be refreshed, prefill the remembered email and ask for sign-in again
+      - File: try to reopen the same file handle immediately; if permission is gone or the handle is invalid, fall back to the file picker
+      - The raw account password is never stored locally; "remember login" means session persistence or account prefill, not password persistence
+      - First-ever visitors still start in transient Memory mode with INTRO.VMD
+    + Bugs to fix
+      - The "add description" should only appear on mobile
+      - Markdown attribute injection: `renderInlineMarkdown` escapes `<`, `>`, `&` but not `"`, allowing attribute breakout in image alt text and link href
+        E.g. `![" onerror="alert(1)](https://x.com)` produces a working XSS payload
+        Fix: also escape `"` to `&quot;` before applying markdown regex replacements
+      - Breadcrumb text not reactive: `BreadcrumbItem` reads `item.text.peek()` instead of `item.text.value`, so breadcrumbs don't update when a node's text changes
+      - localStorage operations not wrapped in try-catch: private browsing mode or a full quota causes unhandled exceptions and silent data loss
+      - Race condition in unlock: rapid double-click on Unlock can fire two concurrent `persistence.unlock()` calls with unpredictable state results
+      - Raw mode save with invalid VMD: `setRootVMD` has no error handling — malformed raw input silently corrupts the document
+      - Search match ID not reset on query change: after clicking a search result and then changing the query, the highlight stays on the old (now irrelevant) node
+      - `getFirstClosedParent` crashes if the target node was deleted between search and click — needs a null guard
+      - Startup bootstrap does not remember the last used mode: it infers from local encrypted data or last remote username, which can reopen the wrong mode for returning users
+      - File mode already remembers the last file handle in IndexedDB, but startup ignores that signal and never preselects/resumes File mode automatically
+      - Switching to File mode sets the auth scenario to `remote-session-expired`, which is the wrong internal state and risks later UI drift
+      - refresh with a hash on the URL does not restore the zoom state
+    + Missing test coverage
+      Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
+      - File mode: no tests for open, save, debounced write, IndexedDB handle persistence, or unsupported-browser error
+      - Startup resume matrix: no tests for first-ever Memory mode, remembered Local mode, remembered Remote mode, remembered File mode, or the fallback path when a remembered file/session can no longer be reopened
+      - Search auto-zoom: pressing Enter or clicking a search result should zoom into the closest collapsed ancestor — untested
+      - Multi-select cross-level prevention: SPEC says multi-select is single-level only — no test verifies the constraint
+      - Multi-select implicit children: selecting a parent should implicitly select its children — untested
+      - Multi-select move: Alt+Up/Down with an active multi-selection — untested
+      - Markdown links, images, and inline code rendering — only bold and italic are tested
+      - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
+      - Sync status indicator state transitions (synced, syncing, error, offline) — untested
+      - Delete confirmation dialog for nodes with children — dialog content and Escape-to-dismiss not verified
+      - Zoomed node text is non-editable per SPEC — never asserted
+      - Indent ordering sequence from SPEC ("INDENT B | INDENT C | UNINDENT B | INDENT B") — no E2E test
+      - Description rendering: empty descriptions should be invisible (not just hidden) — untested
+    + Hardening ideas
+      - Cycle detection after merge: if a sync merge creates a parent-child cycle, tree traversal hangs forever
+      - `randomId()` uses `Math.random` with only 5 collision retries — large outlines could exhaust retries; consider `crypto.randomUUID()`
+      - `CompressionStream` is not available on older browsers — no feature detection or fallback
+      - Base64 helpers may fail on very large documents (>64K char limit in `String.fromCharCode`) — needs chunked encoding
+      - Document size limits: enforce a strict 2.5MB text limit for both local storage and remote sync. Prevent sync/save if exceeded, and show a visual donut chart indicating percentage usage (e.g. in Options or Status bar).
+      - Timestamp-based sync comparison is unreliable with clock skew — consider version counters or tolerance windows
+      - Merge conflict default silently keeps local and discards server changes when no conflict callback is set
+      - Make startup precedence explicit and user-intent-based: remembered mode should win over incidental signals like leftover local ciphertext or a cached email address
+    + Feature ideas
+      - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
+      - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip
+      - Image attachments: support pasting or dragging images directly into nodes, uploading them to Supabase Storage (for Remote mode) or persisting as compressed base64 (for Local/File modes).
+      - Tags (#) and Mentions (@):
+        - **Autocomplete**: Typing `#` or `@` opens a dropdown suggesting existing tags/users to prevent typos.
+        - **Sidebar/Dashboard**: A dedicated view showing tag frequencies and allowing complex filtering (e.g., show `#todo` AND `@alice`).
+        - **Task Management**: Mentions can act as assignments, rolling up into a "My Tasks" or "Assigned to X" view.
+        - **Collaboration hooks**: If multi-player sync is added, `@user` could trigger email/push notifications.
+      - Multi-document workspaces: allow saving and easily switching between multiple named outlines, rather than forcing everything into a single monolithic document tree.
+      - Drag-and-drop reordering: complement keyboard move with pointer-based reorder (current DnD tests use internal helpers, not real drag events)
+      - Accessibility: ARIA tree roles, screen-reader announcements for focus, collapse, and zoom changes
+      - Virtual scrolling: for outlines with thousands of nodes, render only the visible portion to keep the UI responsive
+      - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
+      - Restore intro walkthrough: add an Options action that reloads INTRO.VMD so users can revisit onboarding later
+      - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
+      - Revamped Debug Panel: expand the `?debug=true` panel to show real-time storage quota usage, sync latency, timestamp of the last successful upload, cryptographic execution times, active signal dependencies, and a live raw JSON view of the currently focused node.
+      - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
