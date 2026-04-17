@@ -68,17 +68,32 @@
         If there is text, the backspace functions as if `↑` was pressed
       - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
   - STORAGE MODES
-    Three storage modes are selectable on the lock screen.
+    Four storage modes are available. The most appropriate one is selected automatically on each visit.
+    - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
+      Default on the very first visit (no localStorage data, no remembered mode).
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
     - Remote — document encrypted and synced to the cloud via Supabase.
       Account email, account password, and passphrase are required.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
-      The lock screen pre-selects the most appropriate mode on each visit:
-    - Local encrypted data present, no valid session → Local preselected, passphrase required
-    - Expired session with known account → Remote preselected, email prefilled, password + passphrase required
-    - Valid remote session → Remote preselected, only passphrase needed
-      Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
+    The startup mode is determined as follows:
+    - No remembered mode and no existing data signals → Memory mode, INTRO.VMD loaded
+    - Remembered mode is Local, local data present → Local unlock screen
+    - Remembered mode is Local, no local data → Local unlock screen (create passphrase)
+    - Remembered mode is Remote, valid session → Remote unlock screen (passphrase only)
+    - Remembered mode is Remote, expired session → Remote unlock screen (email prefilled)
+    - Remembered mode is File, valid handle → File reopened silently; if permission denied → file picker
+    - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
+    Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
+    The Options panel action label and confirm text are mode-specific so users understand what is and is not lost.
+    + MEMORY MODE
+      - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
+        INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
+      - The status toolbar shows "In memory — not saved" instead of the mode label and sync dot
+      - Raw mode is hidden (nothing to save)
+      - Options shows an "Upgrade storage…" button that lets the user switch to Local, Remote, or File
+        Switching from Memory requires confirmation (data loss warning) and shows the lock screen
+      - Purge action in Memory mode reloads the intro document (returns to the initial memory state)
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
@@ -189,32 +204,9 @@
       - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
   + ROADMAP
     Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
-    + In-memory mode (zero-friction first use)
-      The app should be usable immediately on first load with no lock screen, no mode selection, and no passphrase.
-      - On the very first visit, the default storage mode is "Memory" — the document lives only in JS memory and is lost on navigation or tab close
-      - On first visit, the app loads a built-in introductory document (INTRO.VMD) that walks the user through every feature
-        The intro document is embedded in the source code; it is not fetched from a server
-      - The lock screen is still reachable: an "Upgrade storage" action (e.g. in Options) lets the user switch to Local, Remote, or File mode at any time
-        Switching from Memory to another mode preserves the current document — no data loss on upgrade
-      - The status toolbar shows a clear indicator that the document is ephemeral (e.g. "In memory — not saved")
-      - The Memory mode has no encryption, no passphrase, and no sync — it is purely transient
-    + Resume last used mode
-      After the user explicitly chooses a persistent mode once, that choice should become the startup default on later visits.
-      - Local: show the local unlock screen directly and ask only for the encryption passphrase
-      - Remote: remember the account identity and, when the auth session can be refreshed, ask only for the encryption passphrase
-      - Remote fallback: if the auth session cannot be refreshed, prefill the remembered email and ask for sign-in again
-      - File: try to reopen the same file handle immediately; if permission is gone or the handle is invalid, fall back to the file picker
-      - The raw account password is never stored locally; "remember login" means session persistence or account prefill, not password persistence
-      - First-ever visitors still start in transient Memory mode with INTRO.VMD
     + Bugs to fix
       - sync conflict resolution is non-existent
     + Questions to clarify
-      - In-memory mode bootstrap
-        - Should first-ever visitors always bypass the lock screen, or only when no persistent data signal exists at all?
-        - Should INTRO.VMD be embedded as a JS constant, or stored as a plain `.vmd` asset loaded at runtime?
-      - Resume-last-mode precedence
-        - If Memory mode is introduced, does remembered persistent mode override Memory on subsequent visits, or only after explicit upgrade action?
-        - If remembered File mode cannot be reopened (permission denied/invalid handle), should startup stay in File with an inline error, or fallback to Local?
       - Sync conflict resolution UX
         - Should per-node conflict resolution be blocking (modal) or non-blocking (side panel/work queue)?
         - What should happen if the user closes the resolver with unresolved conflicts: block save/sync, keep local, or keep remote?
@@ -224,18 +216,8 @@
     + Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
       - File mode: no tests for open, save, debounced write, or IndexedDB handle persistence in supported browsers (unsupported-browser path is covered)
-      - Startup resume matrix: no tests for first-ever Memory mode, and no tests for fallback behavior when remembered File/Remote sessions cannot be resumed
       - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
       - Sync status indicator state transitions (synced, syncing, error, offline) — untested
-    + Hardening ideas
-      - Cycle detection after merge: if a sync merge creates a parent-child cycle, tree traversal hangs forever
-      - localStorage helper sprawl: multiple read/write wrappers should be consolidated in `utils.js` behind a concise API (`store.<name>.get|set|del`)
-      - `randomId()` uses `Math.random` with only 5 collision retries — large outlines could exhaust retries; consider `crypto.randomUUID()`
-      - `CompressionStream` is not available on older browsers — no feature detection or fallback
-      - Base64 helpers may fail on very large documents (>64K char limit in `String.fromCharCode`) — needs chunked encoding
-      - Document size limits: enforce a strict 2.5MB text limit for both local storage and remote sync. Prevent sync/save if exceeded, and show a visual donut chart indicating percentage usage (e.g. in Options or Status bar).
-      - Timestamp-based sync comparison is unreliable with clock skew — consider version counters or tolerance windows
-      - Make startup precedence explicit and user-intent-based: remembered mode should win over incidental signals like leftover local ciphertext or a cached email address
     + Feature ideas
       - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
       - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip

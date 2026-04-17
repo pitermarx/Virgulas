@@ -541,6 +541,14 @@ kbd {
   white-space: nowrap;
 }
 
+.status-memory-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--color-text-faint);
+  font-style: italic;
+}
+
 /* ── Options section heading ── */
 .options-section-heading {
   font-size: 0.75rem;
