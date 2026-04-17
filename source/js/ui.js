@@ -71,6 +71,8 @@ function NodeDesc({ node }) {
     if (focusId.value === id && focusType.value === 'description') {
         function onBlur() {
             setTimeout(() => {
+                const activeEl = document.activeElement
+                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
                 if (focusId.value === id && focusType.value === 'description') {
                     focusId.value = null
                     focusType.value = null
@@ -105,6 +107,10 @@ function NodeText({ node }) {
     if (focusId.value === id && focusType.value === 'text') {
         function onBlur() {
             setTimeout(() => {
+                // If the node was remounted (e.g. after outdent), a new input for the same
+                // node may already hold browser focus — don't clear the signal in that case.
+                const activeEl = document.activeElement
+                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
                 if (focusId.value === id && focusType.value === 'text') {
                     focusId.value = null
                     focusType.value = null
