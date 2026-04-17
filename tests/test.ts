@@ -71,6 +71,8 @@ export async function seedEncryptedDoc(
         const salt = btoa(String.fromCharCode(...saltBytes));
         const encrypted = await encrypt(json, passphrase, salt);
         localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+        // Mark local as the remembered mode so the app shows the lock screen
+        localStorage.setItem('vmd_last_mode', 'local');
     }, { json, passphrase });
 }
 

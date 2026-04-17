@@ -4,7 +4,7 @@ import outline from "./outline.js"
 import { log, store } from './utils.js'
 
 function normalizeMode(mode) {
-  return mode === 'local' || mode === 'remote' || mode === 'filesystem' ? mode : null
+  return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
 }
 
 // ── Filesystem (File System Access API, no encryption) ──────────────────────
@@ -241,13 +241,20 @@ function applyHashZoomIfPresent() {
 const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
+const memoryReady = signal(false)
 
 let lastTimeoutId = null
 effect(() => {
   const version = outline.version.value // subscribe to changes on doc
   const passphraseValue = passphrase.value // subscribe to changes on passphrase
   const fsReady = filesystemReady.value   // subscribe for filesystem mode
+  const _memReady = memoryReady.value     // subscribe for memory mode
   const mode = authMode.value
+
+  // Memory mode: no persistence at all
+  if (mode === 'memory') {
+    return // skip all saves
+  }
 
   // Filesystem mode: plain VMD text, no encryption
   if (mode === 'filesystem' && fsReady) {
@@ -407,6 +414,27 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 }
 
+async function unlockMemory() {
+  let introText = null
+  try {
+    const resp = await fetch('/intro.vmd')
+    if (resp.ok) {
+      introText = await resp.text()
+    }
+  } catch { /* ignore — start with empty doc */ }
+
+  outline.reset()
+  if (introText && introText.trim()) {
+    outline.setRootVMD(introText)
+  }
+
+  batch(() => {
+    authMode.value = 'memory'
+    memoryReady.value = true
+  })
+  return true
+}
+
 async function unlockFilesystem() {
   // Try to reopen the last file silently first
   let json = await filesystemStorage.tryReopen()
@@ -440,6 +468,9 @@ async function unlockFilesystem() {
 
 async function unlock(code, options = {}) {
   const mode = options.mode || 'local'
+  if (mode === 'memory') {
+    return unlockMemory()
+  }
   if (mode === 'filesystem') {
     return unlockFilesystem()
   }
@@ -456,7 +487,8 @@ async function unlock(code, options = {}) {
 
 export default {
   hasData: () => !!localEncryptedData.get().data,
-  isLocked: () => !passphrase.value && !filesystemReady.value,
+  isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
+  isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
   getLastUsername: () => store.user.get('') || '',
   getPreferredMode: () => normalizeMode(store.mode.get(null)),
@@ -503,8 +535,24 @@ export default {
       preferredMode
     }
 
+    // No remembered mode → check for data signals; if none exist, start in memory mode
+    if (!preferredMode) {
+      // Respect existing committed SPEC fallbacks for returning users who have data
+      if (user && hasRemoteData) return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
+      if (hasSavedFileHandle && hasFilesystem) return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
+      if (hasLocalData) return { mode: 'local', scenario: 'local-present-no-session', user: null, ...bootstrapBase }
+      if (lastUsername) return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
+      // True first-ever visitor: no mode remembered and no data signals → memory mode
+      return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
+    }
+
     if (preferredMode === 'filesystem' && hasFilesystem) {
       return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
+    }
+
+    if (preferredMode === 'filesystem') {
+      // filesystem preferred but API unavailable — fall back to lock screen for local
+      return { mode: 'local', scenario: hasLocalData ? 'local-present-no-session' : 'empty-local', user: null, ...bootstrapBase }
     }
 
     if (preferredMode === 'remote') {
@@ -519,11 +567,8 @@ export default {
       return { mode: 'local', scenario, user: null, ...bootstrapBase }
     }
 
-    if (user && hasRemoteData) return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
-    if (hasSavedFileHandle && hasFilesystem) return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
-    if (hasLocalData) return { mode: 'local', scenario: 'local-present-no-session', user: null, ...bootstrapBase }
-    if (lastUsername) return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
-    return { mode: 'local', scenario: 'empty-local', user: null, ...bootstrapBase }
+    // Unknown stored mode value — start fresh in memory
+    return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
   },
   clearLocalData: () => localEncryptedData.set(null, null),
   async signUp(email, password) {
@@ -565,6 +610,7 @@ export default {
   lock() {
     passphrase.value = ''
     filesystemReady.value = false
+    memoryReady.value = false
   },
   async signOut() {
     await remoteSync.signOut()
@@ -591,6 +637,7 @@ export default {
     authMode.value = 'local'
     passphrase.value = ''
     filesystemReady.value = false
+    memoryReady.value = false
     store.mode.del()
     store.user.del()
     filesystemStorage.clear()

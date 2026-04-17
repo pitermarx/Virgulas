@@ -38,6 +38,12 @@ async function initAuthState() {
   authHasFilesystem.value = bootstrap.hasFilesystem || false;
   username.value = bootstrap.lastUsername || '';
   authUser.value = bootstrap.user || null;
+
+  // Memory mode: skip the lock screen entirely
+  if (bootstrap.mode === 'memory') {
+    await persistence.unlock('', { mode: 'memory' });
+    document.body.setAttribute('data-main-view', 'rendered');
+  }
 }
 
 setTimeout(async () => {
@@ -51,6 +57,14 @@ async function switchMode(nextMode) {
   if (nextMode === 'filesystem' && !persistence.hasFilesystem()) {
     unlockError.value = 'File System Access API is not supported in this browser.';
     return;
+  }
+
+  if (authMode.value === 'memory') {
+    // Switching away from memory always discards the in-memory doc
+    const confirmed = confirm('Switching storage mode will discard the current in-memory document. Continue?');
+    if (!confirmed) return;
+    persistence.lock();
+    document.body.removeAttribute('data-main-view');
   }
 
   if (authMode.value === 'local' && nextMode !== 'local' && authHasLocalData.value) {
@@ -324,19 +338,37 @@ const OptionsModal = () => {
     }
   }
 
+  async function handleUpgradeStorage() {
+    optionsOpen.value = false;
+    const confirmed = confirm('Switching to a persistent storage mode will discard the current in-memory document. Continue?');
+    if (!confirmed) return;
+    persistence.lock();
+    document.body.removeAttribute('data-main-view');
+    authMode.value = 'local';
+    authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
+    unlockError.value = '';
+    unlockMessage.value = '';
+  }
+
   async function handleChangeFile() {
     optionsOpen.value = false;
     await persistence.pickNewFile();
   }
 
   async function handlePurge() {
-    if (!confirm('Delete all local data and sign out? This cannot be undone.')) return;
+    const purgeLabel = currentMode === 'remote'
+      ? 'Clear browser session and sign out? Your remote data on the server is unaffected.'
+      : currentMode === 'filesystem'
+        ? 'Clear the remembered file handle and local session? Your .vmd file on disk is unaffected.'
+        : 'Delete locally encrypted data? This cannot be undone.';
+    if (!confirm(purgeLabel)) return;
     optionsOpen.value = false;
     persistence.reset();
     authHasLocalData.value = false;
     authUser.value = null;
-    authMode.value = 'local';
-    authScenario.value = 'empty-local';
+    // Reload into memory mode so the intro appears
+    await persistence.unlock('', { mode: 'memory' });
+    document.body.setAttribute('data-main-view', 'rendered');
   }
 
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
@@ -357,6 +389,11 @@ const OptionsModal = () => {
           <div class="options-row">
             <a href=${REPO_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Source repository ↗</a>
           </div>
+          ${currentMode === 'memory' && html`
+            <div class="options-row">
+              <button class="btn btn-secondary" onClick=${handleUpgradeStorage}>Upgrade storage…</button>
+            </div>
+          `}
           ${currentMode === 'remote' && html`
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${handleSignOut} disabled=${isBusy.value}>Sign out</button>
@@ -373,7 +410,9 @@ const OptionsModal = () => {
             </div>
           `}
           <div class="options-row options-row-danger">
-            <button class="btn btn-danger" onClick=${handlePurge}>Purge all local data</button>
+            <button class="btn btn-danger" onClick=${handlePurge}>
+              ${currentMode === 'remote' ? 'Sign out & clear session' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
+            </button>
           </div>
         </div>
       </div>

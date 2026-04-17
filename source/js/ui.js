@@ -71,6 +71,8 @@ function NodeDesc({ node }) {
     if (focusId.value === id && focusType.value === 'description') {
         function onBlur() {
             setTimeout(() => {
+                const activeEl = document.activeElement
+                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
                 if (focusId.value === id && focusType.value === 'description') {
                     focusId.value = null
                     focusType.value = null
@@ -105,6 +107,10 @@ function NodeText({ node }) {
     if (focusId.value === id && focusType.value === 'text') {
         function onBlur() {
             setTimeout(() => {
+                // If the node was remounted (e.g. after outdent), a new input for the same
+                // node may already hold browser focus — don't clear the signal in that case.
+                const activeEl = document.activeElement
+                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
                 if (focusId.value === id && focusType.value === 'text') {
                     focusId.value = null
                     focusType.value = null
@@ -310,22 +316,25 @@ export const optionsOpen = signal(false)
 export function StatusToolbar() {
     const color = outline.isDirty ? 'var(--color-danger)' : 'var(--color-synced)'
     const mode = persistence.getMode()
-    const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : 'Local'
+    const isMemory = mode === 'memory'
+    const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : isMemory ? 'Memory' : 'Local'
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
-            <button class="toolbar-btn" onClick=${() => {
+            ${!isMemory && html`<button class="toolbar-btn" onClick=${() => {
             rawError.value = ''
             rawContent.value = outline.getVMD()
             rawMode.value = true
-        }}>Raw</button>
+        }}>Raw</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>
         <div class="toolbar-brand">
             <button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>
-            <span class="sync-dot" style="background-color: ${color};" title="Sync: ${outline.isDirty.value ? 'unsynced' : 'synced'}"></span>
-            <span class="status-mode" title="Current storage mode">${modeLabel}</span>
+            ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${outline.isDirty.value ? 'unsynced' : 'synced'}"></span>`}
+            ${isMemory
+            ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
+            : html`<span class="status-mode" title="Current storage mode">${modeLabel}</span>`}
             ${mode === 'remote' && remoteIdentity ? html`<span class="status-user" title=${remoteIdentity}>${remoteIdentity}</span>` : null}
             <span class="status-brand">${isMobile ? "V" : "Virgulas"}</span>
         </div>

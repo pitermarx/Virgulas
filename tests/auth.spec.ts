@@ -120,13 +120,17 @@ const seedEncryptedLocalDoc = async (
     const salt = btoa(String.fromCharCode(...saltBytes));
     const encrypted = await encrypt(json, passphrase, salt);
     localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+    localStorage.setItem('vmd_last_mode', 'local');
   }, { passphrase, doc });
 };
 
 test.describe('Authentication', () => {
   test('first run flow: set passphrase', async ({ page }) => {
-    // Clear localStorage to simulate first run
-    await page.addInitScript(() => localStorage.clear());
+    // Simulate a user who chose local mode before but has no data yet
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await page.goto('/');
 
     // Check for "Set Passphrase" screen
@@ -149,7 +153,10 @@ test.describe('Authentication', () => {
   });
 
   test('remote mode requires username password and passphrase before unlock', async ({ page }) => {
-    await page.addInitScript(() => localStorage.clear());
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await page.goto('/');
 
     await page.getByRole('button', { name: 'Remote' }).click();
@@ -220,7 +227,10 @@ test.describe('Authentication', () => {
       ]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
 
@@ -336,7 +346,10 @@ test.describe('Authentication', () => {
 
   test('login screen can sign up with mocked sync', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await installMockSupabase(page);
     await page.reload();
 
@@ -351,7 +364,10 @@ test.describe('Authentication', () => {
 
   test('login screen shows auth provider errors in remote mode', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await installMockSupabase(page, { authErrorMessage: 'Invalid login credentials' });
     await page.reload();
 
@@ -373,7 +389,10 @@ test.describe('Authentication', () => {
       children: []
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
 
@@ -396,7 +415,10 @@ test.describe('Authentication', () => {
   test('selected unlock mode is remembered across reloads', async ({ page }) => {
     await installMockSupabase(page);
     await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await page.reload();
 
     await page.getByRole('button', { name: 'Remote' }).click();
@@ -428,6 +450,7 @@ test.describe('Authentication', () => {
   test('file mode shows unsupported API error when File System Access API is unavailable', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
       Object.defineProperty(window, 'showOpenFilePicker', {
         configurable: true,
         value: undefined
@@ -451,11 +474,16 @@ test.describe('Authentication', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+    // When localStorage is broken, the app falls back gracefully to memory mode
+    await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+    await expect(page.locator('#app')).toBeVisible();
   });
 
   test('rapid double submit only performs one unlock attempt', async ({ page }) => {
-    await page.addInitScript(() => localStorage.clear());
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
     await page.goto('/');
 
     await page.getByLabel('Create a passphrase').fill('double-submit-pass');

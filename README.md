@@ -25,7 +25,13 @@ Virgulas is a local-first browser outliner.
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase
-- The last selected storage mode is remembered and preselected on the next visit when available
+- **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
+  - The document lives only in JS memory and is lost when the tab is closed or reloaded
+  - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature
+  - The status bar shows an *In memory — not saved* badge
+  - Raw mode is hidden (no document to save)
+  - **Options → Upgrade storage…** lets the user switch to a persistent mode at any time (data loss warning shown)
+  - Once the user unlocks any persistent mode, that choice is remembered and shown as the default on the next visit
 - Status toolbar shows the current storage mode; in Remote mode it also shows the signed-in email/username
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
 - Destructive mode switches (clearing local data, signing out) require confirmation

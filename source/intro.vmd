@@ -1,0 +1,48 @@
+- Welcome to Virgulas!
+  Virgulas is a local-first browser outliner — an infinite tree of editable nodes.
+- This intro lives only in memory. Your changes here are not saved.
+  Open **Options → Upgrade storage** to keep your data permanently.
+  - Click any node to focus it and start editing.
+    Press **Enter** to create a new node below.
+    Press **Escape** to stop editing and return to navigation mode.
+  - Text supports **bold**, __italic__, `monospace`, and [links](https://virgulas.com)
+    Markdown is rendered when not editing — click to see the raw text
+  - Each node can also have a description (this is one!)
+    Press `Shift+Enter` while editing to toggle between the node title and its description
+    The description is hidden when empty and shows only the first 2 lines when not editing
+- Organising your outline
+  - Indent and unindent nodes with `Tab` / `Shift+Tab`
+  - Move nodes up and down with `Alt+↑` / `Alt+↓`
+  - Collapse and expand children with `Ctrl+Space` or the ▶/▼ button at the end of each line
+    Or use the shortcut `Ctrl+Space`
+  + Collapsed node example
+    - Child A
+    - Child B
+    - Child C
+- Zoom
+  Click the ● bullet of any node to zoom into it — its children become the new root view.
+  
+  - A breadcrumb at the top shows your location in the tree; click any segment to zoom back out.
+    On desktop, use **Alt+→** to zoom in and **Alt+←** to zoom out.
+- Multi-select
+  Focus a node, then hold **Shift** and press **↑** or **↓** to extend the selection
+  to other nodes at the same indentation level.
+  - Multi-selected nodes can be moved, indented, or deleted all at once.
++ Search
+  Press **Escape** when no node is focused to open the search bar.
+  - Non-matching nodes are hidden; matching text is highlighted.
+  - Use **Tab** / **Shift+Tab** to cycle through results.
+  - Press **Enter** or click a result to zoom into the closest ancestor of the match.
+  - Press **Escape** again to dismiss search.
+- Raw mode
+  Click **Raw** in the bottom toolbar to edit the outline as plain VMD text (Virgulas MarkDown).
+  Lines starting with `-` are expanded nodes; `+` are collapsed nodes.
+  - Indentation determines hierarchy — a child just needs more leading space than its parent.
+- Keyboard shortcuts
+  See the full list of shortcuts with the **?** button in the bottom toolbar.
+- Storage options
+  This document is stored only in memory and will be lost when you close this tab.
+  Open **Options → Upgrade storage** to switch to a persistent mode:
+  - **Local** — document encrypted in your browser with a passphrase you choose
+  - **Remote** — encrypted and synced to the cloud (requires a free account)
+  - **File** — saved as a plain `.vmd` file on your computer (no passphrase needed)
