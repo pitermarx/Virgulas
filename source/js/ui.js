@@ -314,11 +314,21 @@ export function RawEditor() {
 export const optionsOpen = signal(false)
 
 export function StatusToolbar() {
-    const color = outline.isDirty ? 'var(--color-danger)' : 'var(--color-synced)'
     const mode = persistence.getMode()
     const isMemory = mode === 'memory'
     const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : isMemory ? 'Memory' : 'Local'
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
+    const syncState = mode === 'remote'
+        ? persistence.syncStatus.value
+        : (outline.isDirty.value ? 'unsynced' : 'synced')
+    const dotColors = {
+        synced: 'var(--color-synced)',
+        syncing: 'var(--color-syncing)',
+        error: 'var(--color-danger)',
+        offline: 'var(--color-offline)',
+        unsynced: 'var(--color-danger)'
+    }
+    const color = dotColors[syncState] || 'var(--color-danger)'
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
@@ -331,7 +341,7 @@ export function StatusToolbar() {
         </div>
         <div class="toolbar-brand">
             <button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>
-            ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${outline.isDirty.value ? 'unsynced' : 'synced'}"></span>`}
+            ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
             : html`<span class="status-mode" title="Current storage mode">${modeLabel}</span>`}

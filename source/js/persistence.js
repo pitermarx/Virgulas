@@ -242,6 +242,19 @@ const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
+export const syncStatus = signal('synced') // 'synced' | 'syncing' | 'error' | 'offline'
+
+async function retryWithBackoff(fn, maxRetries = 3) {
+  const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (i === maxRetries) throw err
+      await new Promise(r => setTimeout(r, baseMs * Math.pow(2, i)))
+    }
+  }
+}
 
 let lastTimeoutId = null
 effect(() => {
@@ -297,10 +310,15 @@ effect(() => {
       }
       localEncryptedData.set(encrypted, saltValue)
       if (mode === 'remote') {
+        syncStatus.value = 'syncing'
         try {
-          await remoteSync.upsert(encrypted, saltValue)
+          await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue))
+          if (lastTimeoutId === timeoutId) syncStatus.value = 'synced'
         } catch (syncError) {
-          console.error('[Persistence] Remote sync upload failed:', syncError)
+          console.error('[Persistence] Remote sync upload failed after retries:', syncError)
+          if (lastTimeoutId === timeoutId) {
+            syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+          }
         }
       }
       log('[Persistence] Saved encrypted doc v' + version + ' length=', encrypted.length)
@@ -607,6 +625,7 @@ export default {
     rememberMode('remote')
     return true
   },
+  syncStatus,
   lock() {
     passphrase.value = ''
     filesystemReady.value = false
