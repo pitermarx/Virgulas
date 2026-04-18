@@ -80,6 +80,25 @@ test.describe('Multi-select', () => {
     await expect(page.locator('.node-content')).toHaveCount(2);
   });
 
+  test('Ctrl+Space expands all when all selected nodes are already collapsed', async ({ page }) => {
+    await setupWithChildren(page);
+    // Collapse both parents using the toggle button on each
+    await page.locator('.node-content').nth(0).hover();
+    await page.locator('.node-content').nth(0).locator('.collapse-toggle').click();
+    await page.locator('.node-content').nth(1).hover();
+    await page.locator('.node-content').nth(1).locator('.collapse-toggle').click();
+    // Both children hidden — only 2 nodes visible
+    await expect(page.locator('.node-content')).toHaveCount(2);
+
+    // Select both collapsed parents
+    await page.locator('.node-content').nth(0).click();
+    await page.keyboard.press('Shift+ArrowDown');
+
+    // Ctrl+Space with all collapsed → should expand both
+    await page.keyboard.press('Control+ ');
+    await expect(page.locator('.node-content')).toHaveCount(4);
+  });
+
   test('Shift selection does not cross indentation levels', async ({ page }) => {
     await setupWithChildren(page);
     await page.locator('.node-content').nth(1).click(); // Child 1
