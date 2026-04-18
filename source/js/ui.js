@@ -221,10 +221,6 @@ function NodeBody({ node }) {
         e.preventDefault()
         e.stopPropagation()
 
-        selectedIds.value = []
-        focusId.value = id
-        focusType.value = 'text'
-
         if (deltaX > 0) {
             outline.indent(id)
         } else {
@@ -340,7 +336,7 @@ export function StatusToolbar() {
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>
         <div class="toolbar-brand">
-            <button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>
+            ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
@@ -444,7 +440,7 @@ export function Outline() {
     }
 
     const children = root.children.value.map(outline.get).filter(c => c)
-    if (children.length === 0 && root.parentId) {
+    if (children.length === 0) {
         function createFirstNode() {
             const n = outline.addChild(root.id, { text: '' })
             focusId.value = n.id

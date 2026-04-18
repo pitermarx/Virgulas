@@ -132,8 +132,8 @@ function handleKeyDownOnFocusedNode(k, focus) {
             if (focus.Type.value === 'text') {
                 const focusedNode = outline.get(focus.Id.value)
                 let n
-                // If the focused node has children, add a new child. 
-                if (focusedNode.children.value.length > 0) {
+                // If the focused node has children and is expanded, add a new child.
+                if (focusedNode.children.value.length > 0 && focusedNode.open.value) {
                     n = outline.addChild(focus.Id.value, { text: '' }, false)
                 }
                 // Otherwise, add a sibling node

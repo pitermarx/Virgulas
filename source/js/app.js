@@ -204,6 +204,11 @@ async function submitResetRemoteData() {
   }
 }
 
+async function continueInMemory() {
+  await persistence.unlock('', { mode: 'memory' });
+  document.body.setAttribute('data-main-view', 'rendered');
+}
+
 const LockScreen = () => {
   const mode = authMode.value;
   const isFilesystem = mode === 'filesystem';
@@ -299,6 +304,12 @@ const LockScreen = () => {
           </button>
         </div>
       `}
+
+      <div class="auth-memory-skip">
+        <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
+          Skip — continue in memory
+        </button>
+      </div>
     </div>
   `;
 };

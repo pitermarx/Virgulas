@@ -1,5 +1,5 @@
 import { test, expect } from './test';
-import { setupDoc } from './test';
+import { setupDoc, unlockApp } from './test';
 
 test.describe('Outliner', () => {
   test.beforeEach(async ({ page }) => {
@@ -81,5 +81,21 @@ test.describe('Outliner', () => {
 
     // All nodes should still be present
     await expect(page.locator('.node-content')).toHaveCount(3);
+  });
+});
+
+test.describe('Empty new document', () => {
+  test('new local doc starts with one empty node', async ({ page }) => {
+    await page.goto('/');
+    // Seed localStorage so the app thinks there is no doc yet (local mode, no data)
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.reload();
+    await unlockApp(page);
+
+    // There should be one node (the empty initial node)
+    await expect(page.locator('.node-content')).toHaveCount(1);
   });
 });

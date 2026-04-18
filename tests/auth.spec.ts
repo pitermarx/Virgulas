@@ -546,5 +546,28 @@ test.describe('Authentication', () => {
     expect(unlockResult.firstChildId).toBe('remote-child');
   });
 
+  test('"Skip — continue in memory" bypasses lock and enters memory mode', async ({ page }) => {
+    // User has a remembered local mode
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.goto('/');
+
+    // Lock screen is visible
+    await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+
+    // Click the skip link
+    await page.getByRole('button', { name: 'Skip — continue in memory' }).click();
+
+    // App should be in memory mode now
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('.status-memory-badge')).toBeVisible();
+
+    // Remembered mode is unchanged (next visit will show lock screen again)
+    const savedMode = await page.evaluate(() => localStorage.getItem('vmd_last_mode'));
+    expect(savedMode).toBe('local');
+  });
+
 });
 

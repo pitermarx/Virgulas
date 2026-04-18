@@ -90,4 +90,26 @@ test.describe('Collapse/Expand', () => {
     await page.keyboard.press('Control+ ');
     await expect(childNode).toBeVisible();
   });
+
+  test('Enter on a collapsed node creates a sibling, not a child', async ({ page }) => {
+    const parentNode = page.locator('.node-content').nth(0);
+
+    // Focus Parent and collapse it
+    await parentNode.click();
+    await expect(parentNode.locator('input')).toBeFocused();
+    await page.keyboard.press('Control+ ');
+    await expect(page.locator('.node-content')).toHaveCount(1);
+
+    // Press Enter — should create a sibling, not a child
+    await page.keyboard.press('Enter');
+
+    // Now there should be 2 top-level nodes (Parent + new sibling), child still hidden
+    await expect(page.locator('.node-content')).toHaveCount(2);
+
+    // Expand parent — child should still be there (unchanged)
+    await page.keyboard.press('Escape');
+    await parentNode.hover();
+    await parentNode.locator('.collapse-toggle').click();
+    await expect(page.locator('.node-content')).toHaveCount(3);
+  });
 });
