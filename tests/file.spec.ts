@@ -252,7 +252,7 @@ test.describe('File mode', () => {
                     queryPermission: async () => 'denied',
                     requestPermission: async () => 'denied',
                     getFile: async () => ({ text: async () => '' }),
-                    createWritable: async () => ({ write: async () => {}, close: async () => {} })
+                    createWritable: async () => ({ write: async () => { }, close: async () => { } })
                 };
             }
 
@@ -309,7 +309,7 @@ test.describe('File mode', () => {
             const realIndexedDB = window.indexedDB;
             function makeFakeDb() {
                 return {
-                    createObjectStore() {},
+                    createObjectStore() { },
                     transaction(_s: string, _m: string) {
                         const tx: any = { oncomplete: null };
                         tx.objectStore = () => ({
