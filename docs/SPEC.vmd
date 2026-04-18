@@ -67,7 +67,7 @@
       - The node is deleted if Backspace is pressed on a node that has no text
         If there is text, the backspace functions as if `↑` was pressed
       - (DESKTOP ONLY) The shortcut `Ctrl+Backspace` is used for delete
-  - STORAGE MODES
+  + STORAGE MODES
     Four storage modes are available. The most appropriate one is selected automatically on each visit.
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
       Default on the very first visit (no localStorage data, no remembered mode).
@@ -76,16 +76,19 @@
       Account email, account password, and passphrase are required.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
-    The startup mode is determined as follows:
-    - No remembered mode and no existing data signals → Memory mode, INTRO.VMD loaded
-    - Remembered mode is Local, local data present → Local unlock screen
-    - Remembered mode is Local, no local data → Local unlock screen (create passphrase)
-    - Remembered mode is Remote, valid session → Remote unlock screen (passphrase only)
-    - Remembered mode is Remote, expired session → Remote unlock screen (email prefilled)
-    - Remembered mode is File, valid handle → File reopened silently; if permission denied → file picker
-    - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
-    Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
-    The Options panel action label and confirm text are mode-specific so users understand what is and is not lost.
+      The startup mode is determined as follows:
+    + Rules for selecting a mode
+      - No remembered mode and no existing data signals → Memory mode, INTRO.VMD loaded
+      - Remembered mode is Local
+        - local data present → Local unlock screen
+        - no local data → Local unlock screen (create passphrase)
+      - Remembered mode is Remote
+        - valid session → Remote unlock screen (passphrase only)
+        - expired session → Remote unlock screen (email prefilled)
+      - Remembered mode is File, valid handle → File reopened silently; if permission denied → file picker
+      - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
+        Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
+        The Options panel action label and confirm text are mode-specific so users understand what is and is not lost.
     + MEMORY MODE
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
@@ -108,7 +111,7 @@
     - This document is an example of a raw Virgulas document; by convention it has the extension .vmd
     - The `+` char means a collapsed node and the `-` char means an expanded node
     - To actually have the + or - char at the beginning of a line, use the escape char \
-      \\ shows the \ character, \+ and \- show the + and - characters. Escaping is only needed at the beginning of lines
+      \ shows the \ character, \+ and \- show the + and - characters. Escaping is only needed at the beginning of lines
     - Hierarchy is determined by relative indentation, not absolute column numbers
       A child node must have more leading whitespace than its parent; the exact amount is not significant
       Sibling nodes share the same indentation level relative to their parent
@@ -216,7 +219,7 @@
       - File mode filename visibility
         - Should status/lock/options show full path or basename only?
         - After switching away from File mode, should the last filename remain visible as context or be hidden?
-    + Missing test coverage
+    - Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
     + Feature ideas
       - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
