@@ -9,12 +9,13 @@ Virgulas is a local-first browser outliner.
 - Optional description field per node (auto-growing textarea when editing)
 - Node collapse/expand (button click or `Ctrl+Space`)
 - Multi-select with `Shift+↑/↓`; `Delete`, `Tab`/`Shift+Tab`, `Ctrl+Space` all work on selection
-- Node indent/unindent (`Tab` / `Shift+Tab`), plus mobile swipe right/left to indent/outdent
+- Node indent/unindent (`Tab` / `Shift+Tab`), plus mobile swipe right/left to indent/outdent; swipe does not change focus
 - Node move (`Alt+↑` / `Alt+↓`)
 - Node delete (`Ctrl+Backspace` or `Backspace` on empty node); `Backspace` on non-empty node deletes the character (normal text editor behaviour)
 - Zoom into a node (`Alt+→`) with breadcrumb navigation
   - Zoomed node description is visible and editable with placeholder when empty
   - Zoomed node with no children shows an empty state to create the first child
+  - Empty root document shows an empty state to create the first node
 - Raw mode editor (`.vmd` format) with Save / Cancel; invalid VMD saves are rejected with an inline error and no data loss
 - Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly
 - Debug panel (visible with `?debug=true`, shows internal state)
@@ -22,12 +23,12 @@ Virgulas is a local-first browser outliner.
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage
 - Three storage modes selectable on the lock screen:
-  - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage
+  - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage; new document starts with one empty node
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
-  - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase
+  - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase; new empty file gets one initial node
 - **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
   - The document lives only in JS memory and is lost when the tab is closed or reloaded
-  - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature
+  - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature; if the fetch fails an empty node is provided
   - The status bar shows an *In memory — not saved* badge
   - Raw mode is hidden (no document to save)
   - **Options → Upgrade storage…** lets the user switch to a persistent mode at any time (data loss warning shown)
@@ -38,8 +39,9 @@ Virgulas is a local-first browser outliner.
 - Optional cloud sync via Supabase (end-to-end encrypted)
   - Field-level auto-merge on conflicts (same-node different-field changes merge automatically)
   - Node-level conflict resolution when the same field is edited differently
-- Keyboard shortcuts modal (`?` button)
+- Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
 - Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
+- `Enter` on a collapsed node with children creates a sibling, not a child
 
 ## Setup
 

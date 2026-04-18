@@ -31,6 +31,20 @@ test.describe('Mobile swipe indentation', () => {
         await swipeNode(page, 'B', -120);
         await expect.poll(() => getParentId(page, 'B')).toBe('root');
     });
+
+    test('swipe does not focus the swiped node', async ({ page }) => {
+        // Swipe node B to indent it
+        await swipeNode(page, 'B', 120);
+        await expect.poll(() => getParentId(page, 'B')).toBe('A');
+
+        // Node B should not be focused (no input visible inside node B)
+        const nodeBInput = page.locator('[data-node-id="B"] input');
+        await expect(nodeBInput).toHaveCount(0);
+    });
+
+    test('? shortcuts button is not visible on mobile', async ({ page }) => {
+        await expect(page.getByRole('button', { name: '?' })).toHaveCount(0);
+    });
 });
 
 async function getParentId(page: Page, nodeId: string): Promise<string | null> {
