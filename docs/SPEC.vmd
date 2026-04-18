@@ -218,9 +218,6 @@
         - After switching away from File mode, should the last filename remain visible as context or be hidden?
     + Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
-      - File mode: no tests for open, save, debounced write, or IndexedDB handle persistence in supported browsers (unsupported-browser path is covered)
-      - Sync retry and failure recovery: exponential backoff, max retries, offline→online transition — untested
-      - Sync status indicator state transitions (synced, syncing, error, offline) — untested
     + Feature ideas
       - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
       - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip

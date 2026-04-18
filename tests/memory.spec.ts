@@ -96,4 +96,34 @@ test.describe('Memory mode (first-ever visit)', () => {
         // Lock screen should appear
         await expect(page.getByText('Unlock Virgulas')).toBeVisible();
     });
+
+    test('Purge in memory mode reloads the intro document', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+
+        // Edit a node so we have something to lose
+        const secondNode = page.locator('.node-text-md').nth(1);
+        await secondNode.click();
+        const input = page.locator('.node-content input').first();
+        await expect(input).toBeVisible({ timeout: 3000 });
+        await input.press('End');
+        await input.type(' PURGE_MARKER');
+
+        // Open Options and confirm the Purge action
+        await page.getByRole('button', { name: 'Options' }).click();
+        page.once('dialog', dialog => dialog.accept());
+        await page.getByRole('button', { name: 'Delete local data' }).click();
+
+        // App stays rendered (no lock screen)
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+
+        // Intro document is reloaded — "Welcome to Virgulas" is present again
+        await expect(page.locator('.node-content').first()).toContainText('Welcome to Virgulas', { timeout: 3000 });
+
+        // The marker we typed is gone
+        await expect(page.getByText('PURGE_MARKER')).not.toBeVisible();
+
+        // Still in memory mode
+        await expect(page.locator('.status-memory-badge')).toBeVisible();
+    });
 });
