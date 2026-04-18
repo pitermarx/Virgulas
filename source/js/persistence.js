@@ -350,7 +350,7 @@ async function unlockLocal(code) {
   else {
     log('No encrypted data found in localStorage, starting with empty doc')
     outline.reset()
-    outline.addChild()
+    outline.addChild() // initialize with one empty node so the doc is never blank
     authMode.value = 'local'
     passphrase.value = code
     rememberMode('local')
@@ -446,7 +446,7 @@ async function unlockMemory() {
   if (introText && introText.trim()) {
     outline.setRootVMD(introText)
   } else {
-    outline.addChild()
+    outline.addChild() // fallback: intro fetch failed, initialize with one empty node
   }
 
   batch(() => {
