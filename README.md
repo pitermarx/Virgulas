@@ -33,6 +33,7 @@ Virgulas is a local-first browser outliner.
   - Raw mode is hidden (no document to save)
   - **Options → Upgrade storage…** lets the user switch to a persistent mode at any time (data loss warning shown)
   - Once the user unlocks any persistent mode, that choice is remembered and shown as the default on the next visit
+  - The lock screen shows a **"Skip — continue in memory"** link that bypasses unlock for the current session; the remembered mode is preserved so the next visit still shows the lock screen
 - Status toolbar shows the current storage mode; in Remote mode it also shows the signed-in email/username
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
 - Destructive mode switches (clearing local data, signing out) require confirmation

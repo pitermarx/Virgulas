@@ -94,6 +94,9 @@
       - Options shows an "Upgrade storage…" button that lets the user switch to Local, Remote, or File
         Switching from Memory requires confirmation (data loss warning) and shows the lock screen
       - Purge action in Memory mode reloads the intro document (returns to the initial memory state)
+      - The lock screen has a "Skip — continue in memory" link at the bottom
+        Clicking it bypasses the unlock form and loads the app in memory mode for the current session
+        The remembered mode is not changed, so the next visit will show the lock screen again
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
