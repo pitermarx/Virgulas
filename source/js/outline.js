@@ -19,6 +19,7 @@ const NodeModel = createModel((model = {}) => {
     const description = signal(model.description || '')
     const children = signal(model.children || [])
     const open = signal(model.open === undefined ? true : !!model.open)
+    let lastModified = model.lastModified || 0
 
     return {
         get id() {
@@ -39,6 +40,9 @@ const NodeModel = createModel((model = {}) => {
         get open() {
             return open
         },
+        get lastModified() {
+            return lastModified
+        },
         get value() {
             return {
                 id,
@@ -46,7 +50,8 @@ const NodeModel = createModel((model = {}) => {
                 text: text.value,
                 description: description.value,
                 children: children.value,
-                open: open.value
+                open: open.value,
+                lastModified
             }
         },
         peek() {
@@ -56,20 +61,25 @@ const NodeModel = createModel((model = {}) => {
                 text: text.peek(),
                 description: description.peek(),
                 children: children.peek(),
-                open: open.peek()
+                open: open.peek(),
+                lastModified
             }
         },
         toggleOpen() {
             open.value = !open.peek()
+            lastModified = Date.now()
         },
         update(update) {
-            if (update.text !== undefined) text.value = update.text
-            if (update.description !== undefined) description.value = update.description
+            let changed = false
+            if (update.text !== undefined && update.text !== text.peek()) { text.value = update.text; changed = true }
+            if (update.description !== undefined && update.description !== description.peek()) { description.value = update.description; changed = true }
             if (update.parentId !== undefined) parentId = update.parentId
             if (update.open !== undefined) open.value = !!update.open
+            if (changed) lastModified = Date.now()
         },
         removeChild(childId) {
             children.value = children.peek().filter(id => id !== childId)
+            lastModified = Date.now()
         },
         addChild(childId, index = -1) {
             const peek = children.peek()
@@ -78,6 +88,7 @@ const NodeModel = createModel((model = {}) => {
             } else {
                 children.value = [...peek.slice(0, index), childId, ...peek.slice(index)]
             }
+            lastModified = Date.now()
         },
         move(childId, direction = 'up') {
             const peek = children.peek()
@@ -92,12 +103,14 @@ const NodeModel = createModel((model = {}) => {
                 newChildren[index - 1] = newChildren[index]
                 newChildren[index] = temp
                 children.value = newChildren
+                lastModified = Date.now()
             } else if (direction === 'down' && index < peek.length - 1) {
                 const newChildren = [...peek]
                 const temp = newChildren[index + 1]
                 newChildren[index + 1] = newChildren[index]
                 newChildren[index] = temp
                 children.value = newChildren
+                lastModified = Date.now()
             } else {
                 log('Cannot move child in that direction')
                 return
@@ -234,7 +247,7 @@ const OutlineModel = createModel(() => {
         const root = map.get(rootNodeId);
         if (root) {
             const topLevel = root.children.peek()
-            topLevel.forEach(deleteNode)
+            topLevel.forEach(id => deleteNode(id, true))
             root[Symbol.dispose]()
             map.delete(rootNodeId)
         }
@@ -242,7 +255,7 @@ const OutlineModel = createModel(() => {
             log('Warning: map not empty after reset, clearing remaining nodes')
             map.clear()
         }
-        map.set(rootNodeId, new NodeModel({ id: rootNodeId }))
+        map.set(rootNodeId, new NodeModel({ id: rootNodeId, lastModified: 0 }))
         setVersion(0)
     }
 
@@ -259,6 +272,7 @@ const OutlineModel = createModel(() => {
                     description: node.description === '' ? undefined : node.description, // omit description if empty to save space
                     children: node.children.length > 0 ? node.children : undefined, // omit children if empty to save space
                     open: node.open === true ? undefined : node.open, // omit open if true to save space, since most nodes are open by default
+                    lastModified: node.lastModified > 0 ? node.lastModified : undefined, // omit lastModified when 0 for backwards compat
                 }))
         }, null, pretty ? 2 : 0)
     }
@@ -330,7 +344,8 @@ const OutlineModel = createModel(() => {
                 text: nodeData.text,
                 description: nodeData.description,
                 children: nodeData.children,
-                open: nodeData.open
+                open: nodeData.open,
+                lastModified: nodeData.lastModified || 0
             }))
         }
         if (zoomId.value !== rootNodeId && !map.has(zoomId.value)) {

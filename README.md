@@ -38,8 +38,10 @@ Virgulas is a local-first browser outliner.
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
 - Destructive mode switches (clearing local data, signing out) require confirmation
 - Optional cloud sync via Supabase (end-to-end encrypted)
-  - Field-level auto-merge on conflicts (same-node different-field changes merge automatically)
-  - Node-level conflict resolution when the same field is edited differently
+  - Pull-before-push: before every write, the remote `updated_at` timestamp is checked; if the remote is newer the doc is fetched and merged before uploading
+  - Per-node `lastModified` timestamps drive node-level merge: one-side-only changes are applied silently; same-node different-field changes are also auto-merged
+  - Conflict resolution when the same field is edited on both sides: a blocking modal shows each conflict side-by-side with "Keep local" / "Keep remote" per field and "Use all local" / "Use all remote" bulk buttons; "Apply" is disabled until every conflict is resolved
+  - 60-second background polling checks for remote updates while the app is open; pauses when conflicts are pending
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
 - Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
 - `Enter` on a collapsed node with children creates a sibling, not a child

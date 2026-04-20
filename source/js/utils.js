@@ -71,5 +71,6 @@ export const store = {
     mode: slot('vmd_last_mode'),
     user: slot('vmd_last_username'),
     data: slot('vmd_data_enc'),
-    supabase: slot('supabaseconfig')
+    supabase: slot('supabaseconfig'),
+    syncTs: slot('vmd_sync_ts')
 }

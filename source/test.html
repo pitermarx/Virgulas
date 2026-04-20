@@ -255,6 +255,7 @@
         import { summary as outlineSummary, streamOutlineTests } from './js/outlineTests.js'
         import { crypto2Total, runCrypto2Tests } from './js/crypto2Tests.js'
         import { shortcutsTotal, runShortcutsTests } from './js/shortcutsTests.js'
+        import { summary as syncSummary, streamSyncTests } from './js/syncTests.js'
 
         function Section({ section }) {
             const allPassed = section.tests.every(t => t.ok)
@@ -304,20 +305,20 @@
             return `${state.expectedTotal} total | ${getRunningCount(state)} running | ${state.summary.failed} failed`
         }
 
-        function setSummarySummary(outlineState, cryptoState, shortcutsState) {
+        function setSummarySummary(outlineState, cryptoState, shortcutsState, syncState) {
             const summaryEl = document.getElementById('summary')
             if (!summaryEl) return
 
             summaryEl.className = 'ready'
 
-            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal + shortcutsState.expectedTotal
-            const passed = outlineState.summary.passed + cryptoState.summary.passed + shortcutsState.summary.passed
-            const failed = outlineState.summary.failed + cryptoState.summary.failed + shortcutsState.summary.failed
-            const completed = outlineState.summary.total + cryptoState.summary.total + shortcutsState.summary.total
-            const running = getRunningCount(outlineState) + getRunningCount(cryptoState) + getRunningCount(shortcutsState)
+            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal + shortcutsState.expectedTotal + syncState.expectedTotal
+            const passed = outlineState.summary.passed + cryptoState.summary.passed + shortcutsState.summary.passed + syncState.summary.passed
+            const failed = outlineState.summary.failed + cryptoState.summary.failed + shortcutsState.summary.failed + syncState.summary.failed
+            const completed = outlineState.summary.total + cryptoState.summary.total + shortcutsState.summary.total + syncState.summary.total
+            const running = getRunningCount(outlineState) + getRunningCount(cryptoState) + getRunningCount(shortcutsState) + getRunningCount(syncState)
 
-            if (outlineState.status === 'error' || cryptoState.status === 'error' || shortcutsState.status === 'error') {
-                const message = outlineState.error || cryptoState.error || shortcutsState.error || 'Unknown error'
+            if (outlineState.status === 'error' || cryptoState.status === 'error' || shortcutsState.status === 'error' || syncState.status === 'error') {
+                const message = outlineState.error || cryptoState.error || shortcutsState.error || syncState.error || 'Unknown error'
                 summaryEl.innerHTML = `<span class="fail">Failed to run tests</span>: ${message}`
                 return
             }
@@ -354,6 +355,13 @@
                 summary: { passed: 0, failed: 0, total: 0 },
                 error: null,
                 expectedTotal: shortcutsTotal
+            })
+            const [syncState, setSyncState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: syncSummary().total
             })
 
             useEffect(() => {
@@ -451,6 +459,37 @@
                     })
             }, [shortcutsState.status])
 
+            useEffect(() => {
+                if (syncState.status !== 'idle') return
+
+                setSyncState(state => ({ ...state, status: 'running', error: null }))
+                streamSyncTests(progress => {
+                    setSyncState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setSyncState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setSyncState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [syncState.status])
+
             const suite = activeSuite === 'outline'
                 ? {
                     status: outlineState.status,
@@ -467,13 +506,21 @@
                         error: cryptoState.error,
                         expectedTotal: cryptoState.expectedTotal
                     }
-                    : {
-                        status: shortcutsState.status,
-                        sections: shortcutsState.sections,
-                        summary: shortcutsState.summary,
-                        error: shortcutsState.error,
-                        expectedTotal: shortcutsState.expectedTotal
-                    }
+                    : activeSuite === 'shortcuts'
+                        ? {
+                            status: shortcutsState.status,
+                            sections: shortcutsState.sections,
+                            summary: shortcutsState.summary,
+                            error: shortcutsState.error,
+                            expectedTotal: shortcutsState.expectedTotal
+                        }
+                        : {
+                            status: syncState.status,
+                            sections: syncState.sections,
+                            summary: syncState.summary,
+                            error: syncState.error,
+                            expectedTotal: syncState.expectedTotal
+                        }
 
             const completed = suite.summary.total
             const expected = suite.expectedTotal || suite.summary.total
@@ -482,8 +529,8 @@
                 : `${completed} complete`
 
             useEffect(() => {
-                setSummarySummary(outlineState, cryptoState, shortcutsState)
-            }, [outlineState, cryptoState, shortcutsState])
+                setSummarySummary(outlineState, cryptoState, shortcutsState, syncState)
+            }, [outlineState, cryptoState, shortcutsState, syncState])
 
             return html`
     <div class="tabs">
@@ -511,6 +558,14 @@
                                 <span class="tab-title">Shortcuts</span>
                                 <span class="tab-meta">${formatSuiteMeta(shortcutsState)}</span>
             </button>
+      <button
+        class=${'tab' + (activeSuite === 'sync' ? ' active' : '')}
+        onClick=${() => setActiveSuite('sync')}
+        aria-pressed=${activeSuite === 'sync'}
+      >
+                <span class="tab-title">Sync</span>
+                <span class="tab-meta">${formatSuiteMeta(syncState)}</span>
+      </button>
     </div>
 
     ${suite.status === 'running' && html`<div class="suite-note">Running ${activeSuite} tests... ${progressText}</div>`}

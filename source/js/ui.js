@@ -5,6 +5,7 @@ import persistence from './persistence.js';
 import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
+import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -315,7 +316,7 @@ export function StatusToolbar() {
     const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : isMemory ? 'Memory' : 'Local'
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     const syncState = mode === 'remote'
-        ? persistence.syncStatus.value
+        ? syncStatus.value
         : (outline.isDirty.value ? 'unsynced' : 'synced')
     const dotColors = {
         synced: 'var(--color-synced)',
@@ -507,5 +508,99 @@ export function DebugPanel() {
         <div>zoomPath: ${outline.zoomId.value}</div>
         <div>historyLength: 0</div>
         <div>nodeCount: ${outline.nodeCount}</div>
+    </div>`
+}
+
+// ── Conflict resolution modal ─────────────────────────────────────────────────
+
+export function ConflictModal() {
+    const conflicts = pendingConflicts.value
+    if (conflicts.length === 0) return null
+
+    function choose(nodeId, field, side) {
+        const m = new Map(pendingConflictResolutions.peek())
+        m.set(`${nodeId}::${field}`, side)
+        pendingConflictResolutions.value = m
+    }
+
+    function useAll(side) {
+        const m = new Map()
+        for (const c of conflicts) {
+            m.set(`${c.nodeId}::${c.field}`, side)
+        }
+        pendingConflictResolutions.value = m
+    }
+
+    function allResolved() {
+        const m = pendingConflictResolutions.value
+        return conflicts.every(c => m.has(`${c.nodeId}::${c.field}`))
+    }
+
+    async function apply() {
+        if (!allResolved()) return
+        const m = pendingConflictResolutions.peek()
+        const resList = conflicts.map(c => ({
+            nodeId: c.nodeId,
+            field: c.field,
+            chosenSide: m.get(`${c.nodeId}::${c.field}`)
+        }))
+        await resolveConflicts(resList)
+    }
+
+    function renderValue(field, value) {
+        if (field === 'children') {
+            const doc = pendingMergedDoc.peek()
+            const nodeMap = doc ? new Map(doc.nodes.map(n => [n.id, n])) : new Map()
+            const ids = Array.isArray(value) ? value : []
+            return html`<ul class="conflict-children-list">
+                ${ids.map(id => html`<li>${nodeMap.get(id)?.text || id}</li>`)}
+            </ul>`
+        }
+        return html`<textarea class="conflict-value-textarea" readonly rows="4">${value}</textarea>`
+    }
+
+    const fieldLabels = { text: 'Text', description: 'Description', children: 'Children' }
+
+    return html`<div class="modal-overlay conflict-overlay">
+        <div class="modal-dialog conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+            <div class="modal-header">
+                <h2 id="conflict-title" class="modal-title">Sync conflicts (${conflicts.length})</h2>
+            </div>
+            <div class="conflict-body">
+                ${conflicts.map(c => {
+        const key = `${c.nodeId}::${c.field}`
+        const chosen = pendingConflictResolutions.value.get(key)
+        return html`<div class="conflict-item">
+                        <div class="conflict-node-label">
+                            <strong>${c.nodeText || '(no text)'}</strong>
+                            <span class="conflict-field-label">${fieldLabels[c.field] || c.field}</span>
+                        </div>
+                        <div class="conflict-sides">
+                            <div class=${'conflict-side' + (chosen === 'local' ? ' conflict-side-chosen' : '')}>
+                                <div class="conflict-side-header">Local</div>
+                                ${renderValue(c.field, c.localValue)}
+                                <button class="btn btn-secondary conflict-keep-btn"
+                                    onClick=${() => choose(c.nodeId, c.field, 'local')}>
+                                    Keep local
+                                </button>
+                            </div>
+                            <div class=${'conflict-side' + (chosen === 'remote' ? ' conflict-side-chosen' : '')}>
+                                <div class="conflict-side-header">Remote</div>
+                                ${renderValue(c.field, c.remoteValue)}
+                                <button class="btn btn-secondary conflict-keep-btn"
+                                    onClick=${() => choose(c.nodeId, c.field, 'remote')}>
+                                    Keep remote
+                                </button>
+                            </div>
+                        </div>
+                    </div>`
+    })}
+            </div>
+            <div class="conflict-footer">
+                <button class="btn btn-secondary" onClick=${() => useAll('local')}>Use all local</button>
+                <button class="btn btn-secondary" onClick=${() => useAll('remote')}>Use all remote</button>
+                <button class="btn btn-primary" disabled=${!allResolved()} onClick=${apply}>Apply</button>
+            </div>
+        </div>
     </div>`
 }

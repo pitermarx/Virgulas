@@ -1084,3 +1084,122 @@ await test("Multiple rapid updates are batched into a single version increment",
   assertEqual(outline.version.peek(), initialVersion + 1, "Multiple changes should result in one version bump")
   assert(!outline.isDirty, "Should be clean after debounce")
 })
+
+// ─── lastModified ─────────────────────────────────────────────────────────────
+
+section("lastModified")
+
+await test("New nodes have lastModified = 0", () => {
+  const { id } = outline.addChild('root', { text: 'Alpha' })
+  assertEqual(outline.get(id).lastModified, 0, "Fresh node should have lastModified 0")
+})
+
+await test("addChild sets lastModified on the parent node", () => {
+  const before = Date.now()
+  outline.addChild('root', { text: 'Beta' })
+  const after = Date.now()
+  const root = outline.get('root')
+  assert(root.lastModified >= before && root.lastModified <= after,
+    `Root lastModified ${root.lastModified} should be in [${before}, ${after}]`)
+})
+
+await test("update() sets lastModified when text changes", () => {
+  const { id } = outline.addChild('root', { text: 'Original', lastModified: 0 })
+  const node = outline.get(id)
+  // Verify starts at 0
+  assertEqual(node.lastModified, 0, "Should start at 0 before update")
+  const before = Date.now()
+  node.update({ text: 'Changed' })
+  const after = Date.now()
+  assert(node.lastModified >= before && node.lastModified <= after,
+    `lastModified should be set after text change: ${node.lastModified}`)
+})
+
+await test("update() sets lastModified when description changes", () => {
+  const { id } = outline.addChild('root', { text: 'Node', lastModified: 0 })
+  const node = outline.get(id)
+  assertEqual(node.lastModified, 0, "Should start at 0")
+  const before = Date.now()
+  node.update({ description: 'some desc' })
+  const after = Date.now()
+  assert(node.lastModified >= before && node.lastModified <= after,
+    `lastModified should be set after description change`)
+})
+
+await test("update() does NOT change lastModified when nothing changes", () => {
+  const { id } = outline.addChild('root', { text: 'Static', lastModified: 0 })
+  const node = outline.get(id)
+  assertEqual(node.lastModified, 0, "Should be 0 initially")
+  node.update({ text: 'Static' })
+  assertEqual(node.lastModified, 0, "lastModified should remain 0 when text is unchanged")
+})
+
+await test("toggleOpen() sets lastModified", () => {
+  const { id } = outline.addChild('root', { text: 'Togglable', lastModified: 0 })
+  const node = outline.get(id)
+  assertEqual(node.lastModified, 0, "Should start at 0")
+  const before = Date.now()
+  node.toggleOpen()
+  const after = Date.now()
+  assert(node.lastModified >= before && node.lastModified <= after,
+    `lastModified should be set by toggleOpen`)
+})
+
+await test("removeChild() sets lastModified on parent", () => {
+  // Add a child, then remove it — parent's lastModified should become non-zero
+  const { id: childId } = outline.addChild('root', { text: 'Child' })
+  // Reset root lastModified tracking by re-reading it; we can't reset it, so
+  // just record the timestamp before the removeChild and verify it moves forward
+  const root = outline.get('root')
+  const before = Date.now()
+  root.removeChild(childId)
+  const after = Date.now()
+  assert(root.lastModified >= before && root.lastModified <= after,
+    `Root lastModified should be set after removeChild`)
+})
+
+await test("serialize() includes lastModified when non-zero", () => {
+  // Build a doc with a node that has lastModified > 0 via deserialize
+  const doc = {
+    modelVersion: 'v1',
+    dataVersion: 1,
+    nodes: [
+      { id: 'root', text: '', description: '', children: ['ts-node'], parentId: null, open: true },
+      { id: 'ts-node', text: 'TS', description: '', children: [], parentId: 'root', open: true, lastModified: 999 }
+    ]
+  }
+  outline.deserialize(JSON.stringify(doc))
+  const raw = outline.serialize()
+  const obj = JSON.parse(raw)
+  const found = obj.nodes.find(n => n.id === 'ts-node')
+  assertEqual(found?.lastModified, 999, "serialize() should include lastModified")
+})
+
+await test("serialize() omits lastModified when 0", () => {
+  // Fresh addChild → lastModified stays 0 until something modifies it
+  outline.addChild('root', { id: 'no-ts', text: 'No TS', lastModified: 0 })
+  const raw = outline.serialize()
+  const obj = JSON.parse(raw)
+  const found = obj.nodes.find(n => n.id === 'no-ts')
+  assert(!('lastModified' in found), "serialize() should omit lastModified when 0")
+})
+
+await test("deserialize() reads lastModified from payload", () => {
+  const raw = outline.serialize()
+  const obj = JSON.parse(raw)
+  obj.nodes.push({ id: 'restored', text: 'R', parentId: 'root', lastModified: 7777 })
+  const rootNode = obj.nodes.find(n => n.id === 'root')
+  rootNode.children = [...(rootNode.children || []), 'restored']
+  outline.deserialize(JSON.stringify(obj))
+  assertEqual(outline.get('restored').lastModified, 7777, "Deserialized node should have lastModified 7777")
+})
+
+await test("deserialize() defaults lastModified to 0 when absent", () => {
+  const raw = outline.serialize()
+  const obj = JSON.parse(raw)
+  obj.nodes.push({ id: 'no-ts-node', text: 'NTS', parentId: 'root' })
+  const rootNode = obj.nodes.find(n => n.id === 'root')
+  rootNode.children = [...(rootNode.children || []), 'no-ts-node']
+  outline.deserialize(JSON.stringify(obj))
+  assertEqual(outline.get('no-ts-node').lastModified, 0, "Absent lastModified should default to 0")
+})
