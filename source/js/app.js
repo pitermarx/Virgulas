@@ -314,7 +314,7 @@ const LockScreen = () => {
   `;
 };
 
-const REPO_URL = 'https://github.com/pnunes30/Virgulas';
+const REPO_URL = 'https://github.com/pitermarx/Virgulas';
 
 const OptionsModal = () => {
   if (!optionsOpen.value) return null;

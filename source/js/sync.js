@@ -69,6 +69,7 @@ export const remoteSync = {
 export const syncStatus = signal('synced') // 'synced' | 'syncing' | 'error' | 'offline'
 export const pendingConflicts = signal([])  // [{ nodeId, nodeText, field, localValue, remoteValue }]
 export const pendingMergedDoc = signal(null) // merged node array awaiting conflict resolution
+export const pendingConflictResolutions = signal(new Map()) // Map of `nodeId::field` -> 'local' | 'remote'
 
 // Coordination flag: set to true before calling outline.deserialize from within
 // sync/poll handlers so the persistence effect skips a redundant remote push.
@@ -270,6 +271,7 @@ export async function pullAndMerge(passphrase, salt) {
     if (conflicts.length > 0) {
         pendingConflicts.value = conflicts
         pendingMergedDoc.value = { ...localObj, nodes: merged }
+        pendingConflictResolutions.value = new Map()
         return { clean: false, mergedJson: null }
     }
 
@@ -339,6 +341,7 @@ export async function resolveConflicts(resolutions) {
 
     pendingConflicts.value = []
     pendingMergedDoc.value = null
+    pendingConflictResolutions.value = new Map()
 }
 
 // ── Background polling ────────────────────────────────────────────────────────

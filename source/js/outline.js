@@ -247,7 +247,7 @@ const OutlineModel = createModel(() => {
         const root = map.get(rootNodeId);
         if (root) {
             const topLevel = root.children.peek()
-            topLevel.forEach(deleteNode)
+            topLevel.forEach(id => deleteNode(id, true))
             root[Symbol.dispose]()
             map.delete(rootNodeId)
         }

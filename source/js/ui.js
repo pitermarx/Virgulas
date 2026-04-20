@@ -5,7 +5,7 @@ import persistence from './persistence.js';
 import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
-import { syncStatus, pendingConflicts, pendingMergedDoc, resolveConflicts } from './sync.js';
+import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -517,13 +517,10 @@ export function ConflictModal() {
     const conflicts = pendingConflicts.value
     if (conflicts.length === 0) return null
 
-    // Per-conflict resolution state: Map of `nodeId::field` → 'local' | 'remote' | null
-    const resolutions = signal(new Map())
-
     function choose(nodeId, field, side) {
-        const m = new Map(resolutions.peek())
+        const m = new Map(pendingConflictResolutions.peek())
         m.set(`${nodeId}::${field}`, side)
-        resolutions.value = m
+        pendingConflictResolutions.value = m
     }
 
     function useAll(side) {
@@ -531,17 +528,17 @@ export function ConflictModal() {
         for (const c of conflicts) {
             m.set(`${c.nodeId}::${c.field}`, side)
         }
-        resolutions.value = m
+        pendingConflictResolutions.value = m
     }
 
     function allResolved() {
-        const m = resolutions.value
+        const m = pendingConflictResolutions.value
         return conflicts.every(c => m.has(`${c.nodeId}::${c.field}`))
     }
 
     async function apply() {
         if (!allResolved()) return
-        const m = resolutions.peek()
+        const m = pendingConflictResolutions.peek()
         const resList = conflicts.map(c => ({
             nodeId: c.nodeId,
             field: c.field,
@@ -572,7 +569,7 @@ export function ConflictModal() {
             <div class="conflict-body">
                 ${conflicts.map(c => {
         const key = `${c.nodeId}::${c.field}`
-        const chosen = resolutions.value.get(key)
+        const chosen = pendingConflictResolutions.value.get(key)
         return html`<div class="conflict-item">
                         <div class="conflict-node-label">
                             <strong>${c.nodeText || '(no text)'}</strong>
