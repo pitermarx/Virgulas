@@ -52,11 +52,16 @@ Virgulas is a local-first browser outliner.
     ```bash
     npm install
     ```
+  `npm install` also syncs browser runtime dependencies into `source/vendor/` (no bundler/build step required).
 
 2.  Run locally (serves the `source/` folder):
     ```bash
     npm run serve
     ```
+
+  Offline support notes:
+  - Runtime dependencies are self-hosted from `source/vendor/` (no CDN dependency at runtime)
+  - A service worker caches the app shell and static assets so the app works offline after the first successful load
 
   The app reads Supabase settings from `localStorage.supabaseconfig` and seeds it automatically on first run with hosted defaults:
   - `url`: `https://gcpdascpdrakecpknrtt.supabase.co`
