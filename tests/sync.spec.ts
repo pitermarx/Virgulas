@@ -387,7 +387,7 @@ const buildConflictPayload = async (
             const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
             const doc = {
-                modelVersion: 1,
+                modelVersion: 'v1',
                 dataVersion: 1,
                 nodes: [
                     { id: 'root', text: '', description: '', children: ['n1'], parentId: null, open: true, lastModified: 0 },
@@ -487,12 +487,12 @@ test.describe('Pull-before-push', () => {
                 const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
                 const salt = btoa(String.fromCharCode(...saltBytes));
                 const doc = {
-                    modelVersion: 1,
+                    modelVersion: 'v1',
                     dataVersion: 1,
                     nodes: [
                         { id: 'root', text: '', description: '', children: ['n1', 'n2'], parentId: null, open: true, lastModified: 0 },
                         { id: 'n1', text: 'Local Node', description: '', children: [], parentId: 'root', open: true, lastModified: 0 },
-                        { id: 'n2', text: 'Remote Only Node', description: '', children: [], parentId: 'root', open: true, lastModified: Date.now() + 5000 }
+                        { id: 'n2', text: 'Remote Only Node', description: '', children: [], parentId: 'root', open: true, lastModified: Date.now() + 3_600_000 }
                     ]
                 };
                 const data = await encrypt(JSON.stringify(doc), passphrase, salt);
@@ -519,8 +519,8 @@ test.describe('Pull-before-push', () => {
         await page.goto('/');
 
         const passphrase = 'conflict-pass';
-        const T_LOCAL = Date.now() + 1000;   // local modified after sync
-        const T_REMOTE = Date.now() + 2000;  // remote also modified after sync
+        const T_LOCAL = Date.now() + 3_600_000;   // local modified after sync (far future so it's always > lastSyncedAt)
+        const T_REMOTE = Date.now() + 3_600_001;  // remote also modified after sync
 
         // Local doc: n1 was modified locally
         const localPayload = await buildConflictPayload(page, passphrase, 'Local Version', T_LOCAL);
@@ -549,9 +549,10 @@ test.describe('Pull-before-push', () => {
 
 test.describe('Conflict resolution modal', () => {
     async function setupConflict(page: Page, localText: string, remoteText: string) {
+        await page.goto('/');
         const passphrase = 'modal-pass';
-        const T_LOCAL = Date.now() + 1000;
-        const T_REMOTE = Date.now() + 2000;
+        const T_LOCAL = Date.now() + 3_600_000;
+        const T_REMOTE = Date.now() + 3_600_001;
 
         const localPayload = await buildConflictPayload(page, passphrase, localText, T_LOCAL);
         const remotePayload = await buildConflictPayload(page, passphrase, remoteText, T_REMOTE);
