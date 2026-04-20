@@ -157,15 +157,29 @@
     - The derived key lives only in memory for the duration of the session
       On page close or sign-out, the key is gone and must be re-derived on the next visit
     + SYNC BEHAVIOUR
-      - After every local write, the app attempts a background upload to the server
-      - If the upload fails it is retried a few times with increasing delays, then abandoned until the next write
-      - On sign-in or page load (when a session exists), the server and local copies are compared by timestamp
-        - If only one side has data, that side wins
-        - If local is newer, it is uploaded silently
-        - If the server is newer, a three-way merge is attempted using the last-synced base as the common ancestor
-          Non-conflicting field changes are merged automatically
-          Fields changed on both sides are presented to the user for per-node resolution
-      - The status toolbar shows a sync indicator when the user is signed in
+      - Before every local write, the app checks if the remote `updated_at` is newer than `lastSyncedAt`
+        If the remote is newer, the remote document is fetched and merged before the local write is pushed
+        This pull-before-push strategy ensures the server always receives the most up-to-date merged state
+      - A background poll runs every 60 seconds while the app is open (in Remote mode)
+        If the remote is newer and there are no pending conflicts, the remote is fetched and merged silently
+        The poll pauses while conflicts are pending
+      - Merge is performed at the node level using per-node `lastModified` timestamps and a single `lastSyncedAt` timestamp
+        - Node modified only on one side since `lastSyncedAt` → that side wins, no user action needed
+        - Node modified on both sides → per-field direct value comparison:
+          - Same value → no conflict, either value is kept
+          - Different value → conflict; the user must resolve it
+          - `open` (collapse/expand) uses last-writer-wins (newer `lastModified`), never a conflict
+        - Node added on one side only → kept
+        - Node deleted on one side while unmodified on the other → deletion wins
+        - Node deleted on one side but modified on the other → the modified side wins (deletion loses)
+        - Root node is never deleted
+        - After merge, any node whose parent is missing is dropped (tree integrity)
+      - When conflicts exist, a blocking modal is shown; the app cannot be used until all conflicts are resolved
+        Each conflict is displayed with the node text, field name, and side-by-side local / remote values
+        Per-conflict: "Keep local" / "Keep remote" buttons; bulk: "Use all local" / "Use all remote"
+        "Apply" is disabled until every conflict has a resolution; pressing it pushes the merged result
+      - If the upload fails it is retried with exponential back-off (3 retries) then abandoned until the next write
+      - The status toolbar shows a sync indicator while the user is signed in
         Possible states: synced, syncing, error, offline
     + DATABASE SCHEMA
       - `outlines` table
@@ -210,15 +224,6 @@
       - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
   + ROADMAP
     Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
-    + Bugs to fix
-      - sync conflict resolution is non-existent
-    + Questions to clarify
-      - Sync conflict resolution UX
-        - Should per-node conflict resolution be blocking (modal) or non-blocking (side panel/work queue)?
-        - What should happen if the user closes the resolver with unresolved conflicts: block save/sync, keep local, or keep remote?
-      - File mode filename visibility
-        - Should status/lock/options show full path or basename only?
-        - After switching away from File mode, should the last filename remain visible as context or be hidden?
     - Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
     + Feature ideas
