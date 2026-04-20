@@ -519,12 +519,11 @@ test.describe('Pull-before-push', () => {
         await page.goto('/');
 
         const passphrase = 'conflict-pass';
-        const T_LOCAL = Date.now() + 3_600_000;   // local modified after sync (far future so it's always > lastSyncedAt)
-        const T_REMOTE = Date.now() + 3_600_001;  // remote also modified after sync
+        const T_REMOTE = Date.now() + 3_600_000;  // remote modified in far future (always > lastSyncedAt)
 
-        // Local doc: n1 was modified locally
-        const localPayload = await buildConflictPayload(page, passphrase, 'Local Version', T_LOCAL);
-        // Remote doc: n1 has different text, also modified
+        // Local payload: n1 has placeholder text and lastModified=0 (not yet "modified after sync")
+        const localPayload = await buildConflictPayload(page, passphrase, 'placeholder', 0);
+        // Remote doc: n1 has different text, modified after sync
         const remotePayload = await buildConflictPayload(page, passphrase, 'Remote Version', T_REMOTE);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
@@ -533,15 +532,11 @@ test.describe('Pull-before-push', () => {
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
-        // Trigger sync by editing something (the merge happens pull-before-push)
-        // The node already has conflicting text; just trigger save by touching a sibling
-        await page.evaluate(async () => {
-            const outline = (await import('/js/outline.js')).default as any;
-            outline.addChild('root', { text: 'trigger' });
-        });
+        // Edit the local node via UI — this sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
+        await editFirstNode(page, 'Local Version');
 
-        // Conflict modal should appear
-        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 5000 });
+        // Conflict modal should appear (local and remote both changed n1 after last sync)
+        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
     });
 });
 
@@ -551,10 +546,10 @@ test.describe('Conflict resolution modal', () => {
     async function setupConflict(page: Page, localText: string, remoteText: string) {
         await page.goto('/');
         const passphrase = 'modal-pass';
-        const T_LOCAL = Date.now() + 3_600_000;
-        const T_REMOTE = Date.now() + 3_600_001;
+        const T_REMOTE = Date.now() + 3_600_000;  // remote modified in far future (always > lastSyncedAt)
 
-        const localPayload = await buildConflictPayload(page, passphrase, localText, T_LOCAL);
+        // Local payload: n1 has placeholder text and lastModified=0 (not yet "modified after sync")
+        const localPayload = await buildConflictPayload(page, passphrase, 'placeholder', 0);
         const remotePayload = await buildConflictPayload(page, passphrase, remoteText, T_REMOTE);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
@@ -562,11 +557,8 @@ test.describe('Conflict resolution modal', () => {
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
-        // Trigger the merge via an outline change
-        await page.evaluate(async () => {
-            const outline = (await import('/js/outline.js')).default as any;
-            outline.addChild('root', { text: 'trigger sync' });
-        });
+        // Edit the local node via UI — sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
+        await editFirstNode(page, localText);
 
         // Wait for modal
         await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
