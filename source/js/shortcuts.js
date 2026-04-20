@@ -69,6 +69,19 @@ export function zoomOut(focus) {
     focus.Type.value = 'text'
 }
 
+function confirmDeleteNodeWithChildren(id) {
+    const nodeToDelete = outline.get(id)
+    if (!nodeToDelete || nodeToDelete.children.peek().length === 0) {
+        return true
+    }
+
+    if (typeof confirm !== 'function') {
+        return true
+    }
+
+    return confirm('Delete this node and all its children?')
+}
+
 function handleKeyDownOnFocusedNode(k, focus) {
     switch (k) {
         case 'Shift+Enter':
@@ -189,6 +202,9 @@ function handleKeyDownOnFocusedNode(k, focus) {
             if (focus.Type.value === 'text') {
                 if (outline.get(focus.Id.value).text.value === '') {
                     const idToDelete = focus.Id.value
+                    if (!confirmDeleteNodeWithChildren(idToDelete)) {
+                        return true
+                    }
                     focus.Id.value = outline.prev(focus.Id.value)
                     outline.deleteNode(idToDelete)
                     return true
@@ -204,11 +220,8 @@ function handleKeyDownOnFocusedNode(k, focus) {
         case 'Ctrl+Backspace':
             if (focus.Type.value === 'text') {
                 const idToDelete = focus.Id.value
-                const nodeToDelete = outline.get(idToDelete)
-                if (nodeToDelete && nodeToDelete.children.peek().length > 0) {
-                    if (!confirm('Delete this node and all its children?')) {
-                        return true
-                    }
+                if (!confirmDeleteNodeWithChildren(idToDelete)) {
+                    return true
                 }
                 focus.Id.value = outline.prev(idToDelete)
                 outline.deleteNode(idToDelete)

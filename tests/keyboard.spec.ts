@@ -100,6 +100,35 @@ test.describe('Keyboard', () => {
     await expect(node2Input).toHaveValue('Node ');
   });
 
+  test('Final Backspace asks confirmation before deleting node with children', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'P', children: [{ id: '1.1', text: 'Child', children: [] }] },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
+    });
+
+    const parentInput = page.locator('[data-node-id="1"] input');
+    await page.locator('[data-node-id="1"]').click();
+    await expect(parentInput).toBeFocused();
+
+    // First backspace removes text content only.
+    await parentInput.press('Backspace');
+    await expect(parentInput).toHaveValue('');
+
+    // Second backspace attempts node deletion and must confirm because children exist.
+    page.once('dialog', (dialog) => {
+      expect(dialog.message()).toBe('Delete this node and all its children?');
+      dialog.dismiss();
+    });
+    await parentInput.press('Backspace');
+
+    await expect(page.locator('[data-node-id="1"]')).toBeVisible();
+    await expect(page.locator('[data-node-id="1.1"]')).toBeVisible();
+  });
+
   test('Arrow keys navigate nodes', async ({ page }) => {
     // Setup: Root -> Node 1 -> Node 2
     // Create Node 2 via Enter
