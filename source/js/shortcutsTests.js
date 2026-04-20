@@ -7,7 +7,7 @@ import {
     createAsyncSectionHarness
 } from './testing.js'
 
-export const shortcutsTotal = 25
+export const shortcutsTotal = 27
 
 let _cachedResult = null
 
@@ -105,6 +105,10 @@ function installBrowserStubs() {
             }
             globalThis.navigator.__shortcutsClipboard = clipboard
         }
+    }
+
+    if (typeof globalThis.confirm !== 'function') {
+        globalThis.confirm = () => true
     }
 }
 
@@ -349,6 +353,61 @@ export async function runShortcutsTests(onProgress) {
         assertEqual(children.length, 1, 'Backspace should delete empty focused node')
         assertEqual(children[0], 'A', 'Remaining node should be previous sibling')
         assertEqual(focus.Id.value, 'A', 'Focus should move to previous sibling after delete')
+    })
+
+    await test('Backspace on empty focused text with children asks confirmation and supports dismiss', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('root', { id: 'B', text: '' })
+        outline.addChild('B', { id: 'B1', text: 'B1' })
+        const focus = createFocus('B', 'text')
+        const handle = keydown(focus)
+
+        const originalConfirm = globalThis.confirm
+        let confirmCalls = 0
+        globalThis.confirm = () => {
+            confirmCalls += 1
+            return false
+        }
+
+        try {
+            await handle(createKeyEvent({ key: 'Backspace' }))
+        } finally {
+            globalThis.confirm = originalConfirm
+        }
+
+        assertEqual(confirmCalls, 1, 'Backspace delete should ask for confirmation when node has children')
+        assert(!!outline.get('B'), 'Node should remain when deletion confirmation is dismissed')
+        assert(!!outline.get('B1'), 'Child should remain when deletion confirmation is dismissed')
+        assertEqual(focus.Id.value, 'B', 'Focus should remain on the node when deletion is canceled')
+    })
+
+    await test('Backspace on empty focused text with children deletes after confirmation', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('root', { id: 'B', text: '' })
+        outline.addChild('B', { id: 'B1', text: 'B1' })
+        const focus = createFocus('B', 'text')
+        const handle = keydown(focus)
+
+        const originalConfirm = globalThis.confirm
+        let confirmCalls = 0
+        globalThis.confirm = () => {
+            confirmCalls += 1
+            return true
+        }
+
+        try {
+            await handle(createKeyEvent({ key: 'Backspace' }))
+        } finally {
+            globalThis.confirm = originalConfirm
+        }
+
+        const children = outline.get('root').children.peek()
+        assertEqual(confirmCalls, 1, 'Backspace delete should ask for confirmation when node has children')
+        assertEqual(children.length, 1, 'Confirmed backspace delete should remove the focused node subtree')
+        assertEqual(children[0], 'A', 'Remaining node should be previous sibling after confirmed delete')
+        assert(!outline.get('B'), 'Confirmed delete should remove focused node')
+        assert(!outline.get('B1'), 'Confirmed delete should remove child nodes')
+        assertEqual(focus.Id.value, 'A', 'Focus should move to previous sibling after confirmed delete')
     })
 
     await test('Backspace on empty description switches focus type back to text', async () => {
