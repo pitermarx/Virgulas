@@ -1,6 +1,6 @@
 import { html, render } from 'htm/preact';
 import { signal } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen } from "./ui.js";
+import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal } from "./ui.js";
 import persistence from './persistence.js';
 import { store } from './utils.js';
 
@@ -454,6 +454,7 @@ const Splash = () => {
     }
     <${StatusToolbar} />
     <${OptionsModal} />
+    <${ConflictModal} />
   </div>`;
 };
 

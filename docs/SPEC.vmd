@@ -222,7 +222,8 @@
     - Missing test coverage
       Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
     + Feature ideas
-      - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline. Queue remote sync changes locally and execute them automatically once the connection is restored.
+      - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline.
+        Queue remote sync changes locally and execute them automatically once the connection is restored.
       - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip
       - Image attachments: support pasting or dragging images directly into nodes, uploading them to Supabase Storage (for Remote mode) or persisting as compressed base64 (for Local/File modes).
       - Tags (#) and Mentions (@):

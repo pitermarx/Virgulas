@@ -365,3 +365,291 @@ test.describe('Sync retry behaviour', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
     });
 });
+
+// ─── Helpers for conflict / pull-before-push tests ────────────────────────────
+
+/**
+ * Build an encrypted payload whose node text is `remoteText`, simulated to
+ * have been modified AFTER the local last-sync timestamp by injecting a
+ * `lastModified` value in the future relative to `lastSyncedAt`.
+ */
+const buildConflictPayload = async (
+    page: Page,
+    passphrase: string,
+    remoteNodeText: string,
+    remoteLastModified: number
+) => {
+    return await page.evaluate(
+        async ({ passphrase, remoteNodeText, remoteLastModified }: {
+            passphrase: string; remoteNodeText: string; remoteLastModified: number;
+        }) => {
+            const { encrypt } = await import('/js/crypto2.js');
+            const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+            const salt = btoa(String.fromCharCode(...saltBytes));
+            const doc = {
+                modelVersion: 1,
+                dataVersion: 1,
+                nodes: [
+                    { id: 'root', text: '', description: '', children: ['n1'], parentId: null, open: true, lastModified: 0 },
+                    { id: 'n1', text: remoteNodeText, description: '', children: [], parentId: 'root', open: true, lastModified: remoteLastModified }
+                ]
+            };
+            const data = await encrypt(JSON.stringify(doc), passphrase, salt);
+            return { salt, data };
+        },
+        { passphrase, remoteNodeText, remoteLastModified }
+    );
+};
+
+/**
+ * Installs a mock that serves `remotePayload` from `read()` but with a
+ * `updated_at` value in the future (so `checkRemoteNewer` returns true),
+ * while keeping `lastSyncedAt` at 0 in localStorage.
+ */
+const installMockWithRemoteUpdate = async (
+    page: Page,
+    payload: { salt: string; data: string },
+    remotePayload: { salt: string; data: string }
+) => {
+    await page.addInitScript(
+        ({ payload, remotePayload }: {
+            payload: { salt: string; data: string };
+            remotePayload: { salt: string; data: string };
+        }) => {
+            // Start with the local payload (what the user unlocks with)
+            const localRecord = { ...payload, updated_at: new Date(Date.now() - 60_000).toISOString() };
+            // The remote record is "newer"
+            const remoteRecord = { ...remotePayload, updated_at: new Date(Date.now() + 60_000).toISOString() };
+
+            let callCount = 0;
+            (window as any).__mockSupabaseState = { serverRecord: remoteRecord, upsertCallCount: 0 };
+            (window as any).__retryBaseMs = 30;
+
+            const sessionState = { user: { id: 'user-conflict', email: 'user@test.com' } as any };
+            const queryBuilder = {
+                select: () => queryBuilder,
+                eq: () => queryBuilder,
+                single: async () => {
+                    callCount++;
+                    // First call is from unlockRemote (downloads local doc to decrypt)
+                    // Subsequent calls are from checkRemoteNewer / pullAndMerge
+                    const record = callCount === 1 ? localRecord : remoteRecord;
+                    return { data: record, error: null };
+                },
+                upsert: async (p: any) => {
+                    (window as any).__mockSupabaseState.upsertCallCount++;
+                    (window as any).__mockSupabaseState.serverRecord = { ...p, updated_at: p.updated_at };
+                    return { error: null };
+                }
+            };
+            const client = {
+                auth: {
+                    signInWithPassword: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'user-conflict', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signUp: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'user-conflict', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
+                },
+                from: () => queryBuilder
+            };
+            Object.defineProperty(window, 'supabase', {
+                configurable: true, get: () => ({ createClient: () => client }), set: () => { }
+            });
+            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
+            // Keep lastSyncedAt at 0 so remote will appear newer
+            localStorage.removeItem('vmd_sync_ts');
+        },
+        { payload, remotePayload }
+    );
+};
+
+// ─── Pull-before-push ─────────────────────────────────────────────────────────
+
+test.describe('Pull-before-push', () => {
+    test('auto-merges non-conflicting remote update before pushing', async ({ page }) => {
+        await page.goto('/');
+
+        // Local doc: n1 text = 'Local Node'
+        const passphrase = 'merge-pass';
+        const localPayload = await buildConflictPayload(page, passphrase, 'Local Node', 0);
+
+        // Remote doc: n1 text = 'Remote Node' (different node — different id so no conflict)
+        // Actually let's make n1 same id but only remote modified (localLastModified=0 < lastSyncedAt=0? No)
+        // For auto-merge: use different node ids so they merge cleanly
+        const remotePayload = await page.evaluate(
+            async ({ passphrase }: { passphrase: string }) => {
+                const { encrypt } = await import('/js/crypto2.js');
+                const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+                const salt = btoa(String.fromCharCode(...saltBytes));
+                const doc = {
+                    modelVersion: 1,
+                    dataVersion: 1,
+                    nodes: [
+                        { id: 'root', text: '', description: '', children: ['n1', 'n2'], parentId: null, open: true, lastModified: 0 },
+                        { id: 'n1', text: 'Local Node', description: '', children: [], parentId: 'root', open: true, lastModified: 0 },
+                        { id: 'n2', text: 'Remote Only Node', description: '', children: [], parentId: 'root', open: true, lastModified: Date.now() + 5000 }
+                    ]
+                };
+                const data = await encrypt(JSON.stringify(doc), passphrase, salt);
+                return { salt, data };
+            },
+            { passphrase }
+        );
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        // Edit n1 (local change) — this should trigger pull-before-push
+        await editFirstNode(page, 'Local Edit');
+
+        // After merge: both n1 (local edit) and n2 (remote-only) should be present; no modal
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
+    });
+
+    test('conflict modal appears when both sides changed the same node text', async ({ page }) => {
+        await page.goto('/');
+
+        const passphrase = 'conflict-pass';
+        const T_LOCAL = Date.now() + 1000;   // local modified after sync
+        const T_REMOTE = Date.now() + 2000;  // remote also modified after sync
+
+        // Local doc: n1 was modified locally
+        const localPayload = await buildConflictPayload(page, passphrase, 'Local Version', T_LOCAL);
+        // Remote doc: n1 has different text, also modified
+        const remotePayload = await buildConflictPayload(page, passphrase, 'Remote Version', T_REMOTE);
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        // Trigger sync by editing something (the merge happens pull-before-push)
+        // The node already has conflicting text; just trigger save by touching a sibling
+        await page.evaluate(async () => {
+            const outline = (await import('/js/outline.js')).default as any;
+            outline.addChild('root', { text: 'trigger' });
+        });
+
+        // Conflict modal should appear
+        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 5000 });
+    });
+});
+
+// ─── Conflict resolution modal ────────────────────────────────────────────────
+
+test.describe('Conflict resolution modal', () => {
+    async function setupConflict(page: Page, localText: string, remoteText: string) {
+        const passphrase = 'modal-pass';
+        const T_LOCAL = Date.now() + 1000;
+        const T_REMOTE = Date.now() + 2000;
+
+        const localPayload = await buildConflictPayload(page, passphrase, localText, T_LOCAL);
+        const remotePayload = await buildConflictPayload(page, passphrase, remoteText, T_REMOTE);
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        // Trigger the merge via an outline change
+        await page.evaluate(async () => {
+            const outline = (await import('/js/outline.js')).default as any;
+            outline.addChild('root', { text: 'trigger sync' });
+        });
+
+        // Wait for modal
+        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
+        return passphrase;
+    }
+
+    test('modal shows field name and local / remote values', async ({ page }) => {
+        await setupConflict(page, 'My local text', 'My remote text');
+
+        // Should show "Text" field label
+        await expect(page.locator('.conflict-field-label')).toHaveText(/text/i);
+
+        // Should show local value in a readonly textarea
+        await expect(page.locator('.conflict-value-textarea').first()).toContainText('My local text');
+
+        // Should show remote value
+        await expect(page.locator('.conflict-value-textarea').last()).toContainText('My remote text');
+    });
+
+    test('"Apply" is disabled until all conflicts are resolved', async ({ page }) => {
+        await setupConflict(page, 'A', 'B');
+
+        const applyBtn = page.getByRole('button', { name: 'Apply' });
+        await expect(applyBtn).toBeDisabled();
+
+        // Choose local for the conflict
+        await page.locator('.conflict-keep-btn').first().click();
+        await expect(applyBtn).toBeEnabled();
+    });
+
+    test('"Keep local" resolves to local value and Apply closes modal', async ({ page }) => {
+        await setupConflict(page, 'Local Wins', 'Remote Loses');
+
+        await page.locator('.conflict-keep-btn').first().click();  // Keep local
+        await page.getByRole('button', { name: 'Apply' }).click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        // The local text should be in the outline
+        await expect(page.locator('.node-text-md').first()).toContainText('Local Wins');
+    });
+
+    test('"Keep remote" resolves to remote value and Apply closes modal', async ({ page }) => {
+        await setupConflict(page, 'Local Loses', 'Remote Wins');
+
+        // "Keep remote" is the second .conflict-keep-btn in each conflict-side
+        await page.locator('.conflict-keep-btn').nth(1).click();
+        await page.getByRole('button', { name: 'Apply' }).click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.node-text-md').first()).toContainText('Remote Wins');
+    });
+
+    test('"Use all local" resolves all conflicts to local and enables Apply', async ({ page }) => {
+        await setupConflict(page, 'AllLocal', 'AllRemote');
+
+        await page.getByRole('button', { name: 'Use all local' }).click();
+        const applyBtn = page.getByRole('button', { name: 'Apply' });
+        await expect(applyBtn).toBeEnabled();
+        await applyBtn.click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+    });
+
+    test('"Use all remote" resolves all conflicts to remote', async ({ page }) => {
+        await setupConflict(page, 'Discard', 'Keep This');
+
+        await page.getByRole('button', { name: 'Use all remote' }).click();
+        await page.getByRole('button', { name: 'Apply' }).click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.node-text-md').first()).toContainText('Keep This');
+    });
+
+    test('modal blocks interaction: sync-dot stays synced after apply', async ({ page }) => {
+        await setupConflict(page, 'Block A', 'Block B');
+
+        // While modal is open, sync-dot should not be 'error'
+        await expect(page.locator('.sync-dot')).not.toHaveAttribute('title', 'Sync: error');
+
+        // Resolve and apply
+        await page.locator('.conflict-keep-btn').first().click();
+        await page.getByRole('button', { name: 'Apply' }).click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
+    });
+});

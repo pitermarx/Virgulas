@@ -1,7 +1,20 @@
 import { signal, effect, batch } from '@preact/signals'
-import { encrypt, decrypt, randomId, generateSalt } from "./crypto2.js"
+import { encrypt, decrypt, generateSalt } from "./crypto2.js"
 import outline from "./outline.js"
 import { log, store } from './utils.js'
+import {
+  remoteSync,
+  syncStatus,
+  pendingConflicts,
+  pullAndMerge,
+  checkRemoteNewer,
+  startPolling,
+  stopPolling,
+  setCredentials,
+  clearCredentials,
+  skipNextRemotePush,
+  setLastSyncedAt
+} from './sync.js'
 
 function normalizeMode(mode) {
   return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
@@ -124,75 +137,6 @@ const filesystemStorage = (function () {
   }
 })()
 
-const remoteSync = (function () {
-  const DEFAULT_CONFIG = { url: 'https://gcpdascpdrakecpknrtt.supabase.co', key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc' }
-  let client = null
-  let mainTable = null
-
-  function readConfig() {
-    try {
-      const raw = store.supabase.get()
-      if (!raw) return DEFAULT_CONFIG
-      const parsed = JSON.parse(raw)
-      const url = parsed.url || parsed.supabaseUrl
-      const key = parsed.key || parsed.supabaseAnonKey
-      if (!url || !key) return DEFAULT_CONFIG
-      return { url, key }
-    } catch {
-      return DEFAULT_CONFIG
-    }
-  }
-
-  function ensureClient() {
-    if (!window.supabase?.createClient) {
-      throw new Error('Supabase client is unavailable in this environment')
-    }
-    if (client) return client
-    const config = readConfig()
-    client = window.supabase.createClient(config.url, config.key, { realtime: { enabled: false } })
-    mainTable = client.from('outlines')
-    return client
-  }
-
-  async function withClient(fn) {
-    const active = ensureClient()
-    const { data, error } = await fn(active)
-    // PTGRST116 = No rows found, which is expected if the user hasn't saved anything yet
-    if (error && error.code !== 'PGRST116') throw error
-    return data
-  }
-
-  const module = {
-    withClient,
-    signIn: (email, password) => withClient((c) => c.auth.signInWithPassword({ email, password })),
-    signUp: (email, password) => withClient((c) => c.auth.signUp({ email, password })),
-    signOut: async () => {
-      const c = ensureClient()
-      return c.auth.signOut()
-    },
-    getUser: () => withClient((c) => c.auth.getUser()).then(res => res.user),
-
-    read: () => withClient(() => mainTable.select('salt, data, updated_at').single()),
-    getLastUpdate: () => withClient(() => mainTable.select('updated_at').single()),
-    upsert: async (data, salt) => {
-      const payload = {
-        data,
-        updated_at: new Date().toISOString(),
-        user_id: (await module.getUser())?.id
-      }
-      if (salt) {
-        payload.salt = salt
-      }
-      return await withClient(() => mainTable
-        .upsert(payload, {
-          // this means "update the existing row with this user_id, or insert a new one if it doesn't exist"
-          onConflict: 'user_id'
-        }))
-    }
-  }
-
-  return module
-})()
 
 const localEncryptedData = {
   get() {
@@ -242,7 +186,6 @@ const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
-export const syncStatus = signal('synced') // 'synced' | 'syncing' | 'error' | 'offline'
 
 async function retryWithBackoff(fn, maxRetries = 3) {
   const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
@@ -309,11 +252,72 @@ effect(() => {
         return
       }
       localEncryptedData.set(encrypted, saltValue)
-      if (mode === 'remote') {
+      if (mode === 'remote' && pendingConflicts.peek().length === 0) {
+        // Skip remote push if a merge was just applied (prevents double-push)
+        if (skipNextRemotePush.peek()) {
+          skipNextRemotePush.value = false
+          log('[Persistence] Skipping remote push after merge apply')
+          return
+        }
+
         syncStatus.value = 'syncing'
+
+        // Pull-before-push: check if remote has changes since last sync
+        const lastSyncedAt = parseInt(store.syncTs.get('0') || '0') || 0
+        let isRemoteNewer = false
+        try {
+          isRemoteNewer = await checkRemoteNewer(lastSyncedAt)
+        } catch { /* ignore, proceed with direct push */ }
+
+        if (lastTimeoutId !== timeoutId) return
+
+        if (isRemoteNewer) {
+          try {
+            const result = await pullAndMerge(passphraseValue, saltValue)
+            if (lastTimeoutId !== timeoutId) return
+
+            if (!result.clean) {
+              log('[Persistence] Sync blocked by conflicts')
+              syncStatus.value = 'synced'
+              return
+            }
+
+            if (result.mergedJson) {
+              const mergedEncrypted = await encrypt(result.mergedJson, passphraseValue, saltValue)
+              if (lastTimeoutId !== timeoutId) return
+              await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, saltValue))
+              if (lastTimeoutId === timeoutId) {
+                localEncryptedData.set(mergedEncrypted, saltValue)
+                setLastSyncedAt(Date.now())
+                syncStatus.value = 'synced'
+              }
+              // Apply merged doc; flag prevents the triggered save from re-pushing
+              skipNextRemotePush.value = true
+              outline.deserialize(result.mergedJson)
+            } else {
+              // Remote not newer after all (race) or no data to merge
+              await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue))
+              if (lastTimeoutId === timeoutId) {
+                setLastSyncedAt(Date.now())
+                syncStatus.value = 'synced'
+              }
+            }
+          } catch (pullErr) {
+            console.error('[Persistence] Pull-merge failed:', pullErr)
+            if (lastTimeoutId === timeoutId) {
+              syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+            }
+          }
+          return
+        }
+
+        // Remote not newer — direct push
         try {
           await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue))
-          if (lastTimeoutId === timeoutId) syncStatus.value = 'synced'
+          if (lastTimeoutId === timeoutId) {
+            setLastSyncedAt(Date.now())
+            syncStatus.value = 'synced'
+          }
         } catch (syncError) {
           console.error('[Persistence] Remote sync upload failed after retries:', syncError)
           if (lastTimeoutId === timeoutId) {
@@ -409,6 +413,9 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
       passphrase.value = code
     })
     rememberMode('remote')
+    setLastSyncedAt(Date.now())
+    setCredentials(code, salt)
+    startPolling()
     return true
   }
 
@@ -427,6 +434,10 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     })
     localEncryptedData.set(remoteData.data, remoteSalt)
     rememberMode('remote')
+    // Mark sync timestamp so next edit doesn't falsely detect remote as newer
+    setLastSyncedAt(Date.now())
+    setCredentials(code, remoteSalt)
+    startPolling()
     return true
   } catch (error) {
     throw parseRemoteDecryptError(error)
@@ -627,15 +638,22 @@ export default {
       passphrase.value = newPassphrase
     })
     rememberMode('remote')
+    setLastSyncedAt(Date.now())
+    setCredentials(newPassphrase, salt)
+    startPolling()
     return true
   },
   syncStatus,
   lock() {
+    stopPolling()
+    clearCredentials()
     passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
   },
   async signOut() {
+    stopPolling()
+    clearCredentials()
     await remoteSync.signOut()
     authMode.value = 'remote'
     passphrase.value = ''
