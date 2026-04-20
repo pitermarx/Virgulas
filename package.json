@@ -7,7 +7,9 @@
         "test": "node tests/run-all-tests.mjs",
         "test:e2e": "playwright test --grep-invert @unit",
         "test:unit": "playwright test --grep @unit",
+        "vendor:sync": "node scripts/sync-vendor.mjs",
         "serve": "serve -p 3000 source",
+        "postinstall": "npm run vendor:sync",
         "db:start": "supabase start --ignore-health-check",
         "db:stop": "supabase stop --no-backup --yes"
     },
@@ -18,7 +20,8 @@
     },
     "dependencies": {
         "@preact/signals": "^2.9.0",
-        "preact": "^10.29.1",
-        "htm": "^3.1.1"
+        "@supabase/supabase-js": "^2.104.0",
+        "htm": "^3.1.1",
+        "preact": "^10.29.1"
     }
 }

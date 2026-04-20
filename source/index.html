@@ -8,15 +8,17 @@
   <meta name="description" content="Local-first browser outliner">
   <meta name="apple-mobile-web-app-title" content="Virgulas" />
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase.js"></script>
 
   <script type="importmap">
     {
       "imports": {
-        "preact":          "https://esm.sh/preact@10.29.1",
-        "preact/hooks":    "https://esm.sh/preact@10.29.1/hooks",
-        "@preact/signals": "https://esm.sh/@preact/signals@2.9.0?external=preact",
-        "htm/preact":      "https://esm.sh/htm@3.1.1/preact?external=preact"
+        "preact":               "./vendor/preact.module.js",
+        "preact/hooks":         "./vendor/hooks.module.js",
+        "@preact/signals-core": "./vendor/signals-core.module.js",
+        "@preact/signals":      "./vendor/signals.module.js",
+        "htm":                  "./vendor/htm.module.js",
+        "htm/preact":           "./vendor/htm-preact.module.js"
       }
     }
   </script>
@@ -77,6 +79,16 @@
       </ul>
     </div>
   </div>
+  <script>
+    if ('serviceWorker' in navigator && window.isSecureContext && !navigator.webdriver) {
+      window.addEventListener('load', () => {
+        const swUrl = new URL('./sw.js', window.location.href)
+        navigator.serviceWorker.register(swUrl).catch((error) => {
+          console.warn('Service worker registration failed', error)
+        })
+      })
+    }
+  </script>
 </body>
 
 </html>
