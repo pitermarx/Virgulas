@@ -2,6 +2,7 @@ import { signal } from '@preact/signals'
 import { encrypt, decrypt } from './crypto2.js'
 import outline from './outline.js'
 import { log, store } from './utils.js'
+import { devSync } from './devtools.js'
 
 // ── Supabase remote sync client ──────────────────────────────────────────────
 
@@ -213,6 +214,7 @@ export function getLastSyncedAt() {
 
 export function setLastSyncedAt(ts) {
     store.syncTs.set(String(ts))
+    devSync.lastSyncAt.value = ts
 }
 
 // ── Pull-before-push ─────────────────────────────────────────────────────────
@@ -272,6 +274,7 @@ export async function pullAndMerge(passphrase, salt) {
         pendingConflicts.value = conflicts
         pendingMergedDoc.value = { ...localObj, nodes: merged }
         pendingConflictResolutions.value = new Map()
+        devSync.conflictCount.value = devSync.conflictCount.peek() + conflicts.length
         return { clean: false, mergedJson: null }
     }
 
@@ -351,6 +354,7 @@ let _pollingInterval = null
 export function startPolling() {
     stopPolling()
     _pollingInterval = setInterval(async () => {
+        devSync.pollRunCount.value = devSync.pollRunCount.peek() + 1
         // Don't stack pulls while conflicts are pending
         if (pendingConflicts.peek().length > 0) return
 

@@ -1,19 +1,16 @@
-let debug = new URLSearchParams(window.location.search).get('debug')
+import { devPanelOpen } from './devtools.js'
 
 export function log(...args) {
-    if (debug === 'true') {
+    if (devPanelOpen.peek()) {
         console.log('[debug]', ...args)
     }
 }
 
 export function enableDebug() {
-    debug = 'true'
+    // Kept for backwards compatibility; opens the dev panel instead of using query params
+    devPanelOpen.value = true
     log('Debug mode enabled')
     document.body.classList.add('debug')
-}
-
-if (debug) {
-    enableDebug()
 }
 
 export const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);

@@ -6,12 +6,25 @@ import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
+import { devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
 const selectedIds = signal([])
 const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
 const focusMe = { ref: (el) => el && setTimeout(() => el.focus(), 0) }
+
+// ── Mobile keyboard-aware status bar ─────────────────────────────────────────
+// When the virtual keyboard appears on mobile, the visible viewport shrinks.
+// We apply a dynamic bottom inset to the status toolbar so it stays visible
+// above the keyboard. Desktop behavior is unchanged.
+if (isMobile && typeof window !== 'undefined' && window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+        const vv = window.visualViewport
+        const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        document.documentElement.style.setProperty('--keyboard-inset', keyboardHeight + 'px')
+    })
+}
 
 const fadedText = "color: var(--color-text-muted);"
 
@@ -84,7 +97,23 @@ function NodeDesc({ node }) {
             <textarea
                 rows=${lines.length || 1} ...${focusMe} type="text"
                 class="node-desc-textarea" placeholder="Add description..." value=${description} focused
-                onBlur=${onBlur} onInput=${e => outline.update(id, { description: e.currentTarget.value })}>
+                onBlur=${onBlur}
+                onpaste=${e => {
+                // Description always uses plain-text paste — never routed through VMD parser
+                e.preventDefault()
+                const text = e.clipboardData.getData('text/plain')
+                const target = e.currentTarget
+                const start = target.selectionStart
+                const end = target.selectionEnd
+                const current = target.value
+                const next = current.substring(0, start) + text + current.substring(end)
+                outline.update(id, { description: next })
+                // Restore caret position after Preact re-render
+                requestAnimationFrame(() => {
+                    target.selectionStart = target.selectionEnd = start + text.length
+                })
+            }}
+                onInput=${e => outline.update(id, { description: e.currentTarget.value })}>
             </textarea></div>`
     }
 
@@ -120,8 +149,17 @@ function NodeText({ node }) {
         }
         return html`<input
             ...${focusMe} type="text" onpaste=${e => {
+                const text = e.clipboardData.getData('text/plain')
+                const lines = text.split(/\r?\n/).filter(l => l.trim())
+                // Single-line paste without a leading bullet marker → native paste
+                const isSingleLine = lines.length <= 1
+                const hasBullet = lines.length > 0 && /^\s*[-+]/.test(lines[0])
+                if (isSingleLine && !hasBullet) {
+                    // Allow the browser to handle it natively (insert at caret)
+                    return
+                }
                 e.preventDefault()
-                outline.setVMD(e.clipboardData.getData('text/plain'), id)
+                outline.setVMD(text, id)
             }}
             class="node-text-input" placeholder="Type here..." value=${text}
             onBlur=${onBlur} onInput=${e => outline.update(id, { text: e.currentTarget.value })} />`
@@ -499,16 +537,86 @@ function SearchNode({ node, indent = 0 }) {
 document.onkeydown = keydown(focus)
 document.body.focus()
 
-const isDebug = new URLSearchParams(window.location.search).get('debug') === 'true'
+function formatBytes(bytes) {
+    if (!bytes) return '0 B'
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
 
-export function DebugPanel() {
-    if (!isDebug) return null
-    return html`<div class="debug-panel">
-        <div>focusPath: ${focusId.value || 'null'}</div>
-        <div>zoomPath: ${outline.zoomId.value}</div>
-        <div>historyLength: 0</div>
-        <div>nodeCount: ${outline.nodeCount}</div>
+export function DeveloperPanel() {
+    if (!devPanelOpen.value) return null
+
+    const focusedNode = focusId.value ? outline.get(focusId.value) : null
+    const focusedNodeRaw = focusedNode ? JSON.stringify(focusedNode.peek(), null, 2) : 'none'
+    const stats = outline.getStats()
+
+    // Refresh storage quota each time the panel is rendered open
+    refreshStorageQuota()
+
+    return html`<div class="dev-panel">
+        <div class="dev-panel-header">Developer Panel <button class="dev-panel-close" onClick=${() => devPanelOpen.value = false}>×</button></div>
+        <div class="dev-panel-grid">
+            <section class="dev-panel-section">
+                <h4>Outline</h4>
+                <dl>
+                    <dt>Nodes</dt><dd>${stats.nodeCount}</dd>
+                    <dt>Max depth</dt><dd>${stats.maxDepth}</dd>
+                    <dt>Words</dt><dd>${stats.wordCount}</dd>
+                    <dt>Chars</dt><dd>${stats.charCount}</dd>
+                    <dt>Open w/ children</dt><dd>${stats.openCount}</dd>
+                    <dt>Collapsed</dt><dd>${stats.collapsedCount}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section">
+                <h4>Focus / Zoom / Search</h4>
+                <dl>
+                    <dt>Focus ID</dt><dd>${focusId.value || '—'}</dd>
+                    <dt>Focus type</dt><dd>${focusType.value || '—'}</dd>
+                    <dt>Zoom ID</dt><dd>${outline.zoomId.value}</dd>
+                    <dt>Search</dt><dd>${searchQuery.value ? '"' + searchQuery.value + '"' : '—'}</dd>
+                    <dt>Hash applied</dt><dd>${devPersistence.hashApplied.value ? 'yes' : 'no'}</dd>
+                    <dt>Unlock mode</dt><dd>${devPersistence.unlockMode.value || persistence.getMode()}</dd>
+                    <dt>Unlock ms</dt><dd>${devPersistence.unlockDurationMs.value || '—'}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section">
+                <h4>Sync</h4>
+                <dl>
+                    <dt>Status</dt><dd>${syncStatus.value}</dd>
+                    <dt>Last sync</dt><dd>${devSync.lastSyncAt.value ? new Date(devSync.lastSyncAt.value).toLocaleTimeString() : '—'}</dd>
+                    <dt>Last sync ms</dt><dd>${devSync.lastSyncDurationMs.value || '—'}</dd>
+                    <dt>Retries</dt><dd>${devSync.retryCount.value}</dd>
+                    <dt>Last error</dt><dd>${devSync.lastError.value || '—'}</dd>
+                    <dt>Conflicts seen</dt><dd>${devSync.conflictCount.value}</dd>
+                    <dt>Poll runs</dt><dd>${devSync.pollRunCount.value}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section">
+                <h4>Crypto</h4>
+                <dl>
+                    <dt>Last encrypt</dt><dd>${devCrypto.lastEncryptMs.value ? devCrypto.lastEncryptMs.value + ' ms' : '—'}</dd>
+                    <dt>Last decrypt</dt><dd>${devCrypto.lastDecryptMs.value ? devCrypto.lastDecryptMs.value + ' ms' : '—'}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section">
+                <h4>Storage</h4>
+                <dl>
+                    <dt>Used</dt><dd>${formatBytes(devStorage.usageBytes.value)}</dd>
+                    <dt>Quota</dt><dd>${formatBytes(devStorage.quotaBytes.value)}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section dev-panel-section-full">
+                <h4>Focused node JSON</h4>
+                <pre class="dev-panel-json">${focusedNodeRaw}</pre>
+            </section>
+        </div>
     </div>`
+}
+
+// Keep DebugPanel as an alias for backwards compat in tests
+export function DebugPanel() {
+    return DeveloperPanel()
 }
 
 // ── Conflict resolution modal ─────────────────────────────────────────────────

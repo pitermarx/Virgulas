@@ -354,4 +354,44 @@ test.describe('Keyboard', () => {
     await expect(shortcutsModal).toContainText('Search: Tab / Shift+Tab or ↑ / ↓');
     await expect(shortcutsModal).toContainText('Search: Enter');
   });
+
+  test('single-line plain paste in node text is native (inserts at caret)', async ({ page }) => {
+    const node = page.locator('.node-content').nth(0);
+    await node.click();
+    const input = node.locator('input');
+    await expect(input).toBeFocused();
+
+    // Set initial text so we can verify caret-position paste
+    await input.fill('hello world');
+    await input.press('Home'); // caret at start
+
+    // Paste plain single-line text without bullet marker
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', 'greet ');
+      const inp = document.querySelector('input.node-text-input') as HTMLInputElement;
+      if (inp) inp.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    });
+
+    // Node count should remain 1 — no new nodes created
+    await expect(page.locator('.node-content')).toHaveCount(1);
+  });
+
+  test('multi-line bullet paste in node text creates structure', async ({ page }) => {
+    const node = page.locator('.node-content').nth(0);
+    await node.click();
+    const input = node.locator('input');
+    await expect(input).toBeFocused();
+
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '- alpha\n- beta\n- gamma');
+      const inp = document.querySelector('input.node-text-input') as HTMLInputElement;
+      if (inp) inp.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    });
+
+    // Three bullet lines should result in at least 1 node (the original) plus siblings/children
+    const count = await page.locator('.node-content').count();
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
 });

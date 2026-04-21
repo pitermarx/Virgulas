@@ -16,7 +16,6 @@ const APP_SHELL = [
   './site.webmanifest',
   './js/app.js',
   './js/crypto2.js',
-  './js/node.js',
   './js/outline.js',
   './js/persistence.js',
   './js/search.js',

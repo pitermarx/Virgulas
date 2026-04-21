@@ -1,5 +1,6 @@
-const debug = new URLSearchParams(window.location.search).get('debug')
-const log = debug === 'true' ? console.log.bind(console, '[debug crypto]') : () => { }
+import { devCrypto } from './devtools.js'
+import { devPanelOpen } from './devtools.js'
+const log = (...args) => { if (devPanelOpen.peek()) console.log('[debug crypto]', ...args) }
 
 async function compress(string) {
     const compressionStream = new CompressionStream('gzip')
@@ -72,6 +73,7 @@ function fromBase64(base64) {
 // Encrypts text with AES-GCM-256
 // Returns base64 encoded string: IV (12 bytes) + Ciphertext
 async function encrypt(text, passphrase, salt) {
+    const _t0 = performance.now()
     const encodedText = await compress(text)
 
     const iv = window.crypto.getRandomValues(new Uint8Array(12))
@@ -88,12 +90,15 @@ async function encrypt(text, passphrase, salt) {
     combined.set(new Uint8Array(ciphertext), iv.length)
 
     // Convert to base64
-    return toBase64(combined)
+    const result = toBase64(combined)
+    devCrypto.lastEncryptMs.value = Math.round(performance.now() - _t0)
+    return result
 }
 
 // Decrypts base64 encoded string with AES-GCM-256
 // Returns decrypted text
 async function decrypt(encryptedBase64, passphrase, salt) {
+    const _t0 = performance.now()
     // Convert from base64 to Uint8Array
     const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0))
 
@@ -109,7 +114,9 @@ async function decrypt(encryptedBase64, passphrase, salt) {
             ciphertext
         )
 
-        return await decompress(decrypted)
+        const result = await decompress(decrypted)
+        devCrypto.lastDecryptMs.value = Math.round(performance.now() - _t0)
+        return result
     } catch (e) {
         console.error("Decryption failed:", e)
         throw new Error("Invalid password or corrupted data")

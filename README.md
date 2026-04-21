@@ -18,7 +18,7 @@ Virgulas is a local-first browser outliner.
   - Empty root document shows an empty state to create the first node
 - Raw mode editor (`.vmd` format) with Save / Cancel; invalid VMD saves are rejected with an inline error and no data loss
 - Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly
-- Debug panel (visible with `?debug=true`, shows internal state)
+- Developer panel (`Ctrl+Alt+D` toggles at runtime): outline stats, sync diagnostics, crypto timings, storage quota, focused node raw JSON
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage

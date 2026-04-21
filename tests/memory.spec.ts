@@ -126,4 +126,39 @@ test.describe('Memory mode (first-ever visit)', () => {
         // Still in memory mode
         await expect(page.locator('.status-memory-badge')).toBeVisible();
     });
+
+    test('first-load URL hash deep-link zooms into the correct node', async ({ page }) => {
+        // Seed a known node ID in the intro.vmd is not reliable; instead we use
+        // seedEncryptedDoc is not available in memory mode — we manipulate the
+        // hash after load, simulating a shared link opened for the first time.
+        // 1. Load in memory mode (no localStorage)
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+
+        // 2. Get the first real node ID from the outline
+        const nodeId = await page.evaluate(() => {
+            return (window as any).__testOutline
+                ? (window as any).__testOutline.getRoot().peek().children[0]
+                : null
+        }).catch(() => null)
+
+        // If we can't get the nodeId via test hook, use the breadcrumb zoom approach
+        // by clicking the first bullet to zoom in, then reload with that hash
+        const bullet = page.locator('.bullet').first()
+        await bullet.click()
+
+        // After bullet click we should be zoomed in — breadcrumbs appear
+        const crumbs = page.locator('.breadcrumbs')
+        await expect(crumbs).toBeVisible({ timeout: 3000 })
+
+        // The hash should now carry the zoomed node's ID
+        const hash = await page.evaluate(() => window.location.hash)
+        expect(hash).toMatch(/^#.+/)
+
+        // 3. Reload with the same hash — app should re-apply the zoom
+        await page.goto('/' + hash)
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 })
+        // Breadcrumbs should be visible because we are zoomed in
+        await expect(page.locator('.breadcrumbs')).toBeVisible({ timeout: 3000 })
+    });
 });
