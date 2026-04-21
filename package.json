@@ -8,8 +8,10 @@
         "test:e2e": "playwright test --grep-invert @unit",
         "test:unit": "playwright test --grep @unit",
         "vendor:sync": "node scripts/sync-vendor.mjs",
+        "sw:bump": "node scripts/bump-sw-caches.mjs",
+        "sw:hooks": "node scripts/install-hooks.mjs",
         "serve": "serve -p 3000 source",
-        "postinstall": "npm run vendor:sync",
+        "postinstall": "npm run vendor:sync && npm run sw:bump",
         "db:start": "supabase start --ignore-health-check",
         "db:stop": "supabase stop --no-backup --yes"
     },

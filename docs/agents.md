@@ -71,6 +71,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.1'
 
 Do not change these URLs or versions without updating this file.
 
+### Service worker caches (`source/sw.js`)
+
+The service worker uses three versioned caches. Each cache has a dedicated strategy.
+
+| Cache constant  | Cache name pattern       | Covers                                           | Strategy               |
+| --------------- | ------------------------ | ------------------------------------------------ | ---------------------- |
+| `VENDOR_CACHE`  | `virgulas-vendor-v<N>`   | `source/vendor/` JS files                        | Cache-first            |
+| `FONTS_CACHE`   | `virgulas-fonts-v<N>`    | `source/fonts/` and `source/media/` assets       | Cache-first            |
+| `APP_CACHE`     | `virgulas-app-v<N>`      | `source/index.html`, `source/css/`, `source/js/` | Stale-while-revalidate |
+
+**Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed).
+
+- `npm install` runs the bump script automatically (via `postinstall`) — vendor cache bumps are fully hands-off.
+- For changes to fonts, media, or app files, run `npm run sw:bump` before committing.
+- To automate this for every push, install the pre-push hook once per clone:
+  ```bash
+  npm run sw:hooks
+  ```
+  The hook runs `sw:bump` and aborts the push if `sw.js` was modified, prompting you to commit the version bump first.
+
+**Adding a new file to a pre-cached shell:** add the path to the appropriate `*_SHELL` array in `source/sw.js`, add the same path (or its parent directory) to the matching group in `scripts/bump-sw-caches.mjs`, then run `npm run sw:bump`.
+
 ### Database setup
 
 Initialize local Supabase files (first time only):
