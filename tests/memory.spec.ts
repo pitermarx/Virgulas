@@ -126,4 +126,25 @@ test.describe('Memory mode (first-ever visit)', () => {
         // Still in memory mode
         await expect(page.locator('.status-memory-badge')).toBeVisible();
     });
+
+    test('first-load URL hash deep-link zooms into the correct node', async ({ page }) => {
+        // Load in memory mode (no localStorage)
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+
+        // Get the ID of the first real child node from the DOM
+        const nodeId = await page.locator('.node-content').first().getAttribute('data-node-id');
+        expect(nodeId).toBeTruthy();
+
+        // Simulate "first-load with this hash in the URL":
+        // Set the hash to the node ID, then call applyHashZoomIfPresent (the same
+        // function called during unlockMemory when the URL has a hash on first load).
+        await page.evaluate((id) => {
+            window.location.hash = id!;
+            (window as any).__applyHashZoomIfPresent?.();
+        }, nodeId);
+
+        // Breadcrumbs should be visible because we are now zoomed into that node
+        await expect(page.locator('.breadcrumbs')).toBeVisible({ timeout: 3000 });
+    });
 });

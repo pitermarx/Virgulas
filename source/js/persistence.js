@@ -2,6 +2,7 @@ import { signal, effect, batch } from '@preact/signals'
 import { encrypt, decrypt, generateSalt } from "./crypto2.js"
 import outline from "./outline.js"
 import { log, store } from './utils.js'
+import { devPersistence } from './devtools.js'
 import {
   remoteSync,
   syncStatus,
@@ -179,8 +180,12 @@ function applyHashZoomIfPresent() {
   const node = outline.get(nodeParam)
   if (node) {
     outline.zoomIn(nodeParam)
+    devPersistence.hashApplied.value = true
   }
 }
+
+// Test hook: allows E2E tests to trigger hash zoom without a full page reload
+window.__applyHashZoomIfPresent = applyHashZoomIfPresent
 
 const passphrase = signal('')
 const authMode = signal('local')
@@ -460,6 +465,8 @@ async function unlockMemory() {
     outline.addChild('root', { text: '' }) // fallback: intro fetch failed, initialize with one empty node
   }
 
+  applyHashZoomIfPresent()
+
   batch(() => {
     authMode.value = 'memory'
     memoryReady.value = true
@@ -487,6 +494,7 @@ async function unlockFilesystem() {
   } else {
     outline.reset()
     outline.addChild('root', { text: '' })
+    applyHashZoomIfPresent()
     // Write initial doc with one empty node to file
     await filesystemStorage.write(outline.getVMD('root'))
   }

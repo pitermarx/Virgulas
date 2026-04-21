@@ -1,6 +1,7 @@
 import outline from "./outline.js"
 import { searchQuery, searchResultIndex, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js'
 import { log, store } from './utils.js';
+import { devPanelOpen } from './devtools.js';
 
 export function handleSearchKeyDown(e, focus) {
     const results = searchQuery.value ? outline.search(searchQuery.value) : null
@@ -285,8 +286,11 @@ function handleKeyDownOnFocusedNode(k, focus) {
             zoomIn(focus.Id.value, focus)
             return true
         case 'Ctrl+c':
-            navigator.clipboard.writeText(outline.getVMD(focus.Id.value))
-            return true
+            if (focus.Type.value === 'text' && !window.getSelection()?.toString()) {
+                navigator.clipboard.writeText(outline.getVMD(focus.Id.value))
+                return true
+            }
+            return false
     }
 }
 
@@ -317,6 +321,9 @@ function handleKeyDown(e, focus) {
             if (mainContent) {
                 mainContent.style.maxWidth = mainContent.style.maxWidth === 'none' ? '800px' : 'none'
             }
+            return true
+        case 'Ctrl+Alt+d':
+            devPanelOpen.value = !devPanelOpen.peek()
             return true
     }
 

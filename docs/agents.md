@@ -171,7 +171,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 
 - `app.js`:
   App bootstrap, lock screen/auth flow, top-level render tree, modal orchestration.
-- `ui.js` (renamed from `node.js`):
+- `ui.js` 
   Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, raw/debug panels).
 - `search.js`:
   Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
@@ -192,8 +192,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 
 ### Naming and splitting rules
 
-- Name files by responsibility, not by historical scope.
-  Example: `ui.js` is preferred over `node.js` because it owns multiple UI surfaces, not only one node component.
+- Name files by responsibility
 - If a module exceeds ~350-450 lines and mixes unrelated concerns, split it.
   Preferred split order:
   1. shared state/helpers into a focused module

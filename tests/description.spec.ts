@@ -98,4 +98,65 @@ test.describe('Description', () => {
     await node.locator('input').press('Shift+Enter');
     await expect(node.locator('textarea')).toBeVisible();
   });
+
+  test('pasting bullet text into description does not create new nodes', async ({ page }) => {
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const textInput = node.locator('input').first();
+    await textInput.press('Shift+Enter');
+
+    const descTextarea = node.locator('textarea');
+    await expect(descTextarea).toBeFocused();
+
+    // Paste multi-line bullet text
+    await page.evaluate(() => {
+      const ta = document.querySelector('textarea.node-desc-textarea') as HTMLTextAreaElement;
+      if (!ta) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? '- bullet one\n- bullet two' : '' },
+        configurable: true
+      });
+      ta.dispatchEvent(event);
+    });
+
+    // Should remain as one node — no new nodes created
+    await expect(page.locator('.node-content')).toHaveCount(1);
+    // Description should contain the pasted text as-is
+    const desc = await descTextarea.inputValue();
+    expect(desc).toContain('bullet one');
+    expect(desc).toContain('bullet two');
+  });
+
+  test('pasting plain text into description inserts inline text', async ({ page }) => {
+    // Use a node with an empty description so the paste result is predictable
+    await setupDoc(page, {
+      id: 'root', text: 'Root',
+      children: [{ id: '1', text: 'Node 1', description: '', children: [] }]
+    });
+
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const textInput = node.locator('input').first();
+    await textInput.press('Shift+Enter');
+
+    const descTextarea = node.locator('textarea');
+    await expect(descTextarea).toBeFocused();
+
+    await page.evaluate(() => {
+      const ta = document.querySelector('textarea.node-desc-textarea') as HTMLTextAreaElement;
+      if (!ta) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? 'hello world' : '' },
+        configurable: true
+      });
+      ta.dispatchEvent(event);
+    });
+
+    const desc = await descTextarea.inputValue();
+    expect(desc).toContain('hello world');
+    // Node count unchanged
+    await expect(page.locator('.node-content')).toHaveCount(1);
+  });
 });

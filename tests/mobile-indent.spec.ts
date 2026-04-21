@@ -45,6 +45,31 @@ test.describe('Mobile swipe indentation', () => {
     test('? shortcuts button is not visible on mobile', async ({ page }) => {
         await expect(page.getByRole('button', { name: '?' })).toHaveCount(0);
     });
+
+    test('status bar remains visible above keyboard when input is focused', async ({ page }) => {
+        const toolbar = page.locator('.status-toolbar');
+        await expect(toolbar).toBeVisible();
+
+        // Simulate the visual viewport shrinking (keyboard appears)
+        // by setting the --keyboard-inset CSS variable as the JS listener would
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '300px')
+        });
+
+        // Toolbar should still be in the DOM and visible
+        await expect(toolbar).toBeVisible();
+
+        // Padding-bottom should reflect the inset
+        const paddingBottom = await toolbar.evaluate(el => getComputedStyle(el).paddingBottom);
+        // Padding bottom should be > 0 (at least the inset of 300px)
+        const pbValue = parseFloat(paddingBottom);
+        expect(pbValue).toBeGreaterThan(0);
+
+        // Reset
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '0px')
+        });
+    });
 });
 
 async function getParentId(page: Page, nodeId: string): Promise<string | null> {

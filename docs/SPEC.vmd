@@ -13,10 +13,20 @@
       - When focusing a "Node" or "Description", the text becomes editable, and the raw markdown is visible
       - (MOBILE ONLY) When focusing a "Node", its "Description" field becomes visible, even when empty
       - (DESKTOP ONLY) To toggle between "Node" and "Description" we can use `Shift+Enter`. Empty "Descriptions" are invisible
+      - (MOBILE ONLY) When the virtual keyboard is visible while editing, the status bar remains above the keyboard
+        Implemented via `window.visualViewport` resize events that apply a dynamic bottom inset to the status toolbar
       - (DESKTOP ONLY) When nothing is focused, `↑` focuses the last node and `↓` focuses the first node.
       - (DESKTOP ONLY) `Enter` creates a new node below the focused node.
         If it already has children, the new node becomes the first child.
         If it does not have children, it creates a node at the same level.
+    + PASTE
+      - Pasting into a "Node" text input:
+        - Single-line content without a leading `-` or `+` bullet → native browser paste (inserts at caret)
+        - Multi-line content, or content with a leading `-`/`+` bullet → parsed as VMD structure
+          The pasted text is treated as a VMD fragment; new nodes are created as needed
+      - Pasting into a "Description" textarea:
+        - Always plain text paste — content is inserted at caret, never parsed as VMD
+        - This applies regardless of whether the pasted text looks like bullet-formatted VMD
     + (DESKTOP ONLY) MULTI-SELECT
       - When a "Node" is focused, a multi-bullet selection can be expanded with the shortcuts `Shift+↑/↓`
         - Arrow up expands the selection to the previous "Node" of the same indentation level
@@ -48,6 +58,7 @@
         - Most browsers use `Alt+←` to go back in history, so zooms are kept as browser navigation history entries
         - The URL carries the ID of the zoomed "Node" as a hash fragment so it can be directly referenced
         - If the URL contains a node ID hash on load, the app zooms into that node automatically after unlock
+          This applies to all storage modes: Memory, Local, Remote, and File (including new/empty files)
         - If the node no longer exists, the hash is ignored and the root is shown
       - (DESKTOP ONLY) On zoom, the first child is automatically focused
     + INDENT
@@ -212,9 +223,11 @@
     - The Supabase JS client is loaded via CDN
     - All crypto operations use the native Web Crypto API
     - Playwright E2E tests cover all the app's features and edge cases
-    - (DESKTOP ONLY) If a querystring parameter ?debug=true exists, debug mode is activated
-      - A panel with internal state information is shown
-      - Console debug messages are printed
+    - The app shell and all static assets are cached by a Service Worker (`sw.js`) on first load
+      After the first successful load the app opens fully offline (no network required)
+    - (DESKTOP ONLY) `Ctrl+Alt+D` toggles a developer panel at runtime
+      - Sections: outline stats, focus/zoom/search state, sync diagnostics, crypto timings, storage quota, focused node raw JSON
+      - Console debug messages are also printed while the panel is open
     + CI/CD
       - The app is hosted on GitHub Pages
       - On each commit, all E2E tests are run and a preview site is generated
@@ -225,10 +238,15 @@
   + ROADMAP
     Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
     - Missing test coverage
-      Existing tests cover the happy path well, but several SPEC behaviours have no E2E coverage at all.
+      Existing tests cover the happy path well, but some SPEC behaviours still have no E2E coverage.
+      Remaining gaps:
+      - Service worker offline shell behaviour (real offline navigation / cached boot)
+      - Zoom browser history (back/forward with hash-based zoom semantics)
+      - Mobile search activation gesture (scroll-up)
+      - Sync polling pause/resume while conflicts are pending, and additional merge edge cases
     + Feature ideas
-      - Offline PWA & background sync: cache all static assets via a `sw.js` (Service Worker) so the app loads entirely offline.
-        Queue remote sync changes locally and execute them automatically once the connection is restored.
+      - Queued background sync: queue remote sync changes locally and execute them automatically once the connection is restored.
+      - Load VMD document from querystring parameter. Either url of a vmd file or base64 encoded file text
       - Outline statistics: node count, word count, max depth — shown in Options or a status bar tooltip
       - Image attachments: support pasting or dragging images directly into nodes, uploading them to Supabase Storage (for Remote mode) or persisting as compressed base64 (for Local/File modes).
       - Tags (#) and Mentions (@):
@@ -243,6 +261,6 @@
       - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
       - Restore intro walkthrough: add an Options action that reloads INTRO.VMD so users can revisit onboarding later
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
-      - Revamped Debug Panel: expand the `?debug=true` panel to show real-time storage quota usage, sync latency, timestamp of the last successful upload, cryptographic execution times, active signal dependencies, and a live raw JSON view of the currently focused node.
+      - Developer Panel expansion: extend the `Ctrl+Alt+D` panel with active signal dependencies graph and additional runtime diagnostics.
       - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
       - on file mode, show name of file in the status bar, on the lock screen (last chosen file) and on the options popup
