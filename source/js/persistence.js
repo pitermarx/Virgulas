@@ -184,6 +184,9 @@ function applyHashZoomIfPresent() {
   }
 }
 
+// Test hook: allows E2E tests to trigger hash zoom without a full page reload
+window.__applyHashZoomIfPresent = applyHashZoomIfPresent
+
 const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)

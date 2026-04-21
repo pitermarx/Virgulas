@@ -502,8 +502,13 @@ test.describe('Authentication', () => {
       (window as any).__unlockCallCount = () => unlockCalls;
     });
 
-    const unlockButton = page.getByRole('button', { name: 'Unlock' });
-    await Promise.allSettled([unlockButton.click(), unlockButton.click()]);
+    // Fire two clicks synchronously before any re-render can disable the button,
+    // simulating a rapid double-submit that arrives before the UI updates.
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="Unlock"]') as HTMLButtonElement;
+      btn?.click();
+      btn?.click();
+    });
 
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     const unlockCalls = await page.evaluate(() => (window as any).__unlockCallCount());

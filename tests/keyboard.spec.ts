@@ -367,10 +367,14 @@ test.describe('Keyboard', () => {
 
     // Paste plain single-line text without bullet marker
     await page.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', 'greet ');
       const inp = document.querySelector('input.node-text-input') as HTMLInputElement;
-      if (inp) inp.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      if (!inp) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? 'greet ' : '' },
+        configurable: true
+      });
+      inp.dispatchEvent(event);
     });
 
     // Node count should remain 1 — no new nodes created
@@ -384,10 +388,14 @@ test.describe('Keyboard', () => {
     await expect(input).toBeFocused();
 
     await page.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', '- alpha\n- beta\n- gamma');
       const inp = document.querySelector('input.node-text-input') as HTMLInputElement;
-      if (inp) inp.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      if (!inp) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? '- alpha\n- beta\n- gamma' : '' },
+        configurable: true
+      });
+      inp.dispatchEvent(event);
     });
 
     // Three bullet lines should result in at least 1 node (the original) plus siblings/children

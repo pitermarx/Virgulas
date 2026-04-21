@@ -110,10 +110,14 @@ test.describe('Description', () => {
 
     // Paste multi-line bullet text
     await page.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', '- bullet one\n- bullet two');
       const ta = document.querySelector('textarea.node-desc-textarea') as HTMLTextAreaElement;
-      if (ta) ta.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      if (!ta) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? '- bullet one\n- bullet two' : '' },
+        configurable: true
+      });
+      ta.dispatchEvent(event);
     });
 
     // Should remain as one node — no new nodes created
@@ -140,10 +144,14 @@ test.describe('Description', () => {
     await expect(descTextarea).toBeFocused();
 
     await page.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', 'hello world');
       const ta = document.querySelector('textarea.node-desc-textarea') as HTMLTextAreaElement;
-      if (ta) ta.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      if (!ta) return;
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type: string) => type === 'text/plain' ? 'hello world' : '' },
+        configurable: true
+      });
+      ta.dispatchEvent(event);
     });
 
     const desc = await descTextarea.inputValue();
