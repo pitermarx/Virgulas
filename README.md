@@ -61,7 +61,13 @@ Virgulas is a local-first browser outliner.
 
   Offline support notes:
   - Runtime dependencies are self-hosted from `source/vendor/` (no CDN dependency at runtime)
-  - A service worker caches the app shell and static assets so the app works offline after the first successful load
+  - A service worker (`source/sw.js`) caches assets in three separate buckets so the app works offline after the first successful load:
+    - **Vendor cache** — `source/vendor/` JS files; served **cache-first**
+    - **Fonts & icons cache** — `source/fonts/` and `source/media/` files; served **cache-first**
+    - **App cache** — HTML, CSS, and `source/js/` modules; served **stale-while-revalidate**
+  - Cache version constants in `sw.js` are bumped automatically by `scripts/bump-sw-caches.mjs`, which hashes each file group and increments only the versions whose files have changed
+  - `npm install` runs the bump script automatically, so vendor cache bumps after dependency updates require no manual work
+  - For font/icon/app file changes, run `npm run sw:bump` before committing, or install the pre-push hook (`npm run sw:hooks`) to have it run automatically on every push
 
   The app reads Supabase settings from `localStorage.supabaseconfig` and seeds it automatically on first run with hosted defaults:
   - `url`: `https://gcpdascpdrakecpknrtt.supabase.co`
