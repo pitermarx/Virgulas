@@ -12,18 +12,97 @@ const focusId = signal(null)
 const focusType = signal(null)
 const selectedIds = signal([])
 const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
-const focusMe = { ref: (el) => el && setTimeout(() => el.focus(), 0) }
+const FOCUS_TRANSFER_WINDOW_MS = 450
+const BLUR_SETTLE_MS = 75
+let pendingFocusTransfer = null
+
+function getNodeIdFromElement(el) {
+    return el?.closest?.('.node-content')?.getAttribute('data-node-id') || null
+}
+
+function markFocusTransfer(id, type) {
+    pendingFocusTransfer = {
+        id: String(id),
+        type,
+        expiresAt: Date.now() + FOCUS_TRANSFER_WINDOW_MS
+    }
+}
+
+function requestNodeFocus(id, type) {
+    markFocusTransfer(id, type)
+    focusId.value = id
+    focusType.value = type
+}
+
+function hasActiveTransferForOtherNode(id) {
+    if (!pendingFocusTransfer) return false
+    if (Date.now() > pendingFocusTransfer.expiresAt) {
+        pendingFocusTransfer = null
+        return false
+    }
+    return pendingFocusTransfer.id !== String(id)
+}
+
+function clearTransferForElement(el) {
+    if (!pendingFocusTransfer) return
+    const nodeId = getNodeIdFromElement(el)
+    if (nodeId && nodeId === pendingFocusTransfer.id) {
+        pendingFocusTransfer = null
+    }
+}
+
+function focusElement(el) {
+    if (!el) return
+    if (document.activeElement !== el) {
+        try {
+            el.focus({ preventScroll: true })
+        } catch {
+            el.focus()
+        }
+    }
+    clearTransferForElement(el)
+}
+
+function scheduleBlurClear(id, type) {
+    setTimeout(() => {
+        const activeNodeId = getNodeIdFromElement(document.activeElement)
+        if (activeNodeId === String(id)) return
+        if (hasActiveTransferForOtherNode(id)) return
+        if (focusId.value === id && focusType.value === type) {
+            focusId.value = null
+            focusType.value = null
+        }
+    }, BLUR_SETTLE_MS)
+}
+
+const focusMe = { ref: focusElement }
 
 // ── Mobile keyboard-aware status bar ─────────────────────────────────────────
 // When the virtual keyboard appears on mobile, the visible viewport shrinks.
 // We apply a dynamic bottom inset to the status toolbar so it stays visible
 // above the keyboard. Desktop behavior is unchanged.
 if (isMobile && typeof window !== 'undefined' && window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
+    let lastKeyboardInset = -1
+    let insetUpdateQueued = false
+
+    const updateKeyboardInset = () => {
+        insetUpdateQueued = false
         const vv = window.visualViewport
+        if (!vv) return
         const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        if (keyboardHeight === lastKeyboardInset) return
+        lastKeyboardInset = keyboardHeight
         document.documentElement.style.setProperty('--keyboard-inset', keyboardHeight + 'px')
-    })
+    }
+
+    const queueInsetUpdate = () => {
+        if (insetUpdateQueued) return
+        insetUpdateQueued = true
+        window.requestAnimationFrame(updateKeyboardInset)
+    }
+
+    window.visualViewport.addEventListener('resize', queueInsetUpdate)
+    queueInsetUpdate()
 }
 
 const fadedText = "color: var(--color-text-muted);"
@@ -76,22 +155,13 @@ function NodeDesc({ node }) {
     const { description, id } = node.value // subscribe to changes on node
     const lines = description.split('\n')
     const focusDesc = e => {
-        focusId.value = id
-        focusType.value = 'description'
+        requestNodeFocus(id, 'description')
         e.stopPropagation()
-        console.log('Focusing description of node', id)
     }
 
     if (focusId.value === id && focusType.value === 'description') {
         function onBlur() {
-            setTimeout(() => {
-                const activeEl = document.activeElement
-                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
-                if (focusId.value === id && focusType.value === 'description') {
-                    focusId.value = null
-                    focusType.value = null
-                }
-            }, 250);
+            scheduleBlurClear(id, 'description')
         }
         return html`<div class="node-description" onClick=${focusDesc}>
             <textarea
@@ -136,16 +206,7 @@ function NodeText({ node }) {
     const { text, id } = node.value // subscribe to changes on node
     if (focusId.value === id && focusType.value === 'text') {
         function onBlur() {
-            setTimeout(() => {
-                // If the node was remounted (e.g. after outdent), a new input for the same
-                // node may already hold browser focus — don't clear the signal in that case.
-                const activeEl = document.activeElement
-                if (activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') === id) return
-                if (focusId.value === id && focusType.value === 'text') {
-                    focusId.value = null
-                    focusType.value = null
-                }
-            }, 250);
+            scheduleBlurClear(id, 'text')
         }
         return html`<input
             ...${focusMe} type="text" onpaste=${e => {
@@ -171,8 +232,7 @@ function NodeText({ node }) {
         dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text) : '&nbsp;' }}
         onClick=${e => {
             if (e.target === e.currentTarget) {
-                focusId.value = id
-                focusType.value = 'text'
+                requestNodeFocus(id, 'text')
                 e.stopPropagation()
                 e.preventDefault()
             }
@@ -199,8 +259,7 @@ function NodeBody({ node }) {
     function focusTextIfOnlyClickedThisElement(e) {
         if (e.target === e.currentTarget) {
             selectedIds.value = []
-            focusId.value = id
-            focusType.value = 'text'
+            requestNodeFocus(id, 'text')
             e.stopPropagation()
         }
     }
@@ -535,7 +594,6 @@ function SearchNode({ node, indent = 0 }) {
 }
 
 document.onkeydown = keydown(focus)
-document.body.focus()
 
 function formatBytes(bytes) {
     if (!bytes) return '0 B'

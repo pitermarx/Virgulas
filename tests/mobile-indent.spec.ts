@@ -46,6 +46,27 @@ test.describe('Mobile swipe indentation', () => {
         await expect(page.getByRole('button', { name: '?' })).toHaveCount(0);
     });
 
+    test('tap to edit keeps node focus stable', async ({ page }) => {
+        await page.locator('[data-node-id="A"] .node-text-md').tap();
+
+        const nodeAInput = page.locator('[data-node-id="A"] input');
+        await expect(nodeAInput).toBeFocused();
+        await expect.poll(() => activeNodeId(page)).toBe('A');
+        await expectFocusedNodeStable(page, 'A');
+    });
+
+    test('tap from one node to another keeps edit focus stable', async ({ page }) => {
+        await page.locator('[data-node-id="A"] .node-text-md').tap();
+        await expect(page.locator('[data-node-id="A"] input')).toBeFocused();
+
+        await page.locator('[data-node-id="B"] .node-text-md').tap();
+
+        const nodeBInput = page.locator('[data-node-id="B"] input');
+        await expect(nodeBInput).toBeFocused();
+        await expect.poll(() => activeNodeId(page)).toBe('B');
+        await expectFocusedNodeStable(page, 'B');
+    });
+
     test('status bar remains visible above keyboard when input is focused', async ({ page }) => {
         const toolbar = page.locator('.status-toolbar');
         await expect(toolbar).toBeVisible();
@@ -78,6 +99,30 @@ async function getParentId(page: Page, nodeId: string): Promise<string | null> {
         const node = outline.get(id);
         return node ? node.parentId : null;
     }, { id: nodeId });
+}
+
+async function activeNodeId(page: Page): Promise<string | null> {
+    return page.evaluate(() => {
+        const activeEl = document.activeElement;
+        return activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') || null;
+    });
+}
+
+async function expectFocusedNodeStable(page: Page, nodeId: string, durationMs = 260) {
+    const stayedFocused = await page.evaluate(async ({ id, ms }) => {
+        const deadline = performance.now() + ms;
+        while (performance.now() < deadline) {
+            const activeEl = document.activeElement;
+            const activeNode = activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') || null;
+            if (activeNode !== id) {
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        return true;
+    }, { id: nodeId, ms: durationMs });
+
+    expect(stayedFocused).toBe(true);
 }
 
 async function swipeNode(page: Page, nodeId: string, deltaX: number, deltaY = 0) {
