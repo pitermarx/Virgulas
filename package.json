@@ -10,6 +10,8 @@
         "vendor:sync": "node scripts/sync-vendor.mjs",
         "sw:bump": "node scripts/bump-sw-caches.mjs",
         "sw:hooks": "node scripts/install-hooks.mjs",
+        "commit:check": "node scripts/check-conventional-commits.mjs",
+        "commit:check:range": "node scripts/check-conventional-commits.mjs --range",
         "serve": "serve -p 3000 source",
         "postinstall": "npm run vendor:sync && npm run sw:bump",
         "db:start": "supabase start --ignore-health-check",

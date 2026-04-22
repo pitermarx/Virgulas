@@ -23,8 +23,38 @@ permissions:
   checks: write
 
 jobs:
+  commit-policy:
+    name: Conventional Commit Policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Derive commit range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BEFORE="${{ github.event.before }}"
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="${{ github.sha }}"
+            else
+              RANGE="$BEFORE..${{ github.sha }}"
+            fi
+          else
+            RANGE="${{ github.sha }}"
+          fi
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Conventional Commit headers
+        run: node scripts/check-conventional-commits.mjs --range "${{ steps.range.outputs.range }}"
+
   test:
     name: E2E Tests
+    needs: commit-policy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

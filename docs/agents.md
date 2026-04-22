@@ -85,11 +85,13 @@ The service worker uses three versioned caches. Each cache has a dedicated strat
 
 - `npm install` runs the bump script automatically (via `postinstall`) — vendor cache bumps are fully hands-off.
 - For changes to fonts, media, or app files, run `npm run sw:bump` before committing.
-- To automate this for every push, install the pre-push hook once per clone:
+- To automate this for every push and enforce commit format, install Git hooks once per clone:
   ```bash
   npm run sw:hooks
   ```
-  The hook runs `sw:bump` and aborts the push if `sw.js` was modified, prompting you to commit the version bump first.
+  Installed hooks:
+  - `pre-push` runs `sw:bump` and aborts the push if `sw.js` was modified, prompting you to commit the version bump first.
+  - `commit-msg` validates Conventional Commits headers.
 
 **Adding a new file to a pre-cached shell:** add the path to the appropriate `*_SHELL` array in `source/sw.js`, add the same path (or its parent directory) to the matching group in `scripts/bump-sw-caches.mjs`, then run `npm run sw:bump`.
 
@@ -360,3 +362,27 @@ If any of the following are true, stop and ask rather than proceeding:
 - Implementing the task requires files outside the defined structure
 - A test is failing and the fix is not obvious
 - Two rules in this document appear to conflict
+
+### Rule 11 — Conventional Commits are required
+
+All commits (human and agent-authored) must use a Conventional Commits header:
+
+```
+type(scope)!: subject
+```
+
+- Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+- Scope is optional but recommended for non-trivial changes
+- `!` is required for breaking changes; also include `BREAKING CHANGE:` in the body when applicable
+- Auto-generated merge commit messages are allowed
+
+Examples:
+
+- `feat(sync): add remote retry backoff`
+- `fix(ui)!: rename storage mode label`
+- `chore: bump sw cache versions`
+
+Enforcement:
+
+- Local `commit-msg` hook: run `npm run sw:hooks` once per clone
+- CI validation: all commits in push/PR range must pass Conventional Commits checks
