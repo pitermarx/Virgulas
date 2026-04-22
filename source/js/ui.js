@@ -477,6 +477,8 @@ function Breadcrumbs() {
 
     function startEditing(e) {
         zoomDescEditing.value = true
+        focus.Id.value = null
+        focus.Type.value = null
         e.stopPropagation()
     }
     function stopEditing() {
@@ -496,7 +498,19 @@ function Breadcrumbs() {
                 value=${root.description}
                 onInput=${e => outline.update(root.id, { description: e.currentTarget.value })}
                 onBlur=${stopEditing}
-                onKeyDown=${e => { if (e.key === 'Escape') { stopEditing(); e.preventDefault() } }}></textarea>`
+                onKeyDown=${e => {
+                    if (e.key === 'Escape') {
+                        stopEditing()
+                        focus.Id.value = null
+                        focus.Type.value = null
+                        document.body.focus()
+                        e.preventDefault()
+                        e.stopPropagation()
+                        return
+                    }
+                    // Keep native textarea behavior and avoid bubbling to global shortcuts.
+                    e.stopPropagation()
+                }}></textarea>`
             : html`<div
                 class=${'zoom-desc-display' + (!descText ? ' zoom-desc-placeholder' : '')}
                 onClick=${startEditing}

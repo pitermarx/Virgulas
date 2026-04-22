@@ -341,6 +341,29 @@ test.describe('Keyboard', () => {
     await expect(page.locator('.node-content').nth(1).locator('input')).toBeFocused();
   });
 
+  test('Arrow ↑ when nothing focused selects collapsed visible parent, not hidden child', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'First', children: [] },
+        {
+          id: '2',
+          text: 'Collapsed parent',
+          open: false,
+          children: [{ id: '2.1', text: 'Hidden child', children: [] }]
+        }
+      ]
+    });
+
+    // Hidden child should not be visible while parent is collapsed.
+    await expect(page.locator('.node-content')).toHaveCount(2);
+
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('[data-node-id="2"] input')).toBeFocused();
+    await expect(page.locator('[data-node-id="2.1"]')).toHaveCount(0);
+  });
+
   test('Shortcuts popup includes multi-select and search shortcuts', async ({ page }) => {
     await page.getByRole('button', { name: '?' }).click();
 

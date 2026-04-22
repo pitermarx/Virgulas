@@ -176,6 +176,108 @@ test.describe('Zoom', () => {
     await expect(descDisplay).toContainText('My zoom description');
   });
 
+  test('Enter in zoom description adds newline and does not create a node', async ({ page }) => {
+    const parent = page.locator('.node-content').nth(0);
+    await parent.click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await expect(page.locator('.node-content')).toHaveCount(1);
+
+    const descDisplay = page.locator('.zoom-desc-display');
+    await descDisplay.click();
+
+    const descTextarea = page.locator('.zoom-desc-textarea');
+    await expect(descTextarea).toBeFocused();
+
+    await descTextarea.fill('Line 1');
+    await descTextarea.press('Enter');
+    await page.keyboard.type('Line 2');
+
+    await expect(descTextarea).toHaveValue('Line 1\nLine 2');
+    await expect(page.locator('.node-content')).toHaveCount(1);
+  });
+
+  test('Arrow boundaries in zoomed view blur and no-focus arrows return to first/last visible child', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent', children: [
+            { id: '1.1', text: 'Child A', children: [] },
+            { id: '1.2', text: 'Child B', children: [] }
+          ]
+        },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
+    });
+
+    await page.locator('[data-node-id="1"]').click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await expect(page.locator('.node-content')).toHaveCount(2);
+
+    const firstChildInput = page.locator('[data-node-id="1.1"] input');
+    const lastChildInput = page.locator('[data-node-id="1.2"] input');
+
+    await expect(firstChildInput).toBeFocused();
+
+    // ArrowUp on the first visible child should blur (not focus hidden parent).
+    await firstChildInput.press('ArrowUp');
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    // With no focus, ArrowDown should focus first visible child.
+    await page.keyboard.press('ArrowDown');
+    await expect(firstChildInput).toBeFocused();
+
+    await page.keyboard.press('ArrowDown');
+    await expect(lastChildInput).toBeFocused();
+
+    // ArrowDown on the last visible child should blur.
+    await lastChildInput.press('ArrowDown');
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    // With no focus, ArrowUp should focus last visible child.
+    await page.keyboard.press('ArrowUp');
+    await expect(lastChildInput).toBeFocused();
+  });
+
+  test('Escape in zoom description exits edit mode and restores no-focus Arrow navigation', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent', children: [
+            { id: '1.1', text: 'Child A', children: [] },
+            { id: '1.2', text: 'Child B', children: [] }
+          ]
+        },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
+    });
+
+    await page.locator('[data-node-id="1"]').click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await page.locator('.zoom-desc-display').click();
+    const descTextarea = page.locator('.zoom-desc-textarea');
+    await expect(descTextarea).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.zoom-desc-textarea')).toHaveCount(0);
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('[data-node-id="1.1"] input')).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('[data-node-id="1.2"] input')).toBeFocused();
+  });
+
   test('zoomed node with no children shows empty state and allows creating node', async ({ page }) => {
     // Zoom into 'Sibling' (which has no children)
     const sibling = page.locator('.node-content').nth(2); // Sibling
