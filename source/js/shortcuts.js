@@ -83,6 +83,21 @@ function confirmDeleteNodeWithChildren(id) {
     return confirm('Delete this node and all its children?')
 }
 
+function blurFocus(focus) {
+    focus.Id.value = null
+    focus.Type.value = null
+    document.body.focus()
+}
+
+function focusTextOrBlur(focus, nextId) {
+    if (nextId && nextId !== outline.zoomId.value) {
+        focus.Id.value = nextId
+        focus.Type.value = 'text'
+        return
+    }
+    blurFocus(focus)
+}
+
 function handleKeyDownOnFocusedNode(k, focus) {
     switch (k) {
         case 'Shift+Enter':
@@ -162,9 +177,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
             if (focus.SelectedIds && focus.SelectedIds.value.length > 0) {
                 focus.SelectedIds.value = []
             }
-            focus.Id.value = null
-            focus.Type.value = null
-            document.body.focus()
+            blurFocus(focus)
             return true
         case 'Ctrl+ ':
             if (focus.SelectedIds?.value?.length > 0) {
@@ -189,13 +202,15 @@ function handleKeyDownOnFocusedNode(k, focus) {
             return true
         case 'ArrowDown':
             if (focus.Type.value === 'text') {
-                focus.Id.value = outline.next(focus.Id.value)
+                const nextId = outline.next(focus.Id.value)
+                focusTextOrBlur(focus, nextId)
                 return true
             }
             break;
         case 'ArrowUp':
             if (focus.Type.value === 'text') {
-                focus.Id.value = outline.prev(focus.Id.value)
+                const prevId = outline.prev(focus.Id.value)
+                focusTextOrBlur(focus, prevId)
                 return true
             }
             break;
@@ -206,7 +221,8 @@ function handleKeyDownOnFocusedNode(k, focus) {
                     if (!confirmDeleteNodeWithChildren(idToDelete)) {
                         return true
                     }
-                    focus.Id.value = outline.prev(focus.Id.value)
+                    const prevId = outline.prev(focus.Id.value)
+                    focusTextOrBlur(focus, prevId)
                     outline.deleteNode(idToDelete)
                     return true
                 }
@@ -224,7 +240,8 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 if (!confirmDeleteNodeWithChildren(idToDelete)) {
                     return true
                 }
-                focus.Id.value = outline.prev(idToDelete)
+                const prevId = outline.prev(idToDelete)
+                focusTextOrBlur(focus, prevId)
                 outline.deleteNode(idToDelete)
                 return true
             }
@@ -336,19 +353,21 @@ function handleKeyDown(e, focus) {
         // on up arrow, focus last child of document
         case 'ArrowDown':
             const first = outline.getRoot().peek().children[0]
-            focus.Id.value = first
-            focus.Type.value = 'text'
+            focusTextOrBlur(focus, first)
             return true
         case 'ArrowUp':
-            function findLastDescendant(node) {
+            function findLastVisibleDescendant(id) {
+                if (!id) return null
+                const node = outline.get(id)
+                if (!node) return null
                 const p = node.peek()
-                if (!node.open) return node.id
-                if (p.children.length === 0) return node.id
-                return findLastDescendant(outline.get(p.children[p.children.length - 1]))
+                if (!p.open || p.children.length === 0) return id
+                return findLastVisibleDescendant(p.children[p.children.length - 1]) || id
             }
-            const last = findLastDescendant(outline.getRoot())
-            focus.Id.value = last
-            focus.Type.value = 'text'
+            const root = outline.getRoot().peek()
+            const lastTopLevelId = root.children[root.children.length - 1]
+            const last = findLastVisibleDescendant(lastTopLevelId)
+            focusTextOrBlur(focus, last)
             return true
         case 'Enter':
             focus.Id.value = outline.addChild().id

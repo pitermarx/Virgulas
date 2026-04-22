@@ -588,7 +588,17 @@ const OutlineModel = createModel(() => {
         const parent = map.get(node.parentId)
         if (!parent) return null
 
-        return parent.getChild(currentId, 'next') || next(parent.id, false)
+        const nextSiblingId = parent.getChild(currentId, 'next')
+        if (nextSiblingId) {
+            return nextSiblingId
+        }
+
+        // Keep keyboard navigation constrained to what is visible in the current zoom context.
+        if (parent.id === zoomId.value && zoomId.value !== rootNodeId) {
+            return null
+        }
+
+        return next(parent.id, false)
     }
 
     function prev(currentId) {
@@ -597,7 +607,15 @@ const OutlineModel = createModel(() => {
         const parent = map.get(node.parentId)
         if (!parent) return null
         const prevSiblingId = parent.getChild(currentId, 'prev')
-        return lastOpenChild(prevSiblingId) || parent.id
+        if (prevSiblingId) {
+            return lastOpenChild(prevSiblingId)
+        }
+
+        if (parent.id === zoomId.value && zoomId.value !== rootNodeId) {
+            return null
+        }
+
+        return parent.id
     }
 
     let dirtyDebounceTimeout = 800 // ms, time to wait after a change before updating the version, to allow for batching multiple changes together

@@ -7,7 +7,7 @@ import {
     createAsyncSectionHarness
 } from './testing.js'
 
-export const shortcutsTotal = 27
+export const shortcutsTotal = 30
 
 let _cachedResult = null
 
@@ -328,6 +328,38 @@ export async function runShortcutsTests(onProgress) {
         assertEqual(focus.Id.value, 'A', 'ArrowUp should move focus to previous node')
     })
 
+    await test('ArrowUp on first child in zoomed view clears focus', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('A', { id: 'A1', text: 'A1' })
+        outline.addChild('A', { id: 'A2', text: 'A2' })
+        outline.zoomIn('A')
+
+        const focus = createFocus('A1', 'text')
+        const handle = keydown(focus)
+
+        await handle(createKeyEvent({ key: 'ArrowUp' }))
+
+        assertEqual(focus.Id.value, null, 'ArrowUp on first zoomed child should clear focus id')
+        assertEqual(focus.Type.value, null, 'ArrowUp on first zoomed child should clear focus type')
+        assert(document.body.focused, 'ArrowUp on first zoomed child should move focus to body')
+    })
+
+    await test('ArrowDown on last child in zoomed view clears focus', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('A', { id: 'A1', text: 'A1' })
+        outline.addChild('A', { id: 'A2', text: 'A2' })
+        outline.zoomIn('A')
+
+        const focus = createFocus('A2', 'text')
+        const handle = keydown(focus)
+
+        await handle(createKeyEvent({ key: 'ArrowDown' }))
+
+        assertEqual(focus.Id.value, null, 'ArrowDown on last zoomed child should clear focus id')
+        assertEqual(focus.Type.value, null, 'ArrowDown on last zoomed child should clear focus type')
+        assert(document.body.focused, 'ArrowDown on last zoomed child should move focus to body')
+    })
+
     await test('Ctrl+Space toggles node open state when focused node has children', async () => {
         outline.addChild('root', { id: 'A', text: 'A' })
         outline.addChild('A', { id: 'A1', text: 'A1' })
@@ -522,6 +554,20 @@ export async function runShortcutsTests(onProgress) {
         await handle(createKeyEvent({ key: 'ArrowUp' }))
 
         assertEqual(focus.Id.value, 'B', 'ArrowUp should focus the last visible descendant from root')
+        assertEqual(focus.Type.value, 'text', 'ArrowUp should set focus type to text')
+    })
+
+    await test('ArrowUp with no focused node does not target hidden descendants under collapsed parent', async () => {
+        outline.addChild('root', { id: 'A', text: 'A' })
+        outline.addChild('root', { id: 'B', text: 'B' })
+        outline.addChild('B', { id: 'B1', text: 'B1' })
+        outline.update('B', { open: false })
+        const focus = createFocus(null, null)
+        const handle = keydown(focus)
+
+        await handle(createKeyEvent({ key: 'ArrowUp' }))
+
+        assertEqual(focus.Id.value, 'B', 'ArrowUp should focus the collapsed visible parent, not hidden children')
         assertEqual(focus.Type.value, 'text', 'ArrowUp should set focus type to text')
     })
 
