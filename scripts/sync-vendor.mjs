@@ -8,6 +8,8 @@ const files = [
   ['node_modules/htm/preact/index.module.js', 'source/vendor/htm-preact.module.js'],
   ['node_modules/@preact/signals-core/dist/signals-core.module.js', 'source/vendor/signals-core.module.js'],
   ['node_modules/@preact/signals/dist/signals.module.js', 'source/vendor/signals.module.js'],
+  ['node_modules/marked/lib/marked.esm.js', 'source/vendor/marked.esm.js'],
+  ['node_modules/dompurify/dist/purify.es.mjs', 'source/vendor/purify.es.mjs'],
   ['node_modules/@supabase/supabase-js/dist/umd/supabase.js', 'source/vendor/supabase.js']
 ]
 

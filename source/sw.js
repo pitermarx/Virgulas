@@ -1,9 +1,9 @@
 // Bump VENDOR_CACHE when vendor/ files change (after npm install / sync-vendor)
-const VENDOR_CACHE = 'virgulas-vendor-v2'
+const VENDOR_CACHE = 'virgulas-vendor-v3'
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v2'
 // Bump APP_CACHE when app JS, CSS, or HTML changes
-const APP_CACHE = 'virgulas-app-v2'
+const APP_CACHE = 'virgulas-app-v4'
 
 const KNOWN_CACHES = new Set([VENDOR_CACHE, FONTS_CACHE, APP_CACHE])
 
@@ -15,6 +15,8 @@ const VENDOR_SHELL = [
   './vendor/htm-preact.module.js',
   './vendor/signals-core.module.js',
   './vendor/signals.module.js',
+  './vendor/marked.esm.js',
+  './vendor/purify.es.mjs',
   './vendor/supabase.js'
 ]
 
@@ -49,6 +51,7 @@ const APP_SHELL = [
   './js/search.js',
   './js/shortcuts.js',
   './js/sync.js',
+  './js/markdown.js',
   './js/ui.js',
   './js/utils.js'
 ]
