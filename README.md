@@ -67,7 +67,7 @@ Virgulas is a local-first browser outliner.
     - **App cache** — HTML, CSS, and `source/js/` modules; served **stale-while-revalidate**
   - Cache version constants in `sw.js` are bumped automatically by `scripts/bump-sw-caches.mjs`, which hashes each file group and increments only the versions whose files have changed
   - `npm install` runs the bump script automatically, so vendor cache bumps after dependency updates require no manual work
-  - For font/icon/app file changes, run `npm run sw:bump` before committing, or install the pre-push hook (`npm run sw:hooks`) to have it run automatically on every push
+  - For font/icon/app file changes, run `npm run sw:bump` before committing, or install Git hooks (`npm run sw:hooks`) to run `sw:bump` on push and validate Conventional Commit headers on commit
 
   The app reads Supabase settings from `localStorage.supabaseconfig` and seeds it automatically on first run with hosted defaults:
   - `url`: `https://gcpdascpdrakecpknrtt.supabase.co`
@@ -180,3 +180,43 @@ Repository secrets expected by workflows:
 - `SUPABASE_ACCESS_TOKEN` (for CI migration publish)
 - `CLOUDFLARE_ZONE_ID` (optional, for cache purge)
 - `CLOUDFLARE_API_TOKEN` (optional, for cache purge)
+
+## Commit Message Policy
+
+All commits in this repository (human and AI-authored) must follow Conventional Commits:
+
+```text
+type(scope)!: subject
+```
+
+Allowed types:
+
+- `feat`
+- `fix`
+- `docs`
+- `style`
+- `refactor`
+- `perf`
+- `test`
+- `build`
+- `ci`
+- `chore`
+- `revert`
+
+Examples:
+
+- `feat(sync): add pull-before-push retries`
+- `fix(ui)!: rename storage mode labels`
+- `chore: bump sw cache versions`
+
+Enforcement:
+
+- Local `commit-msg` hook validates the commit header (installed by `npm run sw:hooks`)
+- CI validates every commit in the PR/push range and fails on non-conforming headers
+
+You can run checks manually:
+
+```bash
+npm run commit:check
+npm run commit:check:range -- "HEAD~5..HEAD"
+```
