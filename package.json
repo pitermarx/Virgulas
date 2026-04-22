@@ -23,7 +23,9 @@
     "dependencies": {
         "@preact/signals": "^2.9.0",
         "@supabase/supabase-js": "^2.104.0",
+        "dompurify": "^3.4.1",
         "htm": "^3.1.1",
+        "marked": "^18.0.2",
         "preact": "^10.29.1"
     }
 }

@@ -2,6 +2,7 @@ import { html } from 'htm/preact';
 import { signal } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
+import { renderInlineMarkdown } from './markdown.js';
 import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
@@ -106,28 +107,6 @@ if (isMobile && typeof window !== 'undefined' && window.visualViewport) {
 }
 
 const fadedText = "color: var(--color-text-muted);"
-
-function renderInlineMarkdown(text) {
-    if (!text) return ''
-    const escaped = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-    return escaped
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/__(.+?)__/g, '<em>$1</em>')
-        .replace(/_(.+?)_/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-            const safeSrc = /^https?:\/\//.test(src) ? src : ''
-            return safeSrc ? `<img src="${safeSrc}" alt="${alt}">` : (alt || '')
-        })
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, href) => {
-            const safeHref = /^https?:\/\//.test(href) ? href : '#'
-            return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${linkText}</a>`
-        })
-}
 
 
 const hasClosedChildrenBullet = html`<circle cx="25" cy="25" r="10" fill="none" stroke="currentColor" stroke-width="5"/>`
