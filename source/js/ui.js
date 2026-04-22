@@ -7,7 +7,7 @@ import { log, isMobile } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
-import { devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
+import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -617,6 +617,12 @@ export function DeveloperPanel() {
                     <dt>Chars</dt><dd>${stats.charCount}</dd>
                     <dt>Open w/ children</dt><dd>${stats.openCount}</dd>
                     <dt>Collapsed</dt><dd>${stats.collapsedCount}</dd>
+                </dl>
+            </section>
+            <section class="dev-panel-section">
+                <h4>App</h4>
+                <dl>
+                    <dt>Version</dt><dd class="dev-app-version">${appVersion.value}</dd>
                 </dl>
             </section>
             <section class="dev-panel-section">

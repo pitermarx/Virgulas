@@ -134,9 +134,53 @@ jobs:
       - name: Publish latest migrations
         run: npm exec supabase -- db push --linked --include-all
 
+  release:
+    name: Publish Release
+    needs: [test, publish-db]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_needed: ${{ steps.plan.outputs.release_needed }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      resolved_version: ${{ steps.plan.outputs.resolved_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Plan release from commit history
+        id: plan
+        run: node scripts/release-from-commits.mjs
+
+      - name: Create GitHub Release
+        if: steps.plan.outputs.release_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.plan.outputs.release_tag }}"
+          NOTES_FILE="${{ steps.plan.outputs.notes_file }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Skipping publish."
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE"
+
   deploy:
     name: Deploy to GitHub Pages
-    needs: [test, publish-db]
+    needs: [test, publish-db, release]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -154,12 +198,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
       - name: Build static site bundle
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ needs.release.outputs.resolved_version }}
         run: |
           mkdir -p _site
           cp -r source/. _site/
+
+          if [ -z "$APP_VERSION" ]; then
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          node scripts/stamp-app-version.mjs --index "_site/index.html" --json "_site/version.json" --version "$APP_VERSION"
+          echo "Stamped app version: $APP_VERSION"
 
           # Build PR preview folders under /preview/<branch-name>
           gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName --jq '.[].headRefName' | while IFS= read -r branch; do

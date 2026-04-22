@@ -27,6 +27,7 @@ const GROUPS = {
     ],
     APP_CACHE: [
         join(ROOT, 'source', 'index.html'),
+        join(ROOT, 'source', 'version.json'),
         join(ROOT, 'source', 'site.webmanifest'),
         join(ROOT, 'source', 'css'),
         join(ROOT, 'source', 'js'),
