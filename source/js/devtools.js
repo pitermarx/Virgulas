@@ -1,5 +1,16 @@
 import { signal } from '@preact/signals'
 
+function readAppVersion() {
+    if (typeof document === 'undefined') return 'dev'
+    const value = document
+        .querySelector('meta[name="app-version"]')
+        ?.getAttribute('content')
+        ?.trim()
+    return value || 'dev'
+}
+
+export const appVersion = signal(readAppVersion())
+
 // ── Developer panel open/close toggle ────────────────────────────────────────
 export const devPanelOpen = signal(false)
 

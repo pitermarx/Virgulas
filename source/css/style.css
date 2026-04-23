@@ -232,6 +232,18 @@ body {
   display: flex;
 }
 
+.options-footer-meta {
+  margin-top: var(--space-1);
+  text-align: center;
+  color: var(--color-text-faint);
+  font-size: 0.75rem;
+}
+
+.options-footer-version {
+  font-family: var(--font-mono);
+  letter-spacing: 0.01em;
+}
+
 .options-row .btn,
 .options-row a.btn {
   flex: 1;

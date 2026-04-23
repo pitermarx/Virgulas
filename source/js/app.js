@@ -2,6 +2,7 @@ import { html, render } from 'htm/preact';
 import { signal } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal } from "./ui.js";
 import persistence from './persistence.js';
+import { appVersion } from './devtools.js';
 import { store } from './utils.js';
 
 const splashVisible = signal(true);
@@ -425,6 +426,7 @@ const OptionsModal = () => {
               ${currentMode === 'remote' ? 'Sign out & clear session' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
             </button>
           </div>
+          <div class="options-footer-meta">Version <span class="options-footer-version" data-app-version>${appVersion.value}</span></div>
         </div>
       </div>
     </div>`;

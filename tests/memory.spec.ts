@@ -37,6 +37,17 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.getByRole('button', { name: /Upgrade storage/i })).toBeVisible();
     });
 
+    test('Options shows app version', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+
+        const expectedVersion = await page.locator('meta[name="app-version"]').getAttribute('content');
+        expect(expectedVersion).toBeTruthy();
+
+        await page.getByRole('button', { name: 'Options' }).click();
+        await expect(page.locator('[data-app-version]')).toHaveText(expectedVersion || '');
+    });
+
     test('Upgrade storage shows lock screen after confirmation', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });

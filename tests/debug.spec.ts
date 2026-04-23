@@ -38,11 +38,20 @@ test.describe('Developer panel', () => {
     await page.keyboard.press('Control+Alt+d');
     const panel = page.locator('.dev-panel');
     await expect(panel).toBeVisible();
+    await expect(panel).toContainText('App');
     await expect(panel).toContainText('Outline');
     await expect(panel).toContainText('Sync');
     await expect(panel).toContainText('Crypto');
     await expect(panel).toContainText('Storage');
     await expect(panel).toContainText('Focus / Zoom / Search');
+  });
+
+  test('dev panel shows app version from meta tag', async ({ page }) => {
+    const expectedVersion = await page.locator('meta[name="app-version"]').getAttribute('content');
+    expect(expectedVersion).toBeTruthy();
+
+    await page.keyboard.press('Control+Alt+d');
+    await expect(page.locator('.dev-panel .dev-app-version')).toHaveText(expectedVersion || '');
   });
 
   test('dev panel close button hides panel', async ({ page }) => {

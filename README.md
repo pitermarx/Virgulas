@@ -170,8 +170,9 @@ Auth tests that require a specific account attempt sign-in first and create the 
 ## CI/CD
 
 - Pull requests and pushes run Playwright E2E tests in GitHub Actions.
+- Main branch CI validates commit policy, computes semantic version bumps from Conventional Commits, and publishes a GitHub release tag when releasable commits exist.
 - Main branch CI publishes the latest database migrations to the linked Supabase project before deploy.
-- Main branch deploys the static site to GitHub Pages and publishes branch previews under `/preview/<branch>`.
+- Main branch deploys the static site to GitHub Pages, stamps the resolved app version into `index.html`, writes `version.json`, and publishes branch previews under `/preview/<branch>`.
 - A daily workflow runs E2E tests against `https://virgulas.com`.
 
 Repository secrets expected by workflows:
@@ -219,4 +220,10 @@ You can run checks manually:
 ```bash
 npm run commit:check
 npm run commit:check:range -- "HEAD~5..HEAD"
+```
+
+Release planning dry-run:
+
+```bash
+npm run release:plan
 ```
