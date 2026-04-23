@@ -2,6 +2,7 @@ import { html, render } from 'htm/preact';
 import { signal } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal } from "./ui.js";
 import persistence from './persistence.js';
+import outline from './outline.js';
 import { appVersion } from './devtools.js';
 import { store } from './utils.js';
 
@@ -26,9 +27,34 @@ const unlockMessage = signal('');
 const canResetRemoteData = signal(false);
 const isBusy = signal(false);
 const authUser = signal(null);
+const authStep = signal('unlock');
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
+
+let stagedMemoryDocJson = null;
+let cachedIntroText = null;
+
+async function getIntroText() {
+  if (cachedIntroText !== null) return cachedIntroText;
+  try {
+    const resp = await fetch('/intro.vmd');
+    cachedIntroText = resp.ok ? await resp.text() : '';
+  } catch {
+    cachedIntroText = '';
+  }
+  return cachedIntroText;
+}
+
+async function loadLockedBackgroundIntro() {
+  const introText = await getIntroText();
+  outline.reset();
+  if (introText && introText.trim()) {
+    outline.setRootVMD(introText);
+  } else {
+    outline.addChild('root', { text: '' });
+  }
+}
 
 async function initAuthState() {
   const bootstrap = await persistence.getAuthBootstrap();
@@ -44,6 +70,11 @@ async function initAuthState() {
   if (bootstrap.mode === 'memory') {
     await persistence.unlock('', { mode: 'memory' });
     document.body.setAttribute('data-main-view', 'rendered');
+    return;
+  }
+
+  if (persistence.isLocked()) {
+    await loadLockedBackgroundIntro();
   }
 }
 
@@ -52,40 +83,28 @@ setTimeout(async () => {
   splashVisible.value = false;
 }, 300);
 
-async function switchMode(nextMode) {
-  if (nextMode === authMode.value) return;
+async function requestChangeMode() {
+  if (authMode.value === 'local' && authHasLocalData.value) {
+    if (!confirm('Switching mode will clear your local encrypted data from this device. Continue?')) return;
+    persistence.clearLocalData();
+    authHasLocalData.value = false;
+  } else if (authMode.value === 'remote' && authUser.value) {
+    if (!confirm('Switching mode will sign you out of the remote session. Continue?')) return;
+    await persistence.signOut();
+    authUser.value = null;
+  }
+  authStep.value = 'choose-mode';
+  unlockError.value = '';
+  unlockMessage.value = '';
+  passphrase.value = '';
+  password.value = '';
+}
 
+function pickMode(nextMode) {
   if (nextMode === 'filesystem' && !persistence.hasFilesystem()) {
     unlockError.value = 'File System Access API is not supported in this browser.';
     return;
   }
-
-  if (authMode.value === 'memory') {
-    // Switching away from memory always discards the in-memory doc
-    const confirmed = confirm('Switching storage mode will discard the current in-memory document. Continue?');
-    if (!confirmed) return;
-    persistence.lock();
-    document.body.removeAttribute('data-main-view');
-  }
-
-  if (authMode.value === 'local' && nextMode !== 'local' && authHasLocalData.value) {
-    const confirmed = confirm('Switching away from local will remove local encrypted data on this device. Continue?');
-    if (!confirmed) return;
-    persistence.clearLocalData();
-    authHasLocalData.value = false;
-    unlockMessage.value = 'Local encrypted data was cleared.';
-  }
-
-  if (authMode.value === 'remote' && nextMode !== 'remote' && authUser.value) {
-    const confirmed = confirm('Switching away from remote signs you out and clears local session data. Continue?');
-    if (!confirmed) return;
-    await persistence.signOut();
-    persistence.clearLocalData();
-    authHasLocalData.value = false;
-    authUser.value = null;
-    unlockMessage.value = 'Signed out.';
-  }
-
   authMode.value = nextMode;
   authScenario.value = nextMode === 'local'
     ? (authHasLocalData.value ? 'local-present-no-session' : 'empty-local')
@@ -94,9 +113,9 @@ async function switchMode(nextMode) {
       : 'remote-session-expired';
   persistence.setPreferredMode(nextMode);
   unlockError.value = '';
-  canResetRemoteData.value = false;
-  password.value = '';
   passphrase.value = '';
+  password.value = '';
+  authStep.value = 'unlock';
 }
 
 async function submitUnlock(e) {
@@ -109,6 +128,7 @@ async function submitUnlock(e) {
   try {
     if (authMode.value === 'filesystem') {
       await persistence.unlock('', { mode: 'filesystem' });
+      stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
       return;
     }
@@ -130,6 +150,7 @@ async function submitUnlock(e) {
       trustSession: isRemoteSessionValid()
     });
     if (success) {
+      stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Invalid passphrase.';
@@ -173,6 +194,7 @@ async function submitSignOut() {
     authUser.value = null;
     authScenario.value = 'remote-session-expired';
     authMode.value = 'remote';
+    await loadLockedBackgroundIntro();
   } catch (error) {
     unlockError.value = String(error?.message || 'Failed to sign out.');
   } finally {
@@ -206,11 +228,31 @@ async function submitResetRemoteData() {
 }
 
 async function continueInMemory() {
+  const staged = stagedMemoryDocJson;
+  stagedMemoryDocJson = null;
   await persistence.unlock('', { mode: 'memory' });
+  if (staged) {
+    outline.deserialize(staged);
+  }
   document.body.setAttribute('data-main-view', 'rendered');
 }
 
+function openSecureStorageSetup() {
+  stagedMemoryDocJson = outline.serialize();
+  persistence.lock();
+  authMode.value = 'local';
+  authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
+  authStep.value = 'unlock';
+  unlockError.value = '';
+  unlockMessage.value = '';
+  canResetRemoteData.value = false;
+  password.value = '';
+  passphrase.value = '';
+  document.body.removeAttribute('data-main-view');
+}
+
 const LockScreen = () => {
+  const step = authStep.value;
   const mode = authMode.value;
   const isFilesystem = mode === 'filesystem';
   const isRemote = mode === 'remote';
@@ -221,97 +263,128 @@ const LockScreen = () => {
     || (!isFilesystem && !passphrase.value.trim())
     || (isRemote && !isSessionValid && (!username.value.trim() || !password.value));
 
-  // Mode descriptions
-  const modeDescriptions = {
-    local: isLocalCreate() ? 'Encrypted local storage — create a passphrase to get started.' : 'Encrypted local storage — enter your passphrase to unlock.',
-    remote: isSessionValid
-      ? `Encrypted sync — signed in as ${authUser.value?.email || ''}. Enter your passphrase to decrypt.`
-      : 'Encrypted sync via Supabase — sign in then enter your passphrase.',
-    filesystem: 'Open a local file — no encryption, no passphrase needed.'
-  };
+  const modeLabel = isLocal ? 'Local' : isRemote ? 'Remote' : 'File';
 
   return html`
-    <div class="auth-card">
-      <h1 class="auth-title">Unlock Virgulas</h1>
+    <div class="bottom-sheet" data-auth-mode=${mode} role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-content">
 
-      <div class="auth-mode-switch" role="group" aria-label="Storage mode">
-        <button type="button" class=${`auth-mode-btn ${isLocal ? 'is-active' : ''}`}
-          onClick=${() => switchMode('local')}>
-          Local
-        </button>
-        <button type="button" class=${`auth-mode-btn ${isRemote ? 'is-active' : ''}`}
-          onClick=${() => switchMode('remote')}>
-          Remote
-        </button>
-        <button type="button" class=${`auth-mode-btn ${isFilesystem ? 'is-active' : ''}`}
-          onClick=${() => switchMode('filesystem')}>
-          File
-        </button>
-      </div>
-
-      <p class="auth-subtitle">${modeDescriptions[mode]}</p>
-
-      ${isRemote && !isSessionValid && html`
-        <div class="input-group">
-          <label for="auth-username" class="input-label">Email</label>
-          <input value=${username.value} onInput=${(e) => username.value = e.target.value}
-            id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
-        </div>
-        <div class="input-group">
-          <label for="auth-password" class="input-label">Account password</label>
-          <input value=${password.value} onInput=${(e) => password.value = e.target.value}
-            id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
-        </div>
-      `}
-
-      ${isRemote && isSessionValid && html`
-        <div class="auth-secondary-actions">
-          <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
-            ${isBusy.value ? 'Signing out...' : 'Sign out'}
-          </button>
-        </div>
-      `}
-
-      <form onSubmit=${submitUnlock}>
-        ${!isFilesystem && html`
-          <div class="input-group">
-            <label for="auth-passphrase" class="input-label">
-              ${isLocalCreate() ? 'Create a passphrase' : 'Encryption passphrase'}
-            </label>
-            <input value=${passphrase.value} onInput=${(e) => passphrase.value = e.target.value}
-              id="auth-passphrase" type="password"
-              placeholder=${isLocalCreate() ? 'Choose a passphrase' : 'Enter your passphrase'}
-              class="input-field" autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'} />
+        ${step === 'choose-mode' && html`
+          <h1 class="auth-title" id="auth-title">Choose Storage</h1>
+          <div class="auth-mode-switch" role="group" aria-label="Storage mode">
+            <button type="button" class=${'auth-mode-btn' + (isLocal ? ' is-active' : '')}
+              onClick=${() => pickMode('local')}>Local</button>
+            <button type="button" class=${'auth-mode-btn' + (isRemote ? ' is-active' : '')}
+              onClick=${() => pickMode('remote')}>Remote</button>
+            <button type="button" class=${'auth-mode-btn' + (isFilesystem ? ' is-active' : '')}
+              onClick=${() => pickMode('filesystem')}>File</button>
+          </div>
+          ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+          <div class="auth-memory-skip">
+            <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
+              Skip — continue in memory
+            </button>
           </div>
         `}
-        ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
-        ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
-        ${canResetRemoteData.value && html`
-          <div class="auth-secondary-actions">
-            <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
-              onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
+
+        ${step === 'unlock' && html`
+          <h1 class="auth-title" id="auth-title">Unlock Virgulas</h1>
+          <div class="status-text">
+            ${isLocal && (isLocalCreate() ? 'Secure Your Workspace' : 'Encrypted Local Storage')}
+            ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — sign in')}
+            ${isFilesystem && 'File'}
+          </div>
+
+          ${isRemote && !isSessionValid && html`
+            <div class="input-group">
+              <label for="auth-username" class="input-label">Email</label>
+              <input value=${username.value} onInput=${(e) => username.value = e.target.value}
+                id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
+            </div>
+            <div class="input-group">
+              <label for="auth-password" class="input-label">Account password</label>
+              <input value=${password.value} onInput=${(e) => password.value = e.target.value}
+                id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
+            </div>
+          `}
+
+          ${isRemote && isSessionValid && html`
+            <div class="auth-secondary-actions">
+              <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
+                ${isBusy.value ? 'Signing out...' : 'Sign out'}
+              </button>
+            </div>
+          `}
+
+          <form onSubmit=${submitUnlock}>
+            ${!isFilesystem && html`
+              <label for="auth-passphrase" class="visually-hidden">
+                ${isLocalCreate() ? 'Create a passphrase' : 'Encryption passphrase'}
+              </label>
+              <input
+                value=${passphrase.value}
+                onInput=${(e) => passphrase.value = e.target.value}
+                id="auth-passphrase"
+                type="password"
+                placeholder=${isLocalCreate() ? 'Create passphrase' : 'Passphrase'}
+                class="huge-input"
+                autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'}
+              />
+            `}
+            ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
+            ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+            ${canResetRemoteData.value && html`
+              <div class="auth-secondary-actions">
+                <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
+                  onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
+              </div>
+            `}
+            <button type="submit" class="lock-submit-btn" disabled=${unlockDisabled} aria-label="Unlock" title="Unlock">
+              ${isBusy.value ? '...' : isFilesystem ? 'Open File' : 'Unlock'}
+            </button>
+          </form>
+
+          ${isRemote && !isSessionValid && html`
+            <div class="auth-secondary-actions">
+              <button type="button" class="toolbar-btn" disabled=${isBusy.value || !username.value.trim() || !password.value}
+                onClick=${submitSignUp}>
+                ${isBusy.value ? '...' : 'Sign up'}
+              </button>
+            </div>
+          `}
+
+          <button type="button" class="subtle-switch" onClick=${requestChangeMode} disabled=${isBusy.value}>
+            Change mode (${modeLabel})
+          </button>
+          <div class="auth-memory-skip">
+            <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
+              Skip — continue in memory
+            </button>
           </div>
         `}
-        <button type="submit" class="lock-submit-btn" disabled=${unlockDisabled} aria-label="Unlock" title="Unlock">
-          ${isBusy.value ? '...' : isFilesystem ? '📂' : '🔒'}
-        </button>
-      </form>
 
-      ${isRemote && !isSessionValid && html`
-        <div class="auth-secondary-actions">
-          <button type="button" class="toolbar-btn" disabled=${isBusy.value || !username.value.trim() || !password.value}
-            onClick=${submitSignUp}>
-            ${isBusy.value ? '...' : 'Sign up'}
-          </button>
-        </div>
-      `}
-
-      <div class="auth-memory-skip">
-        <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
-          Skip — continue in memory
-        </button>
       </div>
     </div>
+  `;
+};
+
+const SecureStoragePrompt = () => {
+  if (persistence.isLocked() || !persistence.isMemory()) return null;
+
+  return html`
+    <button type="button" class="app-node" onClick=${openSecureStorageSetup}>
+      <div class="app-node-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="app-node-text">Enable Secure Storage</div>
+        <div class="app-node-sub">Your document is currently only in memory. Tap to save locally.</div>
+      </div>
+    </button>
   `;
 };
 
@@ -331,9 +404,13 @@ const OptionsModal = () => {
     store.theme.set(next);
   }
 
-  function handleLock() {
+  async function handleLock() {
     optionsOpen.value = false;
     persistence.lock();
+    authMode.value = 'local';
+    authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
+    authStep.value = 'unlock';
+    await loadLockedBackgroundIntro();
   }
 
   async function handleSignOut() {
@@ -343,6 +420,7 @@ const OptionsModal = () => {
       await persistence.signOut();
       authUser.value = null;
       authScenario.value = 'remote-session-expired';
+      await loadLockedBackgroundIntro();
     } catch (err) {
       unlockError.value = String(err?.message || 'Failed to sign out.');
     } finally {
@@ -354,10 +432,12 @@ const OptionsModal = () => {
     optionsOpen.value = false;
     const confirmed = confirm('Switching to a persistent storage mode will discard the current in-memory document. Continue?');
     if (!confirmed) return;
+    stagedMemoryDocJson = null;
     persistence.lock();
-    document.body.removeAttribute('data-main-view');
+    await loadLockedBackgroundIntro();
     authMode.value = 'local';
     authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
+    authStep.value = 'unlock';
     unlockError.value = '';
     unlockMessage.value = '';
   }
@@ -375,6 +455,18 @@ const OptionsModal = () => {
         : 'Delete locally encrypted data? This cannot be undone.';
     if (!confirm(purgeLabel)) return;
     optionsOpen.value = false;
+
+    if (currentMode === 'memory') {
+      const introText = await getIntroText();
+      outline.reset();
+      if (introText && introText.trim()) {
+        outline.setRootVMD(introText);
+      } else {
+        outline.addChild('root', { text: '' });
+      }
+      return;
+    }
+
     persistence.reset();
     authHasLocalData.value = false;
     authUser.value = null;
@@ -439,25 +531,33 @@ const Splash = () => {
       <div class="tagline">Local-first browser outliner</div>
     </div>`;
 
-  if (persistence.isLocked()) {
+  const isLocked = persistence.isLocked();
+
+  if (isLocked) {
     document.body.removeAttribute('data-main-view');
-    return html`<${LockScreen} />`;
+  } else {
+    document.body.setAttribute('data-main-view', 'rendered');
   }
 
-  document.body.setAttribute('data-main-view', 'rendered');
-  return html`<div class="main-view">
-    ${rawMode.value
-      ? html`<${RawEditor} />`
-      : html`<div class="main-content">
-          <${MainToolbar} />
-          <${Outline} />
-          <${DebugPanel} />
-        </div>`
-    }
-    <${StatusToolbar} />
-    <${OptionsModal} />
-    <${ConflictModal} />
-  </div>`;
+  return html`
+    <div class="app-shell">
+      <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
+        ${rawMode.value && !isLocked
+          ? html`<${RawEditor} />`
+          : html`<div class="main-content">
+              <${MainToolbar} />
+              <${SecureStoragePrompt} />
+              <${Outline} />
+              <${DebugPanel} />
+            </div>`
+        }
+        <${StatusToolbar} />
+        ${!isLocked && html`<${OptionsModal} />`}
+        ${!isLocked && html`<${ConflictModal} />`}
+      </div>
+      ${isLocked && html`<${LockScreen} />`}
+    </div>
+  `;
 };
 
 render(html`<${Splash} />`, document.getElementById('app'));

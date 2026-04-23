@@ -124,6 +124,17 @@ const seedEncryptedLocalDoc = async (
   }, { passphrase, doc });
 };
 
+const openAdvancedStorageOptions = async (page: Page) => {
+  const modeSwitchGroup = page.locator('.auth-mode-switch');
+  if (await modeSwitchGroup.isVisible().catch(() => false)) {
+    return;
+  }
+  const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
+  await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
+  await changeModeBtn.click();
+  await expect(modeSwitchGroup).toBeVisible({ timeout: 10000 });
+};
+
 test.describe('Authentication', () => {
   test('first run flow: set passphrase', async ({ page }) => {
     // Simulate a user who chose local mode before but has no data yet
@@ -159,6 +170,8 @@ test.describe('Authentication', () => {
     });
     await page.goto('/');
 
+    await openAdvancedStorageOptions(page);
+
     await page.getByRole('button', { name: 'Remote' }).click();
 
     const unlockButton = page.getByRole('button', { name: 'Unlock' });
@@ -179,18 +192,25 @@ test.describe('Authentication', () => {
     await seedEncryptedLocalDoc(page, 'password', { id: 'root', text: 'Secret Doc', children: [] });
 
     await page.reload();
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+    // On unlock step with local mode (has local data)
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
 
+    // Attempt 1: dismiss dialog → stays in local mode
     page.once('dialog', (dialog) => dialog.dismiss());
-    await page.getByRole('button', { name: 'Remote' }).click();
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+    await page.getByRole('button', { name: /Change mode/i }).click();
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
 
     const stillHasData = await page.evaluate(() => !!localStorage.getItem('vmd_data_enc'));
     expect(stillHasData).toBe(true);
 
+    // Attempt 2: accept dialog → clears data → shows choose-mode step
     page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: /Change mode/i }).click();
+    await expect(page.locator('.auth-mode-switch')).toBeVisible();
+
+    // Pick Remote → unlock step with remote mode
     await page.getByRole('button', { name: 'Remote' }).click();
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
     const clearedData = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
     expect(clearedData).toBeNull();
@@ -203,7 +223,7 @@ test.describe('Authentication', () => {
     });
     await page.goto('/');
 
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
     await expect(page.getByLabel('Email')).toHaveValue('stale@virgulas.com');
 
     const unlockButton = page.getByRole('button', { name: 'Unlock' });
@@ -233,6 +253,8 @@ test.describe('Authentication', () => {
     });
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
+
+    await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('existing@virgulas.com');
@@ -269,7 +291,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
     await expect(page.getByLabel('Email')).toHaveCount(0);
     await expect(page.getByLabel('Account password')).toHaveCount(0);
     await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
@@ -294,10 +316,14 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
+    // Click 'Change mode (Remote)' → confirms sign-out → shows choose-mode step
     page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: 'Local' }).click();
+    await page.getByRole('button', { name: /Change mode/i }).click();
+    await expect(page.locator('.auth-mode-switch')).toBeVisible();
 
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+    // Pick Local → unlock step for local mode
+    await page.getByRole('button', { name: 'Local' }).click();
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
     await expect(page.getByLabel('Create a passphrase')).toBeVisible();
 
     const stateAfterSwitch = await page.evaluate(() => ({
@@ -353,6 +379,8 @@ test.describe('Authentication', () => {
     await installMockSupabase(page);
     await page.reload();
 
+    await openAdvancedStorageOptions(page);
+
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('mock-signup@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
@@ -370,6 +398,8 @@ test.describe('Authentication', () => {
     });
     await installMockSupabase(page, { authErrorMessage: 'Invalid login credentials' });
     await page.reload();
+
+    await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('mock-error@virgulas.com');
@@ -396,6 +426,8 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
 
+    await openAdvancedStorageOptions(page);
+
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('recover@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
@@ -421,13 +453,16 @@ test.describe('Authentication', () => {
     });
     await page.reload();
 
+    await openAdvancedStorageOptions(page);
+
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.reload();
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Remote');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
+    await openAdvancedStorageOptions(page); // no session → goes to choose-mode without dialog
     await page.getByRole('button', { name: 'Local' }).click();
     await page.reload();
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
   });
 
   test('remembered filesystem mode is preselected when supported', async ({ page }) => {
@@ -440,11 +475,11 @@ test.describe('Authentication', () => {
 
     const fileModeSupported = await page.evaluate(() => typeof (window as any).showOpenFilePicker === 'function');
     if (!fileModeSupported) {
-      await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('Local');
+      await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
       return;
     }
 
-    await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('File');
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
   });
 
   test('file mode shows unsupported API error when File System Access API is unavailable', async ({ page }) => {
@@ -458,6 +493,7 @@ test.describe('Authentication', () => {
     });
 
     await page.goto('/');
+    await openAdvancedStorageOptions(page);
     await page.getByRole('button', { name: 'File' }).click();
     await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
   });
