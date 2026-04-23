@@ -91,8 +91,20 @@ const buildEncryptedPayload = async (page: Page, passphrase: string) => {
     }, { passphrase });
 };
 
+const openAdvancedStorageOptions = async (page: Page) => {
+    const modeSwitchGroup = page.locator('.auth-mode-switch');
+    if (await modeSwitchGroup.isVisible().catch(() => false)) {
+        return;
+    }
+    const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
+    await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
+    await changeModeBtn.click();
+    await expect(modeSwitchGroup).toBeVisible({ timeout: 10000 });
+};
+
 /** Unlock the app in remote mode via the lock screen UI. */
 const unlockRemote = async (page: Page, email: string, accountPass: string, passphrase: string) => {
+    await openAdvancedStorageOptions(page);
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Account password').fill(accountPass);

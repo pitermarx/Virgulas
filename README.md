@@ -22,18 +22,21 @@ Virgulas is a local-first browser outliner.
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage
-- Three storage modes selectable on the lock screen:
+- Bottom-sheet lock screen flow with quick local unlock/setup and advanced mode switching:
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage; new document starts with one empty node
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase; new empty file gets one initial node
+  - In quick local mode, **Advanced Storage Options** (or **Switch Mode**) reveals the Local/Remote/File selector and full auth form
 - **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
   - The document lives only in JS memory and is lost when the tab is closed or reloaded
   - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature; if the fetch fails an empty node is provided
+  - An inline **Enable Secure Storage** prompt appears above the outline and opens the bottom-sheet setup flow
   - The status bar shows an *In memory — not saved* badge
   - Raw mode is hidden (no document to save)
   - **Options → Upgrade storage…** lets the user switch to a persistent mode at any time (data loss warning shown)
   - Once the user unlocks any persistent mode, that choice is remembered and shown as the default on the next visit
   - The lock screen shows a **"Skip — continue in memory"** link that bypasses unlock for the current session; the remembered mode is preserved so the next visit still shows the lock screen
+  - When the app is locked, the main canvas remains visible in a blurred state using `intro.vmd` as background context until unlock
 - Status toolbar shows the current storage mode; in Remote mode it also shows the signed-in email/username
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs
 - Destructive mode switches (clearing local data, signing out) require confirmation

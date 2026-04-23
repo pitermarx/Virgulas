@@ -277,15 +277,181 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
 }
 
-/* ── Auth card ── */
-.auth-card {
-  background-color: var(--color-surface);
+/* ── App shell, locksheet, and memory prompt ── */
+.app-shell {
+  min-height: 100vh;
+  position: relative;
+}
+
+.app-node {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-4) 0;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  cursor: pointer;
+  transition: background-color var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.app-node:hover,
+.app-node:focus-visible {
   box-shadow: var(--shadow-md);
-  padding: var(--space-6);
-  max-width: 400px;
-  margin: 10vh auto;
+  border-color: var(--color-accent-primary);
+  background: var(--color-background);
+}
+
+.app-node-icon {
+  font-size: 1.5rem;
+  color: var(--color-accent-primary);
+  display: flex;
+  align-items: center;
+}
+
+.app-node-text {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: var(--space-1);
+}
+
+.app-node-sub {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1050;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5) var(--space-5) calc(var(--space-6) + var(--space-2));
+  max-height: min(85vh, 720px);
+  overflow-y: auto;
+}
+
+.sheet-handle {
+  width: 48px;
+  height: 4px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  margin: 0 auto var(--space-5);
+}
+
+.sheet-content {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.huge-input {
+  width: 100%;
+  border: none;
+  border-bottom: 2px solid var(--color-border-subtle);
+  background: transparent;
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  padding: var(--space-3) 0;
+  text-align: center;
+  color: var(--color-text-primary);
+  outline: none;
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-5);
+  font-family: inherit;
+  transition: border-bottom-color var(--transition-base);
+  letter-spacing: 0.1em;
+}
+
+.huge-input:focus {
+  border-bottom-color: var(--color-accent-primary);
+}
+
+.huge-input::placeholder {
+  color: var(--color-border);
+  letter-spacing: normal;
+  font-weight: 300;
+}
+
+.status-text {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+  text-align: center;
+}
+
+.subtle-switch {
+  font-size: 0.85rem;
+  color: var(--color-text-faint);
+  margin-top: var(--space-4);
+  cursor: pointer;
+  border: none;
+  background: none;
+  text-decoration: underline;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  text-underline-offset: 2px;
+}
+
+.subtle-switch:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+.subtle-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.main-view.is-locked {
+  filter: blur(8px) grayscale(50%);
+  pointer-events: none;
+  opacity: 0.3;
+  transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .bottom-sheet {
+    padding: var(--space-4) var(--space-3) calc(var(--space-5) + var(--space-2));
+  }
+
+  .sheet-handle {
+    margin-bottom: var(--space-4);
+  }
+
+  .huge-input {
+    letter-spacing: 0.05em;
+  }
+
+  .app-node {
+    padding: var(--space-3) var(--space-4);
+  }
 }
 
 /* ── Nodes ── */

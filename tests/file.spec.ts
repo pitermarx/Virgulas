@@ -157,7 +157,7 @@ test.describe('File mode', () => {
 
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
-        await expect(page.locator('.auth-mode-btn.is-active')).toHaveText('File');
+        await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
 
         await page.getByRole('button', { name: 'Unlock' }).click();
 

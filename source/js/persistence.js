@@ -449,14 +449,23 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 }
 
-async function unlockMemory() {
-  let introText = null
+let introVmdCache = null
+
+async function getIntroVmdText() {
+  if (introVmdCache !== null) return introVmdCache
   try {
-    const resp = await fetch('/intro.vmd')
+    const resp = await fetch('/intro.vmd', { cache: 'no-store' })
     if (resp.ok) {
-      introText = await resp.text()
+      introVmdCache = await resp.text()
+      return introVmdCache
     }
-  } catch { /* ignore — start with empty doc */ }
+  } catch { /* ignore */ }
+  introVmdCache = ''
+  return introVmdCache
+}
+
+async function unlockMemory() {
+  const introText = await getIntroVmdText()
 
   outline.reset()
   if (introText && introText.trim()) {
