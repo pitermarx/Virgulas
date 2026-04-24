@@ -498,6 +498,54 @@ test.describe('Authentication', () => {
     await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
   });
 
+  test('local decrypt failure offers reset with new passphrase', async ({ page }) => {
+    await page.goto('/');
+    await seedEncryptedLocalDoc(page, 'old-passphrase', {
+      id: 'root',
+      text: 'Old Local Doc',
+      children: []
+    });
+    await page.reload();
+
+    // Enter the wrong passphrase
+    await page.getByLabel('Encryption passphrase').fill('wrong-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText(/Invalid passphrase/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeVisible();
+
+    // Enter a new passphrase and confirm the reset
+    await page.getByLabel('Encryption passphrase').fill('new-passphrase');
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Reset Local Data With New Passphrase' }).click();
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+    // New encrypted data with the new passphrase is eventually saved
+    await expect.poll(async () => {
+      return await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+    }, { timeout: 5000 }).toContain('|');
+  });
+
+  test('local reset button is disabled when passphrase field is empty', async ({ page }) => {
+    await page.goto('/');
+    await seedEncryptedLocalDoc(page, 'old-passphrase', {
+      id: 'root',
+      text: 'Old Local Doc',
+      children: []
+    });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('wrong-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeVisible();
+
+    // Clear passphrase → reset button must be disabled
+    await page.getByLabel('Encryption passphrase').fill('');
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeDisabled();
+  });
+
   test('lock screen still renders when localStorage access throws', async ({ page }) => {
     await page.addInitScript(() => {
       const originalGetItem = Storage.prototype.getItem;

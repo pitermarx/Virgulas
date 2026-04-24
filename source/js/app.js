@@ -25,6 +25,7 @@ const passphrase = signal('');
 const unlockError = signal('');
 const unlockMessage = signal('');
 const canResetRemoteData = signal(false);
+const canResetLocalData = signal(false);
 const isBusy = signal(false);
 const authUser = signal(null);
 const authStep = signal('unlock');
@@ -96,6 +97,8 @@ async function requestChangeMode() {
   authStep.value = 'choose-mode';
   unlockError.value = '';
   unlockMessage.value = '';
+  canResetRemoteData.value = false;
+  canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
 }
@@ -113,6 +116,8 @@ function pickMode(nextMode) {
       : 'remote-session-expired';
   persistence.setPreferredMode(nextMode);
   unlockError.value = '';
+  canResetRemoteData.value = false;
+  canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
   authStep.value = 'unlock';
@@ -124,6 +129,7 @@ async function submitUnlock(e) {
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
+  canResetLocalData.value = false;
   isBusy.value = true;
   try {
     if (authMode.value === 'filesystem') {
@@ -154,6 +160,7 @@ async function submitUnlock(e) {
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Invalid passphrase.';
+      canResetLocalData.value = authMode.value === 'local' && authHasLocalData.value;
     }
   } catch (error) {
     const message = String(error?.message || 'Failed to unlock.');
@@ -197,6 +204,35 @@ async function submitSignOut() {
     await loadLockedBackgroundIntro();
   } catch (error) {
     unlockError.value = String(error?.message || 'Failed to sign out.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function submitResetLocalData() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  if (!passphrase.value.trim()) {
+    unlockError.value = 'Enter a new passphrase before resetting local data.';
+    return;
+  }
+  const confirmed = confirm('This replaces your local encrypted data with a new empty document. Continue?');
+  if (!confirmed) return;
+
+  isBusy.value = true;
+  try {
+    persistence.clearLocalData();
+    authHasLocalData.value = false;
+    canResetLocalData.value = false;
+    const success = await persistence.unlock(passphrase.value, { mode: 'local' });
+    if (success) {
+      stagedMemoryDocJson = null;
+      document.body.setAttribute('data-main-view', 'rendered');
+    } else {
+      unlockError.value = 'Failed to create new local data.';
+    }
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Failed to reset local data.');
   } finally {
     isBusy.value = false;
   }
@@ -246,6 +282,7 @@ function openSecureStorageSetup() {
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
+  canResetLocalData.value = false;
   password.value = '';
   passphrase.value = '';
   document.body.removeAttribute('data-main-view');
@@ -334,6 +371,12 @@ const LockScreen = () => {
             `}
             ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
             ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+            ${canResetLocalData.value && html`
+              <div class="auth-secondary-actions">
+                <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
+                  onClick=${submitResetLocalData}>Reset Local Data With New Passphrase</button>
+              </div>
+            `}
             ${canResetRemoteData.value && html`
               <div class="auth-secondary-actions">
                 <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
