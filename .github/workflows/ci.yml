@@ -178,6 +178,27 @@ jobs:
             --title "$TAG" \
             --notes-file "$NOTES_FILE"
 
+      - name: Bump version in package.json and source/version.json
+        if: steps.plan.outputs.release_needed == 'true'
+        run: |
+          VERSION="${{ steps.plan.outputs.resolved_version }}"
+          npm version "$VERSION" --no-git-tag-version
+          node -e "
+            const fs = require('fs');
+            const v = JSON.parse(fs.readFileSync('source/version.json', 'utf8'));
+            v.version = process.env.VERSION;
+            fs.writeFileSync('source/version.json', JSON.stringify(v, null, 2) + '\n');
+          " VERSION="$VERSION"
+
+      - name: Commit version bump
+        if: steps.plan.outputs.release_needed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json source/version.json
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.plan.outputs.resolved_version }} [skip ci]"
+          git push
+
   deploy:
     name: Deploy to GitHub Pages
     needs: [test, publish-db, release]
