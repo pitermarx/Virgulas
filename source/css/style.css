@@ -474,6 +474,7 @@ body {
 
 .node-focused:not([style*="background-color"]) {
   background-color: var(--color-accent-soft);
+  box-shadow: inset 3px 0 0 var(--color-accent-primary);
 }
 
 /* ── Modal ── */
@@ -607,6 +608,11 @@ kbd {
   bottom: 4px;
   border-left: 1px solid var(--color-border-subtle);
   pointer-events: none;
+  transition: border-left-color var(--transition-base);
+}
+
+.children:hover::before {
+  border-left-color: var(--color-border);
 }
 
 /* ── Bullet refinement ── */
@@ -616,12 +622,16 @@ kbd {
   flex-shrink: 0;
   min-width: 1.25em;
   transition: color var(--transition-base), transform var(--transition-base);
-  color: var(--color-accent-primary);
+  color: var(--color-text-faint);
   transform: scale(0.7);
 }
 
 .bullet:hover {
   transform: scale(1);
+}
+
+.node-content:hover .bullet {
+  color: var(--color-text-muted);
 }
 
 .bullet svg {
@@ -658,15 +668,17 @@ kbd {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2px;
-  margin-bottom: var(--space-3);
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .breadcrumb-item {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--color-text-muted);
   cursor: pointer;
-  padding: 2px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   text-decoration: none;
   transition: color var(--transition-base), background-color var(--transition-base);
@@ -685,8 +697,8 @@ kbd {
 .breadcrumb-item:not(.active)::after {
   content: '›';
   color: var(--color-text-faint);
-  margin-left: 4px;
-  font-size: 0.8rem;
+  margin-left: var(--space-2);
+  font-size: 0.9rem;
   user-select: none;
   pointer-events: none;
 }
@@ -978,6 +990,16 @@ a:hover {
   color: var(--color-text-muted);
   cursor: text;
   white-space: pre-wrap;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.node-desc-md:not(:empty) {
+  margin-top: 6px;
 }
 
 /* ── Node description: edit mode (textarea, auto-grow) ── */
@@ -989,10 +1011,11 @@ a:hover {
   font-size: 0.85rem;
   outline: none;
   padding: 0;
-  margin: 0;
+  margin: 6px 0 0;
   color: var(--color-text-muted);
   resize: none;
   display: block;
+  line-height: 1.4;
   overflow-y: hidden;
   box-sizing: border-box;
 }
@@ -1392,6 +1415,7 @@ a:hover {
   color: var(--color-text-faint);
   font-style: italic;
   cursor: text;
+  text-align: center;
   border-radius: var(--radius-sm);
   transition: background-color var(--transition-base), color var(--transition-base);
   outline: none;

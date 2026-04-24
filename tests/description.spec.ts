@@ -38,19 +38,21 @@ test.describe('Description', () => {
     await expect(textInput).toBeFocused();
   });
 
-  test('description with more than 2 lines truncates to 2 lines with ellipsis', async ({ page }) => {
+  test('description with more than 2 lines is visually clipped by CSS line-clamp', async ({ page }) => {
     await setupDoc(page, {
       id: 'root', text: 'Root',
       children: [{ id: '1', text: 'Node', description: 'Line 1\nLine 2\nLine 3', children: [] }]
     });
 
-    const descDiv = page.locator('.node-description div');
+    const descDiv = page.locator('.node-desc-md');
     await expect(descDiv).toBeVisible();
+    // All content is in the DOM (CSS line-clamp clips visually, not structurally)
     const innerText = await descDiv.innerText();
     expect(innerText).toContain('Line 1');
     expect(innerText).toContain('Line 2');
-    expect(innerText).not.toContain('Line 3');
-    expect(innerText).toContain('\u2026'); // ellipsis character
+    // Visually clipped: scroll height exceeds client height
+    const isClipped = await descDiv.evaluate(el => el.scrollHeight > el.clientHeight);
+    expect(isClipped).toBe(true);
   });
 
   test('description textarea grows to show all content', async ({ page }) => {

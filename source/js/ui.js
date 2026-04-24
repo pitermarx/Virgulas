@@ -111,6 +111,7 @@ const fadedText = "color: var(--color-text-muted);"
 
 const hasClosedChildrenBullet = html`<circle cx="25" cy="25" r="10" fill="none" stroke="currentColor" stroke-width="5"/>`
 const NormalBullet = html`<circle cx="25" cy="25" r="10" fill="currentColor"/>`
+const hasOpenChildrenBullet = html`<g><circle cx="25" cy="25" r="10" fill="currentColor"/><circle cx="25" cy="25" r="18" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.35"/></g>`
 const SWIPE_MIN_DISTANCE_PX = 56
 const SWIPE_AXIS_RATIO = 1.35
 
@@ -132,7 +133,6 @@ function isSwipeBlockedTarget(target) {
 
 function NodeDesc({ node }) {
     const { description, id } = node.value // subscribe to changes on node
-    const lines = description.split('\n')
     const focusDesc = e => {
         requestNodeFocus(id, 'description')
         e.stopPropagation()
@@ -142,9 +142,15 @@ function NodeDesc({ node }) {
         function onBlur() {
             scheduleBlurClear(id, 'description')
         }
+        function autosizeAndFocus(el) {
+            focusElement(el)
+            if (!el) return
+            el.style.height = 'auto'
+            el.style.height = el.scrollHeight + 'px'
+        }
         return html`<div class="node-description" onClick=${focusDesc}>
             <textarea
-                rows=${lines.length || 1} ...${focusMe} type="text"
+                ref=${autosizeAndFocus} type="text"
                 class="node-desc-textarea" placeholder="Add description..." value=${description} focused
                 onBlur=${onBlur}
                 onpaste=${e => {
@@ -162,15 +168,16 @@ function NodeDesc({ node }) {
                     target.selectionStart = target.selectionEnd = start + text.length
                 })
             }}
-                onInput=${e => outline.update(id, { description: e.currentTarget.value })}>
+                onInput=${e => {
+                const el = e.currentTarget
+                el.style.height = 'auto'
+                el.style.height = el.scrollHeight + 'px'
+                outline.update(id, { description: el.value })
+            }}>
             </textarea></div>`
     }
 
-    if (lines.length > 2) {
-        lines[1] += '\u2026'
-    }
-
-    let text = lines.slice(0, 2).join('\n')
+    let text = description
     let style = ''
     if (!text && focusId.value === id && isMobile) {
         text = 'Add description...'
@@ -236,11 +243,10 @@ function NodeBody({ node }) {
     }
 
     function focusTextIfOnlyClickedThisElement(e) {
-        if (e.target === e.currentTarget) {
-            selectedIds.value = []
-            requestNodeFocus(id, 'text')
-            e.stopPropagation()
-        }
+        if (e.target.closest('.bullet, .collapse-toggle')) return
+        selectedIds.value = []
+        requestNodeFocus(id, 'text')
+        e.stopPropagation()
     }
 
     function handleTouchStart(e) {
@@ -318,7 +324,7 @@ function NodeBody({ node }) {
         onTouchCancel=${handleTouchCancel}>
         <span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
             <svg viewBox="0 0 50 50">
-                ${hasChildren && !open ? hasClosedChildrenBullet : NormalBullet}
+                ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
             </svg>
         </span>
     <div class="node-body">
@@ -541,7 +547,7 @@ export function Outline() {
             <div class="empty-state" tabIndex="-1"
                 onClick=${createFirstNode}
                 onKeyDown=${e => { if (e.key === 'Enter') { createFirstNode(); e.preventDefault(); e.stopPropagation() } }}>
-                Click here or press Enter to add a node
+                Press Enter to start writing…
             </div>
         </div>`
     }
