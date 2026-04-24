@@ -7,6 +7,8 @@ const configJson = (
 
 export const test = base.extend({
     page: async ({ page }, use) => {
+        await page.route('https://um.vps.pitermarx.com/**', route => route.abort());
+
         if (configJson) {
             await page.addInitScript((value: string) => {
                 localStorage.setItem('supabaseconfig', value);
