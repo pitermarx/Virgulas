@@ -243,11 +243,10 @@ function NodeBody({ node }) {
     }
 
     function focusTextIfOnlyClickedThisElement(e) {
-        if (e.target === e.currentTarget) {
-            selectedIds.value = []
-            requestNodeFocus(id, 'text')
-            e.stopPropagation()
-        }
+        if (e.target.closest('.bullet, .collapse-toggle')) return
+        selectedIds.value = []
+        requestNodeFocus(id, 'text')
+        e.stopPropagation()
     }
 
     function handleTouchStart(e) {
