@@ -69,5 +69,6 @@ export const store = {
     user: slot('vmd_last_username'),
     data: slot('vmd_data_enc'),
     supabase: slot('supabaseconfig'),
-    syncTs: slot('vmd_sync_ts')
+    syncTs: slot('vmd_sync_ts'),
+    quickUnlock: slot('vmd_quick_unlock')
 }

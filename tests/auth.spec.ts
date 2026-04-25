@@ -74,6 +74,68 @@ const installMockSupabase = async (page: Page, options?: {
   }, options ?? {});
 };
 
+const installMockWebAuthnPrf = async (page: Page) => {
+  await page.addInitScript(() => {
+    const randomBytes = (length: number) => window.crypto.getRandomValues(new Uint8Array(length));
+
+    const toUint8Array = (value: any): Uint8Array => {
+      if (!value) return new Uint8Array();
+      if (value instanceof ArrayBuffer) return new Uint8Array(value);
+      if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      return new Uint8Array();
+    };
+
+    const derivePrf = async (credentialId: Uint8Array, input: Uint8Array) => {
+      const combined = new Uint8Array(credentialId.length + input.length);
+      combined.set(credentialId);
+      combined.set(input, credentialId.length);
+      const digest = await window.crypto.subtle.digest('SHA-256', combined);
+      return new Uint8Array(digest);
+    };
+
+    class MockPublicKeyCredential { }
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      configurable: true,
+      value: MockPublicKeyCredential
+    });
+
+    const createMock = async () => {
+      const rawId = randomBytes(32);
+      return {
+        rawId: rawId.buffer,
+        getClientExtensionResults: () => ({})
+      };
+    };
+
+    const getMock = async (options: any) => {
+      const credentialId = toUint8Array(options?.publicKey?.allowCredentials?.[0]?.id);
+      const input = toUint8Array(options?.publicKey?.extensions?.prf?.eval?.first);
+      const prfBytes = await derivePrf(credentialId, input);
+
+      return {
+        getClientExtensionResults: () => ({
+          prf: {
+            results: {
+              first: prfBytes.buffer
+            }
+          }
+        })
+      };
+    };
+
+    const navAny = navigator as any;
+    try {
+      navAny.credentials.create = createMock;
+      navAny.credentials.get = getMock;
+    } catch {
+      Object.defineProperty(navigator, 'credentials', {
+        configurable: true,
+        value: { create: createMock, get: getMock }
+      });
+    }
+  });
+};
+
 const createEncryptedPayload = async (
   page: Page,
   passphrase: string,
@@ -656,6 +718,78 @@ test.describe('Authentication', () => {
     // Remembered mode is unchanged (next visit will show lock screen again)
     const savedMode = await page.evaluate(() => localStorage.getItem('vmd_last_mode'));
     expect(savedMode).toBe('local');
+  });
+
+  test.describe('Quick unlock', () => {
+    test.skip(({ browserName }) => browserName !== 'chromium', 'Quick unlock tests use mocked WebAuthn PRF behavior in Chromium only.');
+
+    test('saving local passphrase enables startup auto-unlock', async ({ page }) => {
+      await installMockWebAuthnPrf(page);
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.setItem('vmd_last_mode', 'local');
+      });
+      await page.reload();
+      await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
+      await page.getByLabel('Save passphrase on this device').check();
+      await page.getByRole('button', { name: 'Unlock' }).click();
+
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const raw = localStorage.getItem('vmd_quick_unlock');
+          if (!raw) return false;
+          try {
+            const parsed = JSON.parse(raw);
+            return !!parsed?.local?.credentialId && !!parsed?.local?.wrappedPassphrase;
+          } catch {
+            return false;
+          }
+        });
+      }).toBe(true);
+
+      await page.reload();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+      await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toHaveCount(0);
+    });
+
+    test('removing saved passphrase disables local startup auto-unlock', async ({ page }) => {
+      await installMockWebAuthnPrf(page);
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.setItem('vmd_last_mode', 'local');
+      });
+      await page.reload();
+      await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
+      await page.getByLabel('Save passphrase on this device').check();
+      await page.getByRole('button', { name: 'Unlock' }).click();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+      await page.getByRole('button', { name: 'Options' }).click();
+      await expect(page.getByRole('button', { name: 'Remove saved passphrase' })).toBeVisible();
+
+      page.once('dialog', (dialog) => dialog.accept());
+      await page.getByRole('button', { name: 'Remove saved passphrase' }).click();
+
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const raw = localStorage.getItem('vmd_quick_unlock');
+          if (!raw) return false;
+          try {
+            const parsed = JSON.parse(raw);
+            return !!parsed?.local;
+          } catch {
+            return true;
+          }
+        });
+      }).toBe(false);
+
+      await page.reload();
+      await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+    });
   });
 
 });

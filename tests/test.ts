@@ -82,7 +82,7 @@ export async function unlockApp(
     page: import('@playwright/test').Page,
     passphrase = 'password'
 ) {
-    await page.getByLabel('Passphrase').fill(passphrase);
+    await page.locator('#auth-passphrase').fill(passphrase);
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 }

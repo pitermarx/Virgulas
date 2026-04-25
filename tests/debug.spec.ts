@@ -16,7 +16,7 @@ test.describe('Developer panel', () => {
   test('?debug=true no longer activates dev panel', async ({ page }) => {
     await page.goto('/?debug=true');
     await page.reload();
-    await page.getByLabel('Passphrase').fill('password');
+    await page.locator('#auth-passphrase').fill('password');
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.dev-panel')).not.toBeVisible();
