@@ -126,7 +126,7 @@ test.describe('Zoom', () => {
     await page.goto(`/#${nodeId}`);
 
     // Need to unlock again
-    await page.getByLabel('Passphrase').fill('password');
+    await page.locator('#auth-passphrase').fill('password');
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
@@ -138,7 +138,7 @@ test.describe('Zoom', () => {
   test('Invalid URL hash falls back to root', async ({ page }) => {
     await page.goto('about:blank');
     await page.goto('/#nonexistent-id-xyz');
-    await page.getByLabel('Passphrase').fill('password');
+    await page.locator('#auth-passphrase').fill('password');
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 

@@ -29,9 +29,30 @@ const canResetLocalData = signal(false);
 const isBusy = signal(false);
 const authUser = signal(null);
 const authStep = signal('unlock');
+const quickUnlockSupported = signal(false);
+const quickUnlockSavedForMode = signal(false);
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
+
+function getQuickUnlockAccountIdForMode(mode = authMode.value) {
+  if (mode !== 'remote') return '';
+  return String(authUser.value?.email || username.value || persistence.getLastUsername() || '').trim().toLowerCase();
+}
+
+function refreshQuickUnlockState() {
+  quickUnlockSupported.value = persistence.isQuickUnlockSupported();
+  const mode = authMode.value;
+  if (!quickUnlockSupported.value || (mode !== 'local' && mode !== 'remote')) {
+    quickUnlockSavedForMode.value = false;
+    return;
+  }
+
+  quickUnlockSavedForMode.value = persistence.hasSavedQuickUnlock({
+    mode,
+    accountId: getQuickUnlockAccountIdForMode(mode)
+  });
+}
 
 let stagedMemoryDocJson = null;
 let cachedIntroText = null;
@@ -66,12 +87,32 @@ async function initAuthState() {
   authHasFilesystem.value = bootstrap.hasFilesystem || false;
   username.value = bootstrap.lastUsername || '';
   authUser.value = bootstrap.user || null;
+  quickUnlockSupported.value = !!bootstrap.quickUnlockSupported;
+  refreshQuickUnlockState();
 
   // Memory mode: skip the lock screen entirely
   if (bootstrap.mode === 'memory') {
     await persistence.unlock('', { mode: 'memory' });
     document.body.setAttribute('data-main-view', 'rendered');
     return;
+  }
+
+  if (quickUnlockSupported.value) {
+    const quickUnlockResult = await persistence.tryQuickUnlockStartup({
+      mode: bootstrap.mode,
+      scenario: bootstrap.scenario,
+      user: bootstrap.user || null,
+      lastUsername: bootstrap.lastUsername || ''
+    });
+    if (quickUnlockResult.success) {
+      stagedMemoryDocJson = null;
+      refreshQuickUnlockState();
+      document.body.setAttribute('data-main-view', 'rendered');
+      return;
+    }
+    if (quickUnlockResult.attempted && quickUnlockResult.message && !quickUnlockResult.cancelled) {
+      unlockMessage.value = quickUnlockResult.message;
+    }
   }
 
   if (persistence.isLocked()) {
@@ -101,6 +142,7 @@ async function requestChangeMode() {
   canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
+  refreshQuickUnlockState();
 }
 
 function pickMode(nextMode) {
@@ -121,6 +163,7 @@ function pickMode(nextMode) {
   passphrase.value = '';
   password.value = '';
   authStep.value = 'unlock';
+  refreshQuickUnlockState();
 }
 
 async function submitUnlock(e) {
@@ -137,6 +180,38 @@ async function submitUnlock(e) {
       stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
       return;
+    }
+
+    const canUseSavedRemotePassphrase = authMode.value === 'remote'
+      && !isRemoteSessionValid()
+      && !passphrase.value.trim()
+      && !!username.value.trim()
+      && !!password.value
+      && quickUnlockSupported.value
+      && persistence.hasSavedQuickUnlock({ mode: 'remote', accountId: username.value.trim() });
+
+    if (canUseSavedRemotePassphrase) {
+      const quickUnlockResult = await persistence.unlockWithSavedQuickUnlock({
+        mode: 'remote',
+        accountId: username.value.trim(),
+        username: username.value,
+        password: password.value,
+        trustSession: false
+      });
+
+      if (quickUnlockResult.success) {
+        authUser.value = await persistence.getUser();
+        stagedMemoryDocJson = null;
+        refreshQuickUnlockState();
+        document.body.setAttribute('data-main-view', 'rendered');
+        return;
+      }
+
+      if (quickUnlockResult.attempted) {
+        unlockError.value = quickUnlockResult.message || 'Saved passphrase could not be used. Enter passphrase manually.';
+        refreshQuickUnlockState();
+        return;
+      }
     }
 
     if (!passphrase.value.trim()) {
@@ -156,16 +231,22 @@ async function submitUnlock(e) {
       trustSession: isRemoteSessionValid()
     });
     if (success) {
+      if (authMode.value === 'remote') {
+        authUser.value = await persistence.getUser();
+      }
       stagedMemoryDocJson = null;
+      refreshQuickUnlockState();
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Invalid passphrase.';
       canResetLocalData.value = authMode.value === 'local' && authHasLocalData.value;
+      refreshQuickUnlockState();
     }
   } catch (error) {
     const message = String(error?.message || 'Failed to unlock.');
     unlockError.value = message;
     canResetRemoteData.value = authMode.value === 'remote' && message.includes('Authenticated, but data could not be decrypted');
+    refreshQuickUnlockState();
   } finally {
     isBusy.value = false;
   }
@@ -201,6 +282,7 @@ async function submitSignOut() {
     authUser.value = null;
     authScenario.value = 'remote-session-expired';
     authMode.value = 'remote';
+    refreshQuickUnlockState();
     await loadLockedBackgroundIntro();
   } catch (error) {
     unlockError.value = String(error?.message || 'Failed to sign out.');
@@ -285,6 +367,7 @@ function openSecureStorageSetup() {
   canResetLocalData.value = false;
   password.value = '';
   passphrase.value = '';
+  refreshQuickUnlockState();
   document.body.removeAttribute('data-main-view');
 }
 
@@ -295,9 +378,15 @@ const LockScreen = () => {
   const isRemote = mode === 'remote';
   const isLocal = mode === 'local';
   const isSessionValid = isRemoteSessionValid();
+  const canUseSavedRemotePassphrase = isRemote
+    && !isSessionValid
+    && quickUnlockSupported.value
+    && quickUnlockSavedForMode.value
+    && !!username.value.trim()
+    && !!password.value;
 
   const unlockDisabled = isBusy.value
-    || (!isFilesystem && !passphrase.value.trim())
+    || (!isFilesystem && !passphrase.value.trim() && !canUseSavedRemotePassphrase)
     || (isRemote && !isSessionValid && (!username.value.trim() || !password.value));
 
   const modeLabel = isLocal ? 'Local' : isRemote ? 'Remote' : 'File';
@@ -336,7 +425,7 @@ const LockScreen = () => {
           ${isRemote && !isSessionValid && html`
             <div class="input-group">
               <label for="auth-username" class="input-label">Email</label>
-              <input value=${username.value} onInput=${(e) => username.value = e.target.value}
+              <input value=${username.value} onInput=${(e) => { username.value = e.target.value; refreshQuickUnlockState(); }}
                 id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
             </div>
             <div class="input-group">
@@ -344,6 +433,9 @@ const LockScreen = () => {
               <input value=${password.value} onInput=${(e) => password.value = e.target.value}
                 id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
             </div>
+            ${quickUnlockSupported.value && quickUnlockSavedForMode.value && html`
+              <div class="form-success">Saved passphrase is available for this account on this device.</div>
+            `}
           `}
 
           ${isRemote && isSessionValid && html`
@@ -437,6 +529,15 @@ const OptionsModal = () => {
   if (!optionsOpen.value) return null;
 
   const currentMode = persistence.getMode();
+  const quickUnlockSavedSignal = quickUnlockSavedForMode.value;
+  const quickUnlockModeEligible = currentMode === 'local' || currentMode === 'remote';
+  const quickUnlockAvailable = quickUnlockModeEligible && persistence.isQuickUnlockSupported();
+  const quickUnlockAccountId = currentMode === 'remote' ? String(authUser.value?.email || '').trim().toLowerCase() : '';
+  const quickUnlockSaved = quickUnlockAvailable
+    && (quickUnlockSavedSignal || persistence.hasSavedQuickUnlock({
+      mode: currentMode,
+      accountId: quickUnlockAccountId
+    }));
 
   function handleThemeToggle() {
     const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
@@ -453,6 +554,7 @@ const OptionsModal = () => {
     authMode.value = 'local';
     authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
     authStep.value = 'unlock';
+    refreshQuickUnlockState();
     await loadLockedBackgroundIntro();
   }
 
@@ -463,6 +565,7 @@ const OptionsModal = () => {
       await persistence.signOut();
       authUser.value = null;
       authScenario.value = 'remote-session-expired';
+      refreshQuickUnlockState();
       await loadLockedBackgroundIntro();
     } catch (err) {
       unlockError.value = String(err?.message || 'Failed to sign out.');
@@ -483,11 +586,43 @@ const OptionsModal = () => {
     authStep.value = 'unlock';
     unlockError.value = '';
     unlockMessage.value = '';
+    refreshQuickUnlockState();
   }
 
   async function handleChangeFile() {
     optionsOpen.value = false;
     await persistence.pickNewFile();
+  }
+
+  async function handleEnableQuickUnlock() {
+    const activePassphrase = persistence.getPassphrase();
+    if (!activePassphrase) {
+      alert('Unlock with a passphrase before enabling quick unlock.');
+      return;
+    }
+
+    isBusy.value = true;
+    try {
+      await persistence.saveQuickUnlock({
+        mode: currentMode,
+        accountId: quickUnlockAccountId,
+        passphrase: activePassphrase
+      });
+      refreshQuickUnlockState();
+    } catch (error) {
+      if (String(error?.code || '') !== 'cancelled') {
+        alert(String(error?.message || 'Could not enable quick unlock.'));
+      }
+    } finally {
+      isBusy.value = false;
+    }
+  }
+
+  async function handleRemoveQuickUnlock() {
+    const confirmed = confirm('Remove the saved passphrase from this device?');
+    if (!confirmed) return;
+    persistence.removeQuickUnlock({ mode: currentMode, accountId: quickUnlockAccountId });
+    refreshQuickUnlockState();
   }
 
   async function handlePurge() {
@@ -513,6 +648,7 @@ const OptionsModal = () => {
     persistence.reset();
     authHasLocalData.value = false;
     authUser.value = null;
+    refreshQuickUnlockState();
     // Reload into memory mode so the intro appears
     await persistence.unlock('', { mode: 'memory' });
     document.body.setAttribute('data-main-view', 'rendered');
@@ -555,6 +691,22 @@ const OptionsModal = () => {
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${handleChangeFile}>Change file</button>
             </div>
+          `}
+          ${quickUnlockAvailable && html`
+            ${quickUnlockSaved
+              ? html`
+                <div class="options-row">
+                  <div class="options-footer-meta">Quick unlock enabled on this device</div>
+                </div>
+                <div class="options-row">
+                  <button class="btn btn-secondary" onClick=${handleRemoveQuickUnlock} disabled=${isBusy.value}>Remove saved passphrase</button>
+                </div>
+              `
+              : html`
+                <div class="options-row">
+                  <button class="btn btn-secondary" onClick=${handleEnableQuickUnlock} disabled=${isBusy.value}>Enable quick unlock on this device</button>
+                </div>
+              `}
           `}
           <div class="options-row options-row-danger">
             <button class="btn btn-danger" onClick=${handlePurge}>

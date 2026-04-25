@@ -83,8 +83,10 @@
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
       Default on the very first visit (no localStorage data, no remembered mode).
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
+      Optional quick unlock can store a wrapped copy of the passphrase on this device.
     - Remote — document encrypted and synced to the cloud via Supabase.
       Account email, account password, and passphrase are required.
+      Optional quick unlock can store a wrapped copy of the passphrase on this device.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
       The startup mode is determined as follows:
@@ -93,9 +95,12 @@
       - Remembered mode is Local
         - local data present → Local unlock screen
         - no local data → Local unlock screen (create passphrase)
+        - if quick unlock is saved for Local on this device, startup attempts Local auto-unlock before showing the lock screen
       - Remembered mode is Remote
         - valid session → Remote unlock screen (passphrase only)
+          if quick unlock is saved for this Remote account on this device, startup attempts Remote auto-unlock before showing the lock screen
         - expired session → Remote unlock screen (email prefilled)
+          quick unlock never bypasses account sign-in; after sign-in, it may satisfy only the passphrase step
       - Remembered mode is File, valid handle → File reopened silently; if permission denied → file picker
       - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
         Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
@@ -154,6 +159,24 @@
     - The encrypted document is stored in localStorage under `vmd_data`
     - If the passphrase is forgotten, encrypted data is unrecoverable. There is no cryptographic recovery path.
       A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
+    + QUICK UNLOCK (DEVICE-SCOPED)
+      - Quick unlock is optional and available only in Local and Remote modes on compatible browsers
+      - Quick unlock is enabled and disabled from the Options popup while unlocked
+        There is no lock-screen opt-in for quick unlock
+      - The passphrase itself is not stored in plaintext
+        A locally wrapped passphrase blob plus credential metadata is stored on-device only
+      - Quick unlock never changes the document encryption format and never changes server schema
+      - Local quick unlock can auto-unlock on startup
+      - Remote quick unlock can auto-unlock on startup only when the Supabase session is valid
+      - When the Supabase session is expired, account sign-in remains mandatory
+        Quick unlock can satisfy only the passphrase step after successful sign-in
+      - If quick unlock recovery fails (unsupported, cancelled, stale, missing credential), the app falls back to manual passphrase entry
+        Failures clear only the stale quick-unlock record; encrypted document data is not touched
+      - Quick unlock records are scoped per mode, and for Remote they are additionally scoped per account identity
+      - Removing quick unlock deletes only the saved device record
+        It does not lock the app, delete encrypted data, or sign out
+      - Replacing quick unlock is done by removing the saved device record, then enabling quick unlock again
+      - On destructive passphrase reset flows, previous quick-unlock records are invalidated automatically
   + ACCOUNTS AND SYNC
     Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
     The server stores only ciphertext and cannot decrypt user data.
