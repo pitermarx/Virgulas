@@ -74,8 +74,11 @@ const installMockSupabase = async (page: Page, options?: {
   }, options ?? {});
 };
 
-const installMockWebAuthnPrf = async (page: Page) => {
-  await page.addInitScript(() => {
+const installMockWebAuthnPrf = async (page: Page, options?: {
+  missingPrfOnGetCalls?: number[];
+  missingPrfFlagKey?: string;
+}) => {
+  await page.addInitScript(({ missingPrfOnGetCalls = [], missingPrfFlagKey = '' }) => {
     const randomBytes = (length: number) => window.crypto.getRandomValues(new Uint8Array(length));
 
     const toUint8Array = (value: any): Uint8Array => {
@@ -107,10 +110,29 @@ const installMockWebAuthnPrf = async (page: Page) => {
       };
     };
 
+    let getCallCount = 0;
+
     const getMock = async (options: any) => {
+      getCallCount += 1;
       const credentialId = toUint8Array(options?.publicKey?.allowCredentials?.[0]?.id);
       const input = toUint8Array(options?.publicKey?.extensions?.prf?.eval?.first);
       const prfBytes = await derivePrf(credentialId, input);
+      const omitByCall = missingPrfOnGetCalls.includes(getCallCount);
+      const omitByFlag = !!missingPrfFlagKey && localStorage.getItem(missingPrfFlagKey) === '1';
+
+      if (omitByFlag) {
+        localStorage.removeItem(missingPrfFlagKey);
+      }
+
+      if (omitByCall || omitByFlag) {
+        return {
+          getClientExtensionResults: () => ({
+            prf: {
+              results: {}
+            }
+          })
+        };
+      }
 
       return {
         getClientExtensionResults: () => ({
@@ -133,7 +155,7 @@ const installMockWebAuthnPrf = async (page: Page) => {
         value: { create: createMock, get: getMock }
       });
     }
-  });
+  }, options ?? {});
 };
 
 const createEncryptedPayload = async (
@@ -791,6 +813,52 @@ test.describe('Authentication', () => {
 
       await page.reload();
       await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+    });
+
+    test('transient PRF output failure keeps local quick unlock enrolled', async ({ page }) => {
+      await installMockWebAuthnPrf(page, { missingPrfFlagKey: '__test_missing_prf_once' });
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.setItem('vmd_last_mode', 'local');
+      });
+      await page.reload();
+
+      await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
+      await page.getByRole('button', { name: 'Unlock' }).click();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+      await page.getByRole('button', { name: 'Options' }).click();
+      await page.getByRole('button', { name: 'Enable quick unlock on this device' }).click();
+      await expect(page.getByRole('button', { name: 'Remove saved passphrase' })).toBeVisible();
+      await page.getByRole('button', { name: 'Close' }).click();
+
+      await page.evaluate(() => {
+        localStorage.setItem('__test_missing_prf_once', '1');
+      });
+      await page.reload();
+
+      await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+      await expect(page.getByText('Saved passphrase could not be used. Enter passphrase manually.')).toBeVisible();
+
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const raw = localStorage.getItem('vmd_quick_unlock');
+          if (!raw) return false;
+          try {
+            const parsed = JSON.parse(raw);
+            return !!parsed?.local?.credentialId && !!parsed?.local?.wrappedPassphrase;
+          } catch {
+            return false;
+          }
+        });
+      }).toBe(true);
+
+      await page.getByPlaceholder('Passphrase').fill('quick-local-passphrase');
+      await page.getByRole('button', { name: 'Unlock' }).click();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+      await page.getByRole('button', { name: 'Options' }).click();
+      await expect(page.getByRole('button', { name: 'Remove saved passphrase' })).toBeVisible();
     });
   });
 

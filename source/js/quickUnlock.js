@@ -331,7 +331,8 @@ function isCancellationError(error) {
 
 function shouldForgetRecordOnError(error) {
     const code = String(error?.code || '')
-    return code === 'credential-missing' || code === 'decrypt-failed' || code === 'prf-unavailable' || code === 'record-invalid'
+    // PRF output can be transiently unavailable; keep the record so unlock can be retried.
+    return code === 'credential-missing' || code === 'decrypt-failed' || code === 'record-invalid'
 }
 
 export default {
