@@ -31,7 +31,6 @@ const authUser = signal(null);
 const authStep = signal('unlock');
 const quickUnlockSupported = signal(false);
 const quickUnlockSavedForMode = signal(false);
-const savePassphraseOnDevice = signal(false);
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
@@ -46,7 +45,6 @@ function refreshQuickUnlockState() {
   const mode = authMode.value;
   if (!quickUnlockSupported.value || (mode !== 'local' && mode !== 'remote')) {
     quickUnlockSavedForMode.value = false;
-    savePassphraseOnDevice.value = false;
     return;
   }
 
@@ -54,10 +52,6 @@ function refreshQuickUnlockState() {
     mode,
     accountId: getQuickUnlockAccountIdForMode(mode)
   });
-
-  if (quickUnlockSavedForMode.value) {
-    savePassphraseOnDevice.value = false;
-  }
 }
 
 let stagedMemoryDocJson = null;
@@ -148,7 +142,6 @@ async function requestChangeMode() {
   canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
-  savePassphraseOnDevice.value = false;
   refreshQuickUnlockState();
 }
 
@@ -169,7 +162,6 @@ function pickMode(nextMode) {
   canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
-  savePassphraseOnDevice.value = false;
   authStep.value = 'unlock';
   refreshQuickUnlockState();
 }
@@ -242,22 +234,6 @@ async function submitUnlock(e) {
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
-      if (savePassphraseOnDevice.value
-        && quickUnlockSupported.value
-        && (authMode.value === 'local' || authMode.value === 'remote')) {
-        try {
-          await persistence.saveQuickUnlock({
-            mode: authMode.value,
-            accountId: getQuickUnlockAccountIdForMode(authMode.value),
-            passphrase: passphrase.value.trim()
-          });
-          savePassphraseOnDevice.value = false;
-        } catch (saveError) {
-          if (String(saveError?.code || '') !== 'cancelled') {
-            console.error('[QuickUnlock] Failed to save passphrase:', saveError);
-          }
-        }
-      }
       stagedMemoryDocJson = null;
       refreshQuickUnlockState();
       document.body.setAttribute('data-main-view', 'rendered');
@@ -306,7 +282,6 @@ async function submitSignOut() {
     authUser.value = null;
     authScenario.value = 'remote-session-expired';
     authMode.value = 'remote';
-    savePassphraseOnDevice.value = false;
     refreshQuickUnlockState();
     await loadLockedBackgroundIntro();
   } catch (error) {
@@ -392,7 +367,6 @@ function openSecureStorageSetup() {
   canResetLocalData.value = false;
   password.value = '';
   passphrase.value = '';
-  savePassphraseOnDevice.value = false;
   refreshQuickUnlockState();
   document.body.removeAttribute('data-main-view');
 }
@@ -410,11 +384,6 @@ const LockScreen = () => {
     && quickUnlockSavedForMode.value
     && !!username.value.trim()
     && !!password.value;
-
-  const showQuickUnlockOptIn = quickUnlockSupported.value
-    && (isLocal || isRemote)
-    && !isFilesystem
-    && !quickUnlockSavedForMode.value;
 
   const unlockDisabled = isBusy.value
     || (!isFilesystem && !passphrase.value.trim() && !canUseSavedRemotePassphrase)
@@ -491,19 +460,6 @@ const LockScreen = () => {
                 class="huge-input"
                 autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'}
               />
-            `}
-            ${showQuickUnlockOptIn && html`
-              <div class="auth-secondary-actions">
-                <label class="input-label">
-                  <input
-                    type="checkbox"
-                    checked=${savePassphraseOnDevice.value}
-                    onChange=${(e) => savePassphraseOnDevice.value = !!e.target.checked}
-                    disabled=${isBusy.value}
-                  />
-                  Save passphrase on this device
-                </label>
-              </div>
             `}
             ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
             ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
@@ -598,7 +554,6 @@ const OptionsModal = () => {
     authMode.value = 'local';
     authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
     authStep.value = 'unlock';
-    savePassphraseOnDevice.value = false;
     refreshQuickUnlockState();
     await loadLockedBackgroundIntro();
   }
@@ -610,7 +565,6 @@ const OptionsModal = () => {
       await persistence.signOut();
       authUser.value = null;
       authScenario.value = 'remote-session-expired';
-      savePassphraseOnDevice.value = false;
       refreshQuickUnlockState();
       await loadLockedBackgroundIntro();
     } catch (err) {
@@ -632,7 +586,6 @@ const OptionsModal = () => {
     authStep.value = 'unlock';
     unlockError.value = '';
     unlockMessage.value = '';
-    savePassphraseOnDevice.value = false;
     refreshQuickUnlockState();
   }
 
@@ -672,30 +625,6 @@ const OptionsModal = () => {
     refreshQuickUnlockState();
   }
 
-  async function handleReplaceQuickUnlock() {
-    const activePassphrase = persistence.getPassphrase();
-    if (!activePassphrase) {
-      alert('Unlock with a passphrase before replacing quick unlock.');
-      return;
-    }
-
-    isBusy.value = true;
-    try {
-      await persistence.saveQuickUnlock({
-        mode: currentMode,
-        accountId: quickUnlockAccountId,
-        passphrase: activePassphrase
-      });
-      refreshQuickUnlockState();
-    } catch (error) {
-      if (String(error?.code || '') !== 'cancelled') {
-        alert(String(error?.message || 'Could not replace quick unlock.'));
-      }
-    } finally {
-      isBusy.value = false;
-    }
-  }
-
   async function handlePurge() {
     const purgeLabel = currentMode === 'remote'
       ? 'Clear browser session and sign out? Your remote data on the server is unaffected.'
@@ -719,7 +648,6 @@ const OptionsModal = () => {
     persistence.reset();
     authHasLocalData.value = false;
     authUser.value = null;
-    savePassphraseOnDevice.value = false;
     refreshQuickUnlockState();
     // Reload into memory mode so the intro appears
     await persistence.unlock('', { mode: 'memory' });
@@ -769,9 +697,6 @@ const OptionsModal = () => {
               ? html`
                 <div class="options-row">
                   <div class="options-footer-meta">Quick unlock enabled on this device</div>
-                </div>
-                <div class="options-row">
-                  <button class="btn btn-secondary" onClick=${handleReplaceQuickUnlock} disabled=${isBusy.value}>Replace saved passphrase</button>
                 </div>
                 <div class="options-row">
                   <button class="btn btn-secondary" onClick=${handleRemoveQuickUnlock} disabled=${isBusy.value}>Remove saved passphrase</button>

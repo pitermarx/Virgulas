@@ -732,10 +732,12 @@ test.describe('Authentication', () => {
       });
       await page.reload();
       await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
-      await page.getByLabel('Save passphrase on this device').check();
       await page.getByRole('button', { name: 'Unlock' }).click();
 
       await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+      await page.getByRole('button', { name: 'Options' }).click();
+      await page.getByRole('button', { name: 'Enable quick unlock on this device' }).click();
 
       await expect.poll(async () => {
         return await page.evaluate(() => {
@@ -764,11 +766,11 @@ test.describe('Authentication', () => {
       });
       await page.reload();
       await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
-      await page.getByLabel('Save passphrase on this device').check();
       await page.getByRole('button', { name: 'Unlock' }).click();
       await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
       await page.getByRole('button', { name: 'Options' }).click();
+      await page.getByRole('button', { name: 'Enable quick unlock on this device' }).click();
       await expect(page.getByRole('button', { name: 'Remove saved passphrase' })).toBeVisible();
 
       page.once('dialog', (dialog) => dialog.accept());

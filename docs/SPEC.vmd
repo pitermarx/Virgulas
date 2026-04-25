@@ -161,8 +161,8 @@
       A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
     + QUICK UNLOCK (DEVICE-SCOPED)
       - Quick unlock is optional and available only in Local and Remote modes on compatible browsers
-      - The lock screen can offer "Save passphrase on this device" while manually unlocking
-        The save runs only after a successful unlock
+      - Quick unlock is enabled and disabled from the Options popup while unlocked
+        There is no lock-screen opt-in for quick unlock
       - The passphrase itself is not stored in plaintext
         A locally wrapped passphrase blob plus credential metadata is stored on-device only
       - Quick unlock never changes the document encryption format and never changes server schema
@@ -175,7 +175,7 @@
       - Quick unlock records are scoped per mode, and for Remote they are additionally scoped per account identity
       - Removing quick unlock deletes only the saved device record
         It does not lock the app, delete encrypted data, or sign out
-      - Replacing quick unlock overwrites only the saved device record after a fresh device confirmation
+      - Replacing quick unlock is done by removing the saved device record, then enabling quick unlock again
       - On destructive passphrase reset flows, previous quick-unlock records are invalidated automatically
   + ACCOUNTS AND SYNC
     Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
