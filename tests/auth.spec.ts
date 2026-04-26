@@ -77,8 +77,9 @@ const installMockSupabase = async (page: Page, options?: {
 const installMockWebAuthnPrf = async (page: Page, options?: {
   missingPrfOnGetCalls?: number[];
   missingPrfFlagKey?: string;
+  prfOnlyForCreateSalt?: boolean;
 }) => {
-  await page.addInitScript(({ missingPrfOnGetCalls = [], missingPrfFlagKey = '' }) => {
+  await page.addInitScript(({ missingPrfOnGetCalls = [], missingPrfFlagKey = '', prfOnlyForCreateSalt = false }) => {
     const randomBytes = (length: number) => window.crypto.getRandomValues(new Uint8Array(length));
 
     const toUint8Array = (value: any): Uint8Array => {
@@ -102,8 +103,33 @@ const installMockWebAuthnPrf = async (page: Page, options?: {
       value: MockPublicKeyCredential
     });
 
-    const createMock = async () => {
+    const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+    const fromBase64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+    const createMock = async (createOptions: any) => {
       const rawId = randomBytes(32);
+
+      if (prfOnlyForCreateSalt) {
+        // Simulate Bitwarden Android: PRF is returned during create and is only available
+        // during get when the same salt that was used at creation is presented.
+        // Persist the mapping in sessionStorage so it survives page reloads in the test.
+        const createSalt = toUint8Array(createOptions?.publicKey?.extensions?.prf?.eval?.first);
+        if (createSalt.length === 0) {
+          // No PRF salt in create options — fall back to no-PRF response.
+          return { rawId: rawId.buffer, getClientExtensionResults: () => ({}) };
+        }
+        const store = JSON.parse(sessionStorage.getItem('__mock_prf_salts') || '{}');
+        store[toBase64(rawId)] = toBase64(createSalt);
+        sessionStorage.setItem('__mock_prf_salts', JSON.stringify(store));
+        const prfBytes = await derivePrf(rawId, createSalt);
+        return {
+          rawId: rawId.buffer,
+          getClientExtensionResults: () => ({
+            prf: { results: { first: prfBytes.buffer } }
+          })
+        };
+      }
+
       return {
         rawId: rawId.buffer,
         getClientExtensionResults: () => ({})
@@ -116,6 +142,29 @@ const installMockWebAuthnPrf = async (page: Page, options?: {
       getCallCount += 1;
       const credentialId = toUint8Array(options?.publicKey?.allowCredentials?.[0]?.id);
       const input = toUint8Array(options?.publicKey?.extensions?.prf?.eval?.first);
+
+      if (prfOnlyForCreateSalt) {
+        // Only return PRF when the requested salt matches the one registered during create.
+        if (credentialId.length === 0) {
+          return { getClientExtensionResults: () => ({ prf: { results: {} } }) };
+        }
+        const store = JSON.parse(sessionStorage.getItem('__mock_prf_salts') || '{}');
+        const registeredSaltB64 = store[toBase64(credentialId)];
+        const registeredSalt = registeredSaltB64 ? fromBase64(registeredSaltB64) : null;
+        const saltMatches = !!registeredSalt
+          && input.length === registeredSalt.length
+          && input.every((b, i) => b === registeredSalt[i]);
+        if (!saltMatches) {
+          return { getClientExtensionResults: () => ({ prf: { results: {} } }) };
+        }
+        const prfBytes = await derivePrf(credentialId, input);
+        return {
+          getClientExtensionResults: () => ({
+            prf: { results: { first: prfBytes.buffer } }
+          })
+        };
+      }
+
       const prfBytes = await derivePrf(credentialId, input);
       const omitByCall = missingPrfOnGetCalls.includes(getCallCount);
       const omitByFlag = !!missingPrfFlagKey && localStorage.getItem(missingPrfFlagKey) === '1';
@@ -859,6 +908,40 @@ test.describe('Authentication', () => {
       await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
       await page.getByRole('button', { name: 'Options' }).click();
       await expect(page.getByRole('button', { name: 'Remove saved passphrase' })).toBeVisible();
+    });
+
+    test('quick unlock works when PRF is only available for the creation salt (Bitwarden Android)', async ({ page }) => {
+      await installMockWebAuthnPrf(page, { prfOnlyForCreateSalt: true });
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.setItem('vmd_last_mode', 'local');
+      });
+      await page.reload();
+
+      await page.getByLabel('Create a passphrase').fill('quick-local-passphrase');
+      await page.getByRole('button', { name: 'Unlock' }).click();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+      await page.getByRole('button', { name: 'Options' }).click();
+      await page.getByRole('button', { name: 'Enable quick unlock on this device' }).click();
+
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const raw = localStorage.getItem('vmd_quick_unlock');
+          if (!raw) return false;
+          try {
+            const parsed = JSON.parse(raw);
+            return !!parsed?.local?.credentialId && !!parsed?.local?.wrappedPassphrase;
+          } catch {
+            return false;
+          }
+        });
+      }).toBe(true);
+
+      await page.reload();
+      await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+      await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toHaveCount(0);
     });
   });
 

@@ -132,7 +132,7 @@ function createCredentialLabel(mode, accountId) {
     return account ? `Remote (${account})` : 'Remote'
 }
 
-function buildCreateOptions(mode, accountId) {
+function buildCreateOptions(mode, accountId, prfInput) {
     const rpId = window.location.hostname
     const label = createCredentialLabel(mode, accountId)
 
@@ -158,7 +158,7 @@ function buildCreateOptions(mode, accountId) {
             extensions: {
                 prf: {
                     eval: {
-                        first: randomBytes(32)
+                        first: prfInput
                     }
                 }
             }
@@ -190,10 +190,10 @@ function buildGetOptions(credentialId, prfInputBytes) {
     }
 }
 
-async function createCredential(mode, accountId) {
+async function createCredential(mode, accountId, prfInput) {
     let credential
     try {
-        credential = await navigator.credentials.create(buildCreateOptions(mode, accountId))
+        credential = await navigator.credentials.create(buildCreateOptions(mode, accountId, prfInput))
     } catch (error) {
         throw mapWebAuthnError(error, 'create-failed')
     }
@@ -202,7 +202,15 @@ async function createCredential(mode, accountId) {
         throw quickUnlockError('Could not create quick unlock credential.', 'create-failed')
     }
 
-    return toBase64Url(new Uint8Array(credential.rawId))
+    const credentialId = toBase64Url(new Uint8Array(credential.rawId))
+
+    // Some authenticators (e.g. Bitwarden on Android) return PRF output during create.
+    // Capture it here so savePassphrase can skip the separate get assertion when available.
+    const createExtensions = credential.getClientExtensionResults?.() || {}
+    const createPrfFirst = createExtensions?.prf?.results?.first
+    const prfOutput = createPrfFirst ? asUint8Array(createPrfFirst) : null
+
+    return { credentialId, prfOutput }
 }
 
 async function evaluatePrf(credentialId, prfInputBytes) {
@@ -272,9 +280,18 @@ async function savePassphrase({ mode, accountId = '', passphrase }) {
         throw quickUnlockError('Quick unlock is not supported in this browser.', 'unsupported')
     }
 
-    const credentialId = await createCredential(normalizedMode, accountId)
     const prfInput = randomBytes(32)
-    const prfBytes = await evaluatePrf(credentialId, prfInput)
+    const { credentialId, prfOutput: createPrfOutput } = await createCredential(normalizedMode, accountId, prfInput)
+
+    // Use PRF output from create when the authenticator provided it (e.g. Bitwarden on Android).
+    // Otherwise fall back to a separate get assertion.  Both paths use the same prfInput so that
+    // the stored salt matches the one registered during creation, which some authenticators require.
+    let prfBytes
+    if (createPrfOutput && createPrfOutput.byteLength) {
+        prfBytes = createPrfOutput
+    } else {
+        prfBytes = await evaluatePrf(credentialId, prfInput)
+    }
     const wrappedPassphrase = await encryptSecretWithKeyBytes(normalizedPassphrase, prfBytes)
 
     const now = Date.now()
