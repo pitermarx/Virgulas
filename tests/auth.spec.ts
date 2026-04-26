@@ -114,6 +114,10 @@ const installMockWebAuthnPrf = async (page: Page, options?: {
         // during get when the same salt that was used at creation is presented.
         // Persist the mapping in sessionStorage so it survives page reloads in the test.
         const createSalt = toUint8Array(createOptions?.publicKey?.extensions?.prf?.eval?.first);
+        if (!createSalt.length) {
+          // No PRF salt in create options — fall back to no-PRF response.
+          return { rawId: rawId.buffer, getClientExtensionResults: () => ({}) };
+        }
         const store = JSON.parse(sessionStorage.getItem('__mock_prf_salts') || '{}');
         store[toBase64(rawId)] = toBase64(createSalt);
         sessionStorage.setItem('__mock_prf_salts', JSON.stringify(store));
@@ -141,6 +145,9 @@ const installMockWebAuthnPrf = async (page: Page, options?: {
 
       if (prfOnlyForCreateSalt) {
         // Only return PRF when the requested salt matches the one registered during create.
+        if (!credentialId.length) {
+          return { getClientExtensionResults: () => ({ prf: { results: {} } }) };
+        }
         const store = JSON.parse(sessionStorage.getItem('__mock_prf_salts') || '{}');
         const registeredSaltB64 = store[toBase64(credentialId)];
         const registeredSalt = registeredSaltB64 ? fromBase64(registeredSaltB64) : null;
