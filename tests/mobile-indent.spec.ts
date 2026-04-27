@@ -46,6 +46,17 @@ test.describe('Mobile swipe indentation', () => {
         await expect(page.getByRole('button', { name: '?' })).toHaveCount(0);
     });
 
+    test('Search button opens search mode on mobile', async ({ page }) => {
+        const searchButton = page.getByRole('button', { name: 'Search' });
+        await expect(searchButton).toBeVisible();
+
+        await searchButton.tap();
+
+        const searchInput = page.getByPlaceholder('Search...');
+        await expect(searchInput).toBeVisible();
+        await expect(searchInput).toBeFocused();
+    });
+
     test('tap to edit keeps node focus stable', async ({ page }) => {
         await page.locator('[data-node-id="A"] .node-text-md').tap();
 

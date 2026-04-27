@@ -4,7 +4,7 @@ import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
 import { log, isMobile } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
@@ -78,6 +78,38 @@ function scheduleBlurClear(id, type) {
 
 const focusMe = { ref: focusElement }
 
+function openSearchWithQuery(query) {
+    const nextQuery = String(query || '').trim()
+    if (!nextQuery) return
+    enterSearchMode(focus)
+    searchQuery.value = nextQuery
+    resetSearchNavigation()
+}
+
+function handleInteractiveMarkdownClick(e) {
+    if (!(e?.target instanceof Element)) return false
+
+    const tokenTarget = e.target.closest('[data-search-token]')
+    if (tokenTarget) {
+        const token = tokenTarget.getAttribute('data-search-token')
+        if (!token) return false
+        e.preventDefault()
+        e.stopPropagation()
+        openSearchWithQuery(token)
+        return true
+    }
+
+    const linkTarget = e.target.closest('a[href]')
+    if (linkTarget) {
+        linkTarget.setAttribute('target', '_blank')
+        linkTarget.setAttribute('rel', 'noopener noreferrer')
+        e.stopPropagation()
+        return true
+    }
+
+    return false
+}
+
 // ── Mobile keyboard-aware status bar ─────────────────────────────────────────
 // When the virtual keyboard appears on mobile, the visible viewport shrinks.
 // We apply a dynamic bottom inset to the status toolbar so it stays visible
@@ -134,6 +166,7 @@ function isSwipeBlockedTarget(target) {
 function NodeDesc({ node }) {
     const { description, id } = node.value // subscribe to changes on node
     const focusDesc = e => {
+        if (handleInteractiveMarkdownClick(e)) return
         requestNodeFocus(id, 'description')
         e.stopPropagation()
     }
@@ -151,6 +184,7 @@ function NodeDesc({ node }) {
         return html`<div class="node-description" onClick=${focusDesc}>
             <textarea
                 ref=${autosizeAndFocus} type="text"
+                rows="1"
                 class="node-desc-textarea" placeholder="Add description..." value=${description} focused
                 onBlur=${onBlur}
                 onpaste=${e => {
@@ -243,6 +277,7 @@ function NodeBody({ node }) {
     }
 
     function focusTextIfOnlyClickedThisElement(e) {
+        if (handleInteractiveMarkdownClick(e)) return
         if (e.target.closest('.bullet, .collapse-toggle')) return
         selectedIds.value = []
         requestNodeFocus(id, 'text')
@@ -416,6 +451,7 @@ export function StatusToolbar() {
             rawContent.value = outline.getVMD()
             rawMode.value = true
         }}>Raw</button>`}
+            ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>
         <div class="toolbar-brand">
@@ -482,6 +518,7 @@ function Breadcrumbs() {
     const isEditing = zoomDescEditing.value;
 
     function startEditing(e) {
+        if (handleInteractiveMarkdownClick(e)) return
         zoomDescEditing.value = true
         focus.Id.value = null
         focus.Type.value = null

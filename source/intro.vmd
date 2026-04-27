@@ -7,6 +7,9 @@
     Press **Escape** to stop editing and return to navigation mode.
   - Text supports **bold**, __italic__, `monospace`, and [links](https://virgulas.com)
     Markdown is rendered when not editing — click to see the raw text
+    Links open in a new tab/window when clicked
+  - Use `#tags` and `@mentions` inline (example: #todo and @alice)
+    They render as rounded pills; click one to start Search with that token
   - Each node can also have a description (this is one!)
     Press `Shift+Enter` while editing to toggle between the node title and its description
     The description is hidden when empty and shows only the first 2 lines when not editing
@@ -29,7 +32,8 @@
   to other nodes at the same indentation level.
   - Multi-selected nodes can be moved, indented, or deleted all at once.
 + Search
-  Press **Escape** when no node is focused to open the search bar.
+  Press **Escape** when no node is focused (desktop) to open the search bar.
+  On mobile, tap the **Search** button in the bottom status bar.
   - Non-matching nodes are hidden; matching text is highlighted.
   - Use **Tab** / **Shift+Tab** to cycle through results.
   - Press **Enter** or click a result to zoom into the closest ancestor of the match.

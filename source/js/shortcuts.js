@@ -392,14 +392,22 @@ export function keydown(focus) {
 }
 
 let prevFocusType = {}
+export function enterSearchMode(focus) {
+    if (focus.Type.value === 'search') {
+        resetSearchNavigation()
+        return
+    }
+    prevFocusType = focus.Type.value
+    focus.Type.value = 'search'
+    resetSearchNavigation()
+}
+
 export function toggleSearchMode(focus) {
     if (focus.Type.value === 'search') {
         focus.Type.value = prevFocusType
         resetSearchNavigation()
     }
     else {
-        prevFocusType = focus.Type.value
-        focus.Type.value = 'search'
-        resetSearchNavigation()
+        enterSearchMode(focus)
     }
 }

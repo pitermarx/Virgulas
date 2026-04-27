@@ -8,6 +8,9 @@
     - Each "Node" text and its "Description" can have rendered markdown when not editing.
       Markdown elements are limited to
       **Bold**, __Italic__, [links](http://example.com), ![](https://images.png), `monospace code`
+      Rendered links always open in a new tab/window
+    - Inline `#tags` and `@mentions` in rendered markdown appear as rounded pills
+      Clicking/tapping a pill immediately opens Search with that token pre-filled
   + Behaviors of a "Node"
     + FOCUS
       - When focusing a "Node" or "Description", the text becomes editable, and the raw markdown is visible
@@ -136,7 +139,7 @@
     - When in RAW mode, the app is a plain text editor with a "SAVE" and a "CANCEL" button
   + SEARCH
     - Search can be done with simple substring matches
-    - Search is activated with `Escape` when no node is focused on desktop and with a scroll up on mobile
+    - Search is activated with `Escape` when no node is focused on desktop and with the `Search` button in the status bar on mobile
       The search controls are hidden by default
     - Search can be dismissed with `Escape` again on desktop or with an `X` clear button
     - When searching, the document becomes read-only
@@ -282,8 +285,6 @@
       - Accessibility: ARIA tree roles, screen-reader announcements for focus, collapse, and zoom changes
       - Virtual scrolling: for outlines with thousands of nodes, render only the visible portion to keep the UI responsive
       - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
-      - Restore intro walkthrough: add an Options action that reloads INTRO.VMD so users can revisit onboarding later
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
       - Developer Panel expansion: extend the `Ctrl+Alt+D` panel with active signal dependencies graph and additional runtime diagnostics.
       - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
-      - on file mode, show name of file in the status bar, on the lock screen (last chosen file) and on the options popup
