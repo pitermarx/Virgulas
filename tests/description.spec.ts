@@ -73,6 +73,33 @@ test.describe('Description', () => {
     expect(newHeight).toBeGreaterThan(initialHeight);
   });
 
+  test('description textarea stays one line until a second line is entered', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{ id: '1', text: 'Node 1', description: '', children: [] }]
+    });
+
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const textInput = node.locator('input').first();
+    await textInput.press('Shift+Enter');
+
+    const descTextarea = node.locator('textarea');
+    await expect(descTextarea).toBeFocused();
+
+    await descTextarea.fill('A');
+    const firstLineMetrics = await descTextarea.evaluate(el => {
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+      return { height: el.offsetHeight, lineHeight };
+    });
+    expect(firstLineMetrics.height).toBeLessThan(firstLineMetrics.lineHeight * 1.8);
+
+    await descTextarea.fill('A\nB');
+    const secondLineHeight = await descTextarea.evaluate(el => el.offsetHeight);
+    expect(secondLineHeight).toBeGreaterThan(firstLineMetrics.height);
+  });
+
   test('focused node has distinct visual style from hover', async ({ page }) => {
     const node = page.locator('.node-content').first();
 

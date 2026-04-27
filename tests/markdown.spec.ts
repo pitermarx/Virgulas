@@ -13,7 +13,8 @@ test.describe('Markdown Rendering', () => {
         { id: '4', text: '[Virgulas](https://example.com)', children: [] },
         { id: '5', text: '![Logo](https://example.com/logo.png)', children: [] },
         { id: '6', text: '`const x = 1`', children: [] },
-        { id: '7', text: '![" onerror="alert(1)](https://x.com)', children: [] }
+        { id: '7', text: '![' + '" onerror="alert(1)](https://x.com)', children: [] },
+        { id: '8', text: 'Ping @alice about #todo', children: [] }
       ]
     });
   });
@@ -83,9 +84,40 @@ test.describe('Markdown Rendering', () => {
   });
 
   test('Renders links, images, and inline code', async ({ page }) => {
-    await expect(page.locator('a[href="https://example.com"]')).toHaveText('Virgulas');
+    const link = page.locator('a[href="https://example.com"]');
+    await expect(link).toHaveText('Virgulas');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     await expect(page.locator('img[src="https://example.com/logo.png"][alt="Logo"]')).toBeVisible();
     await expect(page.locator('code', { hasText: 'const x = 1' })).toBeVisible();
+  });
+
+  test('Clicking markdown links opens a new tab and does not switch to edit mode', async ({ page, context }) => {
+    const node = page.locator('.node-content').nth(3);
+    const link = node.locator('a[href="https://example.com"]');
+
+    const popupPromise = context.waitForEvent('page');
+    await link.click();
+    const popup = await popupPromise;
+
+    await expect(node.locator('input')).toHaveCount(0);
+    await popup.close();
+  });
+
+  test('Highlights tags and mentions and clicking them opens search with the token', async ({ page }) => {
+    const mentionToken = page.locator('[data-search-token="@alice"]');
+    const tagToken = page.locator('[data-search-token="#todo"]');
+
+    await expect(mentionToken).toBeVisible();
+    await expect(mentionToken).toHaveClass(/search-token-mention/);
+    await expect(tagToken).toBeVisible();
+    await expect(tagToken).toHaveClass(/search-token-tag/);
+
+    await tagToken.click();
+
+    const searchInput = page.getByPlaceholder('Search...');
+    await expect(searchInput).toBeVisible();
+    await expect(searchInput).toHaveValue('#todo');
   });
 
   test('Escapes markdown quotes to prevent attribute injection', async ({ page }) => {

@@ -16,6 +16,10 @@
   --color-danger: #c0392b;
   --color-search-match: #fff8e1;
   --color-search-current: #fff0b0;
+  --color-tag-chip-bg: #e4f2d8;
+  --color-tag-chip-text: #2d6a2f;
+  --color-mention-chip-bg: #dbe8ff;
+  --color-mention-chip-text: #244a9a;
   --color-overlay: rgba(20, 18, 14, 0.45);
   --color-success: #2e7d32;
   --color-error: #d32f2f;
@@ -75,6 +79,10 @@
     --color-danger: #e05c4a;
     --color-search-match: #473a18;
     --color-search-current: #6a5318;
+    --color-tag-chip-bg: #2b3f2c;
+    --color-tag-chip-text: #98d89d;
+    --color-mention-chip-bg: #1e3358;
+    --color-mention-chip-text: #8db4ff;
     --color-overlay: rgba(0, 0, 0, 0.7);
   }
 }
@@ -95,6 +103,10 @@
   --color-danger: #e05c4a;
   --color-search-match: #473a18;
   --color-search-current: #6a5318;
+  --color-tag-chip-bg: #2b3f2c;
+  --color-tag-chip-text: #98d89d;
+  --color-mention-chip-bg: #1e3358;
+  --color-mention-chip-text: #8db4ff;
   --color-overlay: rgba(0, 0, 0, 0.7);
 }
 
@@ -553,6 +565,10 @@ body {
   background-color: var(--color-hover-surface);
 }
 
+.toolbar-btn-search {
+  font-weight: 600;
+}
+
 /* ── Keyboard keycaps ── */
 kbd {
   display: inline-block;
@@ -967,6 +983,39 @@ a:hover {
   cursor: text;
   color: var(--color-text-primary);
   white-space: pre-wrap;
+}
+
+.search-token-inline {
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-full);
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  transition: filter var(--transition-base), box-shadow var(--transition-base);
+}
+
+.search-token-inline:hover {
+  filter: brightness(1.02);
+}
+
+.search-token-inline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
+}
+
+.search-token-tag {
+  background: var(--color-tag-chip-bg);
+  color: var(--color-tag-chip-text);
+}
+
+.search-token-mention {
+  background: var(--color-mention-chip-bg);
+  color: var(--color-mention-chip-text);
 }
 
 /* ── Node text: edit mode (input) ── */
