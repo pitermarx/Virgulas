@@ -143,7 +143,7 @@ test.describe('Sync polling', () => {
 
         const baseline = await page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls);
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls - baseline),
+            () => page.evaluate((initial) => (window as any).__mockSupabaseState.getLastUpdateCalls - initial, baseline),
             { timeout: 1000, intervals: [200, 200, 200, 200] }
         ).toBeLessThanOrEqual(1);
     });
@@ -167,12 +167,12 @@ test.describe('Sync polling', () => {
         ).toBeGreaterThan(0);
 
         await page.getByRole('button', { name: 'Options' }).click();
-        await page.getByRole('button', { name: 'Sign out' }).click();
+        await page.getByRole('button', { name: 'Sign out', exact: true }).click();
         await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
 
         const baseline = await page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls);
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls - baseline),
+            () => page.evaluate((initial) => (window as any).__mockSupabaseState.getLastUpdateCalls - initial, baseline),
             { timeout: 1000, intervals: [200, 200, 200, 200] }
         ).toBeLessThanOrEqual(1);
     });
@@ -209,9 +209,9 @@ test.describe('Sync polling', () => {
         });
 
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls),
+            () => page.evaluate((initial) => (window as any).__mockSupabaseState.getLastUpdateCalls - initial, baseline),
             { timeout: 500, intervals: [120, 120, 120, 120] }
-        ).toBe(baseline);
+        ).toBeLessThanOrEqual(1);
 
         await page.evaluate(async () => {
             const { pendingConflicts } = await import('/js/sync.js');

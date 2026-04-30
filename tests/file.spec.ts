@@ -429,7 +429,7 @@ test.describe('File mode', () => {
         expect(rememberedHandle).toBeNull();
 
         await page.reload();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
-        await expect(page.locator('.status-memory-badge')).toBeVisible();
+        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.getByText('This intro lives only in memory. Your changes here are not saved.')).toBeVisible();
     });
 });
