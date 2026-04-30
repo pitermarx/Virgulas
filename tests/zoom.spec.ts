@@ -99,6 +99,9 @@ test.describe('Zoom', () => {
 
     // Expect all visible
     await expect(page.locator('.node-content')).toHaveCount(3);
+    await expect(page.locator('.node-content').nth(0)).toContainText('Parent');
+    await expect(page.locator('[data-node-id="1.1"] input')).toHaveValue('Child');
+    await expect(page.locator('.node-content').nth(2)).toContainText('Sibling');
   });
 
   test('URL carries node ID when zoomed', async ({ page }) => {
@@ -109,9 +112,9 @@ test.describe('Zoom', () => {
 
     await expect(page.locator('.node-content')).toHaveCount(1);
 
-    // URL should contain #<id> hash
-    const url = page.url();
-    expect(url).toContain('#');
+    await expect(page).toHaveURL(/#1$/);
+    await expect(page.locator('.node-content').first().locator('input')).toHaveValue('Child');
+    await expect(page.locator('.breadcrumbs span').nth(1)).toHaveText('Parent');
   });
 
   test('URL hash zooms on load', async ({ page }) => {
@@ -144,6 +147,9 @@ test.describe('Zoom', () => {
 
     // Should show all nodes (root view)
     await expect(page.locator('.node-content')).toHaveCount(3);
+    await expect(page.locator('.node-content').nth(0)).toContainText('Parent');
+    await expect(page.locator('.node-content').nth(1)).toContainText('Child');
+    await expect(page.locator('.node-content').nth(2)).toContainText('Sibling');
   });
 
   test('zoomed node description is visible and editable with placeholder', async ({ page }) => {

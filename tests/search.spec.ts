@@ -106,6 +106,24 @@ test.describe('Search', () => {
     await expect(page.getByText('2/2')).toBeVisible();
   });
 
+  test('ArrowUp and ArrowDown also cycle through search results', async ({ page }) => {
+    await page.keyboard.press('Escape');
+    const searchInput = page.getByPlaceholder('Search...');
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill('Node');
+
+    await expect(page.getByText('1/2')).toBeVisible();
+
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByText('2/2')).toBeVisible();
+
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByText('1/2')).toBeVisible();
+
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByText('2/2')).toBeVisible();
+  });
+
   test('Enter auto-zooms to the closest collapsed ancestor', async ({ page }) => {
     await setupDoc(page, {
       id: 'root',

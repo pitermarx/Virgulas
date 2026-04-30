@@ -378,4 +378,58 @@ test.describe('File mode', () => {
         // Content from the picker-opened file is rendered
         await expect(page.locator('.node-content').first()).toContainText('Fallback Node');
     });
+
+    test('Clear file session can be dismissed without losing file mode session', async ({ page }) => {
+        await installMockFilesystem(page, { initialContent: '- Session Node' });
+        await page.addInitScript(() => {
+            localStorage.setItem('vmd_last_mode', 'filesystem');
+        });
+
+        await page.goto('/');
+        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('.status-mode')).toHaveText('File');
+
+        await page.getByRole('button', { name: 'Options' }).click();
+        page.once('dialog', (dialog) => {
+            expect(dialog.message()).toBe('Clear the remembered file handle and local session? Your .vmd file on disk is unaffected.');
+            dialog.dismiss();
+        });
+        await page.getByRole('button', { name: 'Clear file session' }).click();
+
+        await expect(page.locator('.status-mode')).toHaveText('File');
+        await expect(page.locator('.node-content').first()).toContainText('Session Node');
+
+        const rememberedHandle = await page.evaluate(() => sessionStorage.getItem('__fsIDB_last-file'));
+        expect(rememberedHandle).toBeTruthy();
+    });
+
+    test('Clear file session confirms and resets remembered file handle', async ({ page }) => {
+        await installMockFilesystem(page, { initialContent: '- File Reset Node' });
+        await page.addInitScript(() => {
+            localStorage.setItem('vmd_last_mode', 'filesystem');
+        });
+
+        await page.goto('/');
+        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('.status-mode')).toHaveText('File');
+
+        await page.getByRole('button', { name: 'Options' }).click();
+        page.once('dialog', (dialog) => {
+            expect(dialog.message()).toBe('Clear the remembered file handle and local session? Your .vmd file on disk is unaffected.');
+            dialog.accept();
+        });
+        await page.getByRole('button', { name: 'Clear file session' }).click();
+
+        await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+        const rememberedHandle = await page.evaluate(() => sessionStorage.getItem('__fsIDB_last-file'));
+        expect(rememberedHandle).toBeNull();
+
+        await page.reload();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('.status-memory-badge')).toBeVisible();
+    });
 });
