@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Virgulas Preview Builds</title>
+    <meta name="description" content="Open PR preview builds for Virgulas">
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f6f7fb;
+            --fg: #0f172a;
+            --muted: #64748b;
+            --border: #d6d9e1;
+            --card: #ffffff;
+            --chip: #e2e8f0;
+            --chip-fg: #1e293b;
+            --btn-bg: #0f172a;
+            --btn-fg: #ffffff;
+            --btn-border: #0f172a;
+            --btn-secondary-bg: transparent;
+            --btn-secondary-fg: #0f172a;
+            --btn-secondary-border: #cbd5e1;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #090d19;
+                --fg: #e2e8f0;
+                --muted: #94a3b8;
+                --border: #2a3248;
+                --card: #0f172a;
+                --chip: #1e293b;
+                --chip-fg: #cbd5e1;
+                --btn-bg: #e2e8f0;
+                --btn-fg: #0f172a;
+                --btn-border: #e2e8f0;
+                --btn-secondary-bg: transparent;
+                --btn-secondary-fg: #e2e8f0;
+                --btn-secondary-border: #334155;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 0% 0%, #dbeafe 0%, transparent 35%), var(--bg);
+            color: var(--fg);
+            font-family: "Inter", "Segoe UI", sans-serif;
+            min-height: 100vh;
+        }
+
+        main {
+            max-width: 840px;
+            margin: 0 auto;
+            padding: 2.25rem 1rem 3rem;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(1.7rem, 4vw, 2.2rem);
+        }
+
+        .subtitle {
+            margin: 0.5rem 0 0;
+            color: var(--muted);
+        }
+
+        .meta {
+            margin-top: 0.85rem;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .card {
+            margin-top: 1.5rem;
+            border: 1px solid var(--border);
+            background: var(--card);
+            border-radius: 0.9rem;
+            overflow: hidden;
+        }
+
+        .status {
+            margin: 0;
+            padding: 1rem 1.1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.1rem;
+            border-top: 1px solid var(--border);
+        }
+
+        li:first-child {
+            border-top: 0;
+        }
+
+        .pr-meta {
+            min-width: 0;
+        }
+
+        .pr-title {
+            font-weight: 650;
+            margin: 0;
+            line-height: 1.35;
+        }
+
+        .pr-details {
+            margin-top: 0.35rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            color: var(--muted);
+            font-size: 0.87rem;
+        }
+
+        .chip {
+            display: inline-block;
+            border-radius: 999px;
+            background: var(--chip);
+            color: var(--chip-fg);
+            padding: 0.18rem 0.55rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            text-decoration: none;
+            border-radius: 999px;
+            padding: 0.45rem 0.72rem;
+            font-size: 0.86rem;
+            border: 1px solid var(--btn-border);
+            background: var(--btn-bg);
+            color: var(--btn-fg);
+            white-space: nowrap;
+        }
+
+        .btn.secondary {
+            border-color: var(--btn-secondary-border);
+            background: var(--btn-secondary-bg);
+            color: var(--btn-secondary-fg);
+        }
+
+        @media (max-width: 720px) {
+            li {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .actions {
+                width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <h1>Preview Builds</h1>
+        <p class="subtitle">Open previews generated from open pull requests.</p>
+        <p id="repo-meta" class="meta"></p>
+
+        <section class="card" aria-live="polite">
+            <p id="status" class="status">Loading open pull requests from GitHub...</p>
+            <ul id="preview-list"></ul>
+        </section>
+    </main>
+
+    <script>
+        (function () {
+            const repo = 'pitermarx/virgulas'
+
+            const statusEl = document.getElementById('status')
+            const listEl = document.getElementById('preview-list')
+            const repoMetaEl = document.getElementById('repo-meta')
+
+            repoMetaEl.textContent = 'Repository: ' + repo + ' - list is live from GitHub API.'
+
+            function slugifyBranch(branch) {
+                return String(branch || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_-]+/g, '-')
+                    .replace(/^-+/, '')
+                    .replace(/-+$/, '')
+            }
+
+            function buildPreviewRows(pulls) {
+                const used = new Set()
+                const rows = []
+
+                pulls
+                    .slice()
+                    .sort(function (a, b) {
+                        return Number(a.number) - Number(b.number)
+                    })
+                    .forEach(function (pr) {
+                        const number = Number(pr.number)
+                        const branch = pr && pr.head ? pr.head.ref : ''
+                        let slug = slugifyBranch(branch)
+                        if (!slug) {
+                            slug = 'pr-' + number
+                        }
+
+                        if (used.has(slug)) {
+                            slug = slug + '-pr-' + number
+                        }
+                        used.add(slug)
+
+                        rows.push({
+                            number: number,
+                            title: pr.title || 'Untitled pull request',
+                            branch: branch || 'unknown',
+                            slug: slug,
+                            url: pr.html_url || '#'
+                        })
+                    })
+
+                return rows
+            }
+
+            function createListItem(row) {
+                const li = document.createElement('li')
+
+                const meta = document.createElement('div')
+                meta.className = 'pr-meta'
+
+                const title = document.createElement('p')
+                title.className = 'pr-title'
+                title.textContent = 'PR #' + row.number + ' - ' + row.title
+
+                const details = document.createElement('div')
+                details.className = 'pr-details'
+
+                const branchChip = document.createElement('span')
+                branchChip.className = 'chip'
+                branchChip.textContent = row.branch
+
+                const route = document.createElement('span')
+                route.textContent = '/preview/' + row.slug + '/'
+
+                details.appendChild(branchChip)
+                details.appendChild(route)
+
+                meta.appendChild(title)
+                meta.appendChild(details)
+
+                const actions = document.createElement('div')
+                actions.className = 'actions'
+
+                const previewLink = document.createElement('a')
+                previewLink.className = 'btn'
+                previewLink.href = './' + row.slug + '/'
+                previewLink.textContent = 'Open preview'
+
+                const prLink = document.createElement('a')
+                prLink.className = 'btn secondary'
+                prLink.href = row.url
+                prLink.target = '_blank'
+                prLink.rel = 'noopener noreferrer'
+                prLink.textContent = 'View PR'
+
+                actions.appendChild(previewLink)
+                actions.appendChild(prLink)
+
+                li.appendChild(meta)
+                li.appendChild(actions)
+                return li
+            }
+
+            async function filterPublished(rows) {
+                const checks = rows.map(async function (row) {
+                    try {
+                        const check = await fetch('./' + row.slug + '/version.json', { cache: 'no-store' })
+                        if (check.ok) {
+                            return row
+                        }
+                        return null
+                    } catch {
+                        return null
+                    }
+                })
+
+                const result = await Promise.all(checks)
+                return result.filter(Boolean)
+            }
+
+            async function load() {
+                try {
+                    const apiUrl = 'https://api.github.com/repos/' + repo + '/pulls?state=open&per_page=100'
+                    const response = await fetch(apiUrl, {
+                        headers: {
+                            Accept: 'application/vnd.github+json'
+                        }
+                    })
+
+                    if (!response.ok) {
+                        throw new Error('GitHub API request failed with status ' + response.status)
+                    }
+
+                    const pulls = await response.json()
+                    if (!Array.isArray(pulls) || pulls.length === 0) {
+                        statusEl.textContent = 'No open pull requests.'
+                        return
+                    }
+
+                    const rows = buildPreviewRows(pulls)
+                    const published = await filterPublished(rows)
+
+                    if (published.length === 0) {
+                        statusEl.textContent = 'No published preview bundles found yet. Previews are generated on main branch deploys.'
+                        return
+                    }
+
+                    statusEl.textContent = 'Showing ' + published.length + ' published preview build(s).'
+                    const fragment = document.createDocumentFragment()
+                    published
+                        .sort(function (a, b) {
+                            return b.number - a.number
+                        })
+                        .forEach(function (row) {
+                            fragment.appendChild(createListItem(row))
+                        })
+                    listEl.appendChild(fragment)
+                } catch (error) {
+                    statusEl.textContent = 'Could not load preview list from GitHub API.'
+                    const li = document.createElement('li')
+                    li.textContent = String(error && error.message ? error.message : error)
+                    listEl.appendChild(li)
+                }
+            }
+
+            load()
+        })()
+    </script>
+</body>
+
+</html>

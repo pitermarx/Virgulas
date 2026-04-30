@@ -199,6 +199,93 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.plan.outputs.resolved_version }} [skip ci]"
           git push
 
+  deploy-preview:
+    name: Deploy Preview Pages (PR)
+    needs: test
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      pull-requests: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Checkout base branch content
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Build static site bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p _site
+          cp -r source/. _site/
+
+          APP_VERSION=$(node -p "require('./package.json').version")
+          node scripts/stamp-app-version.mjs --index "_site/index.html" --json "_site/version.json" --version "$APP_VERSION"
+          echo "Stamped app version: $APP_VERSION"
+
+          mkdir -p _site/preview
+          cp source/preview.html _site/preview/index.html
+
+          mapfile -t PR_ROWS < <(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
+
+          PREVIEW_COUNT=0
+          declare -A USED_SLUGS=()
+
+          for row in "${PR_ROWS[@]}"; do
+            IFS=$'\t' read -r NUMBER BRANCH <<< "$row"
+
+            SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')
+            if [ -z "$SAFE" ]; then
+              SAFE="pr-$NUMBER"
+            fi
+
+            if [ -n "${USED_SLUGS[$SAFE]:-}" ]; then
+              SAFE="${SAFE}-pr-$NUMBER"
+            fi
+            USED_SLUGS[$SAFE]=1
+
+            TARGET="_site/preview/$SAFE"
+            mkdir -p "$TARGET"
+
+            if git fetch --depth=1 origin "refs/pull/$NUMBER/head"; then
+              git archive FETCH_HEAD -- source | tar --strip-components=1 -C "$TARGET" -x
+              PREVIEW_COUNT=$((PREVIEW_COUNT + 1))
+            else
+              echo "::warning::Unable to fetch refs/pull/$NUMBER/head for branch '$BRANCH'. Skipping this preview."
+              rm -rf "$TARGET"
+            fi
+          done
+
+          echo "Generated $PREVIEW_COUNT preview bundle(s)."
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
+
   deploy:
     name: Deploy to GitHub Pages
     needs: [test, publish-db, release]
@@ -229,6 +316,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ needs.release.outputs.resolved_version }}
         run: |
+          set -euo pipefail
+
           mkdir -p _site
           cp -r source/. _site/
 
@@ -238,13 +327,40 @@ jobs:
           node scripts/stamp-app-version.mjs --index "_site/index.html" --json "_site/version.json" --version "$APP_VERSION"
           echo "Stamped app version: $APP_VERSION"
 
-          # Build PR preview folders under /preview/<branch-name>
-          gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName --jq '.[].headRefName' | while IFS= read -r branch; do
-            SAFE=$(echo "$branch" | sed 's/[^a-zA-Z0-9_-]/-/g')
-            mkdir -p "_site/preview/$SAFE"
-            git fetch --depth=1 origin "$branch"
-            git archive FETCH_HEAD -- source | tar --strip-components=1 -C "_site/preview/$SAFE" -x
+          mkdir -p _site/preview
+          cp source/preview.html _site/preview/index.html
+
+          mapfile -t PR_ROWS < <(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
+
+          PREVIEW_COUNT=0
+          declare -A USED_SLUGS=()
+
+          for row in "${PR_ROWS[@]}"; do
+            IFS=$'\t' read -r NUMBER BRANCH <<< "$row"
+
+            SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')
+            if [ -z "$SAFE" ]; then
+              SAFE="pr-$NUMBER"
+            fi
+
+            if [ -n "${USED_SLUGS[$SAFE]:-}" ]; then
+              SAFE="${SAFE}-pr-$NUMBER"
+            fi
+            USED_SLUGS[$SAFE]=1
+
+            TARGET="_site/preview/$SAFE"
+            mkdir -p "$TARGET"
+
+            if git fetch --depth=1 origin "refs/pull/$NUMBER/head"; then
+              git archive FETCH_HEAD -- source | tar --strip-components=1 -C "$TARGET" -x
+              PREVIEW_COUNT=$((PREVIEW_COUNT + 1))
+            else
+              echo "::warning::Unable to fetch refs/pull/$NUMBER/head for branch '$BRANCH'. Skipping this preview."
+              rm -rf "$TARGET"
+            fi
           done
+
+          echo "Generated $PREVIEW_COUNT preview bundle(s)."
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6
