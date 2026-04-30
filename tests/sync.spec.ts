@@ -115,9 +115,11 @@ const unlockRemote = async (page: Page, email: string, accountPass: string, pass
 
 /** Trigger an edit on the first visible node. */
 const editFirstNode = async (page: Page, text: string) => {
-    await page.locator('.node-text-md').first().click();
-    const input = page.locator('.node-content input').first();
-    await input.fill(text);
+    const existingInput = page.locator('.node-content input').first();
+    if (await existingInput.count() === 0) {
+        await page.locator('.node-text-md').first().click();
+    }
+    await page.locator('.node-content input').first().fill(text);
 };
 
 test.describe('Sync status indicator', () => {
@@ -358,21 +360,10 @@ test.describe('Sync retry behaviour', () => {
         await editFirstNode(page, 'Failing Write');
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 5000 });
 
-        // Fix the flag so next upload succeeds, then make another edit.
-        // The node may still be in edit mode (input focused) from the previous
-        // editFirstNode call, so drive the change through the outline model
-        // directly to avoid any UI focus state issues.
+        // Fix the flag so next upload succeeds, then make another UI edit.
         await page.evaluate(() => { (window as any).__shouldUpsertFail = false; });
 
-        await page.evaluate(async () => {
-            const outline = (await import('/js/outline.js')).default as any;
-            const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
-            if (rootChildren.length > 0) {
-                const node = outline.get(rootChildren[0]);
-                const current: string = node?.value?.text || '';
-                outline.updateNode(rootChildren[0], { text: current + ' v2' });
-            }
-        });
+        await editFirstNode(page, 'Recovered Write');
 
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
     });
@@ -410,6 +401,61 @@ const buildConflictPayload = async (
             return { salt, data };
         },
         { passphrase, remoteNodeText, remoteLastModified }
+    );
+};
+
+const buildChildrenConflictPayload = async (
+    page: Page,
+    passphrase: string,
+    options: {
+        parentLastModified: number;
+        childId: string;
+        childText: string;
+        childLastModified: number;
+    }
+) => {
+    return await page.evaluate(
+        async ({ passphrase, options }: {
+            passphrase: string;
+            options: {
+                parentLastModified: number;
+                childId: string;
+                childText: string;
+                childLastModified: number;
+            };
+        }) => {
+            const { encrypt } = await import('/js/crypto2.js');
+            const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+            const salt = btoa(String.fromCharCode(...saltBytes));
+            const doc = {
+                modelVersion: 'v1',
+                dataVersion: 1,
+                nodes: [
+                    { id: 'root', text: '', description: '', children: ['n1'], parentId: null, open: true, lastModified: 0 },
+                    {
+                        id: 'n1',
+                        text: 'Parent Node',
+                        description: '',
+                        children: [options.childId],
+                        parentId: 'root',
+                        open: true,
+                        lastModified: options.parentLastModified
+                    },
+                    {
+                        id: options.childId,
+                        text: options.childText,
+                        description: '',
+                        children: [],
+                        parentId: 'n1',
+                        open: true,
+                        lastModified: options.childLastModified
+                    }
+                ]
+            };
+            const data = await encrypt(JSON.stringify(doc), passphrase, salt);
+            return { salt, data };
+        },
+        { passphrase, options }
     );
 };
 
@@ -656,5 +702,46 @@ test.describe('Conflict resolution modal', () => {
 
         await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
+    });
+
+    test('children conflict can be resolved by keeping remote values', async ({ page }) => {
+        await page.goto('/');
+
+        const passphrase = 'children-conflict-pass';
+        const localPayload = await buildChildrenConflictPayload(page, passphrase, {
+            parentLastModified: 0,
+            childId: 'local-seed-child',
+            childText: 'Local Seed Child',
+            childLastModified: 0
+        });
+        const remotePayload = await buildChildrenConflictPayload(page, passphrase, {
+            parentLastModified: Date.now() + 3_600_000,
+            childId: 'remote-child',
+            childText: 'Remote Child',
+            childLastModified: Date.now() + 3_600_000
+        });
+
+        await page.evaluate(() => {
+            localStorage.clear();
+            localStorage.setItem('vmd_last_mode', 'local');
+        });
+        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        // Add a local child to change `children` on the same parent before sync.
+        await page.locator('[data-node-id="n1"] .node-text-md').click();
+        await page.locator('[data-node-id="n1"] input').press('Enter');
+
+        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
+        await expect(page.locator('.conflict-field-label')).toHaveText(/children/i);
+
+        await page.locator('.conflict-keep-btn').nth(1).click(); // Keep remote
+        await page.getByRole('button', { name: 'Apply' }).click();
+
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.getByText('Remote Child', { exact: true })).toBeVisible();
+        await expect(page.getByText('Local Seed Child', { exact: true })).toHaveCount(0);
     });
 });

@@ -12,25 +12,31 @@ test.describe('Keyboard', () => {
     });
   });
 
-  test('Enter from focused node adds a new node', async ({ page }) => {
-    // Wait for nodes (Divs)
-    await expect(page.locator('.node-content').nth(0)).toBeVisible();
+  test('Enter on node with children creates a new first child', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1',
+          text: 'Parent',
+          children: [{ id: '1.1', text: 'Existing Child', children: [] }]
+        },
+        { id: '2', text: 'Sibling', children: [] }
+      ]
+    });
 
-    // Check marker
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    const parent = page.locator('[data-node-id="1"]');
+    await parent.click();
+    await parent.locator('input').press('Enter');
 
-    const node1Div = page.locator('.node-content').nth(0);
-    await node1Div.click();
-    const node1Input = node1Div.locator('input');
-    await expect(node1Input).toBeFocused();
-    await node1Input.press('Enter');
+    const parentNode = page.locator('.node').filter({ has: page.locator('.node-content[data-node-id="1"]') });
+    const firstChildInput = parentNode.locator('.children .node-content').first().locator('input');
+    await expect(firstChildInput).toBeFocused();
+    await expect(firstChildInput).toHaveValue('');
 
-    // Expect 2 nodes
-    await expect(page.locator('.node-content')).toHaveCount(2);
-
-    // The new node (index 1) should be focused
-    await expect(page.locator('.node-content').nth(1).locator('input')).toBeVisible();
-    await expect(page.locator('.node-content').nth(1).locator('input')).toBeFocused();
+    await expect(parentNode.locator('.children .node-content').nth(1)).toContainText('Existing Child');
+    await expect(page.locator('.outliner > .node').nth(1)).toContainText('Sibling');
   });
 
   test('Enter creates new sibling node', async ({ page }) => {

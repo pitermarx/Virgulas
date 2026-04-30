@@ -60,6 +60,10 @@ test.describe('Multi-select', () => {
     await page.keyboard.press('Shift+ArrowDown');
     await page.keyboard.press('Delete');
     await expect(page.locator('.node-content')).toHaveCount(2);
+    await expect(page.getByText('Node 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Node 4', { exact: true })).toBeVisible();
+    await expect(page.getByText('Node 2', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Node 3', { exact: true })).toHaveCount(0);
   });
 
   test('Tab indents selected nodes under previous sibling', async ({ page }) => {
@@ -69,6 +73,9 @@ test.describe('Multi-select', () => {
     await page.keyboard.press('Tab');
     await expect(page.locator('.outliner > .node')).toHaveCount(1);
     await expect(page.locator('.outliner > .node > .children > .node')).toHaveCount(2);
+    await expect(page.locator('.outliner > .node > .node-content')).toContainText('Node 1');
+    await expect(page.locator('.outliner > .node > .children > .node').nth(0)).toContainText('Node 2');
+    await expect(page.locator('.outliner > .node > .children > .node').nth(1).locator('input')).toHaveValue('Node 3');
   });
 
   test('Ctrl+Space toggles collapse for selected nodes', async ({ page }) => {
@@ -78,6 +85,8 @@ test.describe('Multi-select', () => {
     await page.keyboard.press('Shift+ArrowDown');
     await page.keyboard.press('Control+ ');
     await expect(page.locator('.node-content')).toHaveCount(2);
+    await expect(page.getByText('Child 1', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Child 2', { exact: true })).toHaveCount(0);
   });
 
   test('Ctrl+Space expands all when all selected nodes are already collapsed', async ({ page }) => {
@@ -97,6 +106,8 @@ test.describe('Multi-select', () => {
     // Ctrl+Space with all collapsed → should expand both
     await page.keyboard.press('Control+ ');
     await expect(page.locator('.node-content')).toHaveCount(4);
+    await expect(page.getByText('Child 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Child 2', { exact: true })).toBeVisible();
   });
 
   test('Shift selection does not cross indentation levels', async ({ page }) => {

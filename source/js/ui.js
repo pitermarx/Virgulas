@@ -146,10 +146,78 @@ const NormalBullet = html`<circle cx="25" cy="25" r="10" fill="currentColor"/>`
 const hasOpenChildrenBullet = html`<g><circle cx="25" cy="25" r="10" fill="currentColor"/><circle cx="25" cy="25" r="18" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.35"/></g>`
 const SWIPE_MIN_DISTANCE_PX = 56
 const SWIPE_AXIS_RATIO = 1.35
+const MOBILE_SEARCH_SCROLL_MIN_PX = 72
+const MOBILE_SEARCH_SCROLL_AXIS_RATIO = 1.2
 
 function firstTouch(list) {
     if (!list || list.length === 0) return null
     return list[0]
+}
+
+function isEditingNodeText() {
+    return focusType.value === 'text' || focusType.value === 'description'
+}
+
+function isSearchGestureBlockedTarget(target) {
+    if (!(target instanceof Element)) return false
+    return !!target.closest('input, textarea, button, a, .bullet, .collapse-toggle, .search-bar')
+}
+
+if (isMobile && typeof window !== 'undefined') {
+    let gestureActive = false
+    let gestureBlocked = false
+    let startX = 0
+    let startY = 0
+
+    function resetGesture() {
+        gestureActive = false
+        gestureBlocked = false
+        startX = 0
+        startY = 0
+    }
+
+    function shouldBlockSearchGesture(target) {
+        return focusType.value === 'search' || isEditingNodeText() || isSearchGestureBlockedTarget(target)
+    }
+
+    function onTouchStart(e) {
+        const touch = firstTouch(e.touches)
+        if (!touch || e.touches.length !== 1) {
+            resetGesture()
+            return
+        }
+
+        gestureActive = true
+        gestureBlocked = shouldBlockSearchGesture(e.target)
+        startX = touch.clientX
+        startY = touch.clientY
+    }
+
+    function onTouchEnd(e) {
+        if (!gestureActive) return
+
+        const endTouch = firstTouch(e.changedTouches) || firstTouch(e.touches)
+        const deltaX = endTouch ? (endTouch.clientX - startX) : 0
+        const deltaY = endTouch ? (endTouch.clientY - startY) : 0
+        const blocked = gestureBlocked || shouldBlockSearchGesture(e.target)
+
+        resetGesture()
+
+        if (!endTouch || blocked) return
+
+        const absX = Math.abs(deltaX)
+        const absY = Math.abs(deltaY)
+        const isUpward = deltaY <= -MOBILE_SEARCH_SCROLL_MIN_PX
+        const isVertical = absY > absX * MOBILE_SEARCH_SCROLL_AXIS_RATIO
+
+        if (!isUpward || !isVertical) return
+
+        enterSearchMode(focus)
+    }
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('touchend', onTouchEnd, { passive: true })
+    window.addEventListener('touchcancel', resetGesture, { passive: true })
 }
 
 function isSwipeGesture(deltaX, deltaY) {
@@ -627,6 +695,27 @@ function SearchNode({ node, indent = 0 }) {
             ${children.map(child => html`<${SearchNode} node=${child} indent=${indent + 1} />`)}
         </div>
     </div>`
+}
+
+function syncZoomFromHash() {
+    const hashId = window.location.hash.replace('#', '')
+    if (!hashId) {
+        outline.zoomIn('root')
+        return
+    }
+
+    const target = outline.get(hashId)
+    if (target) {
+        outline.zoomIn(hashId)
+        return
+    }
+
+    // Ignore unknown hashes by showing root.
+    outline.zoomIn('root')
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', syncZoomFromHash)
 }
 
 document.onkeydown = keydown(focus)

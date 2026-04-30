@@ -333,6 +333,74 @@ test.describe('Authentication', () => {
     expect(stateAfterSwitch.hasLocalData).toBe(false);
   });
 
+  test('remote "Sign out & clear session" can be dismissed from Options', async ({ page }) => {
+    await page.goto('/');
+
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
+    });
+
+    await page.evaluate(() => localStorage.clear());
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.status-mode')).toHaveText('Remote');
+
+    await page.getByRole('button', { name: 'Options' }).click();
+    page.once('dialog', (dialog) => {
+      expect(dialog.message()).toBe('Clear browser session and sign out? Your remote data on the server is unaffected.');
+      dialog.dismiss();
+    });
+    await page.getByRole('button', { name: 'Sign out & clear session' }).click();
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.status-mode')).toHaveText('Remote');
+    await expect(page.locator('.status-user')).toHaveText('valid@virgulas.com');
+  });
+
+  test('remote "Sign out & clear session" confirms and returns to memory mode', async ({ page }) => {
+    await page.goto('/');
+
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
+    });
+
+    await page.evaluate(() => localStorage.clear());
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+    await page.getByRole('button', { name: 'Options' }).click();
+    page.once('dialog', (dialog) => {
+      expect(dialog.message()).toBe('Clear browser session and sign out? Your remote data on the server is unaffected.');
+      dialog.accept();
+    });
+    await page.getByRole('button', { name: 'Sign out & clear session' }).click();
+
+    await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.status-mode')).toHaveCount(0);
+    await expect(page.getByText('Remote Data', { exact: true })).toHaveCount(0);
+
+    const storageState = await page.evaluate(() => ({
+      mode: localStorage.getItem('vmd_last_mode'),
+      username: localStorage.getItem('vmd_last_username'),
+      encryptedData: localStorage.getItem('vmd_data_enc')
+    }));
+    expect(storageState.mode).toBeNull();
+    expect(storageState.username).toBeNull();
+    expect(storageState.encryptedData).toBeNull();
+  });
+
   test('unlock flow: existing user', async ({ page }) => {
     await page.goto('/');
     await seedEncryptedLocalDoc(page, 'password', {
