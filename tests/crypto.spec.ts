@@ -37,18 +37,27 @@ test.describe('Encryption and Storage', () => {
     expect(failed).toBe(true);
   });
 
-  test('encrypts and decrypts data', async ({ page }) => {
+  test('decryption fails when ciphertext is tampered', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const { encrypt, decrypt } = await import('/js/crypto2.js');
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
-      const original = 'Hello World';
-      const encrypted = await encrypt(original, 'password', salt);
-      const decrypted = await decrypt(encrypted, 'password', salt);
-      return { original, decrypted, encryptedType: typeof encrypted };
+      const encrypted = await encrypt('Hello World', 'password', salt);
+
+      const bytes = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+      bytes[bytes.length - 1] = bytes[bytes.length - 1] ^ 0x01;
+      const tampered = btoa(String.fromCharCode(...bytes));
+
+      try {
+        await decrypt(tampered, 'password', salt);
+        return { failed: false, errorMessage: '' };
+      } catch (error) {
+        return { failed: true, errorMessage: String((error as Error).message || '') };
+      }
     });
-    expect(result.original).toBe(result.decrypted);
-    expect(result.encryptedType).toBe('string');
+
+    expect(result.failed).toBe(true);
+    expect(result.errorMessage).toContain('Invalid password or corrupted data');
   });
 
   test('storage stores encrypted data', async ({ page }) => {
