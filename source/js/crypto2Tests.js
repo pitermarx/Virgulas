@@ -2,9 +2,7 @@ import {
     randomId,
     generateSalt,
     encrypt,
-    decrypt,
-    encryptSecretWithKeyBytes,
-    decryptSecretWithKeyBytes
+    decrypt
 } from './crypto2.js'
 import {
     assert,
@@ -14,7 +12,7 @@ import {
     createAsyncSectionHarness
 } from './testing.js'
 
-export const crypto2Total = 15
+export const crypto2Total = 13
 
 let _cachedResult = null
 
@@ -158,32 +156,6 @@ export async function runCrypto2Tests(onProgress) {
         }
 
         assert(threw, 'Decrypt should fail when ciphertext integrity is broken')
-    })
-
-    section('Wrapped secret helpers')
-
-    await test('Wrapped secret round-trip with raw key bytes', async () => {
-        const keyBytes = window.crypto.getRandomValues(new Uint8Array(32))
-        const secret = 'device-local-passphrase'
-        const wrapped = await encryptSecretWithKeyBytes(secret, keyBytes)
-        const unwrapped = await decryptSecretWithKeyBytes(wrapped, keyBytes)
-        assertEqual(unwrapped, secret, 'Wrapped secret should decrypt to original value')
-    })
-
-    await test('Wrapped secret decrypt fails with wrong key bytes', async () => {
-        const keyBytesA = window.crypto.getRandomValues(new Uint8Array(32))
-        const keyBytesB = window.crypto.getRandomValues(new Uint8Array(32))
-        const wrapped = await encryptSecretWithKeyBytes('secret-A', keyBytesA)
-
-        let threw = false
-        try {
-            await decryptSecretWithKeyBytes(wrapped, keyBytesB)
-        } catch (e) {
-            threw = true
-            assertEqual(e.message, 'Failed to decrypt wrapped secret', 'Wrong key bytes should return normalized error')
-        }
-
-        assert(threw, 'Decrypt should fail with different key bytes')
     })
 
     _cachedResult = { sections: cloneSections(h.sections), summary: h.summary() }

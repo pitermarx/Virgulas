@@ -11,8 +11,6 @@ to run the app and tests locally. Read it completely before starting any task.
 
 - Node.js 20 or later (the app has no build step — Node is only needed for Playwright)
 - A Supabase project (free tier is sufficient)
-- For testing WebAuthn PRF: Chrome 108+, Edge 108+, or Safari 16.4+
-  Firefox does not support the PRF extension; quick-unlock tests are Chromium-only
 
 ### Environment variables
 
@@ -169,7 +167,6 @@ npm run test:unit                # source/test.html harness via Playwright
 Playwright starts a local static server automatically — no separate `npx serve` needed.
 
 - Local Playwright runs require local Supabase credentials (`.env` or `supabase status`) and fail fast if missing
-- Tests covering **WebAuthn PRF** use Playwright's virtual authenticator API — no hardware required; Chromium only
 - All other tests run in Chromium and Firefox.
 
 ### CI/CD
@@ -347,7 +344,6 @@ If a task spans multiple items on the list below, split it.
 - Raw mode
 - Keyboard shortcuts modal
 - Options panel (theme, purge, repository link)
-- Quick unlock via WebAuthn PRF
 - Supabase Auth (sign up, sign in, sign out)
 - Cloud sync (upload and download encrypted document)
 - Status toolbar

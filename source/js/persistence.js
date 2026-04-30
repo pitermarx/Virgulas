@@ -3,7 +3,6 @@ import { encrypt, decrypt, generateSalt } from "./crypto2.js"
 import outline from "./outline.js"
 import { log, store } from './utils.js'
 import { devPersistence } from './devtools.js'
-import quickUnlock from './quickUnlock.js'
 import {
   remoteSync,
   syncStatus,
@@ -20,14 +19,6 @@ import {
 
 function normalizeMode(mode) {
   return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
-}
-
-function normalizeAccountId(accountId) {
-  return String(accountId || '').trim().toLowerCase()
-}
-
-function resolveRemoteAccountId({ user, fallback = '' } = {}) {
-  return normalizeAccountId(user?.email || fallback || store.user.get('') || '')
 }
 
 // ── Filesystem (File System Access API, no encryption) ──────────────────────
@@ -356,99 +347,6 @@ function parseRemoteDecryptError(error) {
   return error
 }
 
-function shouldForgetQuickUnlockFromUnlockError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  return message.includes('could not be decrypted')
-    || message.includes('invalid password')
-    || message.includes('corrupted')
-    || message.includes('missing remote salt')
-}
-
-function removeQuickUnlockRecord(mode, accountId = '') {
-  if (mode === 'local') {
-    quickUnlock.removeSavedPassphrase({ mode: 'local' })
-    return
-  }
-  const normalizedAccountId = normalizeAccountId(accountId)
-  if (!normalizedAccountId) return
-  quickUnlock.removeSavedPassphrase({ mode: 'remote', accountId: normalizedAccountId })
-}
-
-async function unlockWithSavedQuickUnlock(options = {}) {
-  const mode = options.mode === 'remote' ? 'remote' : 'local'
-  const normalizedAccountId = mode === 'remote'
-    ? normalizeAccountId(options.accountId || options.username)
-    : ''
-
-  if (!quickUnlock.hasSavedPassphrase({ mode, accountId: normalizedAccountId })) {
-    return { success: false, attempted: false, message: '' }
-  }
-
-  let recoveredPassphrase = ''
-  try {
-    recoveredPassphrase = await quickUnlock.recoverPassphrase({ mode, accountId: normalizedAccountId })
-  } catch (error) {
-    if (quickUnlock.shouldForgetRecordOnError(error)) {
-      removeQuickUnlockRecord(mode, normalizedAccountId)
-    }
-    return {
-      success: false,
-      attempted: true,
-      cancelled: quickUnlock.isCancellationError(error),
-      message: quickUnlock.isCancellationError(error)
-        ? 'Quick unlock was cancelled.'
-        : 'Saved passphrase could not be used. Enter passphrase manually.'
-    }
-  }
-
-  if (!recoveredPassphrase) {
-    return {
-      success: false,
-      attempted: true,
-      message: 'Saved passphrase could not be used. Enter passphrase manually.'
-    }
-  }
-
-  try {
-    const success = mode === 'remote'
-      ? await unlockRemote({
-        passphrase: recoveredPassphrase,
-        username: options.username || normalizedAccountId,
-        password: options.password || '',
-        trustSession: !!options.trustSession
-      })
-      : await unlockLocal(recoveredPassphrase)
-
-    if (!success) {
-      removeQuickUnlockRecord(mode, normalizedAccountId)
-      return {
-        success: false,
-        attempted: true,
-        message: 'Saved passphrase was rejected. Enter passphrase manually.'
-      }
-    }
-
-    return {
-      success: true,
-      attempted: true,
-      passphrase: recoveredPassphrase
-    }
-  } catch (error) {
-    if (!quickUnlock.isCancellationError(error)
-      && (quickUnlock.shouldForgetRecordOnError(error) || shouldForgetQuickUnlockFromUnlockError(error))) {
-      removeQuickUnlockRecord(mode, normalizedAccountId)
-    }
-    return {
-      success: false,
-      attempted: true,
-      cancelled: quickUnlock.isCancellationError(error),
-      message: quickUnlock.isCancellationError(error)
-        ? 'Quick unlock was cancelled.'
-        : String(error?.message || 'Saved passphrase could not be used. Enter passphrase manually.')
-    }
-  }
-}
-
 async function unlockLocal(code) {
   const { salt, data } = localEncryptedData.get()
 
@@ -642,56 +540,7 @@ export default {
   isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
-  isQuickUnlockSupported: () => quickUnlock.isSupported(),
-  hasSavedQuickUnlock(options = {}) {
-    const mode = options.mode === 'remote' ? 'remote' : 'local'
-    const accountId = mode === 'remote'
-      ? normalizeAccountId(options.accountId || options.username)
-      : ''
-    return quickUnlock.hasSavedPassphrase({ mode, accountId })
-  },
   getPassphrase: () => passphrase.value,
-  async saveQuickUnlock(options = {}) {
-    const mode = options.mode === 'remote' ? 'remote' : 'local'
-    const accountId = mode === 'remote'
-      ? resolveRemoteAccountId({ fallback: options.accountId || options.username })
-      : ''
-    await quickUnlock.savePassphrase({
-      mode,
-      accountId,
-      passphrase: options.passphrase || passphrase.value
-    })
-  },
-  removeQuickUnlock(options = {}) {
-    const mode = options.mode === 'remote' ? 'remote' : 'local'
-    const accountId = mode === 'remote'
-      ? resolveRemoteAccountId({ fallback: options.accountId || options.username })
-      : ''
-    removeQuickUnlockRecord(mode, accountId)
-  },
-  unlockWithSavedQuickUnlock,
-  async tryQuickUnlockStartup(options = {}) {
-    if (!quickUnlock.isSupported()) {
-      return { success: false, attempted: false, message: '' }
-    }
-
-    const mode = options.mode || 'local'
-    if (mode === 'local') {
-      return unlockWithSavedQuickUnlock({ mode: 'local' })
-    }
-
-    if (mode === 'remote' && options.scenario === 'remote-session-valid') {
-      const accountId = resolveRemoteAccountId({ user: options.user, fallback: options.lastUsername })
-      return unlockWithSavedQuickUnlock({
-        mode: 'remote',
-        accountId,
-        username: accountId,
-        trustSession: true
-      })
-    }
-
-    return { success: false, attempted: false, message: '' }
-  },
   getLastUsername: () => store.user.get('') || '',
   getPreferredMode: () => normalizeMode(store.mode.get(null)),
   setPreferredMode(mode) {
@@ -710,8 +559,6 @@ export default {
     const hasLocalData = !!localEncryptedData.get().data
     const hasSupabase = !!window.supabase?.createClient
     const hasFilesystem = filesystemStorage.isSupported()
-    const quickUnlockSupported = quickUnlock.isSupported()
-    const quickUnlockLocalSaved = quickUnlock.hasSavedPassphrase({ mode: 'local' })
     const hasSavedFileHandle = hasFilesystem ? await filesystemStorage.hasSavedHandle() : false
     const lastUsername = store.user.get('') || ''
     const preferredMode = normalizeMode(store.mode.get(null))
@@ -730,21 +577,13 @@ export default {
       }
     }
 
-    const quickUnlockRemoteSaved = quickUnlock.hasSavedPassphrase({
-      mode: 'remote',
-      accountId: resolveRemoteAccountId({ user, fallback: lastUsername })
-    })
-
     const bootstrapBase = {
       hasLocalData,
       hasSupabase,
       hasFilesystem,
       hasSavedFileHandle,
       lastUsername,
-      preferredMode,
-      quickUnlockSupported,
-      quickUnlockLocalSaved,
-      quickUnlockRemoteSaved
+      preferredMode
     }
 
     // No remembered mode → check for data signals; if none exist, start in memory mode
@@ -784,7 +623,6 @@ export default {
   },
   clearLocalData() {
     localEncryptedData.set(null, null)
-    removeQuickUnlockRecord('local')
   },
   async signUp(email, password) {
     const res = await remoteSync.signUp(email.trim(), password)
@@ -807,9 +645,6 @@ export default {
     if (!user) {
       throw new Error('Could not validate remote session. Sign in again before resetting data.')
     }
-
-    const remoteAccountId = resolveRemoteAccountId({ user, fallback: username })
-    removeQuickUnlockRecord('remote', remoteAccountId)
 
     const salt = generateSalt()
     outline.reset()
@@ -866,7 +701,6 @@ export default {
     memoryReady.value = false
     store.mode.del()
     store.user.del()
-    quickUnlock.clearAllSavedPassphrases()
     filesystemStorage.clear()
   },
   unlock

@@ -3,7 +3,7 @@ const VENDOR_CACHE = 'virgulas-vendor-v6'
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v4'
 // Bump APP_CACHE when app JS, CSS, or HTML changes
-const APP_CACHE = 'virgulas-app-v19'
+const APP_CACHE = 'virgulas-app-v20'
 
 const KNOWN_CACHES = new Set([VENDOR_CACHE, FONTS_CACHE, APP_CACHE])
 

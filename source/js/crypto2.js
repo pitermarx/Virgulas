@@ -123,61 +123,9 @@ async function decrypt(encryptedBase64, passphrase, salt) {
     }
 }
 
-async function importRawAesKey(keyBytes, usages) {
-    const bytes = keyBytes instanceof Uint8Array ? keyBytes : new Uint8Array(keyBytes)
-    if (![16, 24, 32].includes(bytes.byteLength)) {
-        throw new Error('Invalid key material length for AES-GCM')
-    }
-    return await window.crypto.subtle.importKey(
-        'raw',
-        bytes,
-        { name: 'AES-GCM' },
-        false,
-        usages
-    )
-}
-
-// Encrypt a short secret using raw AES key bytes (for quick unlock wrappers)
-async function encryptSecretWithKeyBytes(secret, keyBytes) {
-    const iv = window.crypto.getRandomValues(new Uint8Array(12))
-    const key = await importRawAesKey(keyBytes, ['encrypt'])
-    const encoded = new TextEncoder().encode(secret)
-    const ciphertext = await window.crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        encoded
-    )
-
-    const combined = new Uint8Array(iv.length + ciphertext.byteLength)
-    combined.set(iv)
-    combined.set(new Uint8Array(ciphertext), iv.length)
-    return toBase64(combined)
-}
-
-// Decrypt a short secret that was encrypted via encryptSecretWithKeyBytes
-async function decryptSecretWithKeyBytes(encryptedBase64, keyBytes) {
-    const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0))
-    const iv = combined.slice(0, 12)
-    const ciphertext = combined.slice(12)
-
-    try {
-        const key = await importRawAesKey(keyBytes, ['decrypt'])
-        const decrypted = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
-            key,
-            ciphertext
-        )
-        return new TextDecoder().decode(decrypted)
-    } catch {
-        throw new Error('Failed to decrypt wrapped secret')
-    }
-}
-
 export {
     randomId,
     generateSalt,
     encrypt,
-    decrypt,
-    encryptSecretWithKeyBytes,
-    decryptSecretWithKeyBytes
+    decrypt
 }
