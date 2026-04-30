@@ -175,8 +175,12 @@ Auth tests that require a specific account attempt sign-in first and create the 
 
 - Pull requests and pushes run Playwright E2E tests in GitHub Actions.
 - Main branch CI validates commit policy, computes semantic version bumps from Conventional Commits, and publishes a GitHub release tag when releasable commits exist.
+- Same-repo pull request builds also deploy GitHub Pages to refresh `/preview/` and preview bundles without waiting for a main-branch deploy.
 - Main branch CI publishes the latest database migrations to the linked Supabase project before deploy.
-- Main branch deploys the static site to GitHub Pages, stamps the resolved app version into `index.html`, writes `version.json`, and publishes branch previews under `/preview/<branch>`.
+- Main branch deploys the static site to GitHub Pages, stamps the resolved app version into `index.html`, writes `version.json`, copies `source/preview.html` to `/preview/index.html`, and publishes PR previews under `/preview/<branch-slug>/`.
+- The `/preview/` page loads open PRs from the GitHub API at runtime and only displays links for previews that are already published.
+- Preview bundles are fetched from `refs/pull/<number>/head`, so previews also work for fork-based pull requests.
+- Fork-based pull request runs do not publish Pages artifacts because the default token in `pull_request` workflows does not have Pages write permissions.
 - A daily workflow runs E2E tests against `https://virgulas.com`.
 
 Repository secrets expected by workflows:
