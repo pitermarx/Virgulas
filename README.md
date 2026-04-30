@@ -23,11 +23,11 @@ Virgulas is a local-first browser outliner.
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage
-- Bottom-sheet lock screen flow with quick local unlock/setup and advanced mode switching:
+- Bottom-sheet lock screen flow with advanced mode switching:
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage; new document starts with one empty node
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase; new empty file gets one initial node
-  - In quick local mode, **Advanced Storage Options** (or **Switch Mode**) reveals the Local/Remote/File selector and full auth form
+  - **Change mode** reveals the Local/Remote/File selector and full auth form
 - **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
   - The document lives only in JS memory and is lost when the tab is closed or reloaded
   - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature; if the fetch fails an empty node is provided
