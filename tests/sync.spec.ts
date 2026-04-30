@@ -258,13 +258,14 @@ test.describe('Sync retry behaviour', () => {
 
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
 
         await editFirstNode(page, 'Retry Edit');
 
         // The sync-dot starts at 'synced' (initial value), so we must NOT check for 'synced'
         // before confirming the upload actually ran. Use expect.poll to wait for all retries.
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            () => page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls),
             { timeout: 4000, intervals: [100] }
         ).toBeGreaterThanOrEqual(FAIL_TIMES + 1);
 
@@ -272,8 +273,8 @@ test.describe('Sync retry behaviour', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 1000 });
 
         // upsert was called FAIL_TIMES + 1 (the final successful attempt)
-        const callCount = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
-        expect(callCount).toBe(FAIL_TIMES + 1);
+        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
+        expect(callDelta).toBe(FAIL_TIMES + 1);
     });
 
     test('abandons upload after max retries and records all attempts', async ({ page }) => {
@@ -292,6 +293,7 @@ test.describe('Sync retry behaviour', () => {
 
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
 
         await editFirstNode(page, 'Exhaust Retries');
 
@@ -299,8 +301,8 @@ test.describe('Sync retry behaviour', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 4000 });
 
         // Exactly 1 (initial attempt) + MAX_RETRIES calls were made
-        const callCount = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
-        expect(callCount).toBe(MAX_RETRIES + 1);
+        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
+        expect(callDelta).toBe(MAX_RETRIES + 1);
     });
 
     test('recovers on next write after coming back online', async ({ page }) => {
