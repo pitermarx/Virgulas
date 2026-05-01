@@ -233,7 +233,8 @@
       - Console debug messages are also printed while the panel is open
     + CI/CD
       - The app is hosted on GitHub Pages
-      - On each commit, all E2E tests are run and a preview site is generated
+      - On each commit, all E2E tests are run
+      - Preview pages are generated and deployed only by a successful main-branch pipeline run
       - On /preview, a page listing all open PRs is shown with a button to use that preview version
         E.g. `virgulas.com/preview/my-feature` will serve the code from the `my-feature` branch
       - On the main branch, the pipeline purges the Cloudflare cache after a successful deploy
