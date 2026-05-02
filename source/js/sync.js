@@ -53,11 +53,11 @@ export const remoteSync = {
     getUser: () => withClient((c) => c.auth.getUser()).then(res => res?.user ?? null),
     read: () => withClient(() => _mainTable.select('salt, data, updated_at').single()),
     getLastUpdate: () => withClient(() => _mainTable.select('updated_at').single()),
-    upsert: async (data, salt) => {
+    upsert: async (data, salt, updatedAt = new Date().toISOString()) => {
         const user = await remoteSync.getUser()
         const payload = {
             data,
-            updated_at: new Date().toISOString(),
+            updated_at: updatedAt,
             user_id: user?.id
         }
         if (salt) payload.salt = salt
@@ -76,6 +76,11 @@ export const pendingConflictResolutions = signal(new Map()) // Map of `nodeId::f
 // sync/poll handlers so the persistence effect skips a redundant remote push.
 export const skipNextRemotePush = signal(false)
 
+const localWriteEpoch = signal(0)
+const remoteSyncNotBefore = signal(0)
+let remoteSyncQueue = Promise.resolve()
+let lastCompletedRemotePush = { epoch: -1, updatedAt: 0 }
+
 // Internal stored credentials (set during remote unlock, cleared on sign-out)
 let _passphrase = ''
 let _salt = ''
@@ -88,6 +93,54 @@ export function setCredentials(passphrase, salt) {
 export function clearCredentials() {
     _passphrase = ''
     _salt = ''
+}
+
+export function noteLocalWriteActivity(now = Date.now()) {
+    localWriteEpoch.value = localWriteEpoch.peek() + 1
+    remoteSyncNotBefore.value = Math.max(
+        remoteSyncNotBefore.peek(),
+        now + outline.dirtyDebounceTimeout
+    )
+}
+
+export function createRemoteSyncAttempt() {
+    return { epoch: localWriteEpoch.peek(), startedAt: 0 }
+}
+
+export function canStartRemoteSync(now = Date.now()) {
+    return now >= remoteSyncNotBefore.peek()
+}
+
+export function isRemoteSyncAttemptStale(attempt, now = Date.now()) {
+    if (!attempt) return true
+    return attempt.epoch !== localWriteEpoch.peek() || now < remoteSyncNotBefore.peek()
+}
+
+export function beginRemotePush(attempt, startedAt = Date.now()) {
+    if (attempt) {
+        attempt.startedAt = startedAt
+    }
+    return new Date(startedAt).toISOString()
+}
+
+export function recordCompletedRemotePush(attempt) {
+    if (!attempt?.startedAt) return
+    lastCompletedRemotePush = {
+        epoch: attempt.epoch,
+        updatedAt: attempt.startedAt
+    }
+}
+
+export function runExclusiveRemoteSync(work) {
+    const run = remoteSyncQueue.then(work, work)
+    remoteSyncQueue = run.catch(() => { })
+    return run
+}
+
+function isSupersededOwnRemoteUpdate(remoteTs) {
+    return remoteTs > 0
+        && remoteTs <= lastCompletedRemotePush.updatedAt
+        && lastCompletedRemotePush.epoch < localWriteEpoch.peek()
 }
 
 // ── Merge algorithm ──────────────────────────────────────────────────────────
@@ -228,6 +281,7 @@ export async function checkRemoteNewer(lastSyncedAt) {
         const remote = await remoteSync.getLastUpdate()
         if (!remote?.updated_at) return false
         const remoteTs = new Date(remote.updated_at).getTime()
+        if (isSupersededOwnRemoteUpdate(remoteTs)) return false
         return remoteTs > lastSyncedAt
     } catch {
         return false
@@ -353,48 +407,67 @@ let _pollingInterval = null
 
 export function startPolling() {
     stopPolling()
-    _pollingInterval = setInterval(async () => {
+    const pollIntervalMs = typeof window !== 'undefined' && window.__syncPollIntervalMs
+        ? window.__syncPollIntervalMs
+        : 60_000
+    _pollingInterval = setInterval(() => {
+        const attempt = createRemoteSyncAttempt()
         devSync.pollRunCount.value = devSync.pollRunCount.peek() + 1
         // Don't stack pulls while conflicts are pending
         if (pendingConflicts.peek().length > 0) return
 
-        const lastSyncedAt = getLastSyncedAt()
-        let isNewer = false
-        try {
-            isNewer = await checkRemoteNewer(lastSyncedAt)
-        } catch { return }
+        if (!canStartRemoteSync() || isRemoteSyncAttemptStale(attempt)) return
 
-        if (!isNewer) return
+        void runExclusiveRemoteSync(async () => {
+            if (pendingConflicts.peek().length > 0) return
+            if (!canStartRemoteSync() || isRemoteSyncAttemptStale(attempt)) return
 
-        log('[Sync] Polling detected remote update, pulling...')
-        const passphrase = _passphrase
-        const salt = _salt
-        if (!passphrase || !salt) return
-
-        try {
-            syncStatus.value = 'syncing'
-            const result = await pullAndMerge(passphrase, salt)
-
-            if (!result.clean) {
-                syncStatus.value = 'synced'
+            const lastSyncedAt = getLastSyncedAt()
+            let isNewer = false
+            try {
+                isNewer = await checkRemoteNewer(lastSyncedAt)
+            } catch {
                 return
             }
 
-            if (result.mergedJson) {
-                const encrypted = await encrypt(result.mergedJson, passphrase, salt)
-                await remoteSync.upsert(encrypted, salt)
-                setLastSyncedAt(Date.now())
-                // Apply locally; flag prevents persistence effect re-push
-                skipNextRemotePush.value = true
-                outline.deserialize(result.mergedJson)
-            }
+            if (!isNewer || isRemoteSyncAttemptStale(attempt)) return
 
-            syncStatus.value = 'synced'
-        } catch (err) {
-            log('[Sync] Poll pull failed:', err)
-            syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
-        }
-    }, 60_000)
+            log('[Sync] Polling detected remote update, pulling...')
+            const passphrase = _passphrase
+            const salt = _salt
+            if (!passphrase || !salt) return
+
+            try {
+                syncStatus.value = 'syncing'
+                const result = await pullAndMerge(passphrase, salt)
+                if (isRemoteSyncAttemptStale(attempt)) return
+
+                if (!result.clean) {
+                    syncStatus.value = 'synced'
+                    return
+                }
+
+                if (result.mergedJson) {
+                    const encrypted = await encrypt(result.mergedJson, passphrase, salt)
+                    if (isRemoteSyncAttemptStale(attempt)) return
+                    const updatedAt = beginRemotePush(attempt)
+                    await remoteSync.upsert(encrypted, salt, updatedAt)
+                    recordCompletedRemotePush(attempt)
+                    if (isRemoteSyncAttemptStale(attempt)) return
+                    setLastSyncedAt(Date.now())
+                    // Apply locally; flag prevents persistence effect re-push
+                    skipNextRemotePush.value = true
+                    outline.deserialize(result.mergedJson)
+                }
+
+                syncStatus.value = 'synced'
+            } catch (err) {
+                if (isRemoteSyncAttemptStale(attempt)) return
+                log('[Sync] Poll pull failed:', err)
+                syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+            }
+        })
+    }, pollIntervalMs)
 }
 
 export function stopPolling() {

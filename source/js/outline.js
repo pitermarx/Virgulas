@@ -279,6 +279,7 @@ const OutlineModel = createModel(() => {
 
     function deserialize(json) {
         log('Deserializing outline, version:', dataVersion.value)
+        const previousZoomId = zoomId.peek()
         const obj = JSON.parse(json)
         if (obj.modelVersion !== modelVersion) {
             throw new Error(`Unsupported model version: ${obj.modelVersion}`)
@@ -348,8 +349,12 @@ const OutlineModel = createModel(() => {
                 lastModified: nodeData.lastModified || 0
             }))
         }
-        if (zoomId.value !== rootNodeId && !map.has(zoomId.value)) {
-            log(`Zoomed node ${zoomId.value} not found in deserialized data, resetting zoom to root`)
+        if (previousZoomId !== rootNodeId && map.has(previousZoomId)) {
+            zoomId.value = previousZoomId
+        } else {
+            if (previousZoomId !== rootNodeId) {
+                log(`Zoomed node ${previousZoomId} not found in deserialized data, resetting zoom to root`)
+            }
             zoomId.value = rootNodeId
         }
         setVersion(obj.dataVersion || 0)
