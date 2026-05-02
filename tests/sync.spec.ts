@@ -122,6 +122,29 @@ const editFirstNode = async (page: Page, text: string) => {
     await page.locator('.node-content input').first().fill(text);
 };
 
+const updateFirstNodeViaModel = async (page: Page, text: string) => {
+    await page.evaluate(async ({ text }: { text: string }) => {
+        const outline = (await import('/js/outline.js')).default as any;
+        const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
+        if (rootChildren.length > 0) {
+            outline.updateNode(rootChildren[0], { text });
+        }
+    }, { text });
+};
+
+const readRemoteFirstNodeText = async (page: Page, passphrase: string) => {
+    return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
+        const { decrypt } = await import('/js/crypto2.js');
+        const record = (window as any).__mockSupabaseState.serverRecord;
+        if (!record?.data || !record?.salt) return null;
+        const json = await decrypt(record.data, passphrase, record.salt);
+        const doc = JSON.parse(json);
+        const root = doc.nodes.find((node: any) => node.id === 'root');
+        const firstChildId = root?.children?.[0];
+        return doc.nodes.find((node: any) => node.id === firstChildId)?.text || null;
+    }, { passphrase });
+};
+
 test.describe('Sync status indicator', () => {
     test('sync-dot shows synced after a successful remote upload', async ({ page }) => {
         await page.goto('/');
@@ -238,6 +261,175 @@ test.describe('Sync status indicator', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 4000 });
         // Then wait for upload to complete (3 s delay in mock + buffer)
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 6000 });
+    });
+
+    test('debounces rapid edits into one final remote upload', async ({ page }) => {
+        await page.goto('/');
+        const passphrase = 'sync-pass';
+        const payload = await buildEncryptedPayload(page, passphrase);
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installFailingMockSupabase(page, { userEmail: 'user@test.com', downloadData: payload });
+        await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        await editFirstNode(page, 'First Draft');
+        await page.waitForTimeout(500);
+        await updateFirstNodeViaModel(page, 'Final Draft');
+
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
+        await expect.poll(
+            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            { timeout: 5000, intervals: [100] }
+        ).toBe(1);
+
+        await expect(await readRemoteFirstNodeText(page, passphrase)).toBe('Final Draft');
+    });
+
+    test('a new write supersedes a slow in-flight upload', async ({ page }) => {
+        await page.goto('/');
+        const passphrase = 'sync-pass';
+        const payload = await buildEncryptedPayload(page, passphrase);
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await page.addInitScript(({ downloadData }: { downloadData: { salt: string; data: string } }) => {
+            (window as any).__retryBaseMs = 30;
+            const initialRecord = { ...downloadData, updated_at: new Date().toISOString() };
+            (window as any).__mockSupabaseState = { serverRecord: initialRecord, upsertCallCount: 0 };
+
+            const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
+            const queryBuilder = {
+                select: () => queryBuilder,
+                eq: () => queryBuilder,
+                single: async () => ({ data: (window as any).__mockSupabaseState.serverRecord, error: null }),
+                upsert: async (payload: any) => {
+                    (window as any).__mockSupabaseState.upsertCallCount++;
+                    const callNo = (window as any).__mockSupabaseState.upsertCallCount;
+                    if (callNo === 1) {
+                        await new Promise<void>(r => setTimeout(r, 2500));
+                    }
+                    (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
+                    return { error: null };
+                }
+            };
+            const client = {
+                auth: {
+                    signInWithPassword: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'u', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signUp: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'u', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
+                },
+                from: () => queryBuilder
+            };
+
+            Object.defineProperty(window, 'supabase', {
+                configurable: true,
+                get: () => ({ createClient: () => client }),
+                set: () => { }
+            });
+
+            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+        }, { downloadData: payload });
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        await editFirstNode(page, 'First Upload');
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 4000 });
+
+        await updateFirstNodeViaModel(page, 'Second Upload');
+
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 8000 });
+        await expect.poll(
+            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            { timeout: 8000, intervals: [100] }
+        ).toBe(2);
+
+        await expect(await readRemoteFirstNodeText(page, passphrase)).toBe('Second Upload');
+    });
+
+    test('background sync waits until typing stops', async ({ page }) => {
+        await page.goto('/');
+        const passphrase = 'sync-pass';
+        const payload = await buildEncryptedPayload(page, passphrase);
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await page.addInitScript(({ downloadData }: { downloadData: { salt: string; data: string } }) => {
+            (window as any).__retryBaseMs = 30;
+            (window as any).__syncPollIntervalMs = 100;
+
+            const initialRecord = { ...downloadData, updated_at: new Date().toISOString() };
+            const state = {
+                serverRecord: initialRecord,
+                upsertCallCount: 0,
+                singleCallCount: 0
+            };
+            (window as any).__mockSupabaseState = state;
+
+            const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
+            const queryBuilder = {
+                select: () => queryBuilder,
+                eq: () => queryBuilder,
+                single: async () => {
+                    state.singleCallCount++;
+                    return { data: state.serverRecord, error: null };
+                },
+                upsert: async (payload: any) => {
+                    state.upsertCallCount++;
+                    state.serverRecord = { ...payload, updated_at: payload.updated_at };
+                    return { error: null };
+                }
+            };
+            const client = {
+                auth: {
+                    signInWithPassword: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'u', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signUp: async ({ email }: { email: string }) => {
+                        sessionState.user = { id: 'u', email };
+                        return { data: { user: sessionState.user }, error: null };
+                    },
+                    signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
+                },
+                from: () => queryBuilder
+            };
+
+            Object.defineProperty(window, 'supabase', {
+                configurable: true,
+                get: () => ({ createClient: () => client }),
+                set: () => { }
+            });
+
+            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+        }, { downloadData: payload });
+
+        await page.reload();
+        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+
+        for (const text of ['Typing 1', 'Typing 2', 'Typing 3', 'Typing 4']) {
+            await updateFirstNodeViaModel(page, text);
+            await page.waitForTimeout(250);
+        }
+
+        const duringTypingUploads = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
+        expect(duringTypingUploads).toBe(0);
+
+        await expect.poll(
+            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            { timeout: 5000, intervals: [100] }
+        ).toBeGreaterThan(0);
+
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
     });
 });
 
@@ -567,12 +759,23 @@ test.describe('Pull-before-push', () => {
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
-        // Edit n1 (local change) — this should trigger pull-before-push
-        await editFirstNode(page, 'Local Edit');
+        // Zoom into n1 and edit it. Sync merge-apply should not reset zoom to root.
+        await page.evaluate(async () => {
+            const outline = (await import('/js/outline.js')).default as any;
+            outline.zoomIn('n1');
+            outline.updateNode('n1', { text: 'Local Edit' });
+        });
 
         // After merge: both n1 (local edit) and n2 (remote-only) should be present; no modal
         await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
+        await expect.poll(
+            () => page.evaluate(async () => {
+                const outline = (await import('/js/outline.js')).default as any;
+                return outline.zoomId.value;
+            }),
+            { timeout: 2000, intervals: [100] }
+        ).toBe('n1');
     });
 
     test('conflict modal appears when both sides changed the same node text', async ({ page }) => {

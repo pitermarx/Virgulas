@@ -14,7 +14,14 @@ import {
   setCredentials,
   clearCredentials,
   skipNextRemotePush,
-  setLastSyncedAt
+  setLastSyncedAt,
+  noteLocalWriteActivity,
+  createRemoteSyncAttempt,
+  canStartRemoteSync,
+  isRemoteSyncAttemptStale,
+  beginRemotePush,
+  recordCompletedRemotePush,
+  runExclusiveRemoteSync
 } from './sync.js'
 
 function normalizeMode(mode) {
@@ -206,6 +213,16 @@ async function retryWithBackoff(fn, maxRetries = 3) {
 
 let lastTimeoutId = null
 effect(() => {
+  const mode = authMode.value
+  if (mode !== 'remote') return
+
+  const isDirty = outline.isDirty
+  if (isDirty) {
+    noteLocalWriteActivity()
+  }
+})
+
+effect(() => {
   const version = outline.version.value // subscribe to changes on doc
   const passphraseValue = passphrase.value // subscribe to changes on passphrase
   const fsReady = filesystemReady.value   // subscribe for filesystem mode
@@ -258,77 +275,89 @@ effect(() => {
       }
       localEncryptedData.set(encrypted, saltValue)
       if (mode === 'remote' && pendingConflicts.peek().length === 0) {
-        // Skip remote push if a merge was just applied (prevents double-push)
-        if (skipNextRemotePush.peek()) {
-          skipNextRemotePush.value = false
-          log('[Persistence] Skipping remote push after merge apply')
-          return
-        }
+        const remoteAttempt = createRemoteSyncAttempt()
+        await runExclusiveRemoteSync(async () => {
+          if (lastTimeoutId !== timeoutId || !canStartRemoteSync() || isRemoteSyncAttemptStale(remoteAttempt)) {
+            return
+          }
 
-        syncStatus.value = 'syncing'
+          // Skip remote push if a merge was just applied (prevents double-push)
+          if (skipNextRemotePush.peek()) {
+            skipNextRemotePush.value = false
+            log('[Persistence] Skipping remote push after merge apply')
+            return
+          }
 
-        // Pull-before-push: check if remote has changes since last sync
-        const lastSyncedAt = parseInt(store.syncTs.get('0') || '0') || 0
-        let isRemoteNewer = false
-        try {
-          isRemoteNewer = await checkRemoteNewer(lastSyncedAt)
-        } catch { /* ignore, proceed with direct push */ }
+          syncStatus.value = 'syncing'
 
-        if (lastTimeoutId !== timeoutId) return
-
-        if (isRemoteNewer) {
+          // Pull-before-push: check if remote has changes since last sync
+          const lastSyncedAt = parseInt(store.syncTs.get('0') || '0') || 0
+          let isRemoteNewer = false
           try {
-            const result = await pullAndMerge(passphraseValue, saltValue)
-            if (lastTimeoutId !== timeoutId) return
+            isRemoteNewer = await checkRemoteNewer(lastSyncedAt)
+          } catch { /* ignore, proceed with direct push */ }
 
-            if (!result.clean) {
-              log('[Persistence] Sync blocked by conflicts')
-              syncStatus.value = 'synced'
-              return
-            }
+          if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
 
-            if (result.mergedJson) {
-              const mergedEncrypted = await encrypt(result.mergedJson, passphraseValue, saltValue)
-              if (lastTimeoutId !== timeoutId) return
-              await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, saltValue))
-              if (lastTimeoutId === timeoutId) {
+          if (isRemoteNewer) {
+            try {
+              const result = await pullAndMerge(passphraseValue, saltValue)
+              if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
+
+              if (!result.clean) {
+                log('[Persistence] Sync blocked by conflicts')
+                syncStatus.value = 'synced'
+                return
+              }
+
+              if (result.mergedJson) {
+                const mergedEncrypted = await encrypt(result.mergedJson, passphraseValue, saltValue)
+                if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
+                const updatedAt = beginRemotePush(remoteAttempt)
+                await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, saltValue, updatedAt))
+                recordCompletedRemotePush(remoteAttempt)
+                if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
                 localEncryptedData.set(mergedEncrypted, saltValue)
                 setLastSyncedAt(Date.now())
                 syncStatus.value = 'synced'
+                // Apply merged doc; flag prevents the triggered save from re-pushing
+                skipNextRemotePush.value = true
+                outline.deserialize(result.mergedJson)
+              } else {
+                // Remote not newer after all (race) or no data to merge
+                const updatedAt = beginRemotePush(remoteAttempt)
+                await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue, updatedAt))
+                recordCompletedRemotePush(remoteAttempt)
+                if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+                  setLastSyncedAt(Date.now())
+                  syncStatus.value = 'synced'
+                }
               }
-              // Apply merged doc; flag prevents the triggered save from re-pushing
-              skipNextRemotePush.value = true
-              outline.deserialize(result.mergedJson)
-            } else {
-              // Remote not newer after all (race) or no data to merge
-              await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue))
-              if (lastTimeoutId === timeoutId) {
-                setLastSyncedAt(Date.now())
-                syncStatus.value = 'synced'
+            } catch (pullErr) {
+              console.error('[Persistence] Pull-merge failed:', pullErr)
+              if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+                syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
               }
             }
-          } catch (pullErr) {
-            console.error('[Persistence] Pull-merge failed:', pullErr)
-            if (lastTimeoutId === timeoutId) {
+            return
+          }
+
+          // Remote not newer — direct push
+          try {
+            const updatedAt = beginRemotePush(remoteAttempt)
+            await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue, updatedAt))
+            recordCompletedRemotePush(remoteAttempt)
+            if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+              setLastSyncedAt(Date.now())
+              syncStatus.value = 'synced'
+            }
+          } catch (syncError) {
+            console.error('[Persistence] Remote sync upload failed after retries:', syncError)
+            if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
               syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
             }
           }
-          return
-        }
-
-        // Remote not newer — direct push
-        try {
-          await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue))
-          if (lastTimeoutId === timeoutId) {
-            setLastSyncedAt(Date.now())
-            syncStatus.value = 'synced'
-          }
-        } catch (syncError) {
-          console.error('[Persistence] Remote sync upload failed after retries:', syncError)
-          if (lastTimeoutId === timeoutId) {
-            syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
-          }
-        }
+        })
       }
       log('[Persistence] Saved encrypted doc v' + version + ' length=', encrypted.length)
     } catch (error) {
