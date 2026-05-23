@@ -102,6 +102,19 @@ test.describe('Mobile swipe indentation', () => {
             document.documentElement.style.setProperty('--keyboard-inset', '0px')
         });
     });
+
+    test('main content prevents vertical overscroll while keyboard inset is applied', async ({ page }) => {
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '300px')
+        });
+
+        const overscrollBehaviorY = await page.locator('.main-content').evaluate(el => getComputedStyle(el).overscrollBehaviorY);
+        expect(overscrollBehaviorY).toBe('none');
+
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '0px')
+        });
+    });
 });
 
 async function getParentId(page: Page, nodeId: string): Promise<string | null> {
