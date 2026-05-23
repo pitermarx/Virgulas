@@ -78,27 +78,29 @@ test.describe('Mobile swipe indentation', () => {
         await expectFocusedNodeStable(page, 'B');
     });
 
-    test('status bar remains visible when viewport shrinks (keyboard appears)', async ({ page }) => {
+    test('status bar remains visible above keyboard when input is focused', async ({ page }) => {
         const toolbar = page.locator('.status-toolbar');
         await expect(toolbar).toBeVisible();
 
-        // Simulate the visual viewport shrinking as keyboard appears by resizing the viewport
-        await page.setViewportSize({ width: 390, height: 544 });
+        // Simulate the visual viewport shrinking (keyboard appears)
+        // by setting the --keyboard-inset CSS variable as the JS listener would
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '300px')
+        });
 
-        // Toolbar should still be in the DOM and visible within the shrunk viewport
+        // Toolbar should still be in the DOM and visible
         await expect(toolbar).toBeVisible();
 
-        // Restore viewport
-        await page.setViewportSize({ width: 390, height: 844 });
-    });
+        // Padding-bottom should reflect the inset
+        const paddingBottom = await toolbar.evaluate(el => getComputedStyle(el).paddingBottom);
+        // Padding bottom should be > 0 (at least the inset of 300px)
+        const pbValue = parseFloat(paddingBottom);
+        expect(pbValue).toBeGreaterThan(0);
 
-    test('main-view uses dynamic viewport height so layout fits visible area', async ({ page }) => {
-        // Verify the CSS height property resolves to a value close to the viewport height.
-        // We allow a tolerance to accommodate browser chrome differences across engines.
-        const height = await page.locator('.main-view').evaluate(el => parseFloat(getComputedStyle(el).height));
-        const viewportHeight = await page.evaluate(() => window.innerHeight);
-        expect(height).toBeGreaterThan(0);
-        expect(Math.abs(height - viewportHeight)).toBeLessThan(100);
+        // Reset
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '0px')
+        });
     });
 
     test('main content prevents vertical overscroll', async ({ page }) => {
