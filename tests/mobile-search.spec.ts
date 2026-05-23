@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './test';
 import { setupDoc } from './test';
 
-test.describe('Mobile search gesture', () => {
+test.describe('Mobile search', () => {
     test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support Playwright mobile contexts (isMobile).');
 
     test.use({
@@ -24,32 +24,21 @@ test.describe('Mobile search gesture', () => {
         });
     });
 
-    test('scroll-up gesture opens search once threshold is reached', async ({ page }) => {
+    test('status-bar Search button opens search', async ({ page }) => {
         await expect(page.locator('.search-input')).toHaveCount(0);
 
-        await swipeViewport(page, -150);
+        await page.locator('.toolbar-btn-search').tap();
 
         const searchInput = page.locator('.search-input');
         await expect(searchInput).toBeVisible();
         await expect(searchInput).toBeFocused();
     });
 
-    test('gesture filtering prevents accidental activation from short or wrong-direction swipes', async ({ page }) => {
-        await swipeViewport(page, -26); // too short
+    test('scroll-up gesture does not open search', async ({ page }) => {
         await expect(page.locator('.search-input')).toHaveCount(0);
-
-        await swipeViewport(page, 150); // downward
-        await expect(page.locator('.search-input')).toHaveCount(0);
-    });
-
-    test('scroll-up gesture does not activate search while editing a node', async ({ page }) => {
-        await page.locator('[data-node-id="A"] .node-text-md').tap();
-        const nodeInput = page.locator('[data-node-id="A"] input');
-        await expect(nodeInput).toBeFocused();
 
         await swipeViewport(page, -160);
 
-        await expect(nodeInput).toBeFocused();
         await expect(page.locator('.search-input')).toHaveCount(0);
     });
 });
