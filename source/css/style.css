@@ -1272,6 +1272,7 @@ a:hover {
 .main-content {
   flex: 1;
   overflow-y: scroll;
+  overscroll-behavior-y: none;
   scrollbar-width: none;
   max-width: 800px;
   margin: 0 auto;
