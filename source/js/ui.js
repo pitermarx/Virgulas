@@ -110,34 +110,6 @@ function handleInteractiveMarkdownClick(e) {
     return false
 }
 
-// ── Mobile keyboard-aware status bar ─────────────────────────────────────────
-// When the virtual keyboard appears on mobile, the visible viewport shrinks.
-// We apply a dynamic bottom inset to the status toolbar so it stays visible
-// above the keyboard. Desktop behavior is unchanged.
-if (isMobile && typeof window !== 'undefined' && window.visualViewport) {
-    let lastKeyboardInset = -1
-    let insetUpdateQueued = false
-
-    const updateKeyboardInset = () => {
-        insetUpdateQueued = false
-        const vv = window.visualViewport
-        if (!vv) return
-        const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-        if (keyboardHeight === lastKeyboardInset) return
-        lastKeyboardInset = keyboardHeight
-        document.documentElement.style.setProperty('--keyboard-inset', keyboardHeight + 'px')
-    }
-
-    const queueInsetUpdate = () => {
-        if (insetUpdateQueued) return
-        insetUpdateQueued = true
-        window.requestAnimationFrame(updateKeyboardInset)
-    }
-
-    window.visualViewport.addEventListener('resize', queueInsetUpdate)
-    queueInsetUpdate()
-}
-
 const fadedText = "color: var(--color-text-muted);"
 
 
