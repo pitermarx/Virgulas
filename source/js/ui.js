@@ -1,5 +1,5 @@
 import { html } from 'htm/preact';
-import { signal, computed } from '@preact/signals';
+import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
@@ -17,6 +17,27 @@ const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
 const FOCUS_TRANSFER_WINDOW_MS = 450
 const BLUR_SETTLE_MS = 75
 let pendingFocusTransfer = null
+
+// Sync body class for wide-screen side-by-side task panel layout
+effect(() => { document.body.classList.toggle('tasks-panel-is-open', tasksPanelOpen.value) })
+
+// Close date picker on click-outside or Escape
+effect(() => {
+    if (!activeDatePickerNodeId.value) return
+    function onMouseDown(e) {
+        if (e.target.closest('.date-picker-popover, .calendar-icon-btn, .due-badge')) return
+        activeDatePickerNodeId.value = null
+    }
+    function onKeyDown(e) {
+        if (e.key === 'Escape') { activeDatePickerNodeId.value = null; e.stopPropagation() }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+        document.removeEventListener('mousedown', onMouseDown)
+        document.removeEventListener('keydown', onKeyDown, true)
+    }
+})
 
 function getNodeIdFromElement(el) {
     return el?.closest?.('.node-content')?.getAttribute('data-node-id') || null
@@ -287,13 +308,19 @@ function DatePickerPopover({ nodeId, anchorRef }) {
         }
     }
 
-    // Position: below anchor or above if near bottom
-    let style = 'bottom:auto;top:100%;margin-top:4px;'
+    // Position: below anchor or above if near bottom, and clamp horizontally
+    let styleTop = 'bottom:auto;top:100%;margin-top:4px;'
+    let leftOff = 0
+    const PICKER_W = 240
     if (anchorRef?.current) {
         const rect = anchorRef.current.getBoundingClientRect()
         const spaceBelow = window.innerHeight - rect.bottom
-        if (spaceBelow < 280) style = 'top:auto;bottom:calc(100% + 4px);'
+        if (spaceBelow < 280) styleTop = 'top:auto;bottom:calc(100% + 4px);'
+        const rightEdge = rect.left + leftOff + PICKER_W
+        if (rightEdge > window.innerWidth - 8) leftOff = window.innerWidth - 8 - rightEdge
+        if (rect.left + leftOff < 8) leftOff = 8 - rect.left
     }
+    const style = styleTop + `left:${leftOff}px;`
 
     const yr = viewYear.value
     const mo = viewMonth.value
@@ -426,7 +453,14 @@ function NodeDesc({ node }) {
 function NodeText({ node }) {
     const { text, id } = node.value // subscribe to changes on node
     if (focusId.value === id && focusType.value === 'text') {
-        function onBlur() {
+        function onBlur(e) {
+            const val = e.currentTarget.value
+            const dueMatch = val.match(/\bdue:(\d{4}-\d{2}-\d{2})\b/)
+            if (dueMatch) {
+                const stripped = val.replace(/\s*\bdue:\d{4}-\d{2}-\d{2}\b\s*/g, ' ').trim()
+                outline.setDueDate(id, dueMatch[1])
+                outline.update(id, { text: stripped })
+            }
             scheduleBlurClear(id, 'text')
         }
         return html`<input

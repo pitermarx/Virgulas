@@ -1643,6 +1643,7 @@ a:hover {
   height: 20px;
   padding: 0;
   margin-right: var(--space-2);
+  margin-top: 2px;
   background: none;
   border: none;
   cursor: pointer;
@@ -1765,7 +1766,7 @@ a:hover {
 /* ── Desktop date picker popover ── */
 .date-picker-popover {
   position: absolute;
-  left: -15vw;
+  left: 0;
   z-index: 900;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1958,6 +1959,20 @@ a:hover {
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-lg);
+}
+
+/* Wide screen: show panel side-by-side without dimming content */
+@media (min-width: 1160px) {
+  body.tasks-panel-is-open .tasks-panel-backdrop {
+    background: transparent;
+    pointer-events: none;
+  }
+  body.tasks-panel-is-open .tasks-panel {
+    pointer-events: auto;
+  }
+  body.tasks-panel-is-open .main-content {
+    margin-right: 336px;
+  }
 }
 
 @media (max-width: 640px) {

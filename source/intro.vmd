@@ -45,7 +45,6 @@
 - Tasks
   Turn any node into a task by pressing **Ctrl+Enter** (desktop) or tapping the **✓ button** in the bottom bar (mobile).
   - **Ctrl+Enter** cycles through three states: plain node → unchecked task → done (strikethrough) → back to plain.
-    **Ctrl+Shift+Enter** jumps directly to plain (removes the task mark without cycling).
   - Add a due date with **Ctrl+Shift+D** on desktop — a mini calendar appears.
     On mobile, tap the 📅 button in the bottom toolbar; the native OS date picker opens.
     Due dates show as a small colored badge next to the node:

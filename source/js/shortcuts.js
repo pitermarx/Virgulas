@@ -315,9 +315,6 @@ function handleKeyDownOnFocusedNode(k, focus) {
         case 'Ctrl+Enter':
             outline.toggleDone(focus.Id.value)
             return true
-        case 'Ctrl+Shift+Enter':
-            outline.removeTaskMark(focus.Id.value)
-            return true
         case 'Ctrl+Shift+D':
             if (isMobile) {
                 // mobile path: signal ui.js to open native date picker
