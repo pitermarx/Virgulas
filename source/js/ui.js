@@ -1,13 +1,14 @@
 import { html } from 'htm/preact';
-import { signal } from '@preact/signals';
+import { signal, computed } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
 import { log, isMobile } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, activeDatePickerNodeId, tasksPanelOpen } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
+import { groupedTasks, urgentTaskCount, dueDateLabel, dueDateStatus, todayISO, daysFromToday } from './tasks.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -144,6 +145,206 @@ const fadedText = "color: var(--color-text-muted);"
 const hasClosedChildrenBullet = html`<circle cx="25" cy="25" r="10" fill="none" stroke="currentColor" stroke-width="5"/>`
 const NormalBullet = html`<circle cx="25" cy="25" r="10" fill="currentColor"/>`
 const hasOpenChildrenBullet = html`<g><circle cx="25" cy="25" r="10" fill="currentColor"/><circle cx="25" cy="25" r="18" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.35"/></g>`
+
+// ── Mobile native date picker ─────────────────────────────────────────────────
+// A single hidden <input type="date"> element. We call .showPicker() on it to
+// trigger the native OS date picker without any custom calendar.
+let mobileDateInputEl = null
+let mobileDateNodeId = null
+
+function getMobileDateInput() {
+    if (!mobileDateInputEl) {
+        mobileDateInputEl = document.createElement('input')
+        mobileDateInputEl.type = 'date'
+        mobileDateInputEl.style.cssText = 'position:fixed;opacity:0;pointer-events:none;top:0;left:0;width:1px;height:1px;'
+        document.body.appendChild(mobileDateInputEl)
+        mobileDateInputEl.addEventListener('change', () => {
+            const id = mobileDateNodeId
+            const val = mobileDateInputEl.value
+            if (id) outline.setDueDate(id, val || null)
+            mobileDateNodeId = null
+        })
+    }
+    return mobileDateInputEl
+}
+
+export function openMobileDatePicker(nodeId) {
+    const node = outline.get(nodeId)
+    if (!node) return
+    const input = getMobileDateInput()
+    mobileDateNodeId = nodeId
+    input.value = node.dueDate.peek() || ''
+    try {
+        input.showPicker()
+    } catch {
+        input.focus()
+    }
+}
+
+// ── Date badge ────────────────────────────────────────────────────────────────
+function DueDateBadge({ nodeId, dueDate, done, onClick }) {
+    const status = dueDateStatus(dueDate, done)
+    const label = dueDateLabel(dueDate)
+    return html`<button
+        class=${'due-badge due-badge--' + status}
+        onClick=${e => { e.stopPropagation(); onClick && onClick(e) }}
+        title=${dueDate}
+        aria-label=${'Due date: ' + label}>
+        ${label}
+    </button>`
+}
+
+// ── Calendar hover affordance (desktop only, shown when no due date) ──────────
+function CalendarIcon({ nodeId }) {
+    function handleClick(e) {
+        e.stopPropagation()
+        if (isMobile) {
+            openMobileDatePicker(nodeId)
+        } else {
+            activeDatePickerNodeId.value = activeDatePickerNodeId.peek() === nodeId ? null : nodeId
+        }
+    }
+    return html`<button class="calendar-icon-btn" onClick=${handleClick} title="Set due date" aria-label="Set due date">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="2" width="14" height="13" rx="2"/>
+            <path d="M1 6h14"/>
+            <path d="M5 1v2M11 1v2"/>
+        </svg>
+    </button>`
+}
+
+// ── Inline date picker popover (desktop) ─────────────────────────────────────
+const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function DatePickerPopover({ nodeId, anchorRef }) {
+    const node = outline.get(nodeId)
+    const initial = node?.dueDate?.peek() || null
+    const today = todayISO()
+
+    const initDate = initial || today
+    const initYear = parseInt(initDate.slice(0, 4))
+    const initMonth = parseInt(initDate.slice(5, 7)) - 1
+
+    const viewYear = signal(initYear)
+    const viewMonth = signal(initMonth)
+    const selected = signal(initial)
+    const focusedDate = signal(initial || today)
+
+    function close() { activeDatePickerNodeId.value = null }
+
+    function confirm(dateStr) {
+        outline.setDueDate(nodeId, dateStr)
+        close()
+    }
+
+    function clearDate() {
+        outline.setDueDate(nodeId, null)
+        close()
+    }
+
+    function setToday() {
+        confirm(today)
+    }
+
+    function prevMonth() {
+        if (viewMonth.peek() === 0) { viewYear.value--; viewMonth.value = 11 }
+        else viewMonth.value--
+    }
+    function nextMonth() {
+        if (viewMonth.peek() === 11) { viewYear.value++; viewMonth.value = 0 }
+        else viewMonth.value++
+    }
+
+    function daysInMonth(year, month) {
+        return new Date(year, month + 1, 0).getDate()
+    }
+
+    // Monday-first: 0=Mon…6=Sun
+    function dayOfWeekMon(year, month, day) {
+        const d = new Date(year, month, day).getDay()
+        return d === 0 ? 6 : d - 1
+    }
+
+    function handleKeyDown(e) {
+        const cur = focusedDate.peek() || today
+        const d = new Date(cur + 'T00:00:00')
+        let moved = null
+        if (e.key === 'ArrowLeft') { d.setDate(d.getDate() - 1); moved = true }
+        else if (e.key === 'ArrowRight') { d.setDate(d.getDate() + 1); moved = true }
+        else if (e.key === 'ArrowUp') { d.setDate(d.getDate() - 7); moved = true }
+        else if (e.key === 'ArrowDown') { d.setDate(d.getDate() + 7); moved = true }
+        else if (e.key === 'Enter') { if (focusedDate.peek()) confirm(focusedDate.peek()); e.preventDefault(); return }
+        else if (e.key === 'Escape') { close(); e.preventDefault(); return }
+        else if (e.key === 'Backspace') { clearDate(); e.preventDefault(); return }
+        if (moved) {
+            e.preventDefault()
+            const iso = d.toISOString().slice(0, 10)
+            focusedDate.value = iso
+            selected.value = iso
+            viewYear.value = d.getFullYear()
+            viewMonth.value = d.getMonth()
+        }
+    }
+
+    // Position: below anchor or above if near bottom
+    let style = 'bottom:auto;top:100%;margin-top:4px;'
+    if (anchorRef?.current) {
+        const rect = anchorRef.current.getBoundingClientRect()
+        const spaceBelow = window.innerHeight - rect.bottom
+        if (spaceBelow < 280) style = 'top:auto;bottom:calc(100% + 4px);'
+    }
+
+    const yr = viewYear.value
+    const mo = viewMonth.value
+    const totalDays = daysInMonth(yr, mo)
+    const startOffset = dayOfWeekMon(yr, mo, 1)
+    const cells = []
+    for (let i = 0; i < startOffset; i++) cells.push(null)
+    for (let d = 1; d <= totalDays; d++) cells.push(d)
+
+    const selVal = selected.value
+    const focusedVal = focusedDate.value
+
+    function makeIso(d) {
+        return `${yr}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    }
+
+    return html`<div
+        class="date-picker-popover"
+        style=${style}
+        tabIndex="-1"
+        onKeyDown=${handleKeyDown}
+        onClick=${e => e.stopPropagation()}>
+        <div class="dp-header">
+            <button class="dp-nav-btn" onClick=${prevMonth} aria-label="Previous month">◀</button>
+            <span class="dp-month-label">${MONTHS[mo]} ${yr}</span>
+            <button class="dp-nav-btn" onClick=${nextMonth} aria-label="Next month">▶</button>
+        </div>
+        <div class="dp-grid">
+            ${DAYS.map(d => html`<span class="dp-weekday">${d}</span>`)}
+            ${cells.map((d, i) => {
+        if (!d) return html`<span key=${'e' + i} class="dp-cell dp-cell--empty"></span>`
+        const iso = makeIso(d)
+        const isToday = iso === today
+        const isSel = iso === selVal
+        const isFocused = iso === focusedVal
+        const status = dueDateStatus(iso, false)
+        return html`<button
+                    key=${iso}
+                    class=${'dp-cell' + (isSel ? ' dp-cell--selected' : '') + (isToday ? ' dp-cell--today' : '') + (isFocused && !isSel ? ' dp-cell--focused' : '') + (' dp-cell--' + status)}
+                    onClick=${() => { selected.value = iso; focusedDate.value = iso; confirm(iso) }}
+                    tabIndex="-1"
+                    aria-label=${iso}
+                    aria-pressed=${isSel}>${d}</button>`
+    })}
+        </div>
+        <div class="dp-footer">
+            <button class="dp-foot-btn" onClick=${clearDate}>Clear</button>
+            <button class="dp-foot-btn dp-foot-btn--today" onClick=${setToday}>Today</button>
+        </div>
+    </div>`
+}
 const SWIPE_MIN_DISTANCE_PX = 56
 const SWIPE_AXIS_RATIO = 1.35
 
@@ -260,10 +461,14 @@ function NodeText({ node }) {
 }
 
 function NodeBody({ node }) {
-    const { id, children, open } = node.value // subscribe to changes on node
+    const { id, children, open, done, dueDate } = node.value // subscribe to changes on node
     const hasChildren = children.length > 0
     const isFocused = focusId.value === id
     const isSelected = selectedIds.value.includes(id)
+    const isTask = done !== null
+    const isDone = done === true
+    const pickerOpen = activeDatePickerNodeId.value === id
+    const anchorRef = { current: null }
     const swipeState = {
         active: false,
         startX: 0,
@@ -350,21 +555,47 @@ function NodeBody({ node }) {
         resetSwipeState()
     }
 
+    function handleOpenDatePicker(e) {
+        e.stopPropagation()
+        if (isMobile) {
+            openMobileDatePicker(id)
+        } else {
+            activeDatePickerNodeId.value = activeDatePickerNodeId.peek() === id ? null : id
+        }
+    }
+
     return html`
-    <div class="node-content ${isFocused ? 'node-focused' : ''} ${isSelected ? 'node-selected' : ''}" data-node-id=${id}
+    <div class=${'node-content' + (isFocused ? ' node-focused' : '') + (isSelected ? ' node-selected' : '') + (isTask ? ' node-task' : '') + (isDone ? ' node-done' : '')} data-node-id=${id}
         onClick=${focusTextIfOnlyClickedThisElement}
         onTouchStart=${handleTouchStart}
         onTouchMove=${handleTouchMove}
         onTouchEnd=${handleTouchEnd}
         onTouchCancel=${handleTouchCancel}>
-        <span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
-            <svg viewBox="0 0 50 50">
-                ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
-            </svg>
-        </span>
+        ${isTask
+            ? html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${e => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                    ${isDone
+                    ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+                    : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
+                }
+                </svg>
+            </button>`
+            : html`<span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
+                <svg viewBox="0 0 50 50">
+                    ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
+                </svg>
+            </span>`
+        }
     <div class="node-body">
         <${NodeText} node=${node} />
         <${NodeDesc} node=${node} />
+    </div>
+    <div class="node-meta" ref=${el => anchorRef.current = el} style="position:relative;display:inline-flex;">
+        ${dueDate
+            ? html`<${DueDateBadge} nodeId=${id} dueDate=${dueDate} done=${done} onClick=${handleOpenDatePicker} />`
+            : !isDone && html`<${CalendarIcon} nodeId=${id} />`
+        }
+        ${pickerOpen && !isMobile && html`<${DatePickerPopover} nodeId=${id} anchorRef=${anchorRef} />`}
     </div>
     ${hasChildren && html`<span class="collapse-toggle" onClick=${() => outline.toggleOpen(id)}>${open ? '▼' : '▶'}</span>`}
     </div>
@@ -389,6 +620,93 @@ function Node({ node, indent = 0 }) {
         </div>` : ''}
     </div>
     `
+}
+
+// ── Tasks Panel ───────────────────────────────────────────────────────────────
+
+const doneGroupExpanded = signal(false)
+
+function TaskRow({ item, onNavigate }) {
+    const node = outline.get(item.id)
+    if (!node) return null
+    const status = dueDateStatus(item.dueDate, item.done)
+    const label = item.dueDate ? dueDateLabel(item.dueDate) : ''
+
+    function toggle(e) {
+        e.stopPropagation()
+        outline.checkboxToggleDone(item.id)
+    }
+
+    function navigate(e) {
+        e.stopPropagation()
+        tasksPanelOpen.value = false
+        zoomIn(item.id, focus)
+        requestNodeFocus(item.id, 'text')
+    }
+
+    return html`<div class="task-row">
+        <button class=${'task-row-check' + (item.done ? ' task-row-check--done' : '')} onClick=${toggle} aria-label=${item.done ? 'Mark undone' : 'Mark done'} aria-pressed=${item.done}>
+            <svg viewBox="0 0 16 16" width="14" height="14">
+                ${item.done
+            ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+            : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
+        }
+            </svg>
+        </button>
+        <div class="task-row-body" onClick=${navigate}>
+            <span class=${'task-row-text' + (item.done ? ' task-row-text--done' : '')}>${item.text || html`<em style="opacity:0.5">Untitled</em>`}</span>
+            ${item.breadcrumb.length > 0 && html`<span class="task-row-breadcrumb">${item.breadcrumb.join(' › ')}</span>`}
+        </div>
+        ${label && html`<span class=${'task-row-date due-badge due-badge--' + status}>${label}</span>`}
+    </div>`
+}
+
+// Persistent per-group expansion state: survives rerenders
+const _groupExpanded = Object.create(null)
+function groupExpandedSignal(title, defaultVal) {
+    if (!_groupExpanded[title]) _groupExpanded[title] = signal(defaultVal)
+    return _groupExpanded[title]
+}
+
+function TaskGroup({ title, items, defaultExpanded = true }) {
+    const expanded = groupExpandedSignal(title, defaultExpanded)
+    if (items.length === 0) return null
+    return html`<div class="tasks-group">
+        <button class="tasks-group-header" onClick=${() => expanded.value = !expanded.peek()}>
+            <span class="tasks-group-toggle">${expanded.value ? '▼' : '▶'}</span>
+            <span class="tasks-group-title">${title}</span>
+            <span class="tasks-group-count">${items.length}</span>
+        </button>
+        ${expanded.value && html`<div class="tasks-group-items">
+            ${items.map(item => html`<${TaskRow} key=${item.id} item=${item} />`)}
+        </div>`}
+    </div>`
+}
+
+export function TasksPanel() {
+    if (!tasksPanelOpen.value) return null
+    const groups = groupedTasks.value
+
+    function close() { tasksPanelOpen.value = false }
+
+    return html`<div class="tasks-panel-backdrop" onClick=${close}>
+        <div class="tasks-panel" onClick=${e => e.stopPropagation()}>
+            <div class="tasks-panel-header">
+                <span class="tasks-panel-title">Tasks</span>
+                <button class="tasks-panel-close" onClick=${close} aria-label="Close tasks panel">×</button>
+            </div>
+            <div class="tasks-panel-body">
+                <${TaskGroup} title="Overdue" items=${groups.overdue} defaultExpanded=${true} />
+                <${TaskGroup} title="Today" items=${groups.today} defaultExpanded=${true} />
+                <${TaskGroup} title="Soon" items=${groups.soon} defaultExpanded=${true} />
+                <${TaskGroup} title="Upcoming" items=${groups.upcoming} defaultExpanded=${true} />
+                <${TaskGroup} title="Someday" items=${groups.someday} defaultExpanded=${false} />
+                <${TaskGroup} title="Done" items=${groups.done} defaultExpanded=${false} />
+                ${groups.overdue.length + groups.today.length + groups.soon.length + groups.upcoming.length + groups.someday.length + groups.done.length === 0
+        && html`<div class="tasks-empty">No tasks yet. Press <kbd>Ctrl+Enter</kbd> on any node to make it a task.</div>`}
+            </div>
+        </div>
+    </div>`
 }
 
 export const rawMode = signal(false)
@@ -443,6 +761,9 @@ export function StatusToolbar() {
         unsynced: 'var(--color-danger)'
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
+    const urgentCount = urgentTaskCount.value
+    const hasFocusedNode = focusId.value !== null
+
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
@@ -453,9 +774,40 @@ export function StatusToolbar() {
         }}>Raw</button>`}
             ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
+            ${isMobile && hasFocusedNode && html`<button
+                class=${'toolbar-btn toolbar-btn-task' + (outline.get(focusId.value)?.done?.value === true ? ' toolbar-btn-task--done' : '')}
+                aria-label="Toggle task"
+                onClick=${() => outline.toggleDone(focusId.value)}>
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                    ${outline.get(focusId.value)?.done?.value === true
+                ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+                : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>`
+            }
+                </svg>
+            </button>`}
+            ${isMobile && hasFocusedNode && html`<button
+                class="toolbar-btn toolbar-btn-cal"
+                aria-label="Set due date"
+                onClick=${() => openMobileDatePicker(focusId.value)}>
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="1" y="2" width="14" height="13" rx="2"/>
+                    <path d="M1 6h14"/>
+                    <path d="M5 1v2M11 1v2"/>
+                </svg>
+            </button>`}
         </div>
         <div class="toolbar-brand">
             ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
+            <button class=${'toolbar-btn toolbar-btn-tasks' + (urgentCount > 0 ? ' toolbar-btn-tasks--urgent' : '')} onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="1" y="1" width="5" height="5" rx="1"/>
+                    <path d="M2.5 3.5l1 1L5.5 2"/>
+                    <path d="M8 3h7M8 8h7M8 13h7"/>
+                    <rect x="1" y="6" width="5" height="5" rx="1"/>
+                    <rect x="1" y="11" width="5" height="5" rx="1"/>
+                </svg>
+                ${urgentCount > 0 && html`<span class="toolbar-tasks-badge">${urgentCount}</span>`}
+            </button>
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`

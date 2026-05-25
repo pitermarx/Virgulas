@@ -1203,3 +1203,143 @@ await test("deserialize() defaults lastModified to 0 when absent", () => {
   outline.deserialize(JSON.stringify(obj))
   assertEqual(outline.get('no-ts-node').lastModified, 0, "Absent lastModified should default to 0")
 })
+
+// ─── Task model ───────────────────────────────────────────────────────────────
+
+section("Task model — toggleDone / checkboxToggleDone / removeTaskMark")
+
+await test("toggleDone cycles null → false → true → null (and clears dueDate on last step)", () => {
+  const n = outline.addChild('root', { id: 'T', text: 'task', dueDate: '2026-06-01' })
+  // Manually set done to null since addChild with dueDate now auto-promotes
+  outline.removeTaskMark('T')
+  assert(outline.get('T').done.peek() === null, 'reset to null')
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), false, '1st press: unchecked task')
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), true, '2nd press: done')
+  outline.get('T').dueDate.peek() // ensure dueDate is still there before final step
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), null, '3rd press: back to plain')
+  assertEqual(outline.get('T').dueDate.peek(), null, 'dueDate cleared when cycling to plain')
+})
+
+await test("checkboxToggleDone toggles false ↔ true and never removes task state", () => {
+  outline.addChild('root', { id: 'C', text: 'cb', done: false })
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), true, 'unchecked → done')
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), false, 'done → unchecked (not null)')
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), true, 'unchecked → done again')
+})
+
+await test("checkboxToggleDone on a plain node makes it an unchecked task (guard)", () => {
+  outline.addChild('root', { id: 'P', text: 'plain' })
+  assertEqual(outline.get('P').done.peek(), null, 'starts plain')
+  outline.checkboxToggleDone('P')
+  assertEqual(outline.get('P').done.peek(), false, 'promoted to unchecked task')
+})
+
+await test("removeTaskMark resets done and dueDate to null", () => {
+  outline.addChild('root', { id: 'R', text: 'rmtask', done: true, dueDate: '2026-06-15' })
+  outline.removeTaskMark('R')
+  assertEqual(outline.get('R').done.peek(), null, 'done cleared')
+  assertEqual(outline.get('R').dueDate.peek(), null, 'dueDate cleared')
+})
+
+await test("getAllTasks includes only nodes with done !== null", () => {
+  outline.addChild('root', { id: 'P1', text: 'plain' })
+  outline.addChild('root', { id: 'T1', text: 'undone', done: false })
+  outline.addChild('root', { id: 'T2', text: 'done', done: true })
+  const ids = outline.getAllTasks().map(n => n.id).sort()
+  assertEqual(JSON.stringify(ids), JSON.stringify(['T1', 'T2']), 'only task nodes returned')
+})
+
+section("Task model — setDueDate auto-promotion")
+
+await test("setDueDate on a plain node promotes it to an unchecked task", () => {
+  outline.addChild('root', { id: 'D', text: 'meeting' })
+  assertEqual(outline.get('D').done.peek(), null, 'starts plain')
+  outline.setDueDate('D', '2026-06-01')
+  assertEqual(outline.get('D').done.peek(), false, 'promoted to unchecked task')
+  assertEqual(outline.get('D').dueDate.peek(), '2026-06-01', 'dueDate set')
+})
+
+await test("setDueDate on an already-task node does not change done state", () => {
+  outline.addChild('root', { id: 'E', text: 'existing', done: true })
+  outline.setDueDate('E', '2026-07-04')
+  assertEqual(outline.get('E').done.peek(), true, 'done state unchanged')
+})
+
+await test("setDueDate(null) clears dueDate but does not remove task state", () => {
+  outline.addChild('root', { id: 'F', text: 'clear', done: false, dueDate: '2026-06-15' })
+  outline.setDueDate('F', null)
+  assertEqual(outline.get('F').dueDate.peek(), null, 'dueDate cleared')
+  assertEqual(outline.get('F').done.peek(), false, 'still a task')
+})
+
+section("Task model — VMD round-trip")
+
+await test("getVMD encodes unchecked task with [ ]", () => {
+  outline.addChild('root', { id: 'V1', text: 'Buy milk', done: false })
+  const vmd = outline.getVMD('root')
+  assert(vmd.includes('[ ] Buy milk'), 'unchecked task encoded as [ ]')
+})
+
+await test("getVMD encodes done task with [x]", () => {
+  outline.addChild('root', { id: 'V2', text: 'Done thing', done: true })
+  const vmd = outline.getVMD('root')
+  assert(vmd.includes('[x] Done thing'), 'done task encoded as [x]')
+})
+
+await test("getVMD encodes due date as due:YYYY-MM-DD", () => {
+  outline.addChild('root', { id: 'V3', text: 'Meeting', done: false, dueDate: '2026-06-15' })
+  const vmd = outline.getVMD('root')
+  assert(vmd.includes('[ ] Meeting due:2026-06-15'), 'due date encoded')
+})
+
+await test("getVMD encodes plain nodes without task annotations", () => {
+  outline.addChild('root', { id: 'V4', text: 'Plain node' })
+  const vmd = outline.getVMD('root')
+  assert(!vmd.includes('['), 'no task annotation for plain node')
+})
+
+await test("setRootVMD round-trip preserves unchecked task and due date", () => {
+  outline.addChild('root', { id: 'RT1', text: 'Buy milk', done: false, dueDate: '2026-06-15' })
+  const vmd = outline.getVMD('root')
+  outline.setRootVMD(vmd)
+  const id = outline.getRoot().children.peek()[0]
+  const node = outline.get(id)
+  assertEqual(node.text.peek(), 'Buy milk', 'text preserved')
+  assertEqual(node.done.peek(), false, 'done=false preserved')
+  assertEqual(node.dueDate.peek(), '2026-06-15', 'dueDate preserved')
+})
+
+await test("setRootVMD round-trip preserves done=true", () => {
+  outline.addChild('root', { id: 'RT2', text: 'Done thing', done: true, dueDate: '2026-05-01' })
+  const vmd = outline.getVMD('root')
+  outline.setRootVMD(vmd)
+  const node = outline.get(outline.getRoot().children.peek()[0])
+  assertEqual(node.done.peek(), true, 'done=true preserved')
+  assertEqual(node.dueDate.peek(), '2026-05-01', 'dueDate preserved')
+})
+
+await test("setRootVMD parses due: annotation on plain text (no checkbox) and auto-promotes", () => {
+  outline.setRootVMD('- meeting due:2026-06-01\n')
+  const node = outline.get(outline.getRoot().children.peek()[0])
+  assertEqual(node.text.peek(), 'meeting', 'text clean')
+  assertEqual(node.done.peek(), false, 'auto-promoted to unchecked task')
+  assertEqual(node.dueDate.peek(), '2026-06-01', 'dueDate set')
+})
+
+await test("setRootVMD plain node after task node clears old task metadata (stale node reuse)", () => {
+  // Populate via VMD then re-import without task annotations to ensure update() clears fields
+  outline.setRootVMD('- [x] Buy milk due:2026-06-01\n')
+  const id = outline.getRoot().children.peek()[0]
+  assertEqual(outline.get(id).done.peek(), true, 'sanity: task parsed')
+  // Re-import with plain text
+  outline.setRootVMD('- Buy milk\n')
+  const id2 = outline.getRoot().children.peek()[0]
+  assertEqual(outline.get(id2).done.peek(), null, 'stale done cleared')
+  assertEqual(outline.get(id2).dueDate.peek(), null, 'stale dueDate cleared')
+})

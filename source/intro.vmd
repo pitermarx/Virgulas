@@ -42,6 +42,21 @@
   Click **Raw** in the bottom toolbar to edit the outline as plain VMD text (Virgulas MarkDown).
   Lines starting with `-` are expanded nodes; `+` are collapsed nodes.
   - Indentation determines hierarchy — a child just needs more leading space than its parent.
+- Tasks
+  Turn any node into a task by pressing **Ctrl+Enter** (desktop) or tapping the **✓ button** in the bottom bar (mobile).
+  - **Ctrl+Enter** cycles through three states: plain node → unchecked task → done (strikethrough) → back to plain.
+    **Ctrl+Shift+Enter** jumps directly to plain (removes the task mark without cycling).
+  - Add a due date with **Ctrl+Shift+D** on desktop — a mini calendar appears.
+    On mobile, tap the 📅 button in the bottom toolbar; the native OS date picker opens.
+    Due dates show as a small colored badge next to the node:
+    red = overdue, amber = today, yellow = soon, green = future
+  - Open the **Tasks panel** with **Ctrl+Alt+K** or the checklist icon in the bottom toolbar.
+    All tasks are grouped by urgency: Overdue, Today, Soon, Upcoming, Someday, Done.
+    Click any row to jump straight to that node in the outline.
+  - Task metadata (done / due date) is fully preserved in **Local** and **Remote** modes.
+    **File mode** (.vmd) also preserves tasks: done nodes are written as `[x] text`,
+    undone tasks as `[ ] text`, and due dates as `due:YYYY-MM-DD` at the end of the line.
+    These annotations are stripped back to clean text when the file is loaded.
 - Keyboard shortcuts
   See the full list of shortcuts with the **?** button in the bottom toolbar.
 - Storage options

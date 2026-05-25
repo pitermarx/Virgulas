@@ -27,6 +27,16 @@
   --color-syncing: #f39c12;
   --color-offline: #7f8c8d;
 
+  /* Task due-date status colors */
+  --color-task-overdue: #dc2626;
+  --color-task-overdue-bg: #fef2f2;
+  --color-task-today: #d97706;
+  --color-task-today-bg: #fffbeb;
+  --color-task-soon: #ca8a04;
+  --color-task-soon-bg: #fefce8;
+  --color-task-future: var(--color-text-muted);
+  --color-task-future-bg: var(--color-hover-surface);
+
   /* Typography */
   --font-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -84,6 +94,15 @@
     --color-mention-chip-bg: #1e3358;
     --color-mention-chip-text: #8db4ff;
     --color-overlay: rgba(0, 0, 0, 0.7);
+    /* Task colors — dark */
+    --color-task-overdue: #f87171;
+    --color-task-overdue-bg: #3b1515;
+    --color-task-today: #fbbf24;
+    --color-task-today-bg: #3b2a10;
+    --color-task-soon: #fcd34d;
+    --color-task-soon-bg: #3a3010;
+    --color-task-future: var(--color-text-muted);
+    --color-task-future-bg: var(--color-hover-surface);
   }
 }
 
@@ -108,6 +127,15 @@
   --color-mention-chip-bg: #1e3358;
   --color-mention-chip-text: #8db4ff;
   --color-overlay: rgba(0, 0, 0, 0.7);
+  /* Task colors — dark */
+  --color-task-overdue: #f87171;
+  --color-task-overdue-bg: #3b1515;
+  --color-task-today: #fbbf24;
+  --color-task-today-bg: #3b2a10;
+  --color-task-soon: #fcd34d;
+  --color-task-soon-bg: #3a3010;
+  --color-task-future: var(--color-text-muted);
+  --color-task-future-bg: var(--color-hover-surface);
 }
 
 body {
@@ -604,6 +632,16 @@ kbd {
 
 .shortcut-row:last-child {
   border-bottom: none;
+}
+
+.shortcut-section-header {
+  padding: var(--space-3) 0 var(--space-1);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+  list-style: none;
 }
 
 .shortcut-desc {
@@ -1594,3 +1632,519 @@ a:hover {
 }
 
 @media (max-width: 640px) {}
+
+/* ── Task checkbox ── */
+.task-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  color: inherit;
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.task-checkbox:hover {
+  opacity: 0.75;
+  transform: scale(1.1);
+}
+
+.task-checkbox:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 1px;
+}
+
+/* ── Done node text ── */
+.node-content.node-done .node-text-input,
+.node-content.node-done .node-text-md {
+  text-decoration: line-through;
+  color: var(--color-text-faint);
+}
+
+.node-content.node-done {
+  opacity: 0.65;
+}
+
+/* ── node-meta: contains date badge + calendar icon ── */
+.node-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+}
+
+.node-meta-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ── Due date badge ── */
+.due-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity var(--transition-base);
+  line-height: 1.6;
+}
+
+.due-badge:hover {
+  opacity: 0.8;
+}
+
+.due-badge--overdue {
+  color: var(--color-task-overdue);
+  background: var(--color-task-overdue-bg);
+}
+
+.due-badge--today {
+  color: var(--color-task-today);
+  background: var(--color-task-today-bg);
+}
+
+.due-badge--soon {
+  color: var(--color-task-soon);
+  background: var(--color-task-soon-bg);
+}
+
+.due-badge--future {
+  color: var(--color-task-future);
+  background: var(--color-task-future-bg);
+}
+
+.due-badge--done {
+  color: var(--color-text-faint);
+  background: var(--color-hover-surface);
+}
+
+/* ── Calendar hover icon (desktop, no due date) ── */
+.calendar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-faint);
+  border-radius: var(--radius-xs);
+  opacity: 0;
+  transition: opacity var(--transition-base), color var(--transition-base);
+}
+
+.node-content:hover .calendar-icon-btn,
+.node-content.node-focused .calendar-icon-btn {
+  opacity: 1;
+}
+
+.calendar-icon-btn:hover {
+  color: var(--color-accent-primary);
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .calendar-icon-btn {
+    display: none;
+  }
+}
+
+/* ── Desktop date picker popover ── */
+.date-picker-popover {
+  position: absolute;
+  left: -15vw;
+  z-index: 900;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  width: 240px;
+  user-select: none;
+}
+
+.dp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.dp-month-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.dp-nav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-xs);
+  transition: background var(--transition-base), color var(--transition-base);
+}
+
+.dp-nav-btn:hover {
+  background: var(--color-hover-surface);
+  color: var(--color-text-primary);
+}
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+
+.dp-weekday {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  text-align: center;
+  padding: 2px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dp-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: none;
+  color: var(--color-text-primary);
+  padding: 0;
+  transition: background var(--transition-base), color var(--transition-base);
+}
+
+.dp-cell--empty {
+  cursor: default;
+  pointer-events: none;
+}
+
+.dp-cell:not(.dp-cell--empty):hover {
+  background: var(--color-hover-surface);
+}
+
+.dp-cell--today {
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+  font-weight: 600;
+}
+
+.dp-cell--selected {
+  background: var(--color-accent-primary) !important;
+  color: #fff !important;
+  border-color: var(--color-accent-primary);
+}
+
+.dp-cell--focused {
+  background: var(--color-accent-soft);
+}
+
+.dp-cell--overdue {
+  color: var(--color-task-overdue);
+}
+
+.dp-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.dp-foot-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-base), color var(--transition-base);
+}
+
+.dp-foot-btn:hover {
+  background: var(--color-hover-surface);
+  color: var(--color-text-primary);
+}
+
+.dp-foot-btn--today {
+  color: var(--color-accent-primary);
+}
+
+/* ── Mobile toolbar task/calendar buttons ── */
+.toolbar-btn-task,
+.toolbar-btn-cal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: var(--space-1) var(--space-2);
+}
+
+.toolbar-btn-task--done svg rect {
+  fill: var(--color-accent-primary);
+  stroke: var(--color-accent-primary);
+}
+
+/* ── Tasks toolbar button ── */
+.toolbar-btn-tasks {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+}
+
+.toolbar-btn-tasks--urgent {
+  color: var(--color-task-today);
+}
+
+.toolbar-tasks-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-task-overdue);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── Tasks Panel ── */
+.tasks-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  background: var(--color-overlay);
+}
+
+.tasks-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 100vw;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 640px) {
+  .tasks-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 70vh;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
+.tasks-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+.tasks-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tasks-panel-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: var(--color-text-muted);
+  line-height: 1;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-base);
+}
+
+.tasks-panel-close:hover {
+  color: var(--color-text-primary);
+}
+
+.tasks-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+}
+
+.tasks-empty {
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.tasks-empty kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-hover-surface);
+}
+
+/* ── Task group ── */
+.tasks-group {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tasks-group:last-child {
+  border-bottom: none;
+}
+
+.tasks-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background var(--transition-base);
+}
+
+.tasks-group-header:hover {
+  background: var(--color-hover-surface);
+}
+
+.tasks-group-toggle {
+  font-size: 0.6rem;
+  color: var(--color-text-faint);
+}
+
+.tasks-group-count {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  font-weight: 400;
+}
+
+.tasks-group-items {
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+/* ── Task row ── */
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  transition: background var(--transition-base);
+  cursor: default;
+}
+
+.task-row:hover {
+  background: var(--color-hover-surface);
+}
+
+.task-row-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  transition: opacity var(--transition-base);
+}
+
+.task-row-check:hover {
+  opacity: 0.7;
+}
+
+.task-row-body {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.task-row-body:hover .task-row-text:not(.task-row-text--done) {
+  color: var(--color-accent-primary);
+}
+
+.task-row-text {
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--transition-base);
+}
+
+.task-row-text--done {
+  text-decoration: line-through;
+  color: var(--color-text-faint);
+}
+
+.task-row-breadcrumb {
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-row-date {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 0.68rem;
+}
