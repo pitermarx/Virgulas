@@ -1,6 +1,6 @@
 import { html, render } from 'htm/preact';
 import { signal } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal } from "./ui.js";
+import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
 import persistence from './persistence.js';
 import outline from './outline.js';
 import { appVersion } from './devtools.js';
@@ -600,6 +600,7 @@ const Splash = () => {
         <${StatusToolbar} />
         ${!isLocked && html`<${OptionsModal} />`}
         ${!isLocked && html`<${ConflictModal} />`}
+        ${!isLocked && html`<${TasksPanel} />`}
       </div>
       ${isLocked && html`<${LockScreen} />`}
     </div>

@@ -1203,3 +1203,98 @@ await test("deserialize() defaults lastModified to 0 when absent", () => {
   outline.deserialize(JSON.stringify(obj))
   assertEqual(outline.get('no-ts-node').lastModified, 0, "Absent lastModified should default to 0")
 })
+
+// ─── Task model ───────────────────────────────────────────────────────────────
+
+section("Task model — toggleDone / checkboxToggleDone / removeTaskMark")
+
+await test("toggleDone cycles null → false → true → null", () => {
+  outline.addChild('root', { id: 'T', text: 'task' })
+  assert(outline.get('T').done.peek() === null, 'starts plain')
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), false, '1st press: unchecked task')
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), true, '2nd press: done')
+  outline.toggleDone('T')
+  assertEqual(outline.get('T').done.peek(), null, '3rd press: back to plain')
+})
+
+await test("checkboxToggleDone toggles false ↔ true and never removes task state", () => {
+  outline.addChild('root', { id: 'C', text: 'cb', done: false })
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), true, 'unchecked → done')
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), false, 'done → unchecked (not null)')
+  outline.checkboxToggleDone('C')
+  assertEqual(outline.get('C').done.peek(), true, 'unchecked → done again')
+})
+
+await test("checkboxToggleDone on a plain node makes it an unchecked task (guard)", () => {
+  outline.addChild('root', { id: 'P', text: 'plain' })
+  assertEqual(outline.get('P').done.peek(), null, 'starts plain')
+  outline.checkboxToggleDone('P')
+  assertEqual(outline.get('P').done.peek(), false, 'promoted to unchecked task')
+})
+
+await test("removeTaskMark resets done to null", () => {
+  outline.addChild('root', { id: 'R', text: 'rmtask', done: true })
+  outline.removeTaskMark('R')
+  assertEqual(outline.get('R').done.peek(), null, 'done cleared')
+})
+
+await test("getAllTasks includes only nodes with done !== null", () => {
+  outline.addChild('root', { id: 'P1', text: 'plain' })
+  outline.addChild('root', { id: 'T1', text: 'undone', done: false })
+  outline.addChild('root', { id: 'T2', text: 'done', done: true })
+  const ids = outline.getAllTasks().map(n => n.id).sort()
+  assertEqual(JSON.stringify(ids), JSON.stringify(['T1', 'T2']), 'only task nodes returned')
+})
+
+section("Task model — VMD round-trip")
+
+await test("getVMD encodes unchecked task with [ ]", () => {
+  outline.addChild('root', { id: 'V1', text: 'Buy milk', done: false })
+  const vmd = outline.getVMD('root')
+  assert(vmd.includes('[ ] Buy milk'), 'unchecked task encoded as [ ]')
+})
+
+await test("getVMD encodes done task with [x]", () => {
+  outline.addChild('root', { id: 'V2', text: 'Done thing', done: true })
+  const vmd = outline.getVMD('root')
+  assert(vmd.includes('[x] Done thing'), 'done task encoded as [x]')
+})
+
+await test("getVMD encodes plain nodes without task annotations", () => {
+  outline.addChild('root', { id: 'V4', text: 'Plain node' })
+  const vmd = outline.getVMD('root')
+  assert(!vmd.includes('['), 'no task annotation for plain node')
+})
+
+await test("setRootVMD round-trip preserves unchecked task", () => {
+  outline.addChild('root', { id: 'RT1', text: 'Buy milk', done: false })
+  const vmd = outline.getVMD('root')
+  outline.setRootVMD(vmd)
+  const id = outline.getRoot().children.peek()[0]
+  const node = outline.get(id)
+  assertEqual(node.text.peek(), 'Buy milk', 'text preserved')
+  assertEqual(node.done.peek(), false, 'done=false preserved')
+})
+
+await test("setRootVMD round-trip preserves done=true", () => {
+  outline.addChild('root', { id: 'RT2', text: 'Done thing', done: true })
+  const vmd = outline.getVMD('root')
+  outline.setRootVMD(vmd)
+  const node = outline.get(outline.getRoot().children.peek()[0])
+  assertEqual(node.done.peek(), true, 'done=true preserved')
+})
+
+await test("setRootVMD plain node after task node clears old task metadata (stale node reuse)", () => {
+  // Populate via VMD then re-import without task annotations to ensure update() clears fields
+  outline.setRootVMD('- [x] Buy milk\n')
+  const id = outline.getRoot().children.peek()[0]
+  assertEqual(outline.get(id).done.peek(), true, 'sanity: task parsed')
+  // Re-import with plain text
+  outline.setRootVMD('- Buy milk\n')
+  const id2 = outline.getRoot().children.peek()[0]
+  assertEqual(outline.get(id2).done.peek(), null, 'stale done cleared')
+})

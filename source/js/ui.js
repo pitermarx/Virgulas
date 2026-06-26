@@ -1,13 +1,14 @@
 import { html } from 'htm/preact';
-import { signal } from '@preact/signals';
+import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
 import { log, isMobile } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
+import { groupedTasks, pendingTaskCount } from './tasks.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -16,6 +17,9 @@ const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
 const FOCUS_TRANSFER_WINDOW_MS = 450
 const BLUR_SETTLE_MS = 75
 let pendingFocusTransfer = null
+
+// Sync body class for wide-screen side-by-side task panel layout
+effect(() => { document.body.classList.toggle('tasks-panel-is-open', tasksPanelOpen.value) })
 
 function getNodeIdFromElement(el) {
     return el?.closest?.('.node-content')?.getAttribute('data-node-id') || null
@@ -144,6 +148,9 @@ const fadedText = "color: var(--color-text-muted);"
 const hasClosedChildrenBullet = html`<circle cx="25" cy="25" r="10" fill="none" stroke="currentColor" stroke-width="5"/>`
 const NormalBullet = html`<circle cx="25" cy="25" r="10" fill="currentColor"/>`
 const hasOpenChildrenBullet = html`<g><circle cx="25" cy="25" r="10" fill="currentColor"/><circle cx="25" cy="25" r="18" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.35"/></g>`
+
+
+
 const SWIPE_MIN_DISTANCE_PX = 56
 const SWIPE_AXIS_RATIO = 1.35
 
@@ -228,6 +235,9 @@ function NodeText({ node }) {
         function onBlur() {
             scheduleBlurClear(id, 'text')
         }
+        function onInput(e) {
+            outline.update(id, { text: e.target.value })
+        }
         return html`<input
             ...${focusMe} type="text" onpaste=${e => {
                 const text = e.clipboardData.getData('text/plain')
@@ -243,7 +253,7 @@ function NodeText({ node }) {
                 outline.setVMD(text, id)
             }}
             class="node-text-input" placeholder="Type here..." value=${text}
-            onBlur=${onBlur} onInput=${e => outline.update(id, { text: e.currentTarget.value })} />`
+            onBlur=${onBlur} onInput=${onInput} />`
     }
 
     return html`<div
@@ -260,10 +270,12 @@ function NodeText({ node }) {
 }
 
 function NodeBody({ node }) {
-    const { id, children, open } = node.value // subscribe to changes on node
+    const { id, children, open, done } = node.value // subscribe to changes on node
     const hasChildren = children.length > 0
     const isFocused = focusId.value === id
     const isSelected = selectedIds.value.includes(id)
+    const isTask = done !== null
+    const isDone = done === true
     const swipeState = {
         active: false,
         startX: 0,
@@ -351,17 +363,27 @@ function NodeBody({ node }) {
     }
 
     return html`
-    <div class="node-content ${isFocused ? 'node-focused' : ''} ${isSelected ? 'node-selected' : ''}" data-node-id=${id}
+    <div class=${'node-content' + (isFocused ? ' node-focused' : '') + (isSelected ? ' node-selected' : '') + (isTask ? ' node-task' : '') + (isDone ? ' node-done' : '')} data-node-id=${id}
         onClick=${focusTextIfOnlyClickedThisElement}
         onTouchStart=${handleTouchStart}
         onTouchMove=${handleTouchMove}
         onTouchEnd=${handleTouchEnd}
         onTouchCancel=${handleTouchCancel}>
-        <span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
-            <svg viewBox="0 0 50 50">
-                ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
-            </svg>
-        </span>
+        ${isTask
+            ? html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${e => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                    ${isDone
+                    ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+                    : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
+                }
+                </svg>
+            </button>`
+            : html`<span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
+                <svg viewBox="0 0 50 50">
+                    ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
+                </svg>
+            </span>`
+        }
     <div class="node-body">
         <${NodeText} node=${node} />
         <${NodeDesc} node=${node} />
@@ -389,6 +411,86 @@ function Node({ node, indent = 0 }) {
         </div>` : ''}
     </div>
     `
+}
+
+// ── Tasks Panel ───────────────────────────────────────────────────────────────
+
+const doneGroupExpanded = signal(false)
+
+function TaskRow({ item, onNavigate }) {
+    const node = outline.get(item.id)
+    if (!node) return null
+
+    function toggle(e) {
+        e.stopPropagation()
+        outline.checkboxToggleDone(item.id)
+    }
+
+    function navigate(e) {
+        e.stopPropagation()
+        tasksPanelOpen.value = false
+        zoomIn(item.id, focus)
+        requestNodeFocus(item.id, 'text')
+    }
+
+    return html`<div class="task-row">
+        <button class=${'task-row-check' + (item.done ? ' task-row-check--done' : '')} onClick=${toggle} aria-label=${item.done ? 'Mark undone' : 'Mark done'} aria-pressed=${item.done}>
+            <svg viewBox="0 0 16 16" width="14" height="14">
+                ${item.done
+            ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+            : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
+        }
+            </svg>
+        </button>
+        <div class="task-row-body" onClick=${navigate}>
+            <span class=${'task-row-text' + (item.done ? ' task-row-text--done' : '')}>${item.text || html`<em style="opacity:0.5">Untitled</em>`}</span>
+            ${item.breadcrumb.length > 0 && html`<span class="task-row-breadcrumb">${item.breadcrumb.join(' › ')}</span>`}
+        </div>
+    </div>`
+}
+
+// Persistent per-group expansion state: survives rerenders
+const _groupExpanded = Object.create(null)
+function groupExpandedSignal(title, defaultVal) {
+    if (!_groupExpanded[title]) _groupExpanded[title] = signal(defaultVal)
+    return _groupExpanded[title]
+}
+
+function TaskGroup({ title, items, defaultExpanded = true }) {
+    const expanded = groupExpandedSignal(title, defaultExpanded)
+    if (items.length === 0) return null
+    return html`<div class="tasks-group">
+        <button class="tasks-group-header" onClick=${() => expanded.value = !expanded.peek()}>
+            <span class="tasks-group-toggle">${expanded.value ? '▼' : '▶'}</span>
+            <span class="tasks-group-title">${title}</span>
+            <span class="tasks-group-count">${items.length}</span>
+        </button>
+        ${expanded.value && html`<div class="tasks-group-items">
+            ${items.map(item => html`<${TaskRow} key=${item.id} item=${item} />`)}
+        </div>`}
+    </div>`
+}
+
+export function TasksPanel() {
+    if (!tasksPanelOpen.value) return null
+    const groups = groupedTasks.value
+
+    function close() { tasksPanelOpen.value = false }
+
+    return html`<div class="tasks-panel-backdrop" onClick=${close}>
+        <div class="tasks-panel" onClick=${e => e.stopPropagation()}>
+            <div class="tasks-panel-header">
+                <span class="tasks-panel-title">Tasks</span>
+                <button class="tasks-panel-close" onClick=${close} aria-label="Close tasks panel">×</button>
+            </div>
+            <div class="tasks-panel-body">
+                <${TaskGroup} title="Pending" items=${groups.pending} defaultExpanded=${true} />
+                <${TaskGroup} title="Done" items=${groups.done} defaultExpanded=${false} />
+                ${groups.pending.length + groups.done.length === 0
+        && html`<div class="tasks-empty">No tasks yet. Press <kbd>Ctrl+Enter</kbd> on any node to make it a task.</div>`}
+            </div>
+        </div>
+    </div>`
 }
 
 export const rawMode = signal(false)
@@ -443,6 +545,9 @@ export function StatusToolbar() {
         unsynced: 'var(--color-danger)'
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
+    const pendingCount = pendingTaskCount.value
+    const hasFocusedNode = focusId.value !== null
+
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
@@ -453,9 +558,30 @@ export function StatusToolbar() {
         }}>Raw</button>`}
             ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
+            ${isMobile && hasFocusedNode && html`<button
+                class=${'toolbar-btn toolbar-btn-task' + (outline.get(focusId.value)?.done?.value === true ? ' toolbar-btn-task--done' : '')}
+                aria-label="Toggle task"
+                onClick=${() => outline.toggleDone(focusId.value)}>
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                    ${outline.get(focusId.value)?.done?.value === true
+                ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+                : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>`
+            }
+                </svg>
+            </button>`}
         </div>
         <div class="toolbar-brand">
             ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
+            <button class="toolbar-btn toolbar-btn-tasks" onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="1" y="1" width="5" height="5" rx="1"/>
+                    <path d="M2.5 3.5l1 1L5.5 2"/>
+                    <path d="M8 3h7M8 8h7M8 13h7"/>
+                    <rect x="1" y="6" width="5" height="5" rx="1"/>
+                    <rect x="1" y="11" width="5" height="5" rx="1"/>
+                </svg>
+            </button>
+            </button>
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`

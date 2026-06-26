@@ -3,11 +3,12 @@ import { randomId } from "./crypto2.js"
 import { log } from './utils.js';
 
 // The document structure is an infinite tree of nodes
-// a node is { id: string, parentId: string, text: string, description: string, children: string[], open: boolean }
+// a node is { id: string, parentId: string, text: string, description: string, children: string[], open: boolean, done: boolean|null }
 // the nodes are stored in a flat map { [id: string]: node }
 // there is always a root node with id 'root' and parentId null
 // the node properties are signals, so that we can update them individually without replacing the whole doc
 // the manipulations on the doc are done by updating the signals, and the view will react to the changes
+// done: null = plain node (not a task), false = unchecked task, true = completed task
 
 const NodeModel = createModel((model = {}) => {
     const id = model.id
@@ -19,6 +20,7 @@ const NodeModel = createModel((model = {}) => {
     const description = signal(model.description || '')
     const children = signal(model.children || [])
     const open = signal(model.open === undefined ? true : !!model.open)
+    const done = signal(model.done !== undefined ? model.done : null)
     let lastModified = model.lastModified || 0
 
     return {
@@ -40,6 +42,9 @@ const NodeModel = createModel((model = {}) => {
         get open() {
             return open
         },
+        get done() {
+            return done
+        },
         get lastModified() {
             return lastModified
         },
@@ -51,6 +56,7 @@ const NodeModel = createModel((model = {}) => {
                 description: description.value,
                 children: children.value,
                 open: open.value,
+                done: done.value,
                 lastModified
             }
         },
@@ -62,11 +68,29 @@ const NodeModel = createModel((model = {}) => {
                 description: description.peek(),
                 children: children.peek(),
                 open: open.peek(),
+                done: done.peek(),
                 lastModified
             }
         },
         toggleOpen() {
             open.value = !open.peek()
+            lastModified = Date.now()
+        },
+        toggleDone() {
+            const current = done.peek()
+            if (current === null) { done.value = false }
+            else if (current === false) { done.value = true }
+            else { done.value = null }  // cycle back to plain node
+            lastModified = Date.now()
+        },
+        removeTaskMark() {
+            done.value = null
+            lastModified = Date.now()
+        },
+        checkboxToggleDone() {
+            const current = done.peek()
+            // null → false (guard, promotes plain node), false → true, true → false. Never null.
+            done.value = current === null ? false : !current
             lastModified = Date.now()
         },
         update(update) {
@@ -75,6 +99,7 @@ const NodeModel = createModel((model = {}) => {
             if (update.description !== undefined && update.description !== description.peek()) { description.value = update.description; changed = true }
             if (update.parentId !== undefined) parentId = update.parentId
             if (update.open !== undefined) open.value = !!update.open
+            if (update.done !== undefined && update.done !== done.peek()) { done.value = update.done; changed = true }
             if (changed) lastModified = Date.now()
         },
         removeChild(childId) {
@@ -186,7 +211,8 @@ const OutlineModel = createModel(() => {
             id: optionalData.id || getNewId(),
             text: optionalData.text,
             description: optionalData.description,
-            open: optionalData.open
+            open: optionalData.open,
+            done: optionalData.done !== undefined ? optionalData.done : null,
         })
         map.set(node.id, node)
 
@@ -273,6 +299,7 @@ const OutlineModel = createModel(() => {
                     children: node.children.length > 0 ? node.children : undefined, // omit children if empty to save space
                     open: node.open === true ? undefined : node.open, // omit open if true to save space, since most nodes are open by default
                     lastModified: node.lastModified > 0 ? node.lastModified : undefined, // omit lastModified when 0 for backwards compat
+                    done: node.done !== null && node.done !== undefined ? node.done : undefined, // omit done if null (not a task)
                 }))
         }, null, pretty ? 2 : 0)
     }
@@ -346,7 +373,8 @@ const OutlineModel = createModel(() => {
                 description: nodeData.description,
                 children: nodeData.children,
                 open: nodeData.open,
-                lastModified: nodeData.lastModified || 0
+                lastModified: nodeData.lastModified || 0,
+                done: nodeData.done !== undefined ? nodeData.done : null,
             }))
         }
         if (previousZoomId !== rootNodeId && map.has(previousZoomId)) {
@@ -482,7 +510,9 @@ const OutlineModel = createModel(() => {
         if (level >= 0) {
             const indent = '  '.repeat(level);
             const bullet = (ch.length > 0 && !peek.open) ? '+' : '-';
-            result += `${indent}${bullet} ${peek.text}\n`;
+            let vmdText = peek.text
+            if (peek.done !== null) vmdText = `${peek.done ? '[x]' : '[ ]'} ${vmdText}`
+            result += `${indent}${bullet} ${vmdText}\n`;
 
             if (peek.description) {
                 const descIndent = '  '.repeat(level + 1);
@@ -498,6 +528,14 @@ const OutlineModel = createModel(() => {
         }
 
         return result;
+    }
+
+    function parseNodeLine(rawNodeText) {
+        let nodeText = rawNodeText.trim()
+        let taskDone = null
+        const cbMatch = nodeText.match(/^\[([ xX])\]\s*(.*)/)
+        if (cbMatch) { taskDone = cbMatch[1].toLowerCase() === 'x'; nodeText = cbMatch[2].trim() }
+        return { text: nodeText, done: taskDone }
     }
 
     function setVMD(text, nodeId) {
@@ -529,8 +567,9 @@ const OutlineModel = createModel(() => {
                 // Match regular bullet points (-, +)
                 const match = line.match(/^(\s*)([-+])(.*)$/);
                 if (match) {
-                    const [, indentStr, bullet, text] = match;
-                    const nodeData = { text: text.trim(), open: bullet === '-' }
+                    const [, indentStr, bullet, rawText] = match;
+                    const parsed = parseNodeLine(rawText)
+                    const nodeData = { ...parsed, open: bullet === '-' }
 
                     // Pop stack until we find the correct parent level
                     while (stack.length > 1 && stack[stack.length - 1].indentLevel >= indentStr.length) {
@@ -689,9 +728,10 @@ const OutlineModel = createModel(() => {
 
                 const match = line.match(/^(\s*)([-+])\s?(.*)$/)
                 if (match) {
-                    const [, indentStr, bullet, nodeText] = match
+                    const [, indentStr, bullet, rawNodeText] = match
                     const indentLen = indentStr.length
-                    const nodeData = { text: nodeText.trim(), open: bullet === '-' }
+                    const parsed = parseNodeLine(rawNodeText)
+                    const nodeData = { ...parsed, open: bullet === '-' }
 
                     // Pop stack until we find the right parent level
                     while (stack.length > 1 && stack[stack.length - 1].indentLen >= indentLen) {
@@ -813,6 +853,10 @@ const OutlineModel = createModel(() => {
         updateNode: (id, { text, description }) => update(id, node => node.update({ text, description })),
         indent: (id) => update(id, indent),
         outdent: (id) => update(id, outdent),
+        toggleDone: (id) => update(id, node => node.toggleDone()),
+        checkboxToggleDone: (id) => update(id, node => node.checkboxToggleDone()),
+        removeTaskMark: (id) => update(id, node => node.removeTaskMark()),
+        getAllTasks: () => [...map.values()].filter(node => node.done.peek() !== null),
     }
 })
 
