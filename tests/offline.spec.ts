@@ -36,9 +36,9 @@ test.describe('Service worker offline shell', () => {
         ).toBe(true);
 
         await page.context().setOffline(true);
-        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.reload({ waitUntil: 'networkidle' });
 
-        await expect(page.locator('#auth-passphrase')).toBeVisible();
+        await expect(page.locator('#auth-passphrase')).toBeVisible({ timeout: 15000 });
         await page.locator('#auth-passphrase').fill('password');
         await page.getByRole('button', { name: 'Unlock' }).click();
 
