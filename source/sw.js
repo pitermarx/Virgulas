@@ -55,7 +55,8 @@ const APP_SHELL = [
   './js/sync.js',
   './js/markdown.js',
   './js/ui.js',
-  './js/utils.js'
+  './js/utils.js',
+  './js/tasks.js'
 ]
 
 self.addEventListener('install', (event) => {

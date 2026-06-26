@@ -1,7 +1,10 @@
+import { signal } from '@preact/signals'
 import outline from "./outline.js"
 import { searchQuery, searchResultIndex, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js'
-import { log, store } from './utils.js';
+import { log, store, isMobile } from './utils.js';
 import { devPanelOpen } from './devtools.js';
+
+export const tasksPanelOpen = signal(false)
 
 export function handleSearchKeyDown(e, focus) {
     const results = searchQuery.value ? outline.search(searchQuery.value) : null
@@ -308,6 +311,9 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 return true
             }
             return false
+        case 'Ctrl+Enter':
+            outline.toggleDone(focus.Id.value)
+            return true
     }
 }
 
@@ -315,10 +321,11 @@ function handleKeyDown(e, focus) {
 
     const k =
         e.ctrlKey && e.altKey ? `Ctrl+Alt+${e.key}` :
-            e.shiftKey ? `Shift+${e.key}` :
-                e.ctrlKey ? `Ctrl+${e.key}` :
-                    e.altKey ? `Alt+${e.key}` :
-                        e.key
+            e.ctrlKey && e.shiftKey ? `Ctrl+Shift+${e.key}` :
+                e.shiftKey ? `Shift+${e.key}` :
+                    e.ctrlKey ? `Ctrl+${e.key}` :
+                        e.altKey ? `Alt+${e.key}` :
+                            e.key
 
     log('Key pressed:', k, 'Focused node:', focus.Id.value, 'Focus type:', focus.Type.value)
 
@@ -341,6 +348,9 @@ function handleKeyDown(e, focus) {
             return true
         case 'Ctrl+Alt+d':
             devPanelOpen.value = !devPanelOpen.peek()
+            return true
+        case 'Ctrl+Alt+k':
+            tasksPanelOpen.value = !tasksPanelOpen.peek()
             return true
     }
 
