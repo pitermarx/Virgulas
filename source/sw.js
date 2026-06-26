@@ -1,9 +1,9 @@
 // Bump VENDOR_CACHE when vendor/ files change (after npm install / sync-vendor)
-const VENDOR_CACHE = 'virgulas-vendor-v10'
+const VENDOR_CACHE = 'virgulas-vendor-v12'
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v5'
 // Bump APP_CACHE when app JS, CSS, or HTML changes
-const APP_CACHE = 'virgulas-app-v25'
+const APP_CACHE = 'virgulas-app-v26'
 
 const KNOWN_CACHES = new Set([VENDOR_CACHE, FONTS_CACHE, APP_CACHE])
 
@@ -47,6 +47,7 @@ const APP_SHELL = [
   './site.webmanifest',
   './js/app.js',
   './js/crypto2.js',
+  './js/devtools.js',
   './js/outline.js',
   './js/persistence.js',
   './js/search.js',
@@ -54,8 +55,7 @@ const APP_SHELL = [
   './js/sync.js',
   './js/markdown.js',
   './js/ui.js',
-  './js/utils.js',
-  './js/tasks.js'
+  './js/utils.js'
 ]
 
 self.addEventListener('install', (event) => {
