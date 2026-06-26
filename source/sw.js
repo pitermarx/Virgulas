@@ -1,5 +1,5 @@
 // Bump VENDOR_CACHE when vendor/ files change (after npm install / sync-vendor)
-const VENDOR_CACHE = 'virgulas-vendor-v8'
+const VENDOR_CACHE = 'virgulas-vendor-v9'
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v5'
 // Bump APP_CACHE when app JS, CSS, or HTML changes
