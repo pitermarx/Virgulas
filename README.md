@@ -47,6 +47,13 @@ Virgulas is a local-first browser outliner.
   - Conflict resolution when the same field is edited on both sides: a blocking modal shows each conflict side-by-side with "Keep local" / "Keep remote" per field and "Use all local" / "Use all remote" bulk buttons; "Apply" is disabled until every conflict is resolved
   - Remote sync waits until typing pauses before checking or uploading, so active typing supersedes stale background sync attempts
   - 60-second background polling checks for remote updates while the app is open; it defers remote checks while local edits are still active and pauses when conflicts are pending
+- Task management: any node can become a task
+  - Task nodes keep their bullet (click to zoom) and show a checkbox after it; clicking the checkbox toggles pending ↔ done
+  - Create/remove task state by editing the node text: type `[ ] ` / `[x] ` at the start, or delete the prefix to return to a plain node
+  - `Ctrl+Enter` cycles task state: plain → pending → done → plain
+  - Tasks panel (`Ctrl+Alt+K` or checklist toolbar icon): Pending and Done groups with breadcrumb context; click a row to zoom to that node
+  - Task state is preserved in Local/Remote JSON and in File mode (`.vmd`) via `[ ]` / `[x]` prefixes
+
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
 - Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
 - `Enter` on a collapsed node with children creates a sibling, not a child

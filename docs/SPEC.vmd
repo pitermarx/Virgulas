@@ -157,6 +157,29 @@
     - The encrypted document is stored in localStorage under `vmd_data`
     - If the passphrase is forgotten, encrypted data is unrecoverable. There is no cryptographic recovery path.
       A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
+  + TASKS
+    Nodes can be "task nodes" with a done-state of pending (☐) or done (☑).
+    The bullet point is always visible and clicking it zooms into the node as usual.
+    - Task nodes render an interactive checkbox immediately after the bullet
+      Clicking/tapping the checkbox toggles between pending (☐) and done (☑)
+    - Task state is created and removed by editing the node text directly:
+      - Type `[ ] ` at the start of a node to make it a pending task
+      - Type `[x] ` at the start of a node to make it a done task
+      - Delete the `[ ]` or `[x]` prefix to remove task state and return to a plain node
+      While editing, the raw prefix is visible in the text input so it can be changed freely
+    - (DESKTOP ONLY) `Ctrl+Enter` cycles the focused node: plain → ☐ pending → ☑ done → plain
+    - VMD serialisation: pending tasks are stored as `[ ] text`, done tasks as `[x] text`
+      Plain nodes carry no prefix. Round-tripping through Raw mode preserves all task states
+    + TASKS SIDEBAR
+      - A panel listing every task node in the document, grouped into Pending and Done sections
+      - Each row shows the task text and a breadcrumb of its ancestors
+        Clicking a row zooms into the nearest ancestor of the task
+        Clicking the checkbox in a row toggles done/pending without navigating
+      - The Done group is collapsed by default
+      - (DESKTOP ONLY) `Ctrl+Alt+K` opens and closes the sidebar
+      - The ☑ icon button in the status toolbar opens and closes the sidebar on all platforms
+      - On wide screens (≥ 1160 px) the panel docks alongside the document without dimming content
+      - On narrow screens the panel slides up from the bottom as a sheet
   + ACCOUNTS AND SYNC
     Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
     The server stores only ciphertext and cannot decrypt user data.
@@ -258,4 +281,4 @@
       - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
       - Developer Panel expansion: extend the `Ctrl+Alt+D` panel with active signal dependencies graph and additional runtime diagnostics.
-      - Task Management: native outliner-based task tracking. Support for `- [ ]` and `- [x]` syntax that renders as interactive checkboxes, plus a dedicated dashboard that rolls up incomplete tasks and integrates with `@mentions` for explicit assignments.
+      - Tasks — future extensions: due dates, `@mention` assignments, a "My Tasks" rollup view across documents.
