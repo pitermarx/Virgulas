@@ -28,6 +28,7 @@ type NestedNode = {
     description?: string,
     open?: boolean,
     collapsed?: boolean,
+    done?: boolean | null,
     children?: NestedNode[]
 }
 
@@ -44,6 +45,7 @@ function nestedToFlat(nested: any) {
         if (node.description) flat.description = node.description;
         if (node.children?.length) flat.children = node.children.map((c: any) => c.id);
         if (node.open === false || node.collapsed === true) flat.open = false;
+        if (node.done !== undefined) flat.done = node.done;
         nodes.push(flat);
         for (const child of node.children || []) {
             visit(child, node.id);

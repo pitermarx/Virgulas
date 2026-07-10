@@ -1615,6 +1615,7 @@ a:hover {
   height: 20px;
   padding: 0;
   margin-right: var(--space-2);
+  margin-left: var(--space-1);
   margin-top: 2px;
   background: none;
   border: none;
@@ -1697,6 +1698,7 @@ a:hover {
     background: transparent;
     pointer-events: none;
   }
+
   body.tasks-panel-is-open .tasks-panel {
     pointer-events: auto;
   }

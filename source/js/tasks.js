@@ -19,10 +19,14 @@ export function breadcrumb(nodeId) {
 // Returns { pending, done } arrays, each containing
 // { id, text, done, breadcrumb } items. Re-evaluated whenever any task signal changes.
 export const groupedTasks = computed(() => {
-    // Access outline.version to subscribe to all outline changes
+    // Subscribe to structural rebuilds (reset/deserialize) and debounced data changes.
+    // structureVersion is required because deserialize can restore the same dataVersion
+    // (often 0) inside a batch, which would otherwise leave this computed stale.
+    void outline.structureVersion.value
     void outline.version.value
 
     const tasks = outline.getAllTasks()
+
     const groups = { pending: [], done: [] }
 
     for (const node of tasks) {

@@ -169,9 +169,15 @@ const OutlineModel = createModel(() => {
     const rootNodeId = 'root'
     const modelVersion = 'v1' // for future compatibility, in case we need to change the structure
     const dataVersion = signal(0) // incremented on every change, but debounced to avoid excessive updates during rapid changes
+    // Always-incrementing counter for structural rebuilds (reset/deserialize).
+    // dataVersion alone is not enough: unlock paths batch deserialize, and when the
+    // restored dataVersion equals the previous value (commonly 0), subscribers never
+    // re-run even though the node map was fully replaced.
+    const structureVersion = signal(0)
     const dirtyWrites = signal(0) // mark if there are unsaved changes, used to trigger version update
     const map = new Map()
     const zoomId = signal(rootNodeId) // the currently zoomed in node, used for rendering and keyboard navigation
+
 
     function getNewId() {
         let id = randomId()
@@ -282,8 +288,10 @@ const OutlineModel = createModel(() => {
             map.clear()
         }
         map.set(rootNodeId, new NodeModel({ id: rootNodeId, lastModified: 0 }))
+        structureVersion.value = structureVersion.peek() + 1
         setVersion(0)
     }
+
 
     function serialize(pretty = false) {
         return JSON.stringify({
@@ -385,8 +393,12 @@ const OutlineModel = createModel(() => {
             }
             zoomId.value = rootNodeId
         }
+        // Always bump structureVersion so computeds that scan the map (e.g. groupedTasks)
+        // re-evaluate even when dataVersion is unchanged inside a batch().
+        structureVersion.value = structureVersion.peek() + 1
         setVersion(obj.dataVersion || 0)
     }
+
 
     function update(id, fn) {
         const node = map.get(id)
@@ -780,9 +792,11 @@ const OutlineModel = createModel(() => {
             dirtyDebounceTimeout = value
         },
         version: dataVersion,
+        structureVersion,
         get isDirty() {
             return dirtyWrites.value > 0
         },
+
         get nodeCount() {
             return map.size
         },
@@ -857,6 +871,18 @@ const OutlineModel = createModel(() => {
         checkboxToggleDone: (id) => update(id, node => node.checkboxToggleDone()),
         removeTaskMark: (id) => update(id, node => node.removeTaskMark()),
         getAllTasks: () => [...map.values()].filter(node => node.done.peek() !== null),
+        updateTextRaw: (id, rawText) => update(id, node => {
+            // Parse the [ ] / [x] prefix without trimming the rest of the text,
+            // so that trailing spaces during editing are preserved.
+            const cbMatch = rawText.match(/^\[([ xX])\]\s?(.*)$/)
+            if (cbMatch) {
+                const done = cbMatch[1].toLowerCase() === 'x'
+                node.update({ text: cbMatch[2], done })
+            } else {
+                node.update({ text: rawText, done: null })
+            }
+        }),
+
     }
 })
 

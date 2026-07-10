@@ -230,13 +230,14 @@ function NodeDesc({ node }) {
 }
 
 function NodeText({ node }) {
-    const { text, id } = node.value // subscribe to changes on node
+    const { text, id, done } = node.value // subscribe to changes on node
     if (focusId.value === id && focusType.value === 'text') {
+        const rawPrefix = done === true ? '[x] ' : done === false ? '[ ] ' : ''
         function onBlur() {
             scheduleBlurClear(id, 'text')
         }
         function onInput(e) {
-            outline.update(id, { text: e.target.value })
+            outline.updateTextRaw(id, e.target.value)
         }
         return html`<input
             ...${focusMe} type="text" onpaste=${e => {
@@ -252,7 +253,7 @@ function NodeText({ node }) {
                 e.preventDefault()
                 outline.setVMD(text, id)
             }}
-            class="node-text-input" placeholder="Type here..." value=${text}
+            class="node-text-input" placeholder="Type here..." value=${rawPrefix + text}
             onBlur=${onBlur} onInput=${onInput} />`
     }
 
@@ -290,7 +291,7 @@ function NodeBody({ node }) {
 
     function focusTextIfOnlyClickedThisElement(e) {
         if (handleInteractiveMarkdownClick(e)) return
-        if (e.target.closest('.bullet, .collapse-toggle')) return
+        if (e.target.closest('.bullet, .collapse-toggle, .task-checkbox')) return
         selectedIds.value = []
         requestNodeFocus(id, 'text')
         e.stopPropagation()
@@ -369,21 +370,20 @@ function NodeBody({ node }) {
         onTouchMove=${handleTouchMove}
         onTouchEnd=${handleTouchEnd}
         onTouchCancel=${handleTouchCancel}>
-        ${isTask
-            ? html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${e => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                    ${isDone
-                    ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
-                    : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
-                }
-                </svg>
-            </button>`
-            : html`<span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
-                <svg viewBox="0 0 50 50">
-                    ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
-                </svg>
-            </span>`
-        }
+        <span class="bullet" draggable="true" onClick=${() => zoomIn(id, focus)}>
+            <svg viewBox="0 0 50 50">
+                ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
+            </svg>
+        </span>
+        ${isTask && !isFocused && html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${e => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
+            <svg viewBox="0 0 16 16" width="16" height="16">
+                ${isDone
+                ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+                : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5"/>`
+            }
+            </svg>
+        </button>`}
+
     <div class="node-body">
         <${NodeText} node=${node} />
         <${NodeDesc} node=${node} />
@@ -558,29 +558,14 @@ export function StatusToolbar() {
         }}>Raw</button>`}
             ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
-            ${isMobile && hasFocusedNode && html`<button
-                class=${'toolbar-btn toolbar-btn-task' + (outline.get(focusId.value)?.done?.value === true ? ' toolbar-btn-task--done' : '')}
-                aria-label="Toggle task"
-                onClick=${() => outline.toggleDone(focusId.value)}>
-                <svg viewBox="0 0 16 16" width="14" height="14">
-                    ${outline.get(focusId.value)?.done?.value === true
-                ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
-                : html`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>`
-            }
-                </svg>
-            </button>`}
         </div>
         <div class="toolbar-brand">
             ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
             <button class="toolbar-btn toolbar-btn-tasks" onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="1" y="1" width="5" height="5" rx="1"/>
-                    <path d="M2.5 3.5l1 1L5.5 2"/>
-                    <path d="M8 3h7M8 8h7M8 13h7"/>
-                    <rect x="1" y="6" width="5" height="5" rx="1"/>
-                    <rect x="1" y="11" width="5" height="5" rx="1"/>
+                <svg viewBox="-1 -1 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="1" width="14" height="14" rx="3" stroke-width="1.5"/>
+                    <path d="M-0.5 8.5l5 5L16.5 1" stroke-width="2"/>
                 </svg>
-            </button>
             </button>
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
             ${isMemory

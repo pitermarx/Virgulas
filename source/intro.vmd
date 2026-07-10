@@ -42,6 +42,18 @@
   Click **Raw** in the bottom toolbar to edit the outline as plain VMD text (Virgulas MarkDown).
   Lines starting with `-` are expanded nodes; `+` are collapsed nodes.
   - Indentation determines hierarchy — a child just needs more leading space than its parent.
+- Tasks
+  Turn any node into a task with **Ctrl+Enter**, or by typing `[ ] ` / `[x] ` at the start of the node text.
+  - Task nodes keep their bullet (click to zoom) and show a checkbox after it.
+  - Click the checkbox to toggle pending ↔ done; it never removes task state.
+  - **Ctrl+Enter** cycles: plain → pending → done → plain.
+  - While editing, the raw `[ ]` / `[x]` prefix is visible so you can change or delete it freely.
+  - Open the **Tasks panel** with **Ctrl+Alt+K** or the checklist icon in the bottom toolbar.
+    Tasks are grouped into Pending and Done (Done is collapsed by default).
+    Click any row to jump to that node; click the row checkbox to toggle without navigating.
+  - Task state is preserved in **Local** and **Remote** modes, and in **File mode** (`.vmd`)
+    as `[ ] text` / `[x] text`.
+
 - Keyboard shortcuts
   See the full list of shortcuts with the **?** button in the bottom toolbar.
 - Storage options
