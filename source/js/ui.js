@@ -563,8 +563,8 @@ export function StatusToolbar() {
             ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
             <button class="toolbar-btn toolbar-btn-tasks" onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
                 <svg viewBox="-1 -1 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="1" y="1" width="14" height="14" rx="3" stroke-width="1.5"/>
-                    <path d="M-0.5 8.5l5 5L16.5 1" stroke-width="2"/>
+                    <rect x="" y="1" width="14" height="14" rx="3" stroke-width="1.5" />
+                    <path d="M1 7l5.5 5L18 0" stroke-width="2" />
                 </svg>
             </button>
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}

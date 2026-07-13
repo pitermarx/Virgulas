@@ -1615,7 +1615,7 @@ a:hover {
   height: 20px;
   padding: 0;
   margin-right: var(--space-2);
-  margin-left: var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
   margin-top: 2px;
   background: none;
   border: none;
