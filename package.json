@@ -20,16 +20,16 @@
         "db:stop": "supabase stop --no-backup --yes"
     },
     "devDependencies": {
-        "@playwright/test": "^1.61.1",
+        "@playwright/test": "^1.62.0",
         "serve": "^14.2.6",
         "supabase": "^2.109.1"
     },
     "dependencies": {
-        "@preact/signals": "^2.9.3",
-        "@supabase/supabase-js": "^2.110.2",
+        "@preact/signals": "^2.10.0",
+        "@supabase/supabase-js": "^2.110.8",
         "dompurify": "^3.4.12",
         "htm": "^3.1.1",
-        "marked": "^18.0.6",
+        "marked": "^18.0.7",
         "preact": "^10.29.7"
     }
 }
