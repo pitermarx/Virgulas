@@ -48,8 +48,13 @@
   - Click the checkbox to toggle pending ↔ done; it never removes task state.
   - **Ctrl+Enter** cycles: plain → pending → done → plain.
   - While editing, the raw `[ ]` / `[x]` prefix is visible so you can change or delete it freely.
+  - Add a due date with `due:yyyy-MM-dd` at the end of the text (example: `due:2026-12-25`)
+    It renders as a chip, and overdue tasks are highlighted in the Tasks panel.
+  - Add `rec:1m` (or `1y` / `1w` / `1d`) next to a due date to make it recurring
+    Checking it off advances the due date to the next occurrence instead of marking it done.
   - Open the **Tasks panel** with **Ctrl+Alt+K** or the checklist icon in the bottom toolbar.
-    Tasks are grouped into Pending and Done (Done is collapsed by default).
+    Tasks are grouped into Pending, Scheduled, and Done, scoped to whatever you're zoomed into.
+    Scheduled shows only the next few days by default — widen the filter to see further ahead.
     Click any row to jump to that node; click the row checkbox to toggle without navigating.
   - Task state is preserved in **Local** and **Remote** modes, and in **File mode** (`.vmd`)
     as `[ ] text` / `[x] text`.

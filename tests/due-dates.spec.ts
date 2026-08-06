@@ -65,9 +65,10 @@ test.describe('Due dates', () => {
         await expect(panel).toBeVisible();
         const rows = panel.locator('.task-row');
         await expect(rows).toHaveCount(3);
+        // Pending group (overdue, plain) renders before the Scheduled group (future)
         await expect(rows.nth(0)).toContainText('Overdue task');
-        await expect(rows.nth(1)).toContainText('Future task');
-        await expect(rows.nth(2)).toContainText('Plain task');
+        await expect(rows.nth(1)).toContainText('Plain task');
+        await expect(rows.nth(2)).toContainText('Future task');
     });
 
     test('tasks toolbar icon is highlighted when overdue task exists', async ({ page }) => {

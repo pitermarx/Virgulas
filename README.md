@@ -52,7 +52,10 @@
   - Task nodes keep their bullet (click to zoom) and show a checkbox after it; clicking the checkbox toggles pending ↔ done
   - Create/remove task state by editing the node text: type `[ ] ` / `[x] ` at the start, or delete the prefix to return to a plain node
   - `Ctrl+Enter` cycles task state: plain → pending → done → plain
-  - Tasks panel (`Ctrl+Alt+K` or checklist toolbar icon): Pending and Done groups with breadcrumb context; click a row to zoom to that node
+  - Due dates: `due:yyyy-MM-dd` metadata renders as a chip in the node text and a badge in the Tasks sidebar; overdue tasks are highlighted and sorted first
+  - Recurrence: `rec:<n><y|m|w|d>` metadata (e.g. `rec:1m`) only takes effect on a task that also has a `due:` date. Checking a recurring task's checkbox (mouse or `Ctrl+Enter`) advances its due date to the next occurrence instead of marking it done; month/year steps keep the same day, clamped to the end of the month when needed
+  - Tasks panel (`Ctrl+Alt+K` or checklist toolbar icon): Pending, Scheduled, and Done groups, scoped to the current zoom, with breadcrumb context; click a row to zoom to that node
+    - Pending: no due date, or due today/overdue. Scheduled: due date in the future, with a day-window filter (3d/7d/30d/All, default 3d) to hide distant tasks
   - Task state is preserved in Local/Remote JSON and in File mode (`.vmd`) via `[ ]` / `[x]` prefixes
 
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)

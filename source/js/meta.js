@@ -9,10 +9,12 @@
 //      encountering any non-matching token, unregistered property, tag, or mention.
 //   5. All tokens to the left of the stop point become content.
 //
-// The registry is intentionally small: `due` is the only registered key.
+// The registry recognises `due` (a date) and `rec` (a recurrence interval).
+// `rec` only has an effect on a task that also carries a `due` date.
 
 const META_REGISTRY = {
-    due: /^\d{4}-\d{2}-\d{2}$/
+    due: /^\d{4}-\d{2}-\d{2}$/,
+    rec: /^\d*(y|m|w|d)$/
 }
 
 const TOKEN_RE = /\S+/g
@@ -121,4 +123,80 @@ function parseDate(str) {
         return null
     }
     return date
+}
+
+function parseRecurrence(recStr) {
+    const match = META_REGISTRY.rec.exec(String(recStr || ''))
+    if (!match) return null
+    const count = match[0].slice(0, -1) ? parseInt(match[0].slice(0, -1), 10) : 1
+    return { count, unit: match[1] }
+}
+
+function daysInMonth(year, monthIndex) {
+    return new Date(year, monthIndex + 1, 0).getDate()
+}
+
+function formatDateISO(date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+}
+
+/**
+ * Advance a yyyy-MM-dd due date by a rec:\d*(y|m|w|d) interval.
+ * Advances from the due date itself (not from today), so a late check-off
+ * still lands on the next natural occurrence.
+ * Month/year steps keep the same day-of-month, clamped to the last valid
+ * day of the resulting month (e.g. Jan 31 + 1m -> Feb 28/29).
+ * @param {string} dueStr
+ * @param {string} recStr
+ * @returns {string|null} next due date in yyyy-MM-dd, or null if inputs are invalid
+ */
+export function advanceDueDate(dueStr, recStr) {
+    const due = parseDate(dueStr)
+    const rec = parseRecurrence(recStr)
+    if (!due || !rec) return null
+
+    let year = due.getFullYear()
+    let month = due.getMonth()
+    const day = due.getDate()
+
+    if (rec.unit === 'd') return formatDateISO(new Date(year, month, day + rec.count))
+    if (rec.unit === 'w') return formatDateISO(new Date(year, month, day + rec.count * 7))
+
+    if (rec.unit === 'm') {
+        month += rec.count
+        year += Math.floor(month / 12)
+        month = ((month % 12) + 12) % 12
+    } else {
+        year += rec.count
+    }
+    return formatDateISO(new Date(year, month, Math.min(day, daysInMonth(year, month))))
+}
+
+/**
+ * Check if a yyyy-MM-dd due date is strictly after today (local timezone).
+ * @param {string} dueStr
+ * @param {Date} [now]
+ * @returns {boolean}
+ */
+export function isFutureDue(dueStr, now = new Date()) {
+    const due = parseDate(dueStr)
+    if (!due) return false
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return due > today
+}
+
+/**
+ * Number of calendar days between today and a yyyy-MM-dd due date (today = 0).
+ * @param {string} dueStr
+ * @param {Date} [now]
+ * @returns {number|null}
+ */
+export function daysUntilDue(dueStr, now = new Date()) {
+    const due = parseDate(dueStr)
+    if (!due) return null
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return Math.round((due - today) / 86400000)
 }

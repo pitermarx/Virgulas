@@ -117,6 +117,80 @@ test.describe('Tasks', () => {
     });
 });
 
+test.describe('Recurring tasks', () => {
+    function daysFromNow(days: number): string {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    test('clicking the checkbox on a recurring task advances the due date instead of marking it done', async ({ page }) => {
+        const due = daysFromNow(-1); // overdue, so it renders in Pending
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'rec', text: 'Pay rent', meta: { due, rec: '1m' }, done: false, children: [] }
+            ]
+        });
+        const checkbox = page.locator('[data-node-id="rec"] .task-checkbox');
+        await checkbox.click();
+        // Stays unchecked — the due date advanced instead of becoming done
+        await expect(checkbox).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.locator('[data-node-id="rec"]')).not.toHaveClass(/node-done/);
+        await page.locator('[data-node-id="rec"] .node-text-md').click();
+        const input = page.locator('[data-node-id="rec"] .node-text-input');
+        await expect(input).toHaveValue(/rec:1m/);
+        await expect(input).not.toHaveValue(new RegExp(`due:${due}(?!\\d)`));
+    });
+
+    test('Ctrl+Enter on a recurring task advances the due date instead of marking it done', async ({ page }) => {
+        const due = daysFromNow(-1);
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'rec', text: 'Pay rent', meta: { due, rec: '1w' }, done: false, children: [] }
+            ]
+        });
+        await page.locator('[data-node-id="rec"]').click();
+        await page.keyboard.press('Control+Enter');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('[data-node-id="rec"] .task-checkbox')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    test('recurring task with no due date is marked done normally (rec is inert)', async ({ page }) => {
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'rec', text: 'Water plants', meta: { rec: '1w' }, done: false, children: [] }
+            ]
+        });
+        const checkbox = page.locator('[data-node-id="rec"] .task-checkbox');
+        await checkbox.click();
+        await expect(checkbox).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('rec badge is rendered next to the due date chip', async ({ page }) => {
+        const due = daysFromNow(3);
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'rec', text: 'Pay rent', meta: { due, rec: '1m' }, done: false, children: [] }
+            ]
+        });
+        const node = page.locator('[data-node-id="rec"] .node-text-md');
+        await expect(node.locator('.due-date')).toBeVisible();
+        await expect(node.locator('.rec-badge')).toBeVisible();
+        await expect(node.locator('.rec-badge')).toContainText('rec:1m');
+    });
+});
+
 test.describe('Tasks sidebar', () => {
     test.beforeEach(async ({ page }) => {
         await setupDoc(page, {
@@ -178,15 +252,52 @@ test.describe('Tasks sidebar', () => {
         await expect(panel.locator('.task-row-text').filter({ hasText: 'Just a note' })).not.toBeVisible();
     });
 
-    test('clicking task row in sidebar zooms to that node', async ({ page }) => {
+    test('clicking a task row in narrow mode closes the sidebar and focuses the task', async ({ page }) => {
+        await page.setViewportSize({ width: 800, height: 900 });
         await page.keyboard.press('Control+Alt+k');
         const panel = page.locator('.tasks-panel');
         await expect(panel).toBeVisible();
         await expect(panel.locator('.task-row')).toHaveCount(2);
         await panel.locator('.task-row-body').first().click();
-        // Panel closes on navigate; breadcrumb shows the task node
         await expect(page.locator('.tasks-panel')).not.toBeVisible();
-        await expect(page.locator('.breadcrumbs')).toContainText('Buy milk');
+        await expect(page.locator('[data-node-id="p1"] .node-text-input')).toBeFocused();
+    });
+
+    test('clicking a task row in wide mode keeps the sidebar open', async ({ page }) => {
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel).toBeVisible();
+        await panel.locator('.task-row-body').first().click();
+        await expect(panel).toBeVisible();
+        await expect(page.locator('[data-node-id="p1"] .node-text-input')).toBeFocused();
+    });
+
+    test('clicking a task that is already visible does not change the zoom', async ({ page }) => {
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await panel.locator('.task-row-body').first().click();
+        // p1 is a direct child of root, already visible under the root zoom — no breadcrumbs at root
+        await expect(page.locator('.breadcrumbs')).not.toBeVisible();
+    });
+
+    test('clicking a task hidden by a collapsed ancestor zooms to its parent', async ({ page }) => {
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                {
+                    id: 'section', text: 'Section', collapsed: true, children: [
+                        { id: 'hidden-task', text: 'Hidden task', done: false, children: [] }
+                    ]
+                }
+            ]
+        });
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await panel.locator('.task-row-body').first().click();
+        await expect(page.locator('.breadcrumbs')).toContainText('Section');
+        await expect(page.locator('[data-node-id="hidden-task"] .node-text-input')).toBeFocused();
     });
 
     test('toggling task done from sidebar updates the sidebar', async ({ page }) => {
@@ -224,3 +335,85 @@ test.describe('Tasks sidebar', () => {
         expect(bodyBox!.height).toBeGreaterThan(0);
     });
 });
+
+test.describe('Tasks sidebar — scheduled group', () => {
+    function daysFromNow(days: number): string {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    test.beforeEach(async ({ page }) => {
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'pending', text: 'No due date', done: false, children: [] },
+                { id: 'soon', text: 'Soon', meta: { due: daysFromNow(2) }, done: false, children: [] },
+                { id: 'far', text: 'Far out', meta: { due: daysFromNow(30) }, done: false, children: [] }
+            ]
+        });
+    });
+
+    test('future due-dated tasks show under Scheduled, not Pending', async ({ page }) => {
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel.locator('.tasks-group-header').nth(0)).toContainText('Pending');
+        await expect(panel.locator('.task-row-text').filter({ hasText: 'No due date' })).toBeVisible();
+        await expect(panel.locator('.tasks-group-header').nth(1)).toContainText('Scheduled');
+    });
+
+    test('default 3-day window shows the soon task but hides the far task', async ({ page }) => {
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel.locator('.task-row-text').filter({ hasText: 'Soon' })).toBeVisible();
+        await expect(panel.locator('.task-row-text').filter({ hasText: 'Far out' })).not.toBeVisible();
+        await expect(panel.locator('.tasks-scheduled-hidden')).toContainText('1 more beyond 3d');
+    });
+
+    test('widening the window filter reveals the far task', async ({ page }) => {
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await panel.locator('.tasks-window-btn', { hasText: '30d' }).click();
+        await expect(panel.locator('.task-row-text').filter({ hasText: 'Far out' })).toBeVisible();
+    });
+});
+
+test.describe('Tasks sidebar — zoom scoping', () => {
+    test.beforeEach(async ({ page }) => {
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                {
+                    id: 'sectionA', text: 'Section A', children: [
+                        { id: 'taskA', text: 'Task in A', done: false, children: [] }
+                    ]
+                },
+                {
+                    id: 'sectionB', text: 'Section B', children: [
+                        { id: 'taskB', text: 'Task in B', done: false, children: [] }
+                    ]
+                }
+            ]
+        });
+    });
+
+    test('sidebar shows all tasks when zoomed at root', async ({ page }) => {
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel.locator('.task-row')).toHaveCount(2);
+    });
+
+    test('sidebar only shows tasks within the zoomed subtree', async ({ page }) => {
+        await page.locator('[data-node-id="sectionA"] .bullet').click();
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel.locator('.task-row')).toHaveCount(1);
+        await expect(panel.locator('.task-row-text')).toContainText('Task in A');
+    });
+});
+

@@ -1,14 +1,15 @@
 import { computed } from '@preact/signals'
 import outline from './outline.js'
-import { parseMeta, isOverdue } from './meta.js'
+import { parseMeta, isOverdue, isFutureDue } from './meta.js'
 
-// Returns ancestor texts for breadcrumb display (up to 2 ancestors, stopping at root).
-export function breadcrumb(nodeId) {
+// Returns ancestor texts for breadcrumb display (up to 2 ancestors), stopping
+// at stopId (the current zoom root) or the document root, whichever comes first.
+export function breadcrumb(nodeId, stopId = 'root') {
     const crumbs = []
     let node = outline.get(nodeId)
     if (!node) return crumbs
     let current = outline.get(node.parentId)
-    while (current && current.id !== 'root' && crumbs.length < 2) {
+    while (current && current.id !== stopId && current.id !== 'root' && crumbs.length < 2) {
         const t = current.text.peek()
         if (t) crumbs.unshift(t)
         current = outline.get(current.parentId)
@@ -16,20 +17,35 @@ export function breadcrumb(nodeId) {
     return crumbs
 }
 
-// Reactive grouped task list.
-// Returns { pending, done } arrays, each containing
-// { id, text, done, breadcrumb, due?, overdue? } items.
-// Re-evaluated whenever any task signal changes.
+// True when nodeId is zoomId itself or one of its descendants.
+function isWithinZoom(nodeId, zoomId) {
+    if (zoomId === 'root') return true
+    let current = outline.get(nodeId)
+    while (current) {
+        if (current.id === zoomId) return true
+        current = outline.get(current.parentId)
+    }
+    return false
+}
+
+// Reactive grouped task list, scoped to the current zoom.
+// Returns { pending, scheduled, done } arrays, each containing
+// { id, text, done, breadcrumb, due?, overdue?, rec? } items.
+// - pending: actionable now (no due date, or due date is today or in the past)
+// - scheduled: due date is strictly in the future
+// - done: completed tasks
+// Re-evaluated whenever any task signal, or the zoom, changes.
 export const groupedTasks = computed(() => {
     // Subscribe to structural rebuilds (reset/deserialize) and debounced data changes.
     // structureVersion is required because deserialize can restore the same dataVersion
     // (often 0) inside a batch, which would otherwise leave this computed stale.
     void outline.structureVersion.value
     void outline.version.value
+    const zoomId = outline.zoomId.value
 
-    const tasks = outline.getAllTasks()
+    const tasks = outline.getAllTasks().filter(node => isWithinZoom(node.peek().id, zoomId))
 
-    const groups = { pending: [], done: [] }
+    const groups = { pending: [], scheduled: [], done: [] }
 
     for (const node of tasks) {
         const peek = node.peek()
@@ -38,14 +54,19 @@ export const groupedTasks = computed(() => {
             id: peek.id,
             text,
             done: peek.done,
-            breadcrumb: breadcrumb(peek.id),
+            breadcrumb: breadcrumb(peek.id, zoomId),
         }
         if (meta.due) {
             item.due = meta.due
             item.overdue = isOverdue(meta.due)
         }
+        if (meta.rec) {
+            item.rec = meta.rec
+        }
         if (peek.done === true) {
             groups.done.push(item)
+        } else if (item.due && isFutureDue(item.due)) {
+            groups.scheduled.push(item)
         } else {
             groups.pending.push(item)
         }
@@ -69,11 +90,14 @@ export const groupedTasks = computed(() => {
         return 0
     })
 
+    // Sort scheduled by due date ascending (soonest first).
+    groups.scheduled.sort((a, b) => a.due.localeCompare(b.due))
+
     return groups
 })
 
-// Count of pending tasks
-export const pendingTaskCount = computed(() => groupedTasks.value.pending.length)
+// Count of open tasks (pending + scheduled)
+export const pendingTaskCount = computed(() => groupedTasks.value.pending.length + groupedTasks.value.scheduled.length)
 
 // True when any pending task is overdue
 export const hasOverdueTasks = computed(() =>
