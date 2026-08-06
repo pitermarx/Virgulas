@@ -19,6 +19,7 @@
       - (MOBILE ONLY) When the virtual keyboard is visible while editing, the status bar remains above the keyboard
         Implemented via `window.visualViewport` resize events that apply a dynamic bottom inset to the status toolbar
       - (DESKTOP ONLY) When nothing is focused, `↑` focuses the last node and `↓` focuses the first node.
+      - Keyboard navigation scrolls the focused node into view when needed
       - (DESKTOP ONLY) `Enter` creates a new node below the focused node.
         If it already has children, the new node becomes the first child.
         If it does not have children, it creates a node at the same level.

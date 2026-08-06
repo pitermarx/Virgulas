@@ -370,6 +370,29 @@ test.describe('Keyboard', () => {
     await expect(page.locator('[data-node-id="2.1"]')).toHaveCount(0);
   });
 
+  test('no-focus Arrow keys scroll the first and last focused nodes into view', async ({ page }) => {
+    const children = Array.from({ length: 48 }, (_, index) => ({
+      id: `node-${index}`,
+      text: `Node ${index}`,
+      children: []
+    }));
+    await setupDoc(page, { id: 'root', text: 'Root', children });
+    await page.setViewportSize({ width: 900, height: 500 });
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.keyboard.press('ArrowDown');
+    const firstInput = page.locator('[data-node-id="node-0"] input');
+    await expect(firstInput).toBeFocused();
+    await expect(firstInput).toBeInViewport();
+
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.keyboard.press('ArrowUp');
+    const lastInput = page.locator('[data-node-id="node-47"] input');
+    await expect(lastInput).toBeFocused();
+    await expect(lastInput).toBeInViewport();
+  });
+
   test('Shortcuts popup includes multi-select and search shortcuts', async ({ page }) => {
     await page.getByRole('button', { name: '?' }).click();
 

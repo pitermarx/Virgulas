@@ -66,6 +66,7 @@ function focusElement(el) {
             el.focus()
         }
     }
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     clearTransferForElement(el)
 }
 
