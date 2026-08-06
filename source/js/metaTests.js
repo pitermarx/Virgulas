@@ -1,4 +1,4 @@
-import { parseMeta, formatMeta, isOverdue, formatDueDate } from './meta.js'
+import { parseMeta, formatMeta, isOverdue, formatDueDate, advanceDueDate, isFutureDue, daysUntilDue } from './meta.js'
 import {
     assert,
     assertEqual,
@@ -161,4 +161,107 @@ await test("formats yyyy-MM-dd to human-readable", () => {
 
 await test("formats with year when not current year", () => {
     assertEqual(formatDueDate('2025-12-31', new Date('2026-08-05T12:00:00')), 'Dec 31, 2025', "should include year when different")
+})
+
+section("parseMeta — rec")
+
+await test("extracts rec:1m from end of text", () => {
+    const { meta, text } = parseMeta("Pay bill due:2026-08-15 rec:1m")
+    assertEqual(meta.rec, '1m', "rec should be extracted")
+    assertEqual(meta.due, '2026-08-15', "due should be extracted")
+    assertEqual(text, 'Pay bill', "residual text should have both tokens stripped")
+})
+
+await test("rec before due is also extracted (order independent)", () => {
+    const { meta, text } = parseMeta("Pay bill rec:1m due:2026-08-15")
+    assertEqual(meta.rec, '1m', "rec should be extracted")
+    assertEqual(meta.due, '2026-08-15', "due should be extracted")
+    assertEqual(text, 'Pay bill', "residual text should have both tokens stripped")
+})
+
+await test("rec without a count is valid (implicit count of 1)", () => {
+    const { meta } = parseMeta("Task rec:d")
+    assertEqual(meta.rec, 'd', "rec with no digits is valid")
+})
+
+await test("rejects invalid rec unit", () => {
+    const { meta, text } = parseMeta("Task rec:1x")
+    assertEqual(Object.keys(meta).length, 0, "invalid unit should not be extracted")
+    assertEqual(text, 'Task rec:1x', "text should be unchanged")
+})
+
+await test("rec with no due is still parsed as metadata", () => {
+    const { meta, text } = parseMeta("Task rec:1y")
+    assertEqual(meta.rec, '1y', "rec should be extracted even without due")
+    assertEqual(text, 'Task', "text should have rec stripped")
+})
+
+section("advanceDueDate")
+
+await test("advances by days", () => {
+    assertEqual(advanceDueDate('2026-08-05', '3d'), '2026-08-08', "should add 3 days")
+})
+
+await test("advances by weeks", () => {
+    assertEqual(advanceDueDate('2026-08-05', '2w'), '2026-08-19', "should add 2 weeks")
+})
+
+await test("advances by months, same day next month", () => {
+    assertEqual(advanceDueDate('2026-08-05', '1m'), '2026-09-05', "should add 1 month, same day")
+})
+
+await test("advances by months, clamps day overflow to last day of month", () => {
+    assertEqual(advanceDueDate('2026-01-31', '1m'), '2026-02-28', "Jan 31 + 1m should clamp to Feb 28 (non-leap year)")
+})
+
+await test("advances by months across year boundary", () => {
+    assertEqual(advanceDueDate('2026-12-15', '2m'), '2027-02-15', "should roll over into next year")
+})
+
+await test("advances by years, same day next year", () => {
+    assertEqual(advanceDueDate('2026-08-05', '1y'), '2027-08-05', "should add 1 year, same day")
+})
+
+await test("advances by years, clamps Feb 29 to Feb 28 in non-leap target year", () => {
+    assertEqual(advanceDueDate('2028-02-29', '1y'), '2029-02-28', "leap day should clamp in non-leap year")
+})
+
+await test("defaults count to 1 when omitted", () => {
+    assertEqual(advanceDueDate('2026-08-05', 'm'), '2026-09-05', "rec:m should behave like rec:1m")
+})
+
+await test("returns null for invalid due date", () => {
+    assertEqual(advanceDueDate('not-a-date', '1m'), null, "invalid due should return null")
+})
+
+await test("returns null for invalid rec string", () => {
+    assertEqual(advanceDueDate('2026-08-05', '1x'), null, "invalid rec should return null")
+})
+
+section("isFutureDue")
+
+await test("true for a date after today", () => {
+    assert(isFutureDue('2026-08-06', new Date('2026-08-05T12:00:00')), "tomorrow should be future")
+})
+
+await test("false for today", () => {
+    assert(!isFutureDue('2026-08-05', new Date('2026-08-05T12:00:00')), "today should not be future")
+})
+
+await test("false for a past date", () => {
+    assert(!isFutureDue('2026-08-04', new Date('2026-08-05T12:00:00')), "yesterday should not be future")
+})
+
+section("daysUntilDue")
+
+await test("returns 0 for today", () => {
+    assertEqual(daysUntilDue('2026-08-05', new Date('2026-08-05T12:00:00')), 0, "today should be 0 days")
+})
+
+await test("returns positive count for future date", () => {
+    assertEqual(daysUntilDue('2026-08-08', new Date('2026-08-05T12:00:00')), 3, "3 days out")
+})
+
+await test("returns negative count for past date", () => {
+    assertEqual(daysUntilDue('2026-08-02', new Date('2026-08-05T12:00:00')), -3, "3 days overdue")
 })

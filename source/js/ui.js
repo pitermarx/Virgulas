@@ -3,13 +3,13 @@ import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
-import { log, isMobile } from './utils.js';
+import { log, isMobile, store } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen } from './shortcuts.js';
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
 import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
-import { formatDueDate } from './meta.js';
+import { formatDueDate, daysUntilDue } from './meta.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -262,7 +262,7 @@ function NodeText({ node }) {
     return html`<div
         class="node-text-md"
         style=${text ? '' : fadedText}
-        dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text, { decorateDueDate: done !== null }) : '&nbsp;' }}
+        dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text, { decorateMeta: done !== null }) : '&nbsp;' }}
         onClick=${e => {
             if (e.target === e.currentTarget) {
                 requestNodeFocus(id, 'text')
@@ -418,6 +418,20 @@ function Node({ node, indent = 0 }) {
 // ── Tasks Panel ───────────────────────────────────────────────────────────────
 
 const doneGroupExpanded = signal(false)
+const WIDE_LAYOUT_QUERY = '(min-width: 1160px)'
+
+// True when id is already visible in the current view: it is the zoomed node
+// itself, or every ancestor between it and the zoomed node is open.
+function isNodeVisibleInZoom(id, zoomId) {
+    if (id === zoomId) return true
+    let current = outline.get(outline.get(id)?.parentId)
+    while (current) {
+        if (current.id === zoomId) return true
+        if (!current.open.peek()) return false
+        current = outline.get(current.parentId)
+    }
+    return false
+}
 
 function TaskRow({ item, onNavigate }) {
     const node = outline.get(item.id)
@@ -430,8 +444,12 @@ function TaskRow({ item, onNavigate }) {
 
     function navigate(e) {
         e.stopPropagation()
-        tasksPanelOpen.value = false
-        zoomIn(item.id, focus)
+        const isWide = window.matchMedia(WIDE_LAYOUT_QUERY).matches
+        if (!isWide) tasksPanelOpen.value = false
+        const zoomId = outline.zoomId.peek()
+        if (!isNodeVisibleInZoom(item.id, zoomId)) {
+            zoomIn(node.parentId, focus)
+        }
         requestNodeFocus(item.id, 'text')
     }
 
@@ -448,7 +466,10 @@ function TaskRow({ item, onNavigate }) {
         </button>
         <div class="task-row-body" onClick=${navigate}>
             <span class=${'task-row-text' + (item.done ? ' task-row-text--done' : '')}>${item.text || html`<em style="opacity:0.5">Untitled</em>`}</span>
-            ${item.due && html`<span class=${'task-row-due' + (item.overdue ? ' task-row-due--overdue' : '')}>${formatDueDate(item.due)}</span>`}
+            ${(item.due || item.rec) && html`<span class="task-row-meta">
+                ${item.due && html`<span class=${'task-row-due' + (item.overdue ? ' task-row-due--overdue' : '')}>${formatDueDate(item.due)}</span>`}
+                ${item.rec && html`<span class="task-row-rec" title="Recurs every ${item.rec}">↻${item.rec}</span>`}
+            </span>`}
             ${item.breadcrumb.length > 0 && html`<span class="task-row-breadcrumb">${item.breadcrumb.join(' › ')}</span>`}
         </div>
     </div>`
@@ -476,6 +497,43 @@ function TaskGroup({ title, items, defaultExpanded = true }) {
     </div>`
 }
 
+// Scheduled group windows: how many days out to show by default (persisted).
+const SCHEDULED_WINDOW_OPTIONS = [3, 7, 30, Infinity]
+export const scheduledWindowDays = signal(Number(store.scheduledWindow.get(3)) || 3)
+
+function setScheduledWindow(days) {
+    scheduledWindowDays.value = days
+    store.scheduledWindow.set(String(days))
+}
+
+function windowLabel(days) {
+    return days === Infinity ? 'All' : `${days}d`
+}
+
+function ScheduledTaskGroup({ items, defaultExpanded = true }) {
+    const expanded = groupExpandedSignal('Scheduled', defaultExpanded)
+    if (items.length === 0) return null
+    const windowDays = scheduledWindowDays.value
+    const visible = items.filter(item => daysUntilDue(item.due) <= windowDays)
+    const hiddenCount = items.length - visible.length
+    return html`<div class="tasks-group">
+        <button class="tasks-group-header" onClick=${() => expanded.value = !expanded.peek()}>
+            <span class="tasks-group-toggle">${expanded.value ? '▼' : '▶'}</span>
+            <span class="tasks-group-title">Scheduled</span>
+            <span class="tasks-group-count">${visible.length}</span>
+        </button>
+        ${expanded.value && html`<div class="tasks-group-items">
+            <div class="tasks-scheduled-filter">
+                ${SCHEDULED_WINDOW_OPTIONS.map(days => html`<button
+                    class=${'tasks-window-btn' + (windowDays === days ? ' tasks-window-btn--active' : '')}
+                    onClick=${() => setScheduledWindow(days)}>${windowLabel(days)}</button>`)}
+            </div>
+            ${visible.map(item => html`<${TaskRow} key=${item.id} item=${item} />`)}
+            ${hiddenCount > 0 && html`<div class="tasks-scheduled-hidden">${hiddenCount} more beyond ${windowLabel(windowDays)}</div>`}
+        </div>`}
+    </div>`
+}
+
 export function TasksPanel() {
     if (!tasksPanelOpen.value) return null
     const groups = groupedTasks.value
@@ -490,8 +548,9 @@ export function TasksPanel() {
             </div>
             <div class="tasks-panel-body">
                 <${TaskGroup} title="Pending" items=${groups.pending} defaultExpanded=${true} />
+                <${ScheduledTaskGroup} items=${groups.scheduled} defaultExpanded=${true} />
                 <${TaskGroup} title="Done" items=${groups.done} defaultExpanded=${false} />
-                ${groups.pending.length + groups.done.length === 0
+                ${groups.pending.length + groups.scheduled.length + groups.done.length === 0
         && html`<div class="tasks-empty">No tasks yet. Press <kbd>Ctrl+Enter</kbd> on any node to make it a task.</div>`}
             </div>
         </div>

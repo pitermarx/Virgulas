@@ -1,6 +1,7 @@
 import { signal, effect, createModel } from "@preact/signals"
 import { randomId } from "./crypto2.js"
 import { log } from './utils.js';
+import { parseMeta, advanceDueDate } from './meta.js';
 
 // The document structure is an infinite tree of nodes
 // a node is { id: string, parentId: string, text: string, description: string, children: string[], open: boolean, done: boolean|null }
@@ -22,6 +23,20 @@ const NodeModel = createModel((model = {}) => {
     const open = signal(model.open === undefined ? true : !!model.open)
     const done = signal(model.done !== undefined ? model.done : null)
     let lastModified = model.lastModified || 0
+
+    // A pending task with rec:<n><y|m|w|d> and due:<date> advances its due date
+    // instead of becoming done. Returns true if it advanced (and thus handled the transition).
+    function tryAdvanceRecurrence() {
+        const raw = text.peek()
+        const { meta } = parseMeta(raw)
+        if (!meta.due || !meta.rec) return false
+        const nextDue = advanceDueDate(meta.due, meta.rec)
+        if (!nextDue) return false
+        // Replace only the due value in place, preserving token order/spacing.
+        text.value = raw.replace(`due:${meta.due}`, `due:${nextDue}`)
+        lastModified = Date.now()
+        return true
+    }
 
     return {
         get id() {
@@ -79,7 +94,9 @@ const NodeModel = createModel((model = {}) => {
         toggleDone() {
             const current = done.peek()
             if (current === null) { done.value = false }
-            else if (current === false) { done.value = true }
+            else if (current === false) {
+                if (!tryAdvanceRecurrence()) done.value = true
+            }
             else { done.value = null }  // cycle back to plain node
             lastModified = Date.now()
         },
@@ -89,6 +106,7 @@ const NodeModel = createModel((model = {}) => {
         },
         checkboxToggleDone() {
             const current = done.peek()
+            if (current === false && tryAdvanceRecurrence()) return
             // null → false (guard, promotes plain node), false → true, true → false. Never null.
             done.value = current === null ? false : !current
             lastModified = Date.now()

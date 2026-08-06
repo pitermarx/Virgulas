@@ -181,11 +181,29 @@
       - Overdue tasks (due date strictly before today) are highlighted in the Tasks sidebar
         and sorted before all other pending tasks
       - If any pending task is overdue, the ☑ tasks toolbar icon is highlighted
+    + RECURRENCE
+      - A task can carry a recurrence interval via the `rec:<n><unit>` metadata key, where `<unit>` is
+        `y` (years), `m` (months), `w` (weeks), or `d` (days), and `<n>` is an optional repeat count
+        that defaults to 1 when omitted (e.g. `rec:1m`, `rec:2w`, `rec:d`)
+        Example: `- [ ] Pay rent due:2026-08-28 rec:1m`
+      - `rec:` only has an effect on a task that also carries a `due:` date. Without a due date it is
+        stored and round-trips normally, but does nothing
+      - Checking a recurring task's checkbox (mouse, tap, or `Ctrl+Enter`) does not mark it done.
+        Instead its due date advances to the next occurrence and it remains pending
+        For `m` and `y` units the new due date keeps the same day of month, clamped to the last valid
+        day of the resulting month (e.g. Jan 31 + 1m -> Feb 28/29)
+      - The recurrence interval is rendered as a badge in the node text (next to the due date chip)
+        and in the task's row in the Tasks sidebar
     + TASKS SIDEBAR
-      - A panel listing every task node in the document, grouped into Pending and Done sections
-      - Each row shows the task text and a breadcrumb of its ancestors
+      - A panel listing every task node within the current zoom, grouped into Pending, Scheduled,
+        and Done sections. Tasks outside the zoomed subtree are not shown
+      - Pending: tasks with no due date, or a due date that is today or in the past (including overdue)
+      - Scheduled: tasks with a due date strictly in the future
+        A day-window filter (3d / 7d / 30d / All, default 3d) limits how far ahead Scheduled shows,
+        to hide distant recurring tasks; a hint shows how many are hidden beyond the current window
+      - Each row shows the task text and a breadcrumb of its ancestors (relative to the current zoom)
         Clicking a row zooms into the nearest ancestor of the task
-        Clicking the checkbox in a row toggles done/pending without navigating
+        Clicking the checkbox in a row toggles done/pending (or advances recurrence) without navigating
       - The Done group is collapsed by default
       - (DESKTOP ONLY) `Ctrl+Alt+K` opens and closes the sidebar
       - The ☑ icon button in the status toolbar opens and closes the sidebar on all platforms

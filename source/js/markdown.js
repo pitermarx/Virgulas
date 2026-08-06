@@ -4,7 +4,11 @@ import { isValidDueDate } from './meta.js'
 
 const SAFE_HTTP_URL_RE = /^https?:\/\//i
 const SEARCH_TOKEN_RE = /(^|[\s([{"'`])([#@][A-Za-z0-9_-]+)/g
-const DUE_TOKEN_RE = /(^|\s)(due:\d{4}-\d{2}-\d{2})(\s*)$/
+const DUE_TOKEN_TEXT_RE = /^due:(\d{4}-\d{2}-\d{2})$/
+const REC_TOKEN_TEXT_RE = /^rec:\d*(?:y|m|w|d)$/
+const META_TOKEN_PART = '(?:due:\\d{4}-\\d{2}-\\d{2}|rec:\\d*(?:y|m|w|d))'
+// Matches one or two trailing due:/rec: tokens (in either order) at the end of the text
+const META_TOKEN_RE = new RegExp(`(^|\\s)(${META_TOKEN_PART}(?:\\s+${META_TOKEN_PART})?)(\\s*)$`)
 
 function isSafeHttpUrl(value) {
     if (!value) return false
@@ -104,12 +108,32 @@ function decorateSearchTokens(safeHtml) {
     return template.innerHTML
 }
 
-function replaceTextNodeWithDueDates(textNode) {
+// Builds a chip span for a single due: or rec: token, or null if invalid (e.g. bad calendar date).
+function chipForToken(token) {
+    const dueMatch = DUE_TOKEN_TEXT_RE.exec(token)
+    if (dueMatch) {
+        if (!isValidDueDate(dueMatch[1])) return null
+        const span = document.createElement('span')
+        span.className = 'due-date'
+        span.textContent = token
+        return span
+    }
+    if (REC_TOKEN_TEXT_RE.test(token)) {
+        const span = document.createElement('span')
+        span.className = 'rec-badge'
+        span.textContent = token
+        return span
+    }
+    return null
+}
+
+function replaceTextNodeWithMetaChips(textNode) {
     const text = textNode.nodeValue || ''
-    const match = DUE_TOKEN_RE.exec(text)
-    if (!match || !isValidDueDate(match[2].slice(4))) return null
+    const match = META_TOKEN_RE.exec(text)
+    if (!match) return null
+    const chips = match[2].split(/\s+/).map(chipForToken)
+    if (chips.some(chip => !chip)) return null
     const prefix = match[1] || ''
-    const token = match[2]
     const trailing = match[3] || ''
     const fragment = document.createDocumentFragment()
     if (match.index > 0) {
@@ -118,17 +142,17 @@ function replaceTextNodeWithDueDates(textNode) {
     if (prefix) {
         fragment.append(document.createTextNode(prefix))
     }
-    const span = document.createElement('span')
-    span.className = 'due-date'
-    span.textContent = token
-    fragment.append(span)
+    chips.forEach((chip, i) => {
+        if (i > 0) fragment.append(document.createTextNode(' '))
+        fragment.append(chip)
+    })
     if (trailing) {
         fragment.append(document.createTextNode(trailing))
     }
     return fragment
 }
 
-function decorateDueDates(safeHtml) {
+function decorateMetaChips(safeHtml) {
     if (!safeHtml || typeof document === 'undefined') return safeHtml
     const template = document.createElement('template')
     template.innerHTML = safeHtml
@@ -142,7 +166,7 @@ function decorateDueDates(safeHtml) {
     }
 
     for (const textNode of candidates) {
-        const replacement = replaceTextNodeWithDueDates(textNode)
+        const replacement = replaceTextNodeWithMetaChips(textNode)
         if (!replacement || !textNode.parentNode) continue
         textNode.parentNode.replaceChild(replacement, textNode)
     }
@@ -182,10 +206,10 @@ const SANITIZE_OPTIONS = {
     ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel']
 }
 
-export function renderInlineMarkdown(text, { decorateDueDate = false } = {}) {
+export function renderInlineMarkdown(text, { decorateMeta = false } = {}) {
     if (!text) return ''
     const rawHtml = markdown.parseInline(normalizeMarkdownAliases(text))
     const safeHtml = DOMPurify.sanitize(rawHtml, SANITIZE_OPTIONS)
     const decorated = decorateSearchTokens(safeHtml)
-    return decorateDueDate ? decorateDueDates(decorated) : decorated
+    return decorateMeta ? decorateMetaChips(decorated) : decorated
 }

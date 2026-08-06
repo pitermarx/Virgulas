@@ -1236,6 +1236,35 @@ await test("checkboxToggleDone on a plain node makes it an unchecked task (guard
   assertEqual(outline.get('P').done.peek(), false, 'promoted to unchecked task')
 })
 
+section("Task model — recurrence")
+
+await test("checkboxToggleDone on a recurring task advances due date instead of becoming done", () => {
+  outline.addChild('root', { id: 'Rec1', text: 'Pay bill due:2026-08-28 rec:1m', done: false })
+  outline.checkboxToggleDone('Rec1')
+  assertEqual(outline.get('Rec1').done.peek(), false, 'stays unchecked')
+  assertEqual(outline.get('Rec1').text.peek(), 'Pay bill due:2026-09-28 rec:1m', 'due date advanced by 1 month')
+})
+
+await test("toggleDone (Ctrl+Enter) on a recurring task advances due date instead of becoming done", () => {
+  outline.addChild('root', { id: 'Rec2', text: 'Pay bill due:2026-08-28 rec:1m', done: false })
+  outline.toggleDone('Rec2')
+  assertEqual(outline.get('Rec2').done.peek(), false, 'stays unchecked')
+  assertEqual(outline.get('Rec2').text.peek(), 'Pay bill due:2026-09-28 rec:1m', 'due date advanced by 1 month')
+})
+
+await test("recurring task with no due date behaves like a normal task (rec is inert)", () => {
+  outline.addChild('root', { id: 'Rec3', text: 'Water plants rec:1w', done: false })
+  outline.checkboxToggleDone('Rec3')
+  assertEqual(outline.get('Rec3').done.peek(), true, 'marked done normally since there is no due date')
+})
+
+await test("unchecking a recurring done task behaves like a normal toggle", () => {
+  outline.addChild('root', { id: 'Rec4', text: 'Pay bill due:2026-08-28 rec:1m', done: true })
+  outline.checkboxToggleDone('Rec4')
+  assertEqual(outline.get('Rec4').done.peek(), false, 'unchecked normally')
+  assertEqual(outline.get('Rec4').text.peek(), 'Pay bill due:2026-08-28 rec:1m', 'due date unchanged')
+})
+
 await test("removeTaskMark resets done to null", () => {
   outline.addChild('root', { id: 'R', text: 'rmtask', done: true })
   outline.removeTaskMark('R')

@@ -22,6 +22,8 @@
   --color-mention-chip-text: #6b3fa0;
   --color-due-chip-bg: #fdf0d5;
   --color-due-chip-text: #8a5a00;
+  --color-rec-chip-bg: #dff2ef;
+  --color-rec-chip-text: #1f7a6c;
   --color-overlay: rgba(20, 18, 14, 0.45);
   --color-success: #2e7d32;
   --color-error: #d32f2f;
@@ -87,6 +89,8 @@
     --color-mention-chip-text: #b794f4;
     --color-due-chip-bg: #3a2f1a;
     --color-due-chip-text: #e8b84b;
+    --color-rec-chip-bg: #183833;
+    --color-rec-chip-text: #5fcbb8;
     --color-overlay: rgba(0, 0, 0, 0.7);
   }
 }
@@ -113,6 +117,8 @@
   --color-mention-chip-text: #b794f4;
   --color-due-chip-bg: #3a2f1a;
   --color-due-chip-text: #e8b84b;
+  --color-rec-chip-bg: #183833;
+  --color-rec-chip-text: #5fcbb8;
   --color-overlay: rgba(0, 0, 0, 0.7);
 }
 
@@ -1046,6 +1052,18 @@ a:hover {
   white-space: nowrap;
 }
 
+/* ── Recurrence badge (inline in node text) ── */
+.rec-badge {
+  display: inline-block;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-full);
+  font: inherit;
+  line-height: inherit;
+  color: var(--color-rec-chip-text);
+  background: var(--color-rec-chip-bg);
+  white-space: nowrap;
+}
+
 /* ── Node text: edit mode (input) ── */
 .node-text-input {
   cursor: text;
@@ -1971,4 +1989,57 @@ a:hover {
 .task-row-due--overdue {
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.task-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.task-row-rec {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-rec-chip-text);
+  background: var(--color-rec-chip-bg);
+  border-radius: var(--radius-full);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+/* ── Scheduled group window filter ── */
+.tasks-scheduled-filter {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.tasks-window-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  padding: 1px 8px;
+  cursor: pointer;
+  transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base);
+}
+
+.tasks-window-btn:hover {
+  background: var(--color-hover-surface);
+}
+
+.tasks-window-btn--active {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  color: #fff;
+}
+
+.tasks-scheduled-hidden {
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  font-style: italic;
 }
