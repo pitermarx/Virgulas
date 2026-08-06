@@ -199,4 +199,28 @@ test.describe('Tasks sidebar', () => {
         // Now only 1 pending task remains visible
         await expect(panel.locator('.task-row')).toHaveCount(1);
     });
+
+    test('status toolbar stays visible when tasks panel is open on widescreen', async ({ page }) => {
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel).toBeVisible();
+        const toolbar = page.locator('.status-toolbar');
+        await expect(toolbar).toBeVisible();
+        // The toolbar should not be covered by the panel — both visible simultaneously
+        const toolbarBox = await toolbar.boundingBox();
+        const panelBox = await panel.boundingBox();
+        expect(toolbarBox).not.toBeNull();
+        expect(panelBox).not.toBeNull();
+        // Toolbar is below the panel (panel is on the right side, toolbar spans full width below)
+        expect(toolbarBox!.y).toBeGreaterThanOrEqual(panelBox!.y);
+        // Panel height adjusts to the window: panel bottom should not exceed toolbar top
+        expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(toolbarBox!.y + 1);
+        // Panel body scrolls independently
+        const panelBody = panel.locator('.tasks-panel-body');
+        await expect(panelBody).toBeVisible();
+        const bodyBox = await panelBody.boundingBox();
+        expect(bodyBox).not.toBeNull();
+        expect(bodyBox!.height).toBeGreaterThan(0);
+    });
 });
