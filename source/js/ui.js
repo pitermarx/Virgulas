@@ -8,7 +8,8 @@ import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode
 import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
 import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
-import { groupedTasks, pendingTaskCount } from './tasks.js';
+import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
+import { formatDueDate } from './meta.js';
 
 const focusId = signal(null)
 const focusType = signal(null)
@@ -260,7 +261,7 @@ function NodeText({ node }) {
     return html`<div
         class="node-text-md"
         style=${text ? '' : fadedText}
-        dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text) : '&nbsp;' }}
+        dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text, { decorateDueDate: done !== null }) : '&nbsp;' }}
         onClick=${e => {
             if (e.target === e.currentTarget) {
                 requestNodeFocus(id, 'text')
@@ -433,7 +434,9 @@ function TaskRow({ item, onNavigate }) {
         requestNodeFocus(item.id, 'text')
     }
 
-    return html`<div class="task-row">
+    const rowClass = 'task-row' + (item.overdue ? ' task-row--overdue' : '')
+
+    return html`<div class=${rowClass}>
         <button class=${'task-row-check' + (item.done ? ' task-row-check--done' : '')} onClick=${toggle} aria-label=${item.done ? 'Mark undone' : 'Mark done'} aria-pressed=${item.done}>
             <svg viewBox="0 0 16 16" width="14" height="14">
                 ${item.done
@@ -444,6 +447,7 @@ function TaskRow({ item, onNavigate }) {
         </button>
         <div class="task-row-body" onClick=${navigate}>
             <span class=${'task-row-text' + (item.done ? ' task-row-text--done' : '')}>${item.text || html`<em style="opacity:0.5">Untitled</em>`}</span>
+            ${item.due && html`<span class=${'task-row-due' + (item.overdue ? ' task-row-due--overdue' : '')}>${formatDueDate(item.due)}</span>`}
             ${item.breadcrumb.length > 0 && html`<span class="task-row-breadcrumb">${item.breadcrumb.join(' › ')}</span>`}
         </div>
     </div>`
@@ -561,7 +565,7 @@ export function StatusToolbar() {
         </div>
         <div class="toolbar-brand">
             ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
-            <button class="toolbar-btn toolbar-btn-tasks" onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
+            <button class=${'toolbar-btn toolbar-btn-tasks' + (hasOverdueTasks.value ? ' toolbar-btn-tasks--overdue' : '')} onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
                 <svg viewBox="-1 -1 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="" y="1" width="14" height="14" rx="3" stroke-width="1.5" />
                     <path d="M1 7l5.5 5L18 0" stroke-width="2" />

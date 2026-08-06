@@ -246,7 +246,9 @@
                 "@preact/signals-core": "./vendor/signals-core.module.js",
                 "@preact/signals":      "./vendor/signals.module.js",
                 "htm":                  "./vendor/htm.module.js",
-                "htm/preact":           "./vendor/htm-preact.module.js"
+                "htm/preact":           "./vendor/htm-preact.module.js",
+                "marked":               "./vendor/marked.esm.js",
+                "dompurify":            "./vendor/purify.es.mjs"
       }
     }
     </script>
@@ -258,6 +260,9 @@
         import { crypto2Total, runCrypto2Tests } from './js/crypto2Tests.js'
         import { shortcutsTotal, runShortcutsTests } from './js/shortcutsTests.js'
         import { summary as syncSummary, streamSyncTests } from './js/syncTests.js'
+        import { summary as metaSummary, streamMetaTests } from './js/metaTests.js'
+        import { summary as tasksSummary, streamTasksTests } from './js/tasksTests.js'
+        import { summary as markdownSummary, streamMarkdownTests } from './js/markdownTests.js'
 
         function Section({ section }) {
             const allPassed = section.tests.every(t => t.ok)
@@ -276,26 +281,26 @@
                 : html`<span class="section-tally"><span class="pass">${passed}</span> / <span class="fail">${failed} failed</span></span>`
 
             return html`
-    <div class=${'section-block' + (open ? ' open' : '')}>
-      <div class="section-header" onClick=${() => setOpen(o => !o)}>
-        <span class="section-left">
-          <span class="chevron">▼</span>
-          <span class="section-name">${section.name}</span>
-        </span>
-        ${tally}
-      </div>
-      <ul class="test-list">
-        ${section.tests.map(t => html`
-          <li class=${'test-item' + (t.ok ? '' : ' failed')}>
-            <span class=${'indicator ' + (t.ok ? 'pass' : 'fail')}>${t.ok ? '✔' : '✘'}</span>
-            <span class="test-name">${t.name}</span>
-            ${!t.ok && t.error && html`<pre class="test-error">${t.error}</pre>`}
-            ${!t.ok && t.errorDetails && html`<pre class="test-error">${JSON.stringify(t.errorDetails, null, 2)}</pre>`}
-          </li>
-        `)}
-      </ul>
-    </div>
-  `
+                <div class=${'section-block' + (open ? ' open' : '')}>
+                  <div class="section-header" onClick=${() => setOpen(o => !o)}>
+                    <span class="section-left">
+                      <span class="chevron">▼</span>
+                      <span class="section-name">${section.name}</span>
+                    </span>
+                    ${tally}
+                  </div>
+                  <ul class="test-list">
+                    ${section.tests.map(t => html`
+                      <li class=${'test-item' + (t.ok ? '' : ' failed')}>
+                        <span class=${'indicator ' + (t.ok ? 'pass' : 'fail')}>${t.ok ? '✔' : '✘'}</span>
+                        <span class="test-name">${t.name}</span>
+                        ${!t.ok && t.error && html`<pre class="test-error">${t.error}</pre>`}
+                        ${!t.ok && t.errorDetails && html`<pre class="test-error">${JSON.stringify(t.errorDetails, null, 2)}</pre>`}
+                      </li>
+                    `)}
+                  </ul>
+                </div>
+              `
         }
 
         function getRunningCount(state) {
@@ -307,20 +312,20 @@
             return `${state.expectedTotal} total | ${getRunningCount(state)} running | ${state.summary.failed} failed`
         }
 
-        function setSummarySummary(outlineState, cryptoState, shortcutsState, syncState) {
+        function setSummarySummary(suiteStates) {
             const summaryEl = document.getElementById('summary')
             if (!summaryEl) return
 
             summaryEl.className = 'ready'
 
-            const expectedTotal = outlineState.expectedTotal + cryptoState.expectedTotal + shortcutsState.expectedTotal + syncState.expectedTotal
-            const passed = outlineState.summary.passed + cryptoState.summary.passed + shortcutsState.summary.passed + syncState.summary.passed
-            const failed = outlineState.summary.failed + cryptoState.summary.failed + shortcutsState.summary.failed + syncState.summary.failed
-            const completed = outlineState.summary.total + cryptoState.summary.total + shortcutsState.summary.total + syncState.summary.total
-            const running = getRunningCount(outlineState) + getRunningCount(cryptoState) + getRunningCount(shortcutsState) + getRunningCount(syncState)
+            const expectedTotal = suiteStates.reduce((sum, s) => sum + s.expectedTotal, 0)
+            const passed = suiteStates.reduce((sum, s) => sum + s.summary.passed, 0)
+            const failed = suiteStates.reduce((sum, s) => sum + s.summary.failed, 0)
+            const completed = suiteStates.reduce((sum, s) => sum + s.summary.total, 0)
+            const running = suiteStates.reduce((sum, s) => sum + getRunningCount(s), 0)
 
-            if (outlineState.status === 'error' || cryptoState.status === 'error' || shortcutsState.status === 'error' || syncState.status === 'error') {
-                const message = outlineState.error || cryptoState.error || shortcutsState.error || syncState.error || 'Unknown error'
+            if (suiteStates.some(s => s.status === 'error')) {
+                const message = suiteStates.find(s => s.status === 'error').error || 'Unknown error'
                 summaryEl.innerHTML = `<span class="fail">Failed to run tests</span>: ${message}`
                 return
             }
@@ -364,6 +369,27 @@
                 summary: { passed: 0, failed: 0, total: 0 },
                 error: null,
                 expectedTotal: syncSummary().total
+            })
+            const [metaState, setMetaState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: metaSummary().total
+            })
+            const [tasksState, setTasksState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: tasksSummary().total
+            })
+            const [markdownState, setMarkdownState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: markdownSummary().total
             })
 
             useEffect(() => {
@@ -492,6 +518,99 @@
                     })
             }, [syncState.status])
 
+            useEffect(() => {
+                if (metaState.status !== 'idle') return
+
+                setMetaState(state => ({ ...state, status: 'running', error: null }))
+                streamMetaTests(progress => {
+                    setMetaState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setMetaState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setMetaState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [metaState.status])
+
+            useEffect(() => {
+                if (tasksState.status !== 'idle') return
+
+                setTasksState(state => ({ ...state, status: 'running', error: null }))
+                streamTasksTests(progress => {
+                    setTasksState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setTasksState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setTasksState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [tasksState.status])
+
+            useEffect(() => {
+                if (markdownState.status !== 'idle') return
+
+                setMarkdownState(state => ({ ...state, status: 'running', error: null }))
+                streamMarkdownTests(progress => {
+                    setMarkdownState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setMarkdownState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setMarkdownState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [markdownState.status])
+
             const suite = activeSuite === 'outline'
                 ? {
                     status: outlineState.status,
@@ -516,13 +635,37 @@
                             error: shortcutsState.error,
                             expectedTotal: shortcutsState.expectedTotal
                         }
-                        : {
-                            status: syncState.status,
-                            sections: syncState.sections,
-                            summary: syncState.summary,
-                            error: syncState.error,
-                            expectedTotal: syncState.expectedTotal
-                        }
+                        : activeSuite === 'sync'
+                            ? {
+                                status: syncState.status,
+                                sections: syncState.sections,
+                                summary: syncState.summary,
+                                error: syncState.error,
+                                expectedTotal: syncState.expectedTotal
+                            }
+                            : activeSuite === 'meta'
+                                ? {
+                                    status: metaState.status,
+                                    sections: metaState.sections,
+                                    summary: metaState.summary,
+                                    error: metaState.error,
+                                    expectedTotal: metaState.expectedTotal
+                                }
+                                : activeSuite === 'tasks'
+                                    ? {
+                                        status: tasksState.status,
+                                        sections: tasksState.sections,
+                                        summary: tasksState.summary,
+                                        error: tasksState.error,
+                                        expectedTotal: tasksState.expectedTotal
+                                    }
+                                    : {
+                                        status: markdownState.status,
+                                        sections: markdownState.sections,
+                                        summary: markdownState.summary,
+                                        error: markdownState.error,
+                                        expectedTotal: markdownState.expectedTotal
+                                    }
 
             const completed = suite.summary.total
             const expected = suite.expectedTotal || suite.summary.total
@@ -531,54 +674,79 @@
                 : `${completed} complete`
 
             useEffect(() => {
-                setSummarySummary(outlineState, cryptoState, shortcutsState, syncState)
-            }, [outlineState, cryptoState, shortcutsState, syncState])
+                setSummarySummary([outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState])
+            }, [outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState])
 
             return html`
-    <div class="tabs">
-      <button
-        class=${'tab' + (activeSuite === 'outline' ? ' active' : '')}
-        onClick=${() => setActiveSuite('outline')}
-        aria-pressed=${activeSuite === 'outline'}
-      >
-                <span class="tab-title">Outline</span>
-                <span class="tab-meta">${formatSuiteMeta(outlineState)}</span>
-      </button>
-      <button
-        class=${'tab' + (activeSuite === 'crypto2' ? ' active' : '')}
-        onClick=${() => setActiveSuite('crypto2')}
-        aria-pressed=${activeSuite === 'crypto2'}
-      >
-                <span class="tab-title">Crypto2</span>
-                <span class="tab-meta">${formatSuiteMeta(cryptoState)}</span>
-      </button>
-            <button
-                class=${'tab' + (activeSuite === 'shortcuts' ? ' active' : '')}
-                onClick=${() => setActiveSuite('shortcuts')}
-                aria-pressed=${activeSuite === 'shortcuts'}
-            >
-                                <span class="tab-title">Shortcuts</span>
-                                <span class="tab-meta">${formatSuiteMeta(shortcutsState)}</span>
-            </button>
-      <button
-        class=${'tab' + (activeSuite === 'sync' ? ' active' : '')}
-        onClick=${() => setActiveSuite('sync')}
-        aria-pressed=${activeSuite === 'sync'}
-      >
-                <span class="tab-title">Sync</span>
-                <span class="tab-meta">${formatSuiteMeta(syncState)}</span>
-      </button>
-    </div>
+                <div class="tabs">
+                  <button
+                    class=${'tab' + (activeSuite === 'outline' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('outline')}
+                    aria-pressed=${activeSuite === 'outline'}
+                  >
+                    <span class="tab-title">Outline</span>
+                    <span class="tab-meta">${formatSuiteMeta(outlineState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'crypto2' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('crypto2')}
+                    aria-pressed=${activeSuite === 'crypto2'}
+                  >
+                    <span class="tab-title">Crypto2</span>
+                    <span class="tab-meta">${formatSuiteMeta(cryptoState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'shortcuts' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('shortcuts')}
+                    aria-pressed=${activeSuite === 'shortcuts'}
+                  >
+                    <span class="tab-title">Shortcuts</span>
+                    <span class="tab-meta">${formatSuiteMeta(shortcutsState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'sync' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('sync')}
+                    aria-pressed=${activeSuite === 'sync'}
+                  >
+                    <span class="tab-title">Sync</span>
+                    <span class="tab-meta">${formatSuiteMeta(syncState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'meta' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('meta')}
+                    aria-pressed=${activeSuite === 'meta'}
+                  >
+                    <span class="tab-title">Meta</span>
+                    <span class="tab-meta">${formatSuiteMeta(metaState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'tasks' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('tasks')}
+                    aria-pressed=${activeSuite === 'tasks'}
+                  >
+                    <span class="tab-title">Tasks</span>
+                    <span class="tab-meta">${formatSuiteMeta(tasksState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'markdown' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('markdown')}
+                    aria-pressed=${activeSuite === 'markdown'}
+                  >
+                    <span class="tab-title">Markdown</span>
+                    <span class="tab-meta">${formatSuiteMeta(markdownState)}</span>
+                  </button>
+                </div>
 
-    ${suite.status === 'running' && html`<div class="suite-note">Running ${activeSuite} tests... ${progressText}</div>`}
-    ${suite.status === 'error' && html`<div class="suite-note fail">${activeSuite} test run failed: ${suite.error}</div>`}
+                ${suite.status === 'running' && html`<div class="suite-note">Running ${activeSuite} tests... ${progressText}</div>`}
+                ${suite.status === 'error' && html`<div class="suite-note fail">${activeSuite} test run failed: ${suite.error}</div>`}
 
-    ${suite.sections.map(s => html`<${Section} key=${activeSuite + ':' + s.name} section=${s} />`)}
-  `
+                ${suite.sections.map(s => html`<${Section} key=${activeSuite + ':' + s.name} section=${s} />`)}
+            `
         }
 
         render(html`<${App} />`, document.getElementById('app'))
     </script>
+
 </body>
 
 </html>

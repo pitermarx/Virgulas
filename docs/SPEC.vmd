@@ -130,7 +130,7 @@
       A child node must have more leading whitespace than its parent; the exact amount is not significant
       Sibling nodes share the same indentation level relative to their parent
     - All lines that do not begin with + or - (after stripping leading whitespace) are descriptions of the previous node
-      Indentation is not relevant on description lines; empty lines are ignored
+      Indentation is not relevant on description lines
     - When in RAW mode, the app is a plain text editor with a "SAVE" and a "CANCEL" button
   + SEARCH
     - Search can be done with simple substring matches
@@ -166,10 +166,20 @@
       - Type `[ ] ` at the start of a node to make it a pending task
       - Type `[x] ` at the start of a node to make it a done task
       - Delete the `[ ]` or `[x]` prefix to remove task state and return to a plain node
-      While editing, the raw prefix is visible in the text input so it can be changed freely
+        While editing, the raw prefix is visible in the text input so it can be changed freely
     - (DESKTOP ONLY) `Ctrl+Enter` cycles the focused node: plain → ☐ pending → ☑ done → plain
     - VMD serialisation: pending tasks are stored as `[ ] text`, done tasks as `[x] text`
       Plain nodes carry no prefix. Round-tripping through Raw mode preserves all task states
+    + DUE DATES
+      - A task can carry a due date via the `due:yyyy-MM-dd` metadata key at the end of its text.
+        The value must be a valid Gregorian calendar date
+        Example: `- [ ] Submit report due:2026-08-15`
+      - The due date is rendered as a highlighted chip in the node text when not editing
+        While editing, the raw `due:yyyy-MM-dd` token is visible as plain text
+      - The due date is shown as a badge in the task's row in the Tasks sidebar
+      - Overdue tasks (due date strictly before today) are highlighted in the Tasks sidebar
+        and sorted before all other pending tasks
+      - If any pending task is overdue, the ☑ tasks toolbar icon is highlighted
     + TASKS SIDEBAR
       - A panel listing every task node in the document, grouped into Pending and Done sections
       - Each row shows the task text and a breadcrumb of its ancestors
@@ -262,7 +272,7 @@
         E.g. `virgulas.com/preview/my-feature` will serve the code from the `my-feature` branch
       - On the main branch, the pipeline purges the Cloudflare cache after a successful deploy
       - Daily, a secondary workflow runs all tests against the production version at `virgulas.com`
-  + ROADMAP
+  - ROADMAP
     Ideas and improvements under consideration. Nothing here is committed — items may be adopted, modified, or dropped.
     + Feature ideas
       - Queued background sync: queue remote sync changes locally and execute them automatically once the connection is restored.
@@ -281,4 +291,4 @@
       - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
       - Developer Panel expansion: extend the `Ctrl+Alt+D` panel with active signal dependencies graph and additional runtime diagnostics.
-      - Tasks — future extensions: due dates, `@mention` assignments, a "My Tasks" rollup view across documents.
+      - Tasks — future extensions: `@mention` assignments, a "My Tasks" rollup view across documents.

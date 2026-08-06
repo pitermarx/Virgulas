@@ -29,6 +29,7 @@ type NestedNode = {
     open?: boolean,
     collapsed?: boolean,
     done?: boolean | null,
+    meta?: Record<string, string>,
     children?: NestedNode[]
 }
 
@@ -41,7 +42,15 @@ function nestedToFlat(nested: any) {
     function visit(node: any, parentId: string | null) {
         const flat: Record<string, any> = { id: node.id };
         if (parentId) flat.parentId = parentId;
-        if (node.text) flat.text = node.text;
+        if (node.meta) {
+            const parts: string[] = [node.text || ''];
+            for (const [key, value] of Object.entries(node.meta)) {
+                parts.push(`${key}:${value}`);
+            }
+            flat.text = parts.filter(Boolean).join(' ');
+        } else if (node.text) {
+            flat.text = node.text;
+        }
         if (node.description) flat.description = node.description;
         if (node.children?.length) flat.children = node.children.map((c: any) => c.id);
         if (node.open === false || node.collapsed === true) flat.open = false;

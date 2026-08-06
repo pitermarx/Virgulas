@@ -1,8 +1,10 @@
 import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { isValidDueDate } from './meta.js'
 
 const SAFE_HTTP_URL_RE = /^https?:\/\//i
 const SEARCH_TOKEN_RE = /(^|[\s([{"'`])([#@][A-Za-z0-9_-]+)/g
+const DUE_TOKEN_RE = /(^|\s)(due:\d{4}-\d{2}-\d{2})(\s*)$/
 
 function isSafeHttpUrl(value) {
     if (!value) return false
@@ -102,6 +104,52 @@ function decorateSearchTokens(safeHtml) {
     return template.innerHTML
 }
 
+function replaceTextNodeWithDueDates(textNode) {
+    const text = textNode.nodeValue || ''
+    const match = DUE_TOKEN_RE.exec(text)
+    if (!match || !isValidDueDate(match[2].slice(4))) return null
+    const prefix = match[1] || ''
+    const token = match[2]
+    const trailing = match[3] || ''
+    const fragment = document.createDocumentFragment()
+    if (match.index > 0) {
+        fragment.append(document.createTextNode(text.slice(0, match.index)))
+    }
+    if (prefix) {
+        fragment.append(document.createTextNode(prefix))
+    }
+    const span = document.createElement('span')
+    span.className = 'due-date'
+    span.textContent = token
+    fragment.append(span)
+    if (trailing) {
+        fragment.append(document.createTextNode(trailing))
+    }
+    return fragment
+}
+
+function decorateDueDates(safeHtml) {
+    if (!safeHtml || typeof document === 'undefined') return safeHtml
+    const template = document.createElement('template')
+    template.innerHTML = safeHtml
+    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT)
+    const candidates = []
+
+    while (walker.nextNode()) {
+        const textNode = walker.currentNode
+        if (shouldSkipTokenDecoration(textNode)) continue
+        candidates.push(textNode)
+    }
+
+    for (const textNode of candidates) {
+        const replacement = replaceTextNodeWithDueDates(textNode)
+        if (!replacement || !textNode.parentNode) continue
+        textNode.parentNode.replaceChild(replacement, textNode)
+    }
+
+    return template.innerHTML
+}
+
 const markdown = new Marked({
     async: false,
     gfm: true,
@@ -134,9 +182,10 @@ const SANITIZE_OPTIONS = {
     ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel']
 }
 
-export function renderInlineMarkdown(text) {
+export function renderInlineMarkdown(text, { decorateDueDate = false } = {}) {
     if (!text) return ''
     const rawHtml = markdown.parseInline(normalizeMarkdownAliases(text))
     const safeHtml = DOMPurify.sanitize(rawHtml, SANITIZE_OPTIONS)
-    return decorateSearchTokens(safeHtml)
+    const decorated = decorateSearchTokens(safeHtml)
+    return decorateDueDate ? decorateDueDates(decorated) : decorated
 }

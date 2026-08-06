@@ -18,8 +18,10 @@
   --color-search-current: #fff0b0;
   --color-tag-chip-bg: #e4f2d8;
   --color-tag-chip-text: #2d6a2f;
-  --color-mention-chip-bg: #dbe8ff;
-  --color-mention-chip-text: #244a9a;
+  --color-mention-chip-bg: #efe6f8;
+  --color-mention-chip-text: #6b3fa0;
+  --color-due-chip-bg: #fdf0d5;
+  --color-due-chip-text: #8a5a00;
   --color-overlay: rgba(20, 18, 14, 0.45);
   --color-success: #2e7d32;
   --color-error: #d32f2f;
@@ -81,8 +83,10 @@
     --color-search-current: #6a5318;
     --color-tag-chip-bg: #2b3f2c;
     --color-tag-chip-text: #98d89d;
-    --color-mention-chip-bg: #1e3358;
-    --color-mention-chip-text: #8db4ff;
+    --color-mention-chip-bg: #2d2440;
+    --color-mention-chip-text: #b794f4;
+    --color-due-chip-bg: #3a2f1a;
+    --color-due-chip-text: #e8b84b;
     --color-overlay: rgba(0, 0, 0, 0.7);
   }
 }
@@ -105,8 +109,10 @@
   --color-search-current: #6a5318;
   --color-tag-chip-bg: #2b3f2c;
   --color-tag-chip-text: #98d89d;
-  --color-mention-chip-bg: #1e3358;
-  --color-mention-chip-text: #8db4ff;
+  --color-mention-chip-bg: #2d2440;
+  --color-mention-chip-text: #b794f4;
+  --color-due-chip-bg: #3a2f1a;
+  --color-due-chip-text: #e8b84b;
   --color-overlay: rgba(0, 0, 0, 0.7);
 }
 
@@ -1028,6 +1034,18 @@ a:hover {
   color: var(--color-mention-chip-text);
 }
 
+/* ── Due date chip (inline in node text) ── */
+.due-date {
+  display: inline-block;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-full);
+  font: inherit;
+  line-height: inherit;
+  color: var(--color-due-chip-text);
+  background: var(--color-due-chip-bg);
+  white-space: nowrap;
+}
+
 /* ── Node text: edit mode (input) ── */
 .node-text-input {
   cursor: text;
@@ -1669,6 +1687,14 @@ a:hover {
   padding: var(--space-1) var(--space-2);
 }
 
+.toolbar-btn-tasks--overdue {
+  color: var(--color-danger);
+}
+
+.toolbar-btn-tasks--overdue svg {
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--color-danger) 40%, transparent));
+}
+
 /* ── Tasks Panel ── */
 .tasks-panel-backdrop {
   position: fixed;
@@ -1692,15 +1718,50 @@ a:hover {
   box-shadow: var(--shadow-lg);
 }
 
-/* Wide screen: show panel side-by-side without dimming content */
+/* Wide screen: show panel side-by-side without dimming content.
+   Grid layout keeps the status toolbar always visible below,
+   while outline and task list scroll independently. */
 @media (min-width: 1160px) {
+  body.tasks-panel-is-open .main-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "content panel"
+      "toolbar toolbar";
+  }
+
+  body.tasks-panel-is-open .main-content {
+    grid-area: content;
+    min-height: 0;
+  }
+
   body.tasks-panel-is-open .tasks-panel-backdrop {
+    grid-area: panel;
+    position: static;
+    inset: auto;
     background: transparent;
     pointer-events: none;
+    z-index: auto;
+    min-height: 0;
+    overflow: hidden;
   }
 
   body.tasks-panel-is-open .tasks-panel {
+    position: static;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border-left: 1px solid var(--color-border);
+    box-shadow: none;
     pointer-events: auto;
+  }
+
+  body.tasks-panel-is-open .status-toolbar {
+    grid-area: toolbar;
   }
 }
 
@@ -1834,6 +1895,14 @@ a:hover {
   background: var(--color-hover-surface);
 }
 
+.task-row--overdue {
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+}
+
+.task-row--overdue:hover {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
 .task-row-check {
   display: inline-flex;
   align-items: center;
@@ -1885,4 +1954,21 @@ a:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-row-due {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-due-chip-text);
+  background: var(--color-due-chip-bg);
+  border-radius: var(--radius-full);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.task-row-due--overdue {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
