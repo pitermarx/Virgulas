@@ -1325,6 +1325,10 @@ a:hover {
   box-sizing: border-box;
 }
 
+.main-content::-webkit-scrollbar {
+  display: none;
+}
+
 .main-toolbar {
   padding: var(--space-3) var(--space-4);
   display: flex;
@@ -1831,7 +1835,12 @@ a:hover {
 .tasks-panel-body {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: var(--space-2) 0;
+}
+
+.tasks-panel-body::-webkit-scrollbar {
+  display: none;
 }
 
 .tasks-empty {
