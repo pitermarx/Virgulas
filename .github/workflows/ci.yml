@@ -45,7 +45,13 @@ jobs:
               RANGE="$BEFORE..${{ github.sha }}"
             fi
           else
-            RANGE="${{ github.sha }}"
+            LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            if [ -n "$LAST_TAG" ]; then
+              RANGE="$LAST_TAG..${{ github.sha }}"
+            else
+              BASE="$(git rev-parse --short HEAD~20 2>/dev/null || echo "${{ github.sha }}")"
+              RANGE="$BASE..${{ github.sha }}"
+            fi
           fi
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
 
