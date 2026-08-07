@@ -1,6 +1,7 @@
 # Virgulas
 
 [Virgulas](https://virgulas.com) is a local-first browser outliner.
+
 ![alt text](docs/demo.png)
 
 ## Features
