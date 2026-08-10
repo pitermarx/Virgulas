@@ -22,14 +22,14 @@
     "devDependencies": {
         "@playwright/test": "^1.62.1",
         "serve": "^14.2.6",
-        "supabase": "^2.110.0"
+        "supabase": "^2.111.0"
     },
     "dependencies": {
-        "@preact/signals": "^2.10.0",
-        "@supabase/supabase-js": "^2.111.0",
-        "dompurify": "^3.4.12",
+        "@preact/signals": "^2.11.0",
+        "@supabase/supabase-js": "^2.112.2",
+        "dompurify": "^3.4.13",
         "htm": "^3.1.1",
-        "marked": "^18.0.7",
-        "preact": "^10.29.7"
+        "marked": "^18.0.9",
+        "preact": "^10.29.8"
     }
 }
