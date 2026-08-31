@@ -82,7 +82,7 @@ async function initAuthState() {
 setTimeout(async () => {
   await initAuthState();
   splashVisible.value = false;
-}, 100);
+}, 300);
 
 async function requestChangeMode() {
   if (authMode.value === 'local' && authHasLocalData.value) {
