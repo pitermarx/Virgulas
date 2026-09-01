@@ -523,8 +523,13 @@ body {
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
+  scrollbar-width: none;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--color-border);
+}
+
+.modal-dialog::-webkit-scrollbar {
+  display: none;
 }
 
 .modal-header {
