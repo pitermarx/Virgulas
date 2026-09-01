@@ -319,6 +319,13 @@ function handleKeyDownOnFocusedNode(k, focus) {
 
 function handleKeyDown(e, focus) {
 
+    // While the lock screen (bottom-sheet) is visible, do not intercept keys so the
+    // browser's default behaviour works — e.g. pressing Enter in the passphrase field
+    // submits the unlock form instead of creating an outline node.
+    if (e.target && typeof e.target.closest === 'function' && e.target.closest('.bottom-sheet')) {
+        return false
+    }
+
     const k =
         e.ctrlKey && e.altKey ? `Ctrl+Alt+${e.key}` :
             e.ctrlKey && e.shiftKey ? `Ctrl+Shift+${e.key}` :

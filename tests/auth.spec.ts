@@ -1,4 +1,4 @@
-import { test, expect, type Page } from './test';
+import { test, expect, type Page, seedEncryptedDoc } from './test';
 
 const installMockSupabase = async (page: Page, options?: {
   userEmail?: string;
@@ -163,24 +163,53 @@ test.describe('Authentication', () => {
     }).toContain('|');
   });
 
-  test('remote mode requires username password and passphrase before unlock', async ({ page }) => {
+  test('pressing Enter in the passphrase field unlocks like the Unlock button', async ({ page }) => {
+    await page.goto('/');
+    await seedEncryptedDoc(page, JSON.stringify({
+      modelVersion: 'v1',
+      dataVersion: 0,
+      nodes: [
+        { id: 'root', text: 'Root' },
+        { id: 'n1', parentId: 'root', text: 'Hello' }
+      ]
+    }), 'correct-horse');
+    await page.reload();
+
+    await expect(page.locator('#auth-passphrase')).toBeVisible();
+    await page.locator('#auth-passphrase').fill('correct-horse');
+    await page.locator('#auth-passphrase').press('Enter');
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.node-content').first()).toContainText('Hello');
+  });
+
+  test('remote mode asks for account password first, then passphrase', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();
       localStorage.setItem('vmd_last_mode', 'local');
     });
+    await installMockSupabase(page);
     await page.goto('/');
 
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: 'Remote' }).click();
 
-    const unlockButton = page.getByRole('button', { name: 'Unlock' });
-    await expect(unlockButton).toBeDisabled();
+    // Step 1: email + account password only, no passphrase field yet
+    const continueButton = page.getByRole('button', { name: 'Continue', exact: true });
+    await expect(continueButton).toBeDisabled();
+    await expect(page.getByLabel('Encryption passphrase')).toHaveCount(0);
 
     await page.getByLabel('Email').fill('user@virgulas.com');
-    await expect(unlockButton).toBeDisabled();
+    await expect(continueButton).toBeDisabled();
 
     await page.getByLabel('Account password').fill('account-password');
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+
+    // Step 2: passphrase only
+    await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
+    const unlockButton = page.getByRole('button', { name: 'Unlock' });
     await expect(unlockButton).toBeDisabled();
 
     await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
@@ -221,15 +250,21 @@ test.describe('Authentication', () => {
       localStorage.clear();
       localStorage.setItem('vmd_last_username', 'stale@virgulas.com');
     });
+    await installMockSupabase(page);
     await page.goto('/');
 
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
     await expect(page.getByLabel('Email')).toHaveValue('stale@virgulas.com');
 
-    const unlockButton = page.getByRole('button', { name: 'Unlock' });
-    await expect(unlockButton).toBeDisabled();
+    const continueButton = page.getByRole('button', { name: 'Continue', exact: true });
+    await expect(continueButton).toBeDisabled();
 
     await page.getByLabel('Account password').fill('account-password');
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+
+    await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
+    const unlockButton = page.getByRole('button', { name: 'Unlock' });
     await expect(unlockButton).toBeDisabled();
 
     await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
@@ -259,6 +294,7 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('existing@virgulas.com');
     await page.getByLabel('Account password').fill('account-password');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
@@ -396,7 +432,7 @@ test.describe('Authentication', () => {
       username: localStorage.getItem('vmd_last_username'),
       encryptedData: localStorage.getItem('vmd_data_enc')
     }));
-    expect(storageState.mode).toBeNull();
+    expect(storageState.mode).toBe('memory');
     expect(storageState.username).toBeNull();
     expect(storageState.encryptedData).toBeNull();
   });
@@ -452,9 +488,11 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('mock-signup@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
-    await page.getByLabel('Encryption passphrase').fill('signup-passphrase');
     await page.getByRole('button', { name: 'Sign up' }).click();
 
+    // Sign-up succeeds → now the passphrase step for creating remote data
+    await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
+    await page.getByLabel('Encryption passphrase').fill('signup-passphrase');
     await expect(page.getByRole('button', { name: 'Unlock' })).toBeEnabled();
   });
 
@@ -472,10 +510,12 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('mock-error@virgulas.com');
     await page.getByLabel('Account password').fill('wrong-password');
-    await page.getByLabel('Encryption passphrase').fill('doc-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
+    // The account password is authenticated at this step, so the error surfaces
+    // before the user is asked for the encryption passphrase.
     await expect(page.getByText('Invalid login credentials')).toBeVisible();
+    await expect(page.getByLabel('Encryption passphrase')).not.toBeVisible();
   });
 
   test('remote decrypt failure offers reset with new passphrase', async ({ page }) => {
@@ -499,6 +539,7 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill('recover@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByLabel('Encryption passphrase').fill('new-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
@@ -721,9 +762,47 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
     await expect(page.locator('.status-memory-badge')).toBeVisible();
 
-    // Remembered mode is unchanged (next visit will show lock screen again)
+    // Memory mode is now remembered — the next visit stays in memory
     const savedMode = await page.evaluate(() => localStorage.getItem('vmd_last_mode'));
-    expect(savedMode).toBe('local');
+    expect(savedMode).toBe('memory');
+  });
+
+  test('remembered memory mode boots straight into the demo without a lock screen', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'memory');
+    });
+    await installMockSupabase(page);
+    await page.goto('/');
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('.status-memory-badge')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toHaveCount(0);
+  });
+
+  test('sign out returns to the in-memory demo and remembers memory mode', async ({ page }) => {
+    await page.goto('/');
+
+    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'r1', text: 'Remote Data', children: [] }]
+    });
+
+    await page.evaluate(() => localStorage.clear());
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+    await page.getByRole('button', { name: 'Options' }).click();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+
+    await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+    const savedMode = await page.evaluate(() => localStorage.getItem('vmd_last_mode'));
+    expect(savedMode).toBe('memory');
   });
 
 });

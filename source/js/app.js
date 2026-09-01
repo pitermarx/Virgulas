@@ -1,7 +1,9 @@
 import { html, render } from 'htm/preact';
-import { signal } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, RawEditor, DebugPanel, rawMode, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
+import { signal, effect } from '@preact/signals';
+import { Outline, StatusToolbar, MainToolbar, DebugPanel, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
 import persistence from './persistence.js';
+import { biometrics } from './biometrics.js';
+import { remoteSync } from './sync.js';
 import outline from './outline.js';
 import { appVersion } from './devtools.js';
 import { store } from './utils.js';
@@ -29,6 +31,136 @@ const canResetLocalData = signal(false);
 const isBusy = signal(false);
 const authUser = signal(null);
 const authStep = signal('unlock');
+// Remote unlock staging: when true, email+password were collected and we await the passphrase
+const remotePasswordStage = signal(false);
+
+// ── Account / options modal state ────────────────────────────────────────────
+const bioEnrolled = signal(false);
+const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 });
+const adminBusy = signal(false);
+const adminError = signal('');
+const adminMessage = signal('');
+const newEmail = signal('');
+const newPassword = signal('');
+const newPassphrase = signal('');
+
+async function refreshAccountInfo() {
+  let user = null;
+  try { user = await persistence.getUser(); } catch { /* ignore */ }
+  accountInfo.value = {
+    email: user?.email || '',
+    mode: persistence.getMode(),
+    encryptedBytes: (store.data.get('') || '').length
+  };
+}
+
+effect(() => {
+  if (optionsOpen.value) {
+    void refreshAccountInfo();
+    void biometrics.hasEnrolled().then(v => { bioEnrolled.value = v });
+  }
+});
+
+if (typeof window !== 'undefined' && biometrics.isSupported()) {
+  biometrics.hasEnrolled().then(v => { bioEnrolled.value = v });
+}
+
+async function runAdminAction(action, successMessage) {
+  adminError.value = '';
+  adminMessage.value = '';
+  adminBusy.value = true;
+  try {
+    await action();
+    adminMessage.value = successMessage;
+    await refreshAccountInfo();
+  } catch (error) {
+    adminError.value = String(error?.message || 'Something went wrong.');
+  } finally {
+    adminBusy.value = false;
+  }
+}
+
+function submitChangeEmail(e) {
+  e.preventDefault();
+  if (!newEmail.value.trim()) {
+    adminError.value = 'Email cannot be empty.';
+    return;
+  }
+  void runAdminAction(() => remoteSync.updateEmail(newEmail.value.trim()), 'Email updated. Confirm the change from the new address if required.');
+  newEmail.value = '';
+}
+
+function submitChangePassword(e) {
+  e.preventDefault();
+  if (!newPassword.value) {
+    adminError.value = 'Password cannot be empty.';
+    return;
+  }
+  void runAdminAction(() => remoteSync.updatePassword(newPassword.value), 'Account password updated.');
+  newPassword.value = '';
+}
+
+function submitChangePassphrase(e) {
+  e.preventDefault();
+  if (!newPassphrase.value) {
+    adminError.value = 'New passphrase cannot be empty.';
+    return;
+  }
+  void runAdminAction(() => persistence.changePassphrase(newPassphrase.value), 'Encryption passphrase changed. Data was re-encrypted.');
+  newPassphrase.value = '';
+}
+
+function enrollBiometric() {
+  void runAdminAction(async () => {
+    const pass = persistence.getPassphrase();
+    if (!pass) throw new Error('Unlock with a passphrase before enabling biometric unlock.');
+    await biometrics.enroll(pass, accountInfo.value.email || 'Virgulas user');
+    bioEnrolled.value = true;
+  }, 'Biometric unlock enabled on this device.');
+}
+
+function forgetBiometric() {
+  void biometrics.forget()
+    .then(() => {
+      bioEnrolled.value = false;
+      adminMessage.value = 'This device can no longer unlock with biometrics.';
+    })
+    .catch(err => {
+      adminError.value = String(err?.message || 'Failed to remove biometric unlock.');
+    });
+}
+
+function exportDoc() {
+  try {
+    const vmd = persistence.exportVmd();
+    const blob = new Blob([vmd], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `virgulas-${stamp}.vmd`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    adminMessage.value = 'Exported .vmd backup.';
+  } catch (error) {
+    adminError.value = String(error?.message || 'Export failed.');
+  }
+}
+
+async function importDoc(e) {
+  const file = e.target?.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    persistence.importVmd(text);
+    adminMessage.value = 'Imported document. It will be re-encrypted and saved.';
+  } catch (error) {
+    adminError.value = String(error?.message || 'Import failed.');
+  }
+}
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
@@ -101,6 +233,7 @@ async function requestChangeMode() {
   canResetLocalData.value = false;
   passphrase.value = '';
   password.value = '';
+  remotePasswordStage.value = false;
 }
 
 function pickMode(nextMode) {
@@ -119,6 +252,7 @@ function pickMode(nextMode) {
   canResetRemoteData.value = false;
   canResetLocalData.value = false;
   passphrase.value = '';
+  remotePasswordStage.value = false;
   password.value = '';
   authStep.value = 'unlock';
 }
@@ -156,6 +290,7 @@ async function submitUnlock(e) {
       trustSession: isRemoteSessionValid()
     });
     if (success) {
+      remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
@@ -185,6 +320,10 @@ async function submitSignUp() {
   try {
     const result = await persistence.signUp(username.value, password.value);
     authUser.value = await persistence.getUser();
+    if (authUser.value) {
+      authScenario.value = 'remote-session-valid';
+      remotePasswordStage.value = false;
+    }
     if (!result?.user) {
       unlockMessage.value = 'Sign-up submitted. Confirm your email if confirmation is enabled.';
     }
@@ -202,9 +341,11 @@ async function submitSignOut() {
   try {
     await persistence.signOut();
     authUser.value = null;
-    authScenario.value = 'remote-session-expired';
-    authMode.value = 'remote';
-    await loadLockedBackgroundIntro();
+    remotePasswordStage.value = false;
+    await persistence.unlock('', { mode: 'memory' });
+    persistence.setPreferredMode('memory');
+    stagedMemoryDocJson = null;
+    document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
     unlockError.value = String(error?.message || 'Failed to sign out.');
   } finally {
@@ -270,6 +411,7 @@ async function continueInMemory() {
   const staged = stagedMemoryDocJson;
   stagedMemoryDocJson = null;
   await persistence.unlock('', { mode: 'memory' });
+  persistence.setPreferredMode('memory');
   if (staged) {
     outline.deserialize(staged);
   }
@@ -291,6 +433,68 @@ function openSecureStorageSetup() {
   document.body.removeAttribute('data-main-view');
 }
 
+async function submitRemotePassword(e) {
+  e.preventDefault();
+  if (isBusy.value) return;
+  if (!username.value.trim() || !password.value) {
+    unlockError.value = 'Email and password are required.';
+    return;
+  }
+  unlockError.value = '';
+  unlockMessage.value = '';
+  isBusy.value = true;
+  try {
+    // Authenticate the account now so invalid credentials surface at this step,
+    // instead of only after the user has already entered their encryption passphrase.
+    await remoteSync.signIn(username.value.trim(), password.value);
+    authUser.value = await persistence.getUser();
+    if (!authUser.value) {
+      unlockError.value = 'Sign-in failed. Check your email and password.';
+      return;
+    }
+    store.user.set(username.value.trim());
+    remotePasswordStage.value = true;
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Sign-in failed. Check your email and password.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function unlockWithBiometrics() {
+  if (isBusy.value) return;
+  isBusy.value = true;
+  unlockError.value = '';
+  try {
+    const recovered = await biometrics.unlock();
+    if (!recovered) {
+      unlockError.value = 'Biometric unlock failed. Enter your passphrase instead.';
+      return;
+    }
+    passphrase.value = recovered;
+    const success = await persistence.unlock(recovered, {
+      mode: authMode.value,
+      username: username.value,
+      password: password.value,
+      trustSession: isRemoteSessionValid()
+    });
+    if (success) {
+      remotePasswordStage.value = false;
+      if (authMode.value === 'remote') {
+        authUser.value = await persistence.getUser();
+      }
+      stagedMemoryDocJson = null;
+      document.body.setAttribute('data-main-view', 'rendered');
+    } else {
+      unlockError.value = 'Invalid passphrase.';
+    }
+  } catch (error) {
+    unlockError.value = String(error?.message || 'Biometric unlock failed.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
 const LockScreen = () => {
   const step = authStep.value;
   const mode = authMode.value;
@@ -299,9 +503,10 @@ const LockScreen = () => {
   const isLocal = mode === 'local';
   const isSessionValid = isRemoteSessionValid();
 
-  const unlockDisabled = isBusy.value
-    || (!isFilesystem && !passphrase.value.trim())
-    || (isRemote && !isSessionValid && (!username.value.trim() || !password.value));
+  const isRemotePasswordStep = isRemote && !isSessionValid && !remotePasswordStage.value;
+
+  const passwordStepDisabled = isBusy.value || !username.value.trim() || !password.value;
+  const unlockDisabled = isBusy.value || (!isFilesystem && !passphrase.value.trim());
 
   const modeLabel = isLocal ? 'Local' : isRemote ? 'Remote' : 'File';
 
@@ -336,68 +541,88 @@ const LockScreen = () => {
             ${isFilesystem && 'File'}
           </div>
 
-          ${isRemote && !isSessionValid && html`
-            <div class="input-group">
-              <label for="auth-username" class="input-label">Email</label>
-              <input value=${username.value} onInput=${(e) => username.value = e.target.value}
-                id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
-            </div>
-            <div class="input-group">
-              <label for="auth-password" class="input-label">Account password</label>
-              <input value=${password.value} onInput=${(e) => password.value = e.target.value}
-                id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
-            </div>
-          `}
-
-          ${isRemote && isSessionValid && html`
-            <div class="auth-secondary-actions">
-              <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
-                ${isBusy.value ? 'Signing out...' : 'Sign out'}
+          ${isRemotePasswordStep && html`
+            <form onSubmit=${submitRemotePassword}>
+              <div class="input-group">
+                <label for="auth-username" class="input-label">Email</label>
+                <input value=${username.value} onInput=${(e) => username.value = e.target.value}
+                  id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
+              </div>
+              <div class="input-group">
+                <label for="auth-password" class="input-label">Account password</label>
+                <input value=${password.value} onInput=${(e) => password.value = e.target.value}
+                  id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
+              </div>
+              ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+              <button type="submit" class="lock-submit-btn" disabled=${passwordStepDisabled} aria-label="Continue" title="Continue">
+                ${isBusy.value ? '...' : 'Continue'}
               </button>
-            </div>
-          `}
+            </form>
 
-          <form onSubmit=${submitUnlock}>
-            ${!isFilesystem && html`
-              <label for="auth-passphrase" class="visually-hidden">
-                ${isLocalCreate() ? 'Create a passphrase' : 'Encryption passphrase'}
-              </label>
-              <input
-                value=${passphrase.value}
-                onInput=${(e) => passphrase.value = e.target.value}
-                id="auth-passphrase"
-                type="password"
-                placeholder=${isLocalCreate() ? 'Create passphrase' : 'Passphrase'}
-                class="huge-input"
-                autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'}
-              />
-            `}
-            ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
-            ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
-            ${canResetLocalData.value && html`
-              <div class="auth-secondary-actions">
-                <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
-                  onClick=${submitResetLocalData}>Reset Local Data With New Passphrase</button>
-              </div>
-            `}
-            ${canResetRemoteData.value && html`
-              <div class="auth-secondary-actions">
-                <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
-                  onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
-              </div>
-            `}
-            <button type="submit" class="lock-submit-btn" disabled=${unlockDisabled} aria-label="Unlock" title="Unlock">
-              ${isBusy.value ? '...' : isFilesystem ? 'Open File' : 'Unlock'}
-            </button>
-          </form>
-
-          ${isRemote && !isSessionValid && html`
             <div class="auth-secondary-actions">
               <button type="button" class="toolbar-btn" disabled=${isBusy.value || !username.value.trim() || !password.value}
                 onClick=${submitSignUp}>
                 ${isBusy.value ? '...' : 'Sign up'}
               </button>
             </div>
+          `}
+
+          ${!isRemotePasswordStep && html`
+            ${isRemote && isSessionValid && html`
+              <div class="auth-secondary-actions">
+                <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
+                  ${isBusy.value ? 'Signing out...' : 'Sign out'}
+                </button>
+              </div>
+            `}
+
+            ${isRemote && !isSessionValid && remotePasswordStage.value && html`
+              <div class="auth-secondary-actions">
+                <button type="button" class="toolbar-btn" disabled=${isBusy.value}
+                  onClick=${() => { remotePasswordStage.value = false; unlockError.value = ''; }}>Back</button>
+              </div>
+            `}
+
+            ${!isFilesystem && bioEnrolled.value && html`
+              <button type="button" class="lock-submit-btn" onClick=${unlockWithBiometrics} disabled=${isBusy.value}>
+                Unlock with biometrics
+              </button>
+            `}
+
+            <form onSubmit=${submitUnlock}>
+              ${!isFilesystem && html`
+                <label for="auth-passphrase" class="visually-hidden">
+                  ${isLocalCreate() ? 'Create a passphrase' : 'Encryption passphrase'}
+                </label>
+                <input
+                  value=${passphrase.value}
+                  onInput=${(e) => passphrase.value = e.target.value}
+                  id="auth-passphrase"
+                  type="password"
+                  placeholder=${isLocalCreate() ? 'Create passphrase' : 'Passphrase'}
+                  class="huge-input"
+                  autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'}
+                />
+                <p class="auth-hint">If you lose this passphrase, your data cannot be recovered — not even by Virgulas.</p>
+              `}
+              ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
+              ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+              ${canResetLocalData.value && html`
+                <div class="auth-secondary-actions">
+                  <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
+                    onClick=${submitResetLocalData}>Reset Local Data With New Passphrase</button>
+                </div>
+              `}
+              ${canResetRemoteData.value && html`
+                <div class="auth-secondary-actions">
+                  <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
+                    onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
+                </div>
+              `}
+              <button type="submit" class="lock-submit-btn" disabled=${unlockDisabled} aria-label="Unlock" title="Unlock">
+                ${isBusy.value ? '...' : isFilesystem ? 'Open File' : 'Unlock'}
+              </button>
+            </form>
           `}
 
           <button type="button" class="subtle-switch" onClick=${requestChangeMode} disabled=${isBusy.value}>
@@ -440,6 +665,9 @@ const OptionsModal = () => {
   if (!optionsOpen.value) return null;
 
   const currentMode = persistence.getMode();
+  const info = accountInfo.value;
+  const hasPassphrase = currentMode === 'local' || currentMode === 'remote';
+  const isRemote = currentMode === 'remote';
 
   function handleThemeToggle() {
     const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
@@ -465,27 +693,16 @@ const OptionsModal = () => {
     try {
       await persistence.signOut();
       authUser.value = null;
-      authScenario.value = 'remote-session-expired';
-      await loadLockedBackgroundIntro();
+      remotePasswordStage.value = false;
+      await persistence.unlock('', { mode: 'memory' });
+      persistence.setPreferredMode('memory');
+      stagedMemoryDocJson = null;
+      document.body.setAttribute('data-main-view', 'rendered');
     } catch (err) {
       unlockError.value = String(err?.message || 'Failed to sign out.');
     } finally {
       isBusy.value = false;
     }
-  }
-
-  async function handleUpgradeStorage() {
-    optionsOpen.value = false;
-    const confirmed = confirm('Switching to a persistent storage mode will discard the current in-memory document. Continue?');
-    if (!confirmed) return;
-    stagedMemoryDocJson = null;
-    persistence.lock();
-    await loadLockedBackgroundIntro();
-    authMode.value = 'local';
-    authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
-    authStep.value = 'unlock';
-    unlockError.value = '';
-    unlockMessage.value = '';
   }
 
   async function handleChangeFile() {
@@ -518,12 +735,9 @@ const OptionsModal = () => {
     authUser.value = null;
     // Reload into memory mode so the intro appears
     await persistence.unlock('', { mode: 'memory' });
+    persistence.setPreferredMode('memory');
     document.body.setAttribute('data-main-view', 'rendered');
   }
-
-  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-  const themeAttr = document.documentElement.getAttribute('data-theme') || (prefersDark ? 'dark' : 'light');
-  const themeLabel = themeAttr === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme';
 
   return html`
     <div class="modal-overlay" onClick=${e => { if (e.target === e.currentTarget) optionsOpen.value = false; }}>
@@ -532,18 +746,89 @@ const OptionsModal = () => {
           <h2 class="modal-title" id="options-title">Options</h2>
           <button class="modal-close" onClick=${() => optionsOpen.value = false} aria-label="Close">×</button>
         </div>
-        <div class="modal-body options-body">
+        <div class="modal-body options-body admin-body">
+
+          <dl class="admin-info">
+            <dt>Email</dt><dd>${info.email || '—'}</dd>
+            <dt>Storage mode</dt><dd>${currentMode}</dd>
+            <dt>Encrypted blob</dt><dd>${info.encryptedBytes} characters</dd>
+          </dl>
+
+          ${isRemote && html`
+            <section class="admin-section">
+              <h3 class="admin-section-title">Account security</h3>
+              <form onSubmit=${submitChangeEmail}>
+                <label class="input-label" for="admin-email">Change email</label>
+                <input id="admin-email" type="email" value=${newEmail.value}
+                  onInput=${e => newEmail.value = e.target.value}
+                  class="input-field" placeholder="new@example.com" autocomplete="email" />
+                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Update email</button>
+              </form>
+              <form onSubmit=${submitChangePassword}>
+                <label class="input-label" for="admin-password">Change account password</label>
+                <input id="admin-password" type="password" value=${newPassword.value}
+                  onInput=${e => newPassword.value = e.target.value}
+                  class="input-field" placeholder="New account password" autocomplete="new-password" />
+                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Update password</button>
+              </form>
+            </section>
+          `}
+
+          ${hasPassphrase && html`
+            <section class="admin-section">
+              <h3 class="admin-section-title">Encryption passphrase</h3>
+              <form onSubmit=${submitChangePassphrase}>
+                <label class="input-label" for="admin-passphrase">Change passphrase (keeps your data)</label>
+                <input id="admin-passphrase" type="password" value=${newPassphrase.value}
+                  onInput=${e => newPassphrase.value = e.target.value}
+                  class="input-field" placeholder="New encryption passphrase" autocomplete="new-password" />
+                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Change passphrase</button>
+              </form>
+              <p class="admin-hint">Your data is encrypted with this passphrase. If you forget it, your data is unrecoverable — Virgulas cannot decrypt it without it.</p>
+            </section>
+          `}
+
+          ${hasPassphrase && html`
+            <section class="admin-section">
+              <h3 class="admin-section-title">Biometric unlock</h3>
+              <p class="admin-hint">
+                ${biometrics.isSupported()
+        ? bioEnrolled.value
+          ? 'This device can unlock with your fingerprint, face, or device PIN.'
+          : 'Enable it to unlock without typing the passphrase. The passphrase is stored encrypted on this device and released only after a biometric prompt.'
+        : 'Biometric unlock is not supported in this browser.'}
+              </p>
+              ${biometrics.isSupported() && html`
+                <div class="options-row">
+                  ${!bioEnrolled.value && html`
+                    <button class="btn btn-secondary" onClick=${enrollBiometric} disabled=${adminBusy.value}>Enable on this device</button>
+                  `}
+                  ${bioEnrolled.value && html`
+                    <button class="btn btn-secondary" onClick=${forgetBiometric} disabled=${adminBusy.value}>Forget this device</button>
+                  `}
+                </div>
+              `}
+            </section>
+          `}
+
+          <section class="admin-section">
+            <h3 class="admin-section-title">Data</h3>
+            <div class="options-row">
+              <button class="btn btn-secondary" onClick=${exportDoc}>Export .vmd backup</button>
+              <label class="btn btn-secondary admin-file-btn">
+                Import .vmd
+                <input type="file" accept=".vmd,text/plain" style="display:none" onChange=${importDoc} />
+              </label>
+            </div>
+          </section>
+
           <div class="options-row">
-            <button class="btn btn-secondary" onClick=${handleThemeToggle}>${themeLabel}</button>
+            <button class="btn btn-secondary" onClick=${handleThemeToggle}>Toggle theme</button>
           </div>
           <div class="options-row">
             <a href=${REPO_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Source repository ↗</a>
           </div>
-          ${currentMode === 'memory' && html`
-            <div class="options-row">
-              <button class="btn btn-secondary" onClick=${handleUpgradeStorage}>Upgrade storage…</button>
-            </div>
-          `}
+
           ${currentMode === 'remote' && html`
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${handleSignOut} disabled=${isBusy.value}>Sign out</button>
@@ -559,11 +844,21 @@ const OptionsModal = () => {
               <button class="btn btn-secondary" onClick=${handleChangeFile}>Change file</button>
             </div>
           `}
-          <div class="options-row options-row-danger">
-            <button class="btn btn-danger" onClick=${handlePurge}>
-              ${currentMode === 'remote' ? 'Sign out & clear session' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
-            </button>
-          </div>
+          ${currentMode !== 'memory' && html`
+            <div class="options-row options-row-danger">
+              <button class="btn btn-danger" onClick=${handlePurge}>
+                ${currentMode === 'remote' ? 'Sign out & clear session' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
+              </button>
+            </div>
+          `}
+
+          ${adminError.value && html`<div class="form-error">${adminError.value}</div>`}
+          ${adminMessage.value && html`<div class="form-success">${adminMessage.value}</div>`}
+
+          <p class="admin-hint admin-footer-note">
+            Account deletion and signing out other sessions are not available yet. Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
+          </p>
+
           <div class="options-footer-meta">Version <span class="options-footer-version" data-app-version>${appVersion.value}</span></div>
         </div>
       </div>
@@ -588,15 +883,12 @@ const Splash = () => {
   return html`
     <div class="app-shell">
       <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
-        ${rawMode.value && !isLocked
-      ? html`<${RawEditor} />`
-      : html`<div class="main-content">
-              <${MainToolbar} />
-              <${SecureStoragePrompt} />
-              <${Outline} />
-              <${DebugPanel} />
-            </div>`
-    }
+        <div class="main-content">
+          <${MainToolbar} />
+          <${SecureStoragePrompt} />
+          <${Outline} />
+          <${DebugPanel} />
+        </div>
         <${StatusToolbar} />
         ${!isLocked && html`<${OptionsModal} />`}
         ${!isLocked && html`<${ConflictModal} />`}

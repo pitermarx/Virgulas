@@ -30,11 +30,12 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.getByRole('button', { name: 'Raw' })).not.toBeVisible();
     });
 
-    test('Options shows Upgrade storage button in memory mode', async ({ page }) => {
+    test('Options hides Upgrade storage and Delete local data in memory mode', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
         await page.getByRole('button', { name: 'Options' }).click();
-        await expect(page.getByRole('button', { name: /Upgrade storage/i })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Upgrade storage/i })).not.toBeVisible();
+        await expect(page.getByRole('button', { name: 'Delete local data' })).not.toBeVisible();
     });
 
     test('Options shows app version', async ({ page }) => {
@@ -48,31 +49,14 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.locator('[data-app-version]')).toHaveText(expectedVersion || '');
     });
 
-    test('Upgrade storage shows lock screen after confirmation', async ({ page }) => {
+    test('Enable Secure Storage banner opens the lock screen', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
-        await page.getByRole('button', { name: 'Options' }).click();
 
-        // Accept the "discard in-memory document" confirmation
-        page.once('dialog', dialog => dialog.accept());
-        await page.getByRole('button', { name: /Upgrade storage/i }).click();
+        // Upgrade storage now lives in the persistent banner shown while in memory mode
+        await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
 
-        // Lock screen is now visible
         await expect(page.getByText('Unlock Virgulas')).toBeVisible({ timeout: 3000 });
-    });
-
-    test('Upgrade storage dismissed stays in memory mode', async ({ page }) => {
-        await page.goto('/');
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
-        await page.getByRole('button', { name: 'Options' }).click();
-
-        // Dismiss the confirmation
-        page.once('dialog', dialog => dialog.dismiss());
-        await page.getByRole('button', { name: /Upgrade storage/i }).click();
-
-        // Still in the app, still in memory mode
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-        await expect(page.locator('.status-memory-badge')).toBeVisible();
     });
 
     test('document is not persisted between visits in memory mode', async ({ page }) => {
@@ -108,35 +92,6 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.getByText('Unlock Virgulas')).toBeVisible();
     });
 
-    test('Purge in memory mode reloads the intro document', async ({ page }) => {
-        await page.goto('/');
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
-
-        // Edit a node so we have something to lose
-        const secondNode = page.locator('.node-text-md').nth(1);
-        await secondNode.click();
-        const input = page.locator('.node-content input').first();
-        await expect(input).toBeVisible({ timeout: 3000 });
-        await input.press('End');
-        await input.type(' PURGE_MARKER');
-
-        // Open Options and confirm the Purge action
-        await page.getByRole('button', { name: 'Options' }).click();
-        page.once('dialog', dialog => dialog.accept());
-        await page.getByRole('button', { name: 'Delete local data' }).click();
-
-        // App stays rendered (no lock screen)
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
-
-        // Intro document is reloaded — "Welcome to Virgulas" is present again
-        await expect(page.locator('.node-content').first()).toContainText('Welcome to Virgulas', { timeout: 3000 });
-
-        // The marker we typed is gone
-        await expect(page.getByText('PURGE_MARKER')).not.toBeVisible();
-
-        // Still in memory mode
-        await expect(page.locator('.status-memory-badge')).toBeVisible();
-    });
 
     test('first-load URL hash deep-link zooms into the correct node', async ({ page }) => {
         // Load in memory mode (no localStorage)

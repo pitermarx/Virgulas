@@ -811,6 +811,7 @@ const OutlineModel = createModel(() => {
         },
         version: dataVersion,
         structureVersion,
+        dirtyWrites,
         get isDirty() {
             return dirtyWrites.value > 0
         },

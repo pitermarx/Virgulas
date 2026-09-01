@@ -111,6 +111,7 @@ const unlockRemote = async (page: Page, email: string, accountPass: string, pass
     await page.getByRole('button', { name: 'Remote' }).click();
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Account password').fill(accountPass);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByLabel('Encryption passphrase').fill(passphrase);
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
@@ -129,6 +130,12 @@ test.describe('Sync polling', () => {
 
         await page.reload();
         await unlockRemote(page, 'poll@test.com', 'pass', 'sync-pass');
+
+        // Keep the remote timestamp at the initial-sync value. This test exercises
+        // polling pause/resume, not conflict creation from a newer remote document.
+        await page.evaluate(() => {
+            (window as any).__mockSupabaseState.serverRecord.updated_at = new Date().toISOString();
+        });
 
         await expect.poll(
             () => page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls),
@@ -168,7 +175,7 @@ test.describe('Sync polling', () => {
 
         await page.getByRole('button', { name: 'Options' }).click();
         await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-        await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+        await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
 
         const baseline = await page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls);
         await expect.poll(

@@ -969,6 +969,12 @@ a:hover {
   font-size: 0.875rem;
 }
 
+.auth-hint {
+  margin: var(--space-2) 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
 /* ── Input group label ── */
 .input-group {
   margin-bottom: var(--space-4);
@@ -1027,6 +1033,91 @@ a:hover {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
 }
+
+/* ── Admin (account) modal ── */
+.admin-body {
+  gap: var(--space-3);
+  min-width: min(420px, 80vw);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.admin-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.admin-info dt {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-info dd {
+  margin: 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.admin-section-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.admin-section form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-section .input-label {
+  margin-bottom: 0;
+}
+
+.admin-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-recovery-code {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: var(--space-2);
+  color: var(--color-accent-primary);
+  background-color: var(--color-accent-soft-background);
+  border-radius: var(--radius-sm);
+  user-select: all;
+}
+
+.admin-file-btn {
+  cursor: pointer;
+}
+
+.admin-footer-note {
+  padding-top: var(--space-2);
+  color: var(--color-text-faint);
+}
+
 
 .search-token-tag {
   background: var(--color-tag-chip-bg);
@@ -1252,57 +1343,6 @@ a:hover {
   padding: 0.15rem 0.45rem;
   font-size: 0.75rem;
   line-height: 1.4;
-}
-
-/* ── Raw view ── */
-.raw-view {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.raw-container {
-  padding: var(--space-4);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  max-width: 800px;
-  margin: 0 auto;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.raw-toolbar {
-  margin-bottom: var(--space-4);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.raw-title {
-  font-size: 1.2rem;
-  margin: 0;
-}
-
-.raw-toolbar-actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.raw-editor {
-  flex: 1;
-  width: 100%;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  resize: none;
-  outline: none;
-  line-height: 1.5;
-  background-color: var(--color-surface);
-  color: var(--color-text-primary);
-  box-sizing: border-box;
 }
 
 /* ── Main view ── */

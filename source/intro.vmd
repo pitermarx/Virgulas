@@ -1,7 +1,7 @@
 - Welcome to Virgulas!
   Virgulas is a local-first browser outliner — an infinite tree of editable nodes.
 - This intro lives only in memory. Your changes here are not saved.
-  Open **Options → Upgrade storage** to keep your data permanently.
+  Tap **Enable Secure Storage** above to keep your data permanently.
   - Click any node to focus it and start editing.
     Press **Enter** to create a new node below.
     Press **Escape** to stop editing and return to navigation mode.
@@ -38,10 +38,6 @@
   - Use **Tab** / **Shift+Tab** to cycle through results.
   - Press **Enter** or click a result to zoom into the closest ancestor of the match.
   - Press **Escape** again to dismiss search.
-- Raw mode
-  Click **Raw** in the bottom toolbar to edit the outline as plain VMD text (Virgulas MarkDown).
-  Lines starting with `-` are expanded nodes; `+` are collapsed nodes.
-  - Indentation determines hierarchy — a child just needs more leading space than its parent.
 - Tasks
   Turn any node into a task with **Ctrl+Enter**, or by typing `[ ] ` / `[x] ` at the start of the node text.
   - Task nodes keep their bullet (click to zoom) and show a checkbox after it.
@@ -63,7 +59,7 @@
   See the full list of shortcuts with the **?** button in the bottom toolbar.
 - Storage options
   This document is stored only in memory and will be lost when you close this tab.
-  Open **Options → Upgrade storage** to switch to a persistent mode:
+  Tap **Enable Secure Storage** above to switch to a persistent mode:
   - **Local** — document encrypted in your browser with a passphrase you choose
   - **Remote** — encrypted and synced to the cloud (requires a free account)
   - **File** — saved as a plain `.vmd` file on your computer (no passphrase needed)
