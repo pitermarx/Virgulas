@@ -1,65 +1,39 @@
-- Welcome to Virgulas!
-  Virgulas is a local-first browser outliner — an infinite tree of editable nodes.
-- This intro lives only in memory. Your changes here are not saved.
-  Tap **Enable Secure Storage** above to keep your data permanently.
-  - Click any node to focus it and start editing.
-    Press **Enter** to create a new node below.
-    Press **Escape** to stop editing and return to navigation mode.
-  - Text supports **bold**, __italic__, `monospace`, and [links](https://virgulas.com)
-    Markdown is rendered when not editing — click to see the raw text
-    Links open in a new tab/window when clicked
-  - Use `#tags` and `@mentions` inline (example: #todo and @alice)
-    They render as rounded pills; click one to start Search with that token
-  - Each node can also have a description (this is one!)
-    Press `Shift+Enter` while editing to toggle between the node title and its description
-    The description is hidden when empty and shows only the first 2 lines when not editing
-- Organising your outline
-  - Indent and unindent nodes with `Tab` / `Shift+Tab`
-  - Move nodes up and down with `Alt+↑` / `Alt+↓`
-  - Collapse and expand children with `Ctrl+Space` or the ▶/▼ button at the end of each line
-    Or use the shortcut `Ctrl+Space`
-  + Collapsed node example
-    - Child A
-    - Child B
-    - Child C
-- Zoom
-  Click the ● bullet of any node to zoom into it — its children become the new root view.
-  
-  - A breadcrumb at the top shows your location in the tree; click any segment to zoom back out.
-    On desktop, use **Alt+→** to zoom in and **Alt+←** to zoom out.
-- Multi-select
-  Focus a node, then hold **Shift** and press **↑** or **↓** to extend the selection
-  to other nodes at the same indentation level.
-  - Multi-selected nodes can be moved, indented, or deleted all at once.
-+ Search
-  Press **Escape** when no node is focused (desktop) to open the search bar.
-  On mobile, tap the **Search** button in the bottom status bar.
-  - Non-matching nodes are hidden; matching text is highlighted.
-  - Use **Tab** / **Shift+Tab** to cycle through results.
-  - Press **Enter** or click a result to zoom into the closest ancestor of the match.
-  - Press **Escape** again to dismiss search.
-- Tasks
-  Turn any node into a task with **Ctrl+Enter**, or by typing `[ ] ` / `[x] ` at the start of the node text.
-  - Task nodes keep their bullet (click to zoom) and show a checkbox after it.
-  - Click the checkbox to toggle pending ↔ done; it never removes task state.
-  - **Ctrl+Enter** cycles: plain → pending → done → plain.
-  - While editing, the raw `[ ]` / `[x]` prefix is visible so you can change or delete it freely.
-  - Add a due date with `due:yyyy-MM-dd` at the end of the text (example: `due:2026-12-25`)
-    It renders as a chip, and overdue tasks are highlighted in the Tasks panel.
-  - Add `rec:1m` (or `1y` / `1w` / `1d`) next to a due date to make it recurring
-    Checking it off advances the due date to the next occurrence instead of marking it done.
-  - Open the **Tasks panel** with **Ctrl+Alt+K** or the checklist icon in the bottom toolbar.
-    Tasks are grouped into Pending, Scheduled, and Done, scoped to whatever you're zoomed into.
-    Scheduled shows only the next few days by default — widen the filter to see further ahead.
-    Click any row to jump to that node; click the row checkbox to toggle without navigating.
-  - Task state is preserved in **Local** and **Remote** modes, and in **File mode** (`.vmd`)
-    as `[ ] text` / `[x] text`.
-
-- Keyboard shortcuts
-  See the full list of shortcuts with the **?** button in the bottom toolbar.
-- Storage options
-  This document is stored only in memory and will be lost when you close this tab.
-  Tap **Enable Secure Storage** above to switch to a persistent mode:
-  - **Local** — document encrypted in your browser with a passphrase you choose
-  - **Remote** — encrypted and synced to the cloud (requires a free account)
-  - **File** — saved as a plain `.vmd` file on your computer (no passphrase needed)
+- Welcome to Virgulas
+  A local-first outliner for thinking in connected, expandable notes. This document is a guided tour: edit it freely, then choose storage when you are ready to keep your work.
+- Start writing
+  Click a node to edit its title. Press `Enter` to add the next node; when the current node has visible children, `Enter` adds the first child. Press `Escape` to leave editing.
+  - Add detail with `Shift+Enter` to switch between a title and its optional description. Empty descriptions stay out of the way, and longer descriptions are previewed when you are browsing.
+  - Use **bold**, __italic__, `code`, [links](https://virgulas.com), and images in a title or description. Markdown renders while browsing and returns to plain text while editing.
+  - Type `#project` or `@name` in any note. Select the rendered pill to search for that tag or person.
+  - Paste a line normally. Paste multiple lines, or text beginning with `-` or `+`, to turn a VMD outline fragment into nodes.
+- Shape the outline
+  Use `Tab` and `Shift+Tab` to indent or outdent the focused node. On mobile, swipe right or left instead. Use `Alt+↑` and `Alt+↓` to move a node among its siblings.
+  - Select neighboring siblings with `Shift+↑` or `Shift+↓`, then move, indent, outdent, collapse, or delete the group together.
+  - Press `Ctrl+Space`, or use the ▶/▼ control, to collapse and expand children.
+  + A collapsed example
+    - Child notes stay here until you expand this node.
+    - Collapsing is useful for keeping a long plan calm and scannable.
+  - Press `Ctrl+Backspace` to delete a node. Backspace on an empty title also deletes it; deleting a node with children asks for confirmation.
+- Navigate and find
+  Select any bullet to zoom into that node. Its children become your working view; use the breadcrumb to go back. On desktop, `Alt+→` zooms in and `Alt+←` zooms out.
+  - Press `Escape` with no note focused to search on desktop; on mobile use the Search button in the status bar. Matching text is highlighted and non-matches are hidden.
+  - Use `Tab` and `Shift+Tab` to move through results, then `Enter` or select a result to open it. Press `Escape` again to close search.
+  - Press `Ctrl+C` with a title focused and no text selected to copy that node and its descendants as VMD.
+- Turn notes into tasks
+  Press `Ctrl+Enter` to cycle a focused note through plain, pending, and done. You can also begin its title with `[ ] ` or `[x] `.
+  - [ ] Plan the next review due:2026-09-15
+    Due dates appear as chips and overdue work is highlighted in the task list.
+  - [ ] Pay rent due:2026-09-28 rec:1m
+    Add `rec:1d`, `rec:1w`, `rec:1m`, or `rec:1y` beside a due date to repeat it. Completing a recurring task advances its date instead of marking it done.
+  - Open Tasks with `Ctrl+Alt+K` or the checklist button in the status bar. It groups work into Pending, Scheduled, and Done for your current zoom; select a row to jump to it.
+- Keep your work
+  This tour is in memory only and disappears when the tab closes. Select **Enable Secure Storage** above to choose a persistent mode.
+  - **Local** encrypts this browser's document with a passphrase you choose. The passphrase cannot be recovered.
+  - **Remote** signs in with an account password, then encrypts and syncs your document with a separate passphrase. Other devices need both access to the account and the passphrase.
+    Changes are synced after you pause typing. When edits conflict, choose which version of each field to keep.
+  - **File** opens or creates a plain `.vmd` file on your device. Changes are saved back to the file after you pause typing.
+  - In Local or Remote mode, Options lets you export or import a `.vmd` backup, change your encryption passphrase, and enable an optional biometric prompt on this device.
+- Make it yours
+  Select **Options** in the status bar to change theme, manage the current storage session, or open the source repository. The current mode and sync state are also shown there.
+  - On desktop, `Ctrl+Alt+T` toggles theme, `Ctrl+Alt+W` toggles wide mode, and `Ctrl+Alt+D` opens developer diagnostics.
+  - Select the **?** button for the complete keyboard shortcut reference.
