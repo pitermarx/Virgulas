@@ -557,40 +557,6 @@ export function TasksPanel() {
     </div>`
 }
 
-export const rawMode = signal(false)
-const rawContent = signal('')
-const rawError = signal('')
-
-export function RawEditor() {
-    function save() {
-        rawError.value = ''
-        try {
-            outline.setRootVMD(rawContent.value)
-            rawMode.value = false
-        } catch (error) {
-            rawError.value = String(error?.message || 'Invalid VMD document.')
-        }
-    }
-    return html`<div class="raw-view">
-        <div class="raw-container">
-            <div class="raw-toolbar">
-                <h2 class="raw-title">Raw Editor</h2>
-                <div class="raw-toolbar-actions">
-                    <button class="btn btn-primary" onClick=${save}>Back to Outline</button>
-                    <button class="btn btn-secondary" onClick=${() => {
-            rawError.value = ''
-            rawMode.value = false
-        }}>Cancel</button>
-                </div>
-            </div>
-            ${rawError.value ? html`<div class="form-error">${rawError.value}</div>` : null}
-            <textarea class="raw-editor"
-                value=${rawContent.value}
-                onInput=${e => rawContent.value = e.currentTarget.value}></textarea>
-        </div>
-    </div>`
-}
-
 export const optionsOpen = signal(false)
 
 export function StatusToolbar() {
@@ -615,11 +581,6 @@ export function StatusToolbar() {
     return html`
     <div class="status-toolbar">
         <div class="toolbar-actions">
-            ${!isMemory && html`<button class="toolbar-btn" onClick=${() => {
-            rawError.value = ''
-            rawContent.value = outline.getVMD()
-            rawMode.value = true
-        }}>Raw</button>`}
             ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>

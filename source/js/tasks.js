@@ -36,11 +36,13 @@ function isWithinZoom(nodeId, zoomId) {
 // - done: completed tasks
 // Re-evaluated whenever any task signal, or the zoom, changes.
 export const groupedTasks = computed(() => {
-    // Subscribe to structural rebuilds (reset/deserialize) and debounced data changes.
+    // Subscribe to structural rebuilds (reset/deserialize) and immediate data changes.
+    // dirtyWrites increments synchronously on every mutation (update/addChild/deleteNode),
+    // so the panel reacts instantly instead of waiting for the debounced version bump.
     // structureVersion is required because deserialize can restore the same dataVersion
     // (often 0) inside a batch, which would otherwise leave this computed stale.
     void outline.structureVersion.value
-    void outline.version.value
+    void outline.dirtyWrites.value
     const zoomId = outline.zoomId.value
 
     const tasks = outline.getAllTasks().filter(node => isWithinZoom(node.peek().id, zoomId))

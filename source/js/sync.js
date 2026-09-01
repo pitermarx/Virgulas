@@ -62,7 +62,9 @@ export const remoteSync = {
         }
         if (salt) payload.salt = salt
         return withClient(() => _mainTable.upsert(payload, { onConflict: 'user_id' }))
-    }
+    },
+    updatePassword: (newPassword) => withClient((c) => c.auth.updateUser({ password: newPassword })),
+    updateEmail: (newEmail) => withClient((c) => c.auth.updateUser({ email: newEmail }))
 }
 
 // ── Sync status + conflict signals ───────────────────────────────────────────

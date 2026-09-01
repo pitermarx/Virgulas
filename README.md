@@ -19,7 +19,6 @@
   - Zoomed node description is visible and editable with placeholder when empty
   - Zoomed node with no children shows an empty state to create the first child
   - Empty root document shows an empty state to create the first node
-- Raw mode editor (`.vmd` format) with Save / Cancel; invalid VMD saves are rejected with an inline error and no data loss
 - Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly; mobile includes a status-bar Search button
 - Developer panel (`Ctrl+Alt+D` toggles at runtime): outline stats, sync diagnostics, crypto timings, storage quota, focused node raw JSON
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
@@ -35,10 +34,9 @@
   - A built-in intro document (`intro.vmd`) is loaded automatically to walk new users through every feature; if the fetch fails an empty node is provided
   - An inline **Enable Secure Storage** prompt appears above the outline and opens the bottom-sheet setup flow
   - The status bar shows an *In memory — not saved* badge
-  - Raw mode is hidden (no document to save)
-  - **Options → Upgrade storage…** lets the user switch to a persistent mode at any time (data loss warning shown)
-  - Once the user unlocks any persistent mode, that choice is remembered and shown as the default on the next visit
-  - The lock screen shows a **"Skip — continue in memory"** link that bypasses unlock for the current session; the remembered mode is preserved so the next visit still shows the lock screen
+  - The Options panel hides the **Upgrade storage…** and **Delete local data** actions in Memory mode — the persistent upgrade is offered by the **Enable Secure Storage** banner, and there is no local data to purge
+  - The most recently used mode (including Memory) is remembered and shown as the default on the next visit
+  - Choosing **"Skip — continue in memory"** on the lock screen (or signing out) loads the app in Memory mode and remembers it, so the next visit boots straight into memory without a lock screen until the user selects a persistent mode
   - When the app is locked, the main canvas remains visible in a blurred state using `intro.vmd` as background context until unlock
 - Status toolbar shows the current storage mode; in Remote mode it also shows the signed-in email/username
 - Lock screen clearly labels encryption status per mode; Remote mode has separate Sign in / Create account tabs

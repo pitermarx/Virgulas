@@ -626,6 +626,11 @@ export default {
       return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
     }
 
+    // User explicitly chose in-memory mode — remember it and stay in memory
+    if (preferredMode === 'memory') {
+      return { mode: 'memory', scenario: 'memory-remembered', user: null, ...bootstrapBase }
+    }
+
     if (preferredMode === 'filesystem' && hasFilesystem) {
       return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
     }
@@ -731,6 +736,44 @@ export default {
     store.mode.del()
     store.user.del()
     filesystemStorage.clear()
+  },
+  async changePassphrase(newPassphrase) {
+    if (!newPassphrase) {
+      throw new Error('New passphrase cannot be empty.')
+    }
+    const mode = authMode.value
+    if (mode === 'memory' || mode === 'filesystem') {
+      throw new Error('This mode has no encryption passphrase.')
+    }
+    const json = outline.serialize()
+    const salt = generateSalt()
+    const encrypted = await encrypt(json, newPassphrase, salt)
+
+    if (mode === 'remote') {
+      const user = await remoteSync.getUser()
+      if (!user) {
+        throw new Error('Not signed in. Sign in before changing the passphrase.')
+      }
+      await remoteSync.upsert(encrypted, salt)
+      setLastSyncedAt(Date.now())
+      setCredentials(newPassphrase, salt)
+    }
+
+    localEncryptedData.set(encrypted, salt)
+    passphrase.value = newPassphrase
+    return true
+  },
+  exportVmd() {
+    return outline.getVMD('root')
+  },
+  importVmd(vmdText) {
+    outline.reset()
+    if (vmdText && vmdText.trim()) {
+      outline.setRootVMD(vmdText)
+    } else {
+      outline.addChild('root', { text: '' })
+    }
+    return true
   },
   unlock
 }

@@ -94,6 +94,7 @@
       The startup mode is determined as follows:
     + Rules for selecting a mode
       - No remembered mode and no existing data signals → Memory mode, INTRO.VMD loaded
+      - Remembered mode is Memory → Memory mode directly (no lock screen), INTRO.VMD loaded
       - Remembered mode is Local
         - local data present → Local unlock screen
         - no local data → Local unlock screen (create passphrase)
@@ -108,31 +109,19 @@
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
       - The status toolbar shows "In memory — not saved" instead of the mode label and sync dot
-      - Raw mode is hidden (nothing to save)
-      - Options shows an "Upgrade storage…" button that lets the user switch to Local, Remote, or File
-        Switching from Memory requires confirmation (data loss warning) and shows the lock screen
-      - Purge action in Memory mode reloads the intro document (returns to the initial memory state)
-      - The lock screen has a "Skip — continue in memory" link at the bottom
-        Clicking it bypasses the unlock form and loads the app in memory mode for the current session
-        The remembered mode is not changed, so the next visit will show the lock screen again
+      - An inline "Enable Secure Storage" prompt appears above the outline and opens the setup flow
+      - The Options panel hides "Upgrade storage…" and the purge/danger action in Memory mode:
+        Memory has no data to delete, and the persistent upgrade is offered by the banner instead
+      - Choosing Memory mode is remembered: the lock screen has a "Skip — continue in memory" link
+        at the bottom that bypasses the unlock form and loads the app in memory mode; Memory is set
+        as the remembered mode, so the next visit boots straight into memory without a lock screen
+        until the user selects a persistent mode. Signing out also returns to (and remembers) Memory.
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
       - The last opened file handle is remembered in IndexedDB; on next visit the app tries to reopen it silently
       - Every write is debounced: changes are flushed to disk ~1 second after the last edit
       - If the API is not supported in the current browser, the File mode button shows an error
-  + RAW MODE
-    - Direct manipulation of the text is possible in a special "RAW" mode
-    - This document is an example of a raw Virgulas document; by convention it has the extension .vmd
-    - The `+` char means a collapsed node and the `-` char means an expanded node
-    - To actually have the + or - char at the beginning of a line, use the escape char \
-      \ shows the \ character, \+ and \- show the + and - characters. Escaping is only needed at the beginning of lines
-    - Hierarchy is determined by relative indentation, not absolute column numbers
-      A child node must have more leading whitespace than its parent; the exact amount is not significant
-      Sibling nodes share the same indentation level relative to their parent
-    - All lines that do not begin with + or - (after stripping leading whitespace) are descriptions of the previous node
-      Indentation is not relevant on description lines
-    - When in RAW mode, the app is a plain text editor with a "SAVE" and a "CANCEL" button
   + SEARCH
     - Search can be done with simple substring matches
     - Search is activated with `Escape` when no node is focused on desktop and with the `Search` button in the status bar on mobile
@@ -170,7 +159,7 @@
         While editing, the raw prefix is visible in the text input so it can be changed freely
     - (DESKTOP ONLY) `Ctrl+Enter` cycles the focused node: plain → ☐ pending → ☑ done → plain
     - VMD serialisation: pending tasks are stored as `[ ] text`, done tasks as `[x] text`
-      Plain nodes carry no prefix. Round-tripping through Raw mode preserves all task states
+      Plain nodes carry no prefix. Task states are preserved in Local, Remote, and File modes.
     + DUE DATES
       - A task can carry a due date via the `due:yyyy-MM-dd` metadata key at the end of its text.
         The value must be a valid Gregorian calendar date

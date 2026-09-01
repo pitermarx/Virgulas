@@ -341,7 +341,6 @@ If a task spans multiple items on the list below, split it.
 - Undo/redo stack
 - Markdown rendering
 - Search
-- Raw mode
 - Keyboard shortcuts modal
 - Options panel (theme, purge, repository link)
 - Supabase Auth (sign up, sign in, sign out)
