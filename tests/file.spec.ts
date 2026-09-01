@@ -430,6 +430,6 @@ test.describe('File mode', () => {
 
         await page.reload();
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
-        await expect(page.getByText('This intro lives only in memory. Your changes here are not saved.')).toBeVisible();
+        await expect(page.getByText('This tour is in memory only and disappears when the tab closes.')).toBeVisible();
     });
 });
