@@ -36,6 +36,7 @@ const remotePasswordStage = signal(false);
 
 // ── Account / options modal state ────────────────────────────────────────────
 const bioEnrolled = signal(false);
+const autoBioAttempted = signal(false);
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 });
 const adminBusy = signal(false);
 const adminError = signal('');
@@ -234,6 +235,7 @@ async function requestChangeMode() {
   passphrase.value = '';
   password.value = '';
   remotePasswordStage.value = false;
+  autoBioAttempted.value = false;
 }
 
 function pickMode(nextMode) {
@@ -255,6 +257,7 @@ function pickMode(nextMode) {
   remotePasswordStage.value = false;
   password.value = '';
   authStep.value = 'unlock';
+  autoBioAttempted.value = false;
 }
 
 async function submitUnlock(e) {
@@ -424,6 +427,7 @@ function openSecureStorageSetup() {
   authMode.value = 'local';
   authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
   authStep.value = 'unlock';
+  autoBioAttempted.value = false;
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
@@ -494,6 +498,37 @@ async function unlockWithBiometrics() {
     isBusy.value = false;
   }
 }
+
+effect(() => {
+  const isLocked = persistence.isLocked();
+  if (!isLocked) {
+    autoBioAttempted.value = false;
+    return;
+  }
+
+  const step = authStep.value;
+  const mode = authMode.value;
+  const enrolled = bioEnrolled.value;
+  const busy = isBusy.value;
+  const isFilesystem = mode === 'filesystem';
+  const isRemote = mode === 'remote';
+  const isSessionValid = isRemoteSessionValid();
+  const isRemotePasswordStep = isRemote && !isSessionValid && !remotePasswordStage.value;
+  const localCreate = mode === 'local' && !authHasLocalData.value;
+
+  if (
+    step === 'unlock' &&
+    enrolled &&
+    !busy &&
+    !isFilesystem &&
+    !localCreate &&
+    !isRemotePasswordStep &&
+    !autoBioAttempted.value
+  ) {
+    autoBioAttempted.value = true;
+    void unlockWithBiometrics();
+  }
+});
 
 const LockScreen = () => {
   const step = authStep.value;
@@ -581,12 +616,6 @@ const LockScreen = () => {
                 <button type="button" class="toolbar-btn" disabled=${isBusy.value}
                   onClick=${() => { remotePasswordStage.value = false; unlockError.value = ''; }}>Back</button>
               </div>
-            `}
-
-            ${!isFilesystem && bioEnrolled.value && html`
-              <button type="button" class="lock-submit-btn" onClick=${unlockWithBiometrics} disabled=${isBusy.value}>
-                Unlock with biometrics
-              </button>
             `}
 
             <form onSubmit=${submitUnlock}>
@@ -684,6 +713,7 @@ const OptionsModal = () => {
     authMode.value = 'local';
     authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
     authStep.value = 'unlock';
+    autoBioAttempted.value = false;
     await loadLockedBackgroundIntro();
   }
 
