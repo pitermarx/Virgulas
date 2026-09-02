@@ -47,6 +47,7 @@ const APP_SHELL = [
   './site.webmanifest',
   './js/app.js',
   './js/biometrics.js',
+  './js/inbox.js',
   './js/crypto2.js',
   './js/devtools.js',
   './js/outline.js',

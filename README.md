@@ -59,7 +59,20 @@
 
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
 - Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
+- **Quick capture inbox (PWA-only):** text shared to Virgulas or sent to `/?quick-add=...` is held in an unencrypted, device-local queue and filed under a configurable root-level Inbox node after secure storage is unlocked; the web app manifest also exposes a Quick capture shortcut
 - `Enter` on a collapsed node with children creates a sibling, not a child
+
+## Quick capture
+
+Virgulas can receive text without a native Android wrapper or Play Store installation:
+
+- Use the installed PWA's **Quick capture** long-press shortcut and type or dictate the text.
+- Share text from another Android app to Virgulas through the Android share sheet.
+- Open `https://virgulas.com/?quick-add=buy%20milk` (URL-encode the text) from an automation tool such as Tasker.
+
+Captured text is stored temporarily in `localStorage` under `vmd_inbox_queue`. This queue is intentionally **unencrypted and device-local**; it is never synced. On the next unlock of Local, Remote, or File storage, Virgulas creates (or reuses) the configured root-level Inbox node, moves queued entries into it in order, and clears the queue. Memory mode leaves the queue pending until persistent storage is unlocked.
+
+The target node name is configurable under **Options → Quick capture → Inbox node name**. Changing the setting affects future captures; it does not rename an existing node.
 
 ## Setup
 

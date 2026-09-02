@@ -263,6 +263,7 @@
         import { summary as metaSummary, streamMetaTests } from './js/metaTests.js'
         import { summary as tasksSummary, streamTasksTests } from './js/tasksTests.js'
         import { summary as markdownSummary, streamMarkdownTests } from './js/markdownTests.js'
+        import { summary as inboxSummary, streamInboxTests } from './js/inboxTests.js'
 
         function Section({ section }) {
             const allPassed = section.tests.every(t => t.ok)
@@ -390,6 +391,13 @@
                 summary: { passed: 0, failed: 0, total: 0 },
                 error: null,
                 expectedTotal: markdownSummary().total
+            })
+            const [inboxState, setInboxState] = useState({
+                status: 'idle',
+                sections: [],
+                summary: { passed: 0, failed: 0, total: 0 },
+                error: null,
+                expectedTotal: inboxSummary().total
             })
 
             useEffect(() => {
@@ -611,6 +619,37 @@
                     })
             }, [markdownState.status])
 
+            useEffect(() => {
+                if (inboxState.status !== 'idle') return
+
+                setInboxState(state => ({ ...state, status: 'running', error: null }))
+                streamInboxTests(progress => {
+                    setInboxState(state => ({
+                        ...state,
+                        status: 'running',
+                        sections: progress.sections,
+                        summary: progress.summary,
+                        error: null
+                    }))
+                })
+                    .then(result => {
+                        setInboxState(state => ({
+                            ...state,
+                            status: 'ready',
+                            sections: result.sections,
+                            summary: result.summary,
+                            error: null
+                        }))
+                    })
+                    .catch(error => {
+                        setInboxState(state => ({
+                            ...state,
+                            status: 'error',
+                            error: error && error.message ? error.message : String(error)
+                        }))
+                    })
+            }, [inboxState.status])
+
             const suite = activeSuite === 'outline'
                 ? {
                     status: outlineState.status,
@@ -659,7 +698,15 @@
                                         error: tasksState.error,
                                         expectedTotal: tasksState.expectedTotal
                                     }
-                                    : {
+                                    : activeSuite === 'inbox'
+                                        ? {
+                                            status: inboxState.status,
+                                            sections: inboxState.sections,
+                                            summary: inboxState.summary,
+                                            error: inboxState.error,
+                                            expectedTotal: inboxState.expectedTotal
+                                        }
+                                        : {
                                         status: markdownState.status,
                                         sections: markdownState.sections,
                                         summary: markdownState.summary,
@@ -674,8 +721,8 @@
                 : `${completed} complete`
 
             useEffect(() => {
-                setSummarySummary([outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState])
-            }, [outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState])
+                setSummarySummary([outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState, inboxState])
+            }, [outlineState, cryptoState, shortcutsState, syncState, metaState, tasksState, markdownState, inboxState])
 
             return html`
                 <div class="tabs">
@@ -734,6 +781,14 @@
                   >
                     <span class="tab-title">Markdown</span>
                     <span class="tab-meta">${formatSuiteMeta(markdownState)}</span>
+                  </button>
+                  <button
+                    class=${'tab' + (activeSuite === 'inbox' ? ' active' : '')}
+                    onClick=${() => setActiveSuite('inbox')}
+                    aria-pressed=${activeSuite === 'inbox'}
+                  >
+                    <span class="tab-title">Inbox</span>
+                    <span class="tab-meta">${formatSuiteMeta(inboxState)}</span>
                   </button>
                 </div>
 

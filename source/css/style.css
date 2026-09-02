@@ -532,6 +532,48 @@ body {
   display: none;
 }
 
+.quick-capture-overlay {
+  z-index: 1100;
+}
+
+.quick-capture-dialog {
+  max-width: 520px;
+}
+
+.quick-capture-input {
+  display: block;
+  min-height: 7rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.quick-capture-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.quick-capture-actions .btn {
+  flex: 0 1 auto;
+}
+
+.quick-capture-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-6) + 2.5rem);
+  z-index: 1200;
+  max-width: min(90vw, 32rem);
+  padding: var(--space-2) var(--space-4);
+  transform: translateX(-50%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  font-size: 0.85rem;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
