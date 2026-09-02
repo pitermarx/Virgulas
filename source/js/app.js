@@ -7,6 +7,7 @@ import { remoteSync } from './sync.js';
 import outline from './outline.js';
 import { appVersion } from './devtools.js';
 import { store } from './utils.js';
+import inbox from './inbox.js';
 
 const splashVisible = signal(true);
 
@@ -44,6 +45,112 @@ const adminMessage = signal('');
 const newEmail = signal('');
 const newPassword = signal('');
 const newPassphrase = signal('');
+const inboxNodeName = signal(inbox.getNodeName());
+const quickCaptureOpen = signal(false);
+const quickCaptureText = signal('');
+const quickCaptureNotice = signal('');
+let quickCaptureNoticeTimer = null;
+
+function announceQuickCapture(message) {
+  quickCaptureNotice.value = message;
+  if (quickCaptureNoticeTimer !== null) {
+    clearTimeout(quickCaptureNoticeTimer);
+  }
+  quickCaptureNoticeTimer = setTimeout(() => {
+    quickCaptureNotice.value = '';
+    quickCaptureNoticeTimer = null;
+  }, 5000);
+}
+
+function reconcileInbox() {
+  if (persistence.isLocked() || persistence.isMemory()) return 0;
+  const imported = inbox.reconcile();
+  if (imported > 0) {
+    announceQuickCapture(`Added ${imported} item${imported === 1 ? '' : 's'} to ${inbox.getNodeName()}.`);
+  }
+  return imported;
+}
+
+function enqueueIncomingCapture(text) {
+  if (!inbox.enqueue(text)) {
+    announceQuickCapture('Quick capture could not be saved on this device.');
+    return false;
+  }
+
+  const imported = reconcileInbox();
+  if (imported === 0) {
+    announceQuickCapture(
+      persistence.isLocked() || persistence.isMemory()
+        ? `Saved to the ${inbox.getNodeName()} queue. Unlock secure storage to file it.`
+        : `Saved to the ${inbox.getNodeName()} queue.`
+    );
+  }
+  return true;
+}
+
+function closeQuickCapture() {
+  quickCaptureOpen.value = false;
+  quickCaptureText.value = '';
+}
+
+function submitQuickCapture(e) {
+  e.preventDefault();
+  if (!quickCaptureText.value.trim()) {
+    announceQuickCapture('Enter some text before adding it.');
+    return;
+  }
+  if (enqueueIncomingCapture(quickCaptureText.value)) {
+    closeQuickCapture();
+  }
+}
+
+function sharedCaptureText(url) {
+  const parts = ['title', 'text', 'url']
+    .map(key => url.searchParams.get(key)?.trim() || '')
+    .filter(Boolean);
+  return [...new Set(parts)].join('\n');
+}
+
+function consumeQuickCaptureUrl() {
+  if (typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  const shareKeys = ['title', 'text', 'url'];
+  const hasDirectCapture = url.searchParams.has('quick-add');
+  const hasCapturePrompt = url.searchParams.has('quick-capture');
+  const hasSharePayload = shareKeys.some(key => url.searchParams.has(key));
+  let consumed = false;
+  let text = '';
+
+  if (hasDirectCapture) {
+    consumed = true;
+    text = url.searchParams.get('quick-add')?.trim() || '';
+    if (!text) quickCaptureOpen.value = true;
+  } else if (hasCapturePrompt) {
+    consumed = true;
+    quickCaptureOpen.value = true;
+  } else if (hasSharePayload) {
+    consumed = true;
+    text = sharedCaptureText(url);
+  }
+
+  if (text) enqueueIncomingCapture(text);
+  if (!consumed) return;
+
+  ['quick-add', 'quick-capture', ...shareKeys].forEach(key => url.searchParams.delete(key));
+  const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`;
+  window.history.replaceState(null, '', cleanUrl || '/');
+}
+
+// Reconcile a queue that was captured while the app was locked as soon as a
+// persisted document becomes available. Memory mode deliberately leaves the
+// queue untouched for a later secure-storage unlock.
+effect(() => {
+  const locked = persistence.isLocked();
+  const mode = persistence.getMode();
+  if (locked || mode === 'memory') return;
+  reconcileInbox();
+});
 
 async function refreshAccountInfo() {
   let user = null;
@@ -161,6 +268,10 @@ async function importDoc(e) {
   } catch (error) {
     adminError.value = String(error?.message || 'Import failed.');
   }
+}
+
+function handleInboxNodeNameChange(e) {
+  inboxNodeName.value = inbox.setNodeName(e.currentTarget.value);
 }
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
@@ -669,6 +780,56 @@ const LockScreen = () => {
   `;
 };
 
+const QuickCapturePrompt = () => {
+  if (!quickCaptureOpen.value) return null;
+
+  const locked = persistence.isLocked() || persistence.isMemory();
+  return html`
+    <div class="modal-overlay quick-capture-overlay"
+      onClick=${e => { if (e.target === e.currentTarget) closeQuickCapture(); }}>
+      <div class="modal-dialog quick-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-capture-title">
+        <div class="modal-header">
+          <h2 class="modal-title" id="quick-capture-title">Quick capture</h2>
+          <button class="modal-close" type="button" onClick=${closeQuickCapture} aria-label="Close">×</button>
+        </div>
+        <form onSubmit=${submitQuickCapture}>
+          <label class="input-label" for="quick-capture-input">Add to ${inboxNodeName.value}</label>
+          <textarea
+            id="quick-capture-input"
+            class="input-field quick-capture-input"
+            rows="4"
+            value=${quickCaptureText.value}
+            onInput=${e => quickCaptureText.value = e.currentTarget.value}
+            onKeyDown=${e => {
+              if (e.key === 'Escape') {
+                closeQuickCapture();
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+            ref=${el => {
+              if (el && document.activeElement !== el) el.focus();
+            }}
+            placeholder="What do you want to remember?"
+          ></textarea>
+          <p class="admin-hint">
+            ${locked
+              ? `This stays on this device and will be filed after you unlock secure storage.`
+              : `This will be added to your ${inboxNodeName.value} node.`}
+          </p>
+          <div class="options-row quick-capture-actions">
+            <button type="button" class="btn btn-secondary" onClick=${closeQuickCapture}>Cancel</button>
+            <button type="submit" class="btn btn-primary">Add to ${inboxNodeName.value}</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+};
+
+const QuickCaptureToast = () => quickCaptureNotice.value
+  ? html`<div class="quick-capture-toast" role="status">${quickCaptureNotice.value}</div>`
+  : null;
+
 const SecureStoragePrompt = () => {
   if (persistence.isLocked() || !persistence.isMemory()) return null;
 
@@ -842,6 +1003,15 @@ const OptionsModal = () => {
           `}
 
           <section class="admin-section">
+            <h3 class="admin-section-title">Quick capture</h3>
+            <label class="input-label" for="admin-inbox-node-name">Inbox node name</label>
+            <input id="admin-inbox-node-name" type="text" value=${inboxNodeName.value}
+              onChange=${handleInboxNodeNameChange} class="input-field" maxlength="100"
+              autocomplete="off" />
+            <p class="admin-hint">Shared and voice captures wait unencrypted on this device until they are filed here after unlock.</p>
+          </section>
+
+          <section class="admin-section">
             <h3 class="admin-section-title">Data</h3>
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${exportDoc}>Export .vmd backup</button>
@@ -925,8 +1095,15 @@ const Splash = () => {
         ${!isLocked && html`<${TasksPanel} />`}
       </div>
       ${isLocked && html`<${LockScreen} />`}
+      <${QuickCapturePrompt} />
+      <${QuickCaptureToast} />
     </div>
   `;
 };
 
 render(html`<${Splash} />`, document.getElementById('app'));
+consumeQuickCaptureUrl();
+if (typeof window !== 'undefined') {
+  window.addEventListener('pageshow', consumeQuickCaptureUrl);
+  window.addEventListener('popstate', consumeQuickCaptureUrl);
+}
