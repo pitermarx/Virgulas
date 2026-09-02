@@ -55,6 +55,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
+  // WebKit can spend several seconds in PBKDF2/WebCrypto while all three
+  // browser projects run concurrently on the CI runner. Keep local feedback
+  // fast, but give CI readiness assertions enough time to observe the unlock.
+  expect: {
+    timeout: isCI ? 15_000 : 5_000,
+  },
   workers: 5,
   reporter: [
     ['html', { open: 'never' }],
