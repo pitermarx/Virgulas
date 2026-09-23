@@ -1,0 +1,175 @@
+/* Virgulas styles — base. Split from the former monolithic style.css. Order matters: imported in app.css order. */
+:root {
+  /* Light Theme Defaults */
+  --color-background: #f7f5f0;
+  --color-surface: #fdfbf7;
+  --color-border: #ddd9d0;
+  --color-border-subtle: #ece9e2;
+  --color-text-primary: #1a1814;
+  --color-text-muted: #6b6760;
+  --color-text-faint: #aaa79f;
+  --color-accent-primary: #2a5caa;
+  --color-accent-soft: #e8eef8;
+  --color-hover-surface: #f0ede6;
+  --color-selected-surface: #e8eef8;
+  --color-danger: #c0392b;
+  --color-search-match: #fff8e1;
+  --color-search-current: #fff0b0;
+  --color-tag-chip-bg: #e4f2d8;
+  --color-tag-chip-text: #2d6a2f;
+  --color-mention-chip-bg: #efe6f8;
+  --color-mention-chip-text: #6b3fa0;
+  --color-due-chip-bg: #fdf0d5;
+  --color-due-chip-text: #8a5a00;
+  --color-rec-chip-bg: #dff2ef;
+  --color-rec-chip-text: #1f7a6c;
+  --color-overlay: rgba(20, 18, 14, 0.45);
+  --color-success: #2e7d32;
+  --color-error: #d32f2f;
+  --color-synced: #4caf50;
+  --color-syncing: #f39c12;
+  --color-offline: #7f8c8d;
+
+  /* Typography */
+  --font-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --text-size-base: 1rem;
+  /* 14px ideally, but based on user settings */
+  --text-size-description: 0.875rem;
+  --text-size-code: 0.875em;
+  --text-size-root: 1rem;
+  --text-size-level-2: 0.9rem;
+  --text-size-level-3: 0.85rem;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /* Motion */
+  --ease-base: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 150ms var(--ease-base);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #1a1714;
+    --color-surface: #242220;
+    --color-border: #3a3733;
+    --color-border-subtle: #2e2c2a;
+    --color-text-primary: #ede9e3;
+    --color-text-muted: #9b9790;
+    --color-text-faint: #605d58;
+    --color-accent-primary: #5c8ed6;
+    --color-accent-soft: #1c2c46;
+    --color-hover-surface: #2e2c28;
+    --color-selected-surface: #1c2c46;
+    --color-danger: #e05c4a;
+    --color-search-match: #473a18;
+    --color-search-current: #6a5318;
+    --color-tag-chip-bg: #2b3f2c;
+    --color-tag-chip-text: #98d89d;
+    --color-mention-chip-bg: #2d2440;
+    --color-mention-chip-text: #b794f4;
+    --color-due-chip-bg: #3a2f1a;
+    --color-due-chip-text: #e8b84b;
+    --color-rec-chip-bg: #183833;
+    --color-rec-chip-text: #5fcbb8;
+    --color-overlay: rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Theme Overrides */
+[data-theme="dark"] {
+  --color-background: #1a1714;
+  --color-surface: #242220;
+  --color-border: #3a3733;
+  --color-border-subtle: #2e2c2a;
+  --color-text-primary: #ede9e3;
+  --color-text-muted: #9b9790;
+  --color-text-faint: #605d58;
+  --color-accent-primary: #5c8ed6;
+  --color-accent-soft: #1c2c46;
+  --color-hover-surface: #2e2c28;
+  --color-selected-surface: #1c2c46;
+  --color-danger: #e05c4a;
+  --color-search-match: #473a18;
+  --color-search-current: #6a5318;
+  --color-tag-chip-bg: #2b3f2c;
+  --color-tag-chip-text: #98d89d;
+  --color-mention-chip-bg: #2d2440;
+  --color-mention-chip-text: #b794f4;
+  --color-due-chip-bg: #3a2f1a;
+  --color-due-chip-text: #e8b84b;
+  --color-rec-chip-bg: #183833;
+  --color-rec-chip-text: #5fcbb8;
+  --color-overlay: rgba(0, 0, 0, 0.7);
+}
+
+body {
+  margin: 0;
+  font-size: 15px;
+  font-family: var(--font-base);
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Splash Screen */
+#splash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--color-background);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  /* Easing only: reusing --transition-base here would inject its 150ms as a
+     transition *delay* (the shorthand's second <time>). */
+  transition: opacity 0.7s var(--ease-base);
+}
+
+#splash.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.logo {
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-2);
+}
+
+.tagline {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
