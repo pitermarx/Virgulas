@@ -6,7 +6,7 @@
  * Requires Git Bash (or any POSIX shell) — works on macOS, Linux, and Windows
  * with Git for Windows.
  *
- * Usage: npm run sw:hooks
+ * Usage: bun run sw:hooks
  */
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -23,7 +23,7 @@ const PRE_PUSH_HOOK = `#!/bin/sh
 # Installed by scripts/install-hooks.mjs
 # Bumps sw.js cache versions when vendor/fonts/app files have changed.
 
-node scripts/bump-sw-caches.mjs || exit 1
+bun scripts/bump-sw-caches.mjs || exit 1
 
 if ! git diff HEAD --quiet source/sw.js scripts/.sw-cache-hashes.json 2>/dev/null; then
   echo ""
@@ -39,7 +39,7 @@ const COMMIT_MSG_HOOK = `#!/bin/sh
 # Installed by scripts/install-hooks.mjs
 # Enforces Conventional Commits headers.
 
-node scripts/check-conventional-commits.mjs --message-file "$1" || exit 1
+bun scripts/check-conventional-commits.mjs --message-file "$1" || exit 1
 `
 
 async function main() {

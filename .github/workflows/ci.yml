@@ -66,29 +66,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-          cache: npm
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+        run: bunx playwright install --with-deps
 
       - name: Start local Supabase
-        run: npm run db:start
+        run: bun run db:start
 
       - name: Run E2E tests
-        run: npm test
+        run: bun run test
         env:
           CI: true
 
       - name: Stop local Supabase
         if: always()
-        run: npm run db:stop
+        run: bun run db:stop
 
       - name: Upload test artifacts
         if: always()
@@ -114,13 +113,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          cache: npm
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Validate required Supabase secrets
         run: |
@@ -135,10 +134,10 @@ jobs:
           echo "project_ref=$PROJECT_REF" >> "$GITHUB_OUTPUT"
 
       - name: Link Supabase project
-        run: npm exec supabase -- link --project-ref "${{ steps.project.outputs.project_ref }}"
+        run: bunx supabase -- link --project-ref "${{ steps.project.outputs.project_ref }}"
 
       - name: Publish latest migrations
-        run: npm exec supabase -- db push --linked --include-all
+        run: bunx supabase -- db push --linked --include-all
 
   release:
     name: Publish Release
@@ -225,61 +224,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build static site bundle
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ needs.release.outputs.resolved_version }}
+          # Pins the production CSP connect-src to the real project; falls back to
+          # the sync.ts default when the repository variable is not set.
+          SUPABASE_PROJECT: ${{ vars.SUPABASE_PROJECT }}
         run: |
           set -euo pipefail
-
-          mkdir -p _site
-          cp -r source/. _site/
 
           if [ -z "$APP_VERSION" ]; then
             APP_VERSION=$(node -p "require('./package.json').version")
           fi
-          node scripts/stamp-app-version.mjs --index "_site/index.html" --json "_site/version.json" --version "$APP_VERSION"
-          echo "Stamped app version: $APP_VERSION"
 
-          mkdir -p _site/preview
-          cp source/preview.html _site/preview/index.html
+          # Build the app (bundles TS + CSS, stamps version.json and the meta tag).
+          # No source maps: the deployed artifact should not carry them.
+          bun scripts/build-bun.mjs source dist --version "$APP_VERSION" --no-sourcemap
 
-          mapfile -t PR_ROWS < <(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
+          if [ -f dist/js/app.js.map ]; then
+            echo "Refusing to deploy: source maps were generated"
+            exit 1
+          fi
 
-          PREVIEW_COUNT=0
-          declare -A USED_SLUGS=()
-
-          for row in "${PR_ROWS[@]}"; do
-            IFS=$'\t' read -r NUMBER BRANCH <<< "$row"
-
-            SAFE=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')
-            if [ -z "$SAFE" ]; then
-              SAFE="pr-$NUMBER"
-            fi
-
-            if [ -n "${USED_SLUGS[$SAFE]:-}" ]; then
-              SAFE="${SAFE}-pr-$NUMBER"
-            fi
-            USED_SLUGS[$SAFE]=1
-
-            TARGET="_site/preview/$SAFE"
-            mkdir -p "$TARGET"
-
-            if git fetch --depth=1 origin "refs/pull/$NUMBER/head"; then
-              git archive FETCH_HEAD -- source | tar --strip-components=1 -C "$TARGET" -x
-              PREVIEW_COUNT=$((PREVIEW_COUNT + 1))
-            else
-              echo "::warning::Unable to fetch refs/pull/$NUMBER/head for branch '$BRANCH'. Skipping this preview."
-              rm -rf "$TARGET"
-            fi
-          done
-
-          echo "Generated $PREVIEW_COUNT preview bundle(s)."
+          mkdir -p _site
+          cp -r dist/. _site/
+          echo "Built app version: $APP_VERSION"
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6
