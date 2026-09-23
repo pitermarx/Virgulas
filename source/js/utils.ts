@@ -1,21 +1,33 @@
-import { devPanelOpen } from './devtools.js'
+import { signal } from '@preact/signals'
 
-export function log(...args) {
-    if (devPanelOpen.peek()) {
-        console.log('[debug]', ...args)
-    }
+function readAppVersion(): string {
+    if (typeof document === 'undefined') return 'dev'
+    const value = document
+        .querySelector('meta[name="app-version"]')
+        ?.getAttribute('content')
+        ?.trim()
+    return value || 'dev'
 }
 
-export function enableDebug() {
-    // Kept for backwards compatibility; opens the dev panel instead of using query params
-    devPanelOpen.value = true
-    log('Debug mode enabled')
-    document.body.classList.add('debug')
+/** App version from the shell meta tag; shown in the Options footer. */
+export const appVersion = signal(readAppVersion())
+
+/**
+ * Diagnostic logging, used for internal inconsistency warnings. Off unless
+ * `localStorage.vmd_debug === '1'`, so the diagnostics stay available without
+ * shipping a developer panel.
+ */
+export function log(...args: unknown[]) {
+    try {
+        if (localStorage.getItem('vmd_debug') === '1') console.log('[debug]', ...args)
+    } catch {
+        /* storage unavailable */
+    }
 }
 
 export const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
-function readStorage(key, fallback = null) {
+function readStorage(key: string, fallback: string | null = null): string | null {
     try {
         const value = localStorage.getItem(key)
         return value === null ? fallback : value
@@ -25,7 +37,7 @@ function readStorage(key, fallback = null) {
     }
 }
 
-function writeStorage(key, value) {
+function writeStorage(key: string, value: string | null | undefined): boolean {
     try {
         if (value === null || value === undefined) {
             localStorage.removeItem(key)
@@ -39,7 +51,7 @@ function writeStorage(key, value) {
     }
 }
 
-function deleteStorage(key) {
+function deleteStorage(key: string): boolean {
     try {
         localStorage.removeItem(key)
         return true
@@ -49,15 +61,15 @@ function deleteStorage(key) {
     }
 }
 
-function slot(key) {
+function slot(key: string) {
     return {
-        get(fallback = null) {
+        get(fallback: string | null = null): string | null {
             return readStorage(key, fallback)
         },
-        set(value) {
+        set(value: string | null | undefined): boolean {
             return writeStorage(key, value)
         },
-        del() {
+        del(): boolean {
             return deleteStorage(key)
         }
     }

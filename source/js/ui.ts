@@ -3,30 +3,54 @@ import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
-import { log, isMobile, store } from './utils.js';
+import { log, isMobile, store, appVersion } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen } from './shortcuts.js';
-import { searchQuery, searchResultIndex, currentSearchMatchId, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js';
-import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts } from './sync.js';
-import { appVersion, devPanelOpen, devSync, devCrypto, devOutline, devPersistence, devStorage, refreshStorageQuota } from './devtools.js';
+import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
+import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './sync.js';
 import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
 import { formatDueDate, daysUntilDue } from './meta.js';
 
-const focusId = signal(null)
-const focusType = signal(null)
-const selectedIds = signal([])
+const focusId = signal<string | null>(null)
+const focusType = signal<string | null>(null)
+const selectedIds = signal<string[]>([])
 const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
+
+// ── Static shell modals (keyboard shortcuts) ─────────────────────────────────
+// Previously inline <script>/onclick handlers in index.html; moved here so the
+// page can ship a strict script-src CSP without 'unsafe-inline'.
+export function openModal(id: string) {
+  const modal = document.getElementById(id)
+  if (modal) modal.style.display = ''
+}
+
+export function closeModals(event: Event) {
+  const target = event.target as Element | null
+  if (!target?.classList) return
+  const isOverlay = target.classList.contains('modal-overlay')
+  const isClose = target.classList.contains('modal-close')
+  if (!isOverlay && !isClose) return
+  document.querySelectorAll('.modal-overlay').forEach((modal) => {
+    (modal as HTMLElement).style.display = 'none'
+  })
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (event) => {
+    closeModals(event)
+  })
+}
 const FOCUS_TRANSFER_WINDOW_MS = 450
 const BLUR_SETTLE_MS = 75
-let pendingFocusTransfer = null
+let pendingFocusTransfer: { id: string; type: string | null; expiresAt: number } | null = null
 
 // Sync body class for wide-screen side-by-side task panel layout
 effect(() => { document.body.classList.toggle('tasks-panel-is-open', tasksPanelOpen.value) })
 
-function getNodeIdFromElement(el) {
+function getNodeIdFromElement(el: any) {
     return el?.closest?.('.node-content')?.getAttribute('data-node-id') || null
 }
 
-function markFocusTransfer(id, type) {
+function markFocusTransfer(id: string | null, type: string | null) {
     pendingFocusTransfer = {
         id: String(id),
         type,
@@ -34,13 +58,13 @@ function markFocusTransfer(id, type) {
     }
 }
 
-function requestNodeFocus(id, type) {
+function requestNodeFocus(id: string | null, type: string | null) {
     markFocusTransfer(id, type)
     focusId.value = id
     focusType.value = type
 }
 
-function hasActiveTransferForOtherNode(id) {
+function hasActiveTransferForOtherNode(id: string | null) {
     if (!pendingFocusTransfer) return false
     if (Date.now() > pendingFocusTransfer.expiresAt) {
         pendingFocusTransfer = null
@@ -49,7 +73,7 @@ function hasActiveTransferForOtherNode(id) {
     return pendingFocusTransfer.id !== String(id)
 }
 
-function clearTransferForElement(el) {
+function clearTransferForElement(el: any) {
     if (!pendingFocusTransfer) return
     const nodeId = getNodeIdFromElement(el)
     if (nodeId && nodeId === pendingFocusTransfer.id) {
@@ -57,7 +81,7 @@ function clearTransferForElement(el) {
     }
 }
 
-function focusElement(el) {
+function focusElement(el: any) {
     if (!el) return
     if (document.activeElement !== el) {
         try {
@@ -70,7 +94,7 @@ function focusElement(el) {
     clearTransferForElement(el)
 }
 
-function scheduleBlurClear(id, type) {
+function scheduleBlurClear(id: string | null, type: string | null) {
     setTimeout(() => {
         const activeNodeId = getNodeIdFromElement(document.activeElement)
         if (activeNodeId === String(id)) return
@@ -84,7 +108,7 @@ function scheduleBlurClear(id, type) {
 
 const focusMe = { ref: focusElement }
 
-function openSearchWithQuery(query) {
+function openSearchWithQuery(query: string) {
     const nextQuery = String(query || '').trim()
     if (!nextQuery) return
     enterSearchMode(focus)
@@ -92,7 +116,7 @@ function openSearchWithQuery(query) {
     resetSearchNavigation()
 }
 
-function handleInteractiveMarkdownClick(e) {
+function handleInteractiveMarkdownClick(e: any) {
     if (!(e?.target instanceof Element)) return false
 
     const tokenTarget = e.target.closest('[data-search-token]')
@@ -156,25 +180,25 @@ const hasOpenChildrenBullet = html`<g><circle cx="25" cy="25" r="10" fill="curre
 const SWIPE_MIN_DISTANCE_PX = 56
 const SWIPE_AXIS_RATIO = 1.35
 
-function firstTouch(list) {
+function firstTouch(list: any) {
     if (!list || list.length === 0) return null
     return list[0]
 }
 
-function isSwipeGesture(deltaX, deltaY) {
+function isSwipeGesture(deltaX: number, deltaY: number) {
     const absX = Math.abs(deltaX)
     const absY = Math.abs(deltaY)
     return absX >= SWIPE_MIN_DISTANCE_PX && absX > absY * SWIPE_AXIS_RATIO
 }
 
-function isSwipeBlockedTarget(target) {
+function isSwipeBlockedTarget(target: any) {
     if (!(target instanceof Element)) return false
     return !!target.closest('input, textarea, a, button, .bullet, .collapse-toggle')
 }
 
-function NodeDesc({ node }) {
+function NodeDesc({ node }: any) {
     const { description, id } = node.value // subscribe to changes on node
-    const focusDesc = e => {
+    const focusDesc = (e: any) => {
         if (handleInteractiveMarkdownClick(e)) return
         requestNodeFocus(id, 'description')
         e.stopPropagation()
@@ -184,7 +208,7 @@ function NodeDesc({ node }) {
         function onBlur() {
             scheduleBlurClear(id, 'description')
         }
-        function autosizeAndFocus(el) {
+        function autosizeAndFocus(el: any) {
             focusElement(el)
             if (!el) return
             el.style.height = 'auto'
@@ -196,7 +220,7 @@ function NodeDesc({ node }) {
                 rows="1"
                 class="node-desc-textarea" placeholder="Add description..." value=${description} focused
                 onBlur=${onBlur}
-                onpaste=${e => {
+                onpaste=${(e: any) => {
                 // Description always uses plain-text paste — never routed through VMD parser
                 e.preventDefault()
                 const text = e.clipboardData.getData('text/plain')
@@ -211,7 +235,7 @@ function NodeDesc({ node }) {
                     target.selectionStart = target.selectionEnd = start + text.length
                 })
             }}
-                onInput=${e => {
+                onInput=${(e: any) => {
                 const el = e.currentTarget
                 el.style.height = 'auto'
                 el.style.height = el.scrollHeight + 'px'
@@ -231,20 +255,20 @@ function NodeDesc({ node }) {
         <div class="node-desc-md" style=${style} dangerouslySetInnerHTML=${{ __html: style ? text : renderInlineMarkdown(text) }}></div></div>`
 }
 
-function NodeText({ node }) {
+function NodeText({ node }: any) {
     const { text, id, done } = node.value // subscribe to changes on node
     if (focusId.value === id && focusType.value === 'text') {
         const rawPrefix = done === true ? '[x] ' : done === false ? '[ ] ' : ''
         function onBlur() {
             scheduleBlurClear(id, 'text')
         }
-        function onInput(e) {
+        function onInput(e: any) {
             outline.updateTextRaw(id, e.target.value)
         }
         return html`<input
-            ...${focusMe} type="text" onpaste=${e => {
+            ...${focusMe} type="text" onpaste=${(e: any) => {
                 const text = e.clipboardData.getData('text/plain')
-                const lines = text.split(/\r?\n/).filter(l => l.trim())
+                const lines = text.split(/\r?\n/).filter((l: string) => l.trim())
                 // Single-line paste without a leading bullet marker → native paste
                 const isSingleLine = lines.length <= 1
                 const hasBullet = lines.length > 0 && /^\s*[-+]/.test(lines[0])
@@ -263,7 +287,7 @@ function NodeText({ node }) {
         class="node-text-md"
         style=${text ? '' : fadedText}
         dangerouslySetInnerHTML=${{ __html: text ? renderInlineMarkdown(text, { decorateMeta: done !== null }) : '&nbsp;' }}
-        onClick=${e => {
+        onClick=${(e: any) => {
             if (e.target === e.currentTarget) {
                 requestNodeFocus(id, 'text')
                 e.stopPropagation()
@@ -272,7 +296,7 @@ function NodeText({ node }) {
         }}></div>`
 }
 
-function NodeBody({ node }) {
+function NodeBody({ node }: any) {
     const { id, children, open, done } = node.value // subscribe to changes on node
     const hasChildren = children.length > 0
     const isFocused = focusId.value === id
@@ -291,7 +315,7 @@ function NodeBody({ node }) {
         swipeState.startY = 0
     }
 
-    function focusTextIfOnlyClickedThisElement(e) {
+    function focusTextIfOnlyClickedThisElement(e: any) {
         if (handleInteractiveMarkdownClick(e)) return
         if (e.target.closest('.bullet, .collapse-toggle, .task-checkbox')) return
         selectedIds.value = []
@@ -299,7 +323,7 @@ function NodeBody({ node }) {
         e.stopPropagation()
     }
 
-    function handleTouchStart(e) {
+    function handleTouchStart(e: any) {
         if (!isMobile) return
         if (isSwipeBlockedTarget(e.target)) {
             resetSwipeState()
@@ -321,7 +345,7 @@ function NodeBody({ node }) {
         swipeState.startY = touch.clientY
     }
 
-    function handleTouchMove(e) {
+    function handleTouchMove(e: any) {
         if (!isMobile || !swipeState.active) return
 
         const touch = firstTouch(e.touches)
@@ -338,7 +362,7 @@ function NodeBody({ node }) {
         }
     }
 
-    function handleTouchEnd(e) {
+    function handleTouchEnd(e: any) {
         if (!isMobile || !swipeState.active) return
 
         const touch = firstTouch(e.changedTouches) || firstTouch(e.touches)
@@ -377,7 +401,7 @@ function NodeBody({ node }) {
                 ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
             </svg>
         </span>
-        ${isTask && !isFocused && html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${e => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
+        ${isTask && !isFocused && html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${(e: any) => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
             <svg viewBox="0 0 16 16" width="16" height="16">
                 ${isDone
                 ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
@@ -395,11 +419,11 @@ function NodeBody({ node }) {
     `
 }
 
-function Node({ node, indent = 0 }) {
+function Node({ node, indent = 0 }: any) {
     const { id, children, open } = node.value // subscribe to changes on node
     const fontSize = indent === 0 ? `var(--text-size-root)` : `var(--text-size-level-${Math.min(indent, 2)})`;
 
-    function toggleOpenIfOnlyClickedThisElement(e) {
+    function toggleOpenIfOnlyClickedThisElement(e: any) {
         if (e.target === e.currentTarget) {
             outline.toggleOpen(id)
         }
@@ -409,7 +433,7 @@ function Node({ node, indent = 0 }) {
         <${NodeBody} node=${node} />
         ${open && children.length ? html`
         <div class="children" onClick=${toggleOpenIfOnlyClickedThisElement}>
-            ${children.map(outline.get).filter(c => c).map(child => html`<${Node} node=${child} indent=${indent + 1} />`)}
+            ${children.map(outline.get).filter((c: any) => c).map((child: any) => html`<${Node} node=${child} indent=${indent + 1} />`)}
         </div>` : ''}
     </div>
     `
@@ -422,33 +446,34 @@ const WIDE_LAYOUT_QUERY = '(min-width: 1160px)'
 
 // True when id is already visible in the current view: it is the zoomed node
 // itself, or every ancestor between it and the zoomed node is open.
-function isNodeVisibleInZoom(id, zoomId) {
+function isNodeVisibleInZoom(id: string, zoomId: string) {
     if (id === zoomId) return true
-    let current = outline.get(outline.get(id)?.parentId)
+    const start = outline.get(id)
+    let current = start?.parentId ? outline.get(start.parentId) : undefined
     while (current) {
         if (current.id === zoomId) return true
         if (!current.open.peek()) return false
-        current = outline.get(current.parentId)
+        current = current.parentId ? outline.get(current.parentId) : undefined
     }
     return false
 }
 
-function TaskRow({ item, onNavigate }) {
+function TaskRow({ item, onNavigate }: any) {
     const node = outline.get(item.id)
     if (!node) return null
 
-    function toggle(e) {
+    function toggle(e: any) {
         e.stopPropagation()
         outline.checkboxToggleDone(item.id)
     }
 
-    function navigate(e) {
+    function navigate(e: any) {
         e.stopPropagation()
         const isWide = window.matchMedia(WIDE_LAYOUT_QUERY).matches
         if (!isWide) tasksPanelOpen.value = false
         const zoomId = outline.zoomId.peek()
         if (!isNodeVisibleInZoom(item.id, zoomId)) {
-            zoomIn(node.parentId, focus)
+            zoomIn(node!.parentId!, focus)
         }
         requestNodeFocus(item.id, 'text')
     }
@@ -477,12 +502,12 @@ function TaskRow({ item, onNavigate }) {
 
 // Persistent per-group expansion state: survives rerenders
 const _groupExpanded = Object.create(null)
-function groupExpandedSignal(title, defaultVal) {
+function groupExpandedSignal(title: string, defaultVal: any) {
     if (!_groupExpanded[title]) _groupExpanded[title] = signal(defaultVal)
     return _groupExpanded[title]
 }
 
-function TaskGroup({ title, items, defaultExpanded = true }) {
+function TaskGroup({ title, items, defaultExpanded = true }: any) {
     const expanded = groupExpandedSignal(title, defaultExpanded)
     if (items.length === 0) return null
     return html`<div class="tasks-group">
@@ -492,29 +517,29 @@ function TaskGroup({ title, items, defaultExpanded = true }) {
             <span class="tasks-group-count">${items.length}</span>
         </button>
         ${expanded.value && html`<div class="tasks-group-items">
-            ${items.map(item => html`<${TaskRow} key=${item.id} item=${item} />`)}
+            ${items.map((item: any) => html`<${TaskRow} key=${item.id} item=${item} />`)}
         </div>`}
     </div>`
 }
 
 // Scheduled group windows: how many days out to show by default (persisted).
 const SCHEDULED_WINDOW_OPTIONS = [3, 7, 30, Infinity]
-export const scheduledWindowDays = signal(Number(store.scheduledWindow.get(3)) || 3)
+export const scheduledWindowDays = signal(Number(store.scheduledWindow.get('3')) || 3)
 
-function setScheduledWindow(days) {
+function setScheduledWindow(days: number) {
     scheduledWindowDays.value = days
     store.scheduledWindow.set(String(days))
 }
 
-function windowLabel(days) {
+function windowLabel(days: number) {
     return days === Infinity ? 'All' : `${days}d`
 }
 
-function ScheduledTaskGroup({ items, defaultExpanded = true }) {
+function ScheduledTaskGroup({ items, defaultExpanded = true }: any) {
     const expanded = groupExpandedSignal('Scheduled', defaultExpanded)
     if (items.length === 0) return null
     const windowDays = scheduledWindowDays.value
-    const visible = items.filter(item => daysUntilDue(item.due) <= windowDays)
+    const visible = items.filter((item: any) => (daysUntilDue(item.due) ?? 0) <= windowDays)
     const hiddenCount = items.length - visible.length
     return html`<div class="tasks-group">
         <button class="tasks-group-header" onClick=${() => expanded.value = !expanded.peek()}>
@@ -528,7 +553,7 @@ function ScheduledTaskGroup({ items, defaultExpanded = true }) {
                     class=${'tasks-window-btn' + (windowDays === days ? ' tasks-window-btn--active' : '')}
                     onClick=${() => setScheduledWindow(days)}>${windowLabel(days)}</button>`)}
             </div>
-            ${visible.map(item => html`<${TaskRow} key=${item.id} item=${item} />`)}
+            ${visible.map((item: any) => html`<${TaskRow} key=${item.id} item=${item} />`)}
             ${hiddenCount > 0 && html`<div class="tasks-scheduled-hidden">${hiddenCount} more beyond ${windowLabel(windowDays)}</div>`}
         </div>`}
     </div>`
@@ -541,7 +566,7 @@ export function TasksPanel() {
     function close() { tasksPanelOpen.value = false }
 
     return html`<div class="tasks-panel-backdrop" onClick=${close}>
-        <div class="tasks-panel" onClick=${e => e.stopPropagation()}>
+        <div class="tasks-panel" onClick=${(e: any) => e.stopPropagation()}>
             <div class="tasks-panel-header">
                 <span class="tasks-panel-title">Tasks</span>
                 <button class="tasks-panel-close" onClick=${close} aria-label="Close tasks panel">×</button>
@@ -566,7 +591,7 @@ export function StatusToolbar() {
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     const syncState = mode === 'remote'
         ? syncStatus.value
-        : (outline.isDirty.value ? 'unsynced' : 'synced')
+        : (outline.isDirty ? 'unsynced' : 'synced')
     const dotColors = {
         synced: 'var(--color-synced)',
         syncing: 'var(--color-syncing)',
@@ -585,7 +610,7 @@ export function StatusToolbar() {
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>
         <div class="toolbar-brand">
-            ${!isMobile && html`<button class="toolbar-btn" onclick=${() => openModal('keyboard-shortcuts')}>?</button>`}
+            ${!isMobile && html`<button class="toolbar-btn" onClick=${() => openModal('keyboard-shortcuts')}>?</button>`}
             <button class=${'toolbar-btn toolbar-btn-tasks' + (hasOverdueTasks.value ? ' toolbar-btn-tasks--overdue' : '')} onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
                 <svg viewBox="-1 -1 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="" y="1" width="14" height="14" rx="3" stroke-width="1.5" />
@@ -604,8 +629,7 @@ export function StatusToolbar() {
 
 export function MainToolbar() {
     if (focusType.value === 'search') {
-        const results = searchQuery.value ? outline.search(searchQuery.value) : null
-        const matches = results ? flatMatches(results) : []
+        const matches = searchResults.value.ids
         const idx = Math.min(searchResultIndex.value, Math.max(matches.length - 1, 0))
         const counterText = matches.length > 0 ? `${idx + 1}/${matches.length}` : ''
         currentSearchMatchId.value = matches[idx] || null
@@ -616,11 +640,11 @@ export function MainToolbar() {
                 <div class="search-bar-inner">
                     <input placeholder="Search..." ...${focusMe} class="search-input"
                         value=${searchQuery}
-                        onInput=${e => {
+                        onInput=${(e: any) => {
                 searchQuery.value = e.currentTarget.value
                 resetSearchNavigation()
             }}
-                        onKeyDown=${e => handleSearchKeyDown(e, focus)} />
+                        onKeyDown=${(e: any) => handleSearchKeyDown(e, focus)} />
                     ${counterText ? html`<span class="search-counter">${counterText}</span>` : null}
                     <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)}>×</button>
                 </div>
@@ -633,7 +657,7 @@ export function MainToolbar() {
     </div>`
 }
 
-function BreadcrumbItem({ item, active }) {
+function BreadcrumbItem({ item, active }: any) {
     return html`<span class="breadcrumb-item ${active ? 'active' : ''}" onClick=${() => zoomIn(item.id, focus)}>
         ${item.parentId ? item.text.value : 'Home'}
     </span>`
@@ -644,16 +668,16 @@ const zoomDescEditing = signal(false)
 function Breadcrumbs() {
     const root = outline.get(outline.zoomId.value)
     if (!root || !root.parentId) return null
-    const items = []
-    let current = root
+    const items: NonNullable<ReturnType<typeof outline.get>>[] = []
+    let current: NonNullable<ReturnType<typeof outline.get>> | undefined = root
     while (current) {
         items.unshift(current)
-        current = outline.get(current.parentId)
+        current = current.parentId ? outline.get(current.parentId) : undefined
     }
     const descText = root.description.value || '';
     const isEditing = zoomDescEditing.value;
 
-    function startEditing(e) {
+    function startEditing(e: any) {
         if (handleInteractiveMarkdownClick(e)) return
         zoomDescEditing.value = true
         focus.Id.value = null
@@ -675,9 +699,9 @@ function Breadcrumbs() {
                 placeholder="Add a description..."
                 rows=${descText.split('\n').length || 1}
                 value=${root.description}
-                onInput=${e => outline.update(root.id, { description: e.currentTarget.value })}
+                onInput=${(e: any) => outline.update(root.id, { description: e.currentTarget.value })}
                 onBlur=${stopEditing}
-                onKeyDown=${e => {
+                onKeyDown=${(e: any) => {
                     if (e.key === 'Escape') {
                         stopEditing()
                         focus.Id.value = null
@@ -703,23 +727,25 @@ function Breadcrumbs() {
 export function Outline() {
     const root = outline.get(outline.zoomId.value) // subscribe to changes on root node and zoomed node
     if (focusType.value === 'search' && searchQuery.value) {
-        const searchResults = outline.search(searchQuery.value)
+        const results = searchResults.value.tree
         return html`<div class="outliner search-results" key="search-results">
-            ${searchResults.children.map(result => html`<${SearchNode} node=${result} />`)}
+            ${(results?.children ?? []).map(result => html`<${SearchNode} node=${result} />`)}
         </div>`
     }
 
-    const children = root.children.value.map(outline.get).filter(c => c)
+    if (!root) return null
+
+    const children = root.children.value.map(outline.get).filter((c): c is NonNullable<ReturnType<typeof outline.get>> => !!c)
     if (children.length === 0) {
         function createFirstNode() {
-            const n = outline.addChild(root.id, { text: '' })
-            focusId.value = n.id
+            const n = outline.addChild(root!.id, { text: '' })
+            focusId.value = n!.id
             focusType.value = 'text'
         }
         return html`<div class="outliner" key="${root.id}-root">
             <div class="empty-state" tabIndex="-1"
                 onClick=${createFirstNode}
-                onKeyDown=${e => { if (e.key === 'Enter') { createFirstNode(); e.preventDefault(); e.stopPropagation() } }}>
+                onKeyDown=${(e: any) => { if (e.key === 'Enter') { createFirstNode(); e.preventDefault(); e.stopPropagation() } }}>
                 Press Enter to start writing…
             </div>
         </div>`
@@ -731,14 +757,14 @@ export function Outline() {
     </div>`
 }
 
-function SearchNode({ node, indent = 0 }) {
+function SearchNode({ node, indent = 0 }: any) {
     const { text, description, id, children, isMatch } = node
     const fontSize = indent === 0 ? `var(--text-size-root)` : `var(--text-size-level-${Math.min(indent, 2)})`;
     const isCurrent = currentSearchMatchId.value === id
     const style = isCurrent
         ? 'background-color: var(--color-search-current);'
         : isMatch ? 'background-color: var(--color-search-match);' : ''
-    function clickResult(e) {
+    function clickResult(e: any) {
         const zoomTarget = getFirstClosedParent(id)
         if (!zoomTarget) return
         currentSearchMatchId.value = id
@@ -760,7 +786,7 @@ function SearchNode({ node, indent = 0 }) {
             </div>
         </div>
         <div class="children">
-            ${children.map(child => html`<${SearchNode} node=${child} indent=${indent + 1} />`)}
+            ${children.map((child: any) => html`<${SearchNode} node=${child} indent=${indent + 1} />`)}
         </div>
     </div>`
 }
@@ -788,107 +814,17 @@ if (typeof window !== 'undefined') {
 
 document.onkeydown = keydown(focus)
 
-function formatBytes(bytes) {
-    if (!bytes) return '0 B'
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
-export function DeveloperPanel() {
-    if (!devPanelOpen.value) return null
-
-    const focusedNode = focusId.value ? outline.get(focusId.value) : null
-    const focusedNodeRaw = focusedNode ? JSON.stringify(focusedNode.peek(), null, 2) : 'none'
-    const stats = outline.getStats()
-
-    // Refresh storage quota each time the panel is rendered open
-    refreshStorageQuota()
-
-    return html`<div class="dev-panel">
-        <div class="dev-panel-header">Developer Panel <button class="dev-panel-close" onClick=${() => devPanelOpen.value = false}>×</button></div>
-        <div class="dev-panel-grid">
-            <section class="dev-panel-section">
-                <h4>Outline</h4>
-                <dl>
-                    <dt>Nodes</dt><dd>${stats.nodeCount}</dd>
-                    <dt>Max depth</dt><dd>${stats.maxDepth}</dd>
-                    <dt>Words</dt><dd>${stats.wordCount}</dd>
-                    <dt>Chars</dt><dd>${stats.charCount}</dd>
-                    <dt>Open w/ children</dt><dd>${stats.openCount}</dd>
-                    <dt>Collapsed</dt><dd>${stats.collapsedCount}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section">
-                <h4>App</h4>
-                <dl>
-                    <dt>Version</dt><dd class="dev-app-version">${appVersion.value}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section">
-                <h4>Focus / Zoom / Search</h4>
-                <dl>
-                    <dt>Focus ID</dt><dd>${focusId.value || '—'}</dd>
-                    <dt>Focus type</dt><dd>${focusType.value || '—'}</dd>
-                    <dt>Zoom ID</dt><dd>${outline.zoomId.value}</dd>
-                    <dt>Search</dt><dd>${searchQuery.value ? '"' + searchQuery.value + '"' : '—'}</dd>
-                    <dt>Hash applied</dt><dd>${devPersistence.hashApplied.value ? 'yes' : 'no'}</dd>
-                    <dt>Unlock mode</dt><dd>${devPersistence.unlockMode.value || persistence.getMode()}</dd>
-                    <dt>Unlock ms</dt><dd>${devPersistence.unlockDurationMs.value || '—'}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section">
-                <h4>Sync</h4>
-                <dl>
-                    <dt>Status</dt><dd>${syncStatus.value}</dd>
-                    <dt>Last sync</dt><dd>${devSync.lastSyncAt.value ? new Date(devSync.lastSyncAt.value).toLocaleTimeString() : '—'}</dd>
-                    <dt>Last sync ms</dt><dd>${devSync.lastSyncDurationMs.value || '—'}</dd>
-                    <dt>Retries</dt><dd>${devSync.retryCount.value}</dd>
-                    <dt>Last error</dt><dd>${devSync.lastError.value || '—'}</dd>
-                    <dt>Conflicts seen</dt><dd>${devSync.conflictCount.value}</dd>
-                    <dt>Poll runs</dt><dd>${devSync.pollRunCount.value}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section">
-                <h4>Crypto</h4>
-                <dl>
-                    <dt>Last encrypt</dt><dd>${devCrypto.lastEncryptMs.value ? devCrypto.lastEncryptMs.value + ' ms' : '—'}</dd>
-                    <dt>Last decrypt</dt><dd>${devCrypto.lastDecryptMs.value ? devCrypto.lastDecryptMs.value + ' ms' : '—'}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section">
-                <h4>Storage</h4>
-                <dl>
-                    <dt>Used</dt><dd>${formatBytes(devStorage.usageBytes.value)}</dd>
-                    <dt>Quota</dt><dd>${formatBytes(devStorage.quotaBytes.value)}</dd>
-                </dl>
-            </section>
-            <section class="dev-panel-section dev-panel-section-full">
-                <h4>Focused node JSON</h4>
-                <pre class="dev-panel-json">${focusedNodeRaw}</pre>
-            </section>
-        </div>
-    </div>`
-}
-
-// Keep DebugPanel as an alias for backwards compat in tests
-export function DebugPanel() {
-    return DeveloperPanel()
-}
-
-// ── Conflict resolution modal ─────────────────────────────────────────────────
-
 export function ConflictModal() {
     const conflicts = pendingConflicts.value
     if (conflicts.length === 0) return null
 
-    function choose(nodeId, field, side) {
+    function choose(nodeId: string, field: string, side: 'local' | 'remote') {
         const m = new Map(pendingConflictResolutions.peek())
         m.set(`${nodeId}::${field}`, side)
         pendingConflictResolutions.value = m
     }
 
-    function useAll(side) {
+    function useAll(side: 'local' | 'remote') {
         const m = new Map()
         for (const c of conflicts) {
             m.set(`${c.nodeId}::${c.field}`, side)
@@ -904,15 +840,17 @@ export function ConflictModal() {
     async function apply() {
         if (!allResolved()) return
         const m = pendingConflictResolutions.peek()
-        const resList = conflicts.map(c => ({
-            nodeId: c.nodeId,
-            field: c.field,
-            chosenSide: m.get(`${c.nodeId}::${c.field}`)
-        }))
+        const resList = conflicts
+            .map(c => ({
+                nodeId: c.nodeId,
+                field: c.field,
+                chosenSide: m.get(`${c.nodeId}::${c.field}`)
+            }))
+            .filter((r): r is ConflictResolution => r.chosenSide !== undefined)
         await resolveConflicts(resList)
     }
 
-    function renderValue(field, value) {
+    function renderValue(field: string, value: any) {
         if (field === 'children') {
             const doc = pendingMergedDoc.peek()
             const nodeMap = doc ? new Map(doc.nodes.map(n => [n.id, n])) : new Map()
@@ -924,7 +862,7 @@ export function ConflictModal() {
         return html`<textarea class="conflict-value-textarea" readonly rows="4">${value}</textarea>`
     }
 
-    const fieldLabels = { text: 'Text', description: 'Description', children: 'Children' }
+    const fieldLabels: Record<string, string> = { text: 'Text', description: 'Description', children: 'Children' }
 
     return html`<div class="modal-overlay conflict-overlay">
         <div class="modal-dialog conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title">

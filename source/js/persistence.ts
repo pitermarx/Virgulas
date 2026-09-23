@@ -1,8 +1,8 @@
 import { signal, effect, batch } from '@preact/signals'
-import { encrypt, decrypt, generateSalt } from "./crypto2.js"
+import { encrypt, decrypt, generateSalt, MIN_PASSPHRASE_LENGTH } from "./crypto2.js"
 import outline from "./outline.js"
 import { log, store } from './utils.js'
-import { devPersistence } from './devtools.js'
+import { biometrics } from './biometrics.js'
 import {
   remoteSync,
   syncStatus,
@@ -21,11 +21,29 @@ import {
   isRemoteSyncAttemptStale,
   beginRemotePush,
   recordCompletedRemotePush,
-  runExclusiveRemoteSync
+  runExclusiveRemoteSync,
+  hasSupabaseClient
 } from './sync.js'
 
-function normalizeMode(mode) {
+export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
+
+export interface UnlockOptions {
+  mode?: PersistenceMode
+  username?: string
+  password?: string
+  trustSession?: boolean
+}
+
+function normalizeMode(mode: unknown): PersistenceMode | null {
   return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
+}
+
+// Applies to newly chosen passphrases only; existing (possibly shorter) passphrases
+// must keep unlocking.
+function assertNewPassphrase(passphrase: string) {
+  if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`)
+  }
 }
 
 // ── Filesystem (File System Access API, no encryption) ──────────────────────
@@ -34,8 +52,8 @@ const filesystemStorage = (function () {
   const IDB_STORE = 'handles'
   const IDB_KEY = 'last-file'
 
-  function openIDB() {
-    return new Promise((resolve, reject) => {
+  function openIDB(): Promise<IDBDatabase> {
+    return new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open(IDB_DB, 1)
       req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE)
       req.onsuccess = () => resolve(req.result)
@@ -43,10 +61,10 @@ const filesystemStorage = (function () {
     })
   }
 
-  async function getSavedHandle() {
+  async function getSavedHandle(): Promise<FileSystemFileHandle | null> {
     try {
       const db = await openIDB()
-      return new Promise((resolve, reject) => {
+      return new Promise<FileSystemFileHandle | null>((resolve, reject) => {
         const tx = db.transaction(IDB_STORE, 'readonly')
         const req = tx.objectStore(IDB_STORE).get(IDB_KEY)
         req.onsuccess = () => resolve(req.result || null)
@@ -55,10 +73,10 @@ const filesystemStorage = (function () {
     } catch { return null }
   }
 
-  async function saveHandle(handle) {
+  async function saveHandle(handle: FileSystemFileHandle): Promise<void> {
     try {
       const db = await openIDB()
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(IDB_STORE, 'readwrite')
         const req = tx.objectStore(IDB_STORE).put(handle, IDB_KEY)
         req.onsuccess = () => resolve()
@@ -67,10 +85,10 @@ const filesystemStorage = (function () {
     } catch { /* ignore */ }
   }
 
-  async function clearHandle() {
+  async function clearHandle(): Promise<void> {
     try {
       const db = await openIDB()
-      return new Promise((resolve) => {
+      return new Promise<void>((resolve) => {
         const tx = db.transaction(IDB_STORE, 'readwrite')
         tx.objectStore(IDB_STORE).delete(IDB_KEY)
         tx.oncomplete = () => resolve()
@@ -78,13 +96,13 @@ const filesystemStorage = (function () {
     } catch { /* ignore */ }
   }
 
-  let _handle = null
+  let _handle: FileSystemFileHandle | null = null
 
   return {
     isSupported: () => typeof window !== 'undefined' && !!window.showOpenFilePicker,
 
     async open() {
-      const [handle] = await window.showOpenFilePicker({
+      const [handle] = await window.showOpenFilePicker!({
         types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
       })
       _handle = handle
@@ -94,7 +112,7 @@ const filesystemStorage = (function () {
     },
 
     async create() {
-      const handle = await window.showSaveFilePicker({
+      const handle = await window.showSaveFilePicker!({
         suggestedName: 'notes.vmd',
         types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
       })
@@ -107,10 +125,10 @@ const filesystemStorage = (function () {
       const handle = await getSavedHandle()
       if (!handle) return null
       try {
-        const perm = await handle.queryPermission({ mode: 'readwrite' })
+        const perm = await handle.queryPermission!({ mode: 'readwrite' })
         if (perm === 'denied') return null
         if (perm !== 'granted') {
-          const req = await handle.requestPermission({ mode: 'readwrite' })
+          const req = await handle.requestPermission!({ mode: 'readwrite' })
           if (req !== 'granted') return null
         }
         _handle = handle
@@ -124,7 +142,7 @@ const filesystemStorage = (function () {
       return !!handle
     },
 
-    async write(json) {
+    async write(json: string) {
       if (!_handle) throw new Error('No file open')
       const writable = await _handle.createWritable()
       await writable.write(json)
@@ -162,7 +180,7 @@ const localEncryptedData = {
   reset() {
     store.data.del()
   },
-  set(value, salt) {
+  set(value: string | null, salt: string | null) {
     if (value && salt) {
       store.data.set(salt + '|' + value)
     }
@@ -175,7 +193,7 @@ const localEncryptedData = {
   }
 }
 
-function rememberMode(mode) {
+function rememberMode(mode: unknown) {
   const normalized = normalizeMode(mode)
   if (!normalized) return
   store.mode.set(normalized)
@@ -187,7 +205,6 @@ function applyHashZoomIfPresent() {
   const node = outline.get(nodeParam)
   if (node) {
     outline.zoomIn(nodeParam)
-    devPersistence.hashApplied.value = true
   }
 }
 
@@ -199,7 +216,7 @@ const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
 
-async function retryWithBackoff(fn, maxRetries = 3) {
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
   for (let i = 0; i <= maxRetries; i++) {
     try {
@@ -209,9 +226,10 @@ async function retryWithBackoff(fn, maxRetries = 3) {
       await new Promise(r => setTimeout(r, baseMs * Math.pow(2, i)))
     }
   }
+  throw new Error('retryWithBackoff exhausted all attempts')
 }
 
-let lastTimeoutId = null
+let lastTimeoutId: ReturnType<typeof setTimeout> | null = null
 effect(() => {
   const mode = authMode.value
   if (mode !== 'remote') return
@@ -368,15 +386,15 @@ effect(() => {
   return () => clearTimeout(timeoutId)
 })
 
-function parseRemoteDecryptError(error) {
-  const message = String(error?.message || '')
+function parseRemoteDecryptError(error: unknown) {
+  const message = String((error as { message?: string } | null)?.message || '')
   if (message.includes('Invalid password') || message.includes('corrupted')) {
     return new Error('Authenticated, but data could not be decrypted with this passphrase. You can reset remote data with a new passphrase.')
   }
   return error
 }
 
-async function unlockLocal(code) {
+async function unlockLocal(code: string) {
   const { salt, data } = localEncryptedData.get()
 
   if (data) {
@@ -387,6 +405,7 @@ async function unlockLocal(code) {
   }
   else {
     log('No encrypted data found in localStorage, starting with empty doc')
+    assertNewPassphrase(code)
     outline.reset()
     outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
     authMode.value = 'local'
@@ -415,7 +434,7 @@ async function unlockLocal(code) {
   }
 }
 
-async function unlockRemote({ passphrase: code, username, password, trustSession }) {
+async function unlockRemote({ passphrase: code, username, password, trustSession }: { passphrase: string; username?: string; password?: string; trustSession?: boolean }) {
   const hasCredentials = !!(username && password)
   if (!trustSession && !hasCredentials) {
     throw new Error('Username, password, and passphrase are required.')
@@ -435,6 +454,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   const remoteData = await remoteSync.read()
   if (!remoteData?.data) {
+    assertNewPassphrase(code)
     const salt = localEncryptedData.get().salt || generateSalt()
     outline.reset()
     outline.addChild('root', { text: 'Hello World' })
@@ -478,9 +498,9 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 }
 
-let introVmdCache = null
+let introVmdCache: string | null = null
 
-async function getIntroVmdText() {
+async function getIntroVmdText(): Promise<string> {
   if (introVmdCache !== null) return introVmdCache
   try {
     const resp = await fetch('/intro.vmd', { cache: 'no-store' })
@@ -520,7 +540,7 @@ async function unlockFilesystem() {
     try {
       json = await filesystemStorage.open()
     } catch (err) {
-      if (err?.name === 'AbortError') throw new Error('No file selected.')
+      if ((err as { name?: string } | null)?.name === 'AbortError') throw new Error('No file selected.')
       throw err
     }
   }
@@ -545,7 +565,7 @@ async function unlockFilesystem() {
   return true
 }
 
-async function unlock(code, options = {}) {
+async function unlock(code: string, options: UnlockOptions = {}) {
   const mode = options.mode || 'local'
   if (mode === 'memory') {
     return unlockMemory()
@@ -572,10 +592,10 @@ export default {
   getPassphrase: () => passphrase.value,
   getLastUsername: () => store.user.get('') || '',
   getPreferredMode: () => normalizeMode(store.mode.get(null)),
-  setPreferredMode(mode) {
+  setPreferredMode(mode: string | null) {
     rememberMode(mode)
   },
-  hasSupabase: () => !!window.supabase?.createClient,
+  hasSupabase: () => hasSupabaseClient(),
   getMode: () => authMode.value,
   getUser: async () => {
     try {
@@ -586,15 +606,22 @@ export default {
   },
   getAuthBootstrap: async () => {
     const hasLocalData = !!localEncryptedData.get().data
-    const hasSupabase = !!window.supabase?.createClient
+    const hasSupabase = hasSupabaseClient()
     const hasFilesystem = filesystemStorage.isSupported()
-    const hasSavedFileHandle = hasFilesystem ? await filesystemStorage.hasSavedHandle() : false
     const lastUsername = store.user.get('') || ''
     const preferredMode = normalizeMode(store.mode.get(null))
-    let user = null
+    let user: any = null
     let hasRemoteData = false
 
-    if (hasSupabase) {
+    // Both probes are gated on the mode the user actually persisted, so they stay
+    // off the startup path for everyone else: the IndexedDB handle lookup only
+    // runs for File mode, and the Supabase chunk (plus its session round trip)
+    // is only fetched for Remote mode.
+    const hasSavedFileHandle = hasFilesystem && preferredMode === 'filesystem'
+      ? await filesystemStorage.hasSavedHandle()
+      : false
+
+    if (hasSupabase && preferredMode === 'remote') {
       try {
         user = await remoteSync.getUser()
         if (user) {
@@ -658,18 +685,19 @@ export default {
   clearLocalData() {
     localEncryptedData.set(null, null)
   },
-  async signUp(email, password) {
+  async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
     store.user.set(email.trim())
     rememberMode('remote')
     return res
   },
-  async resetRemoteData(newPassphrase, options = {}) {
+  async resetRemoteData(newPassphrase: string, options: { username?: string; password?: string } = {}) {
     const username = (options.username || '').trim()
     const password = options.password || ''
     if (!newPassphrase) {
       throw new Error('Enter a new passphrase before resetting remote data.')
     }
+    assertNewPassphrase(newPassphrase)
     let user = await this.getUser()
     if (!user && username && password) {
       await remoteSync.signIn(username, password)
@@ -708,6 +736,9 @@ export default {
   async signOut() {
     stopPolling()
     clearCredentials()
+    // Revoke the device-local biometric seal: signing out means this device may no
+    // longer recover the passphrase without the user typing it.
+    await biometrics.forget().catch(() => { })
     await remoteSync.signOut()
     authMode.value = 'remote'
     passphrase.value = ''
@@ -736,11 +767,15 @@ export default {
     store.mode.del()
     store.user.del()
     filesystemStorage.clear()
+    // Purging local data must also drop the device-local biometric seal, otherwise
+    // the wrapped passphrase would outlive the data it protects.
+    void biometrics.forget().catch(() => { })
   },
-  async changePassphrase(newPassphrase) {
+  async changePassphrase(newPassphrase: string) {
     if (!newPassphrase) {
       throw new Error('New passphrase cannot be empty.')
     }
+    assertNewPassphrase(newPassphrase)
     const mode = authMode.value
     if (mode === 'memory' || mode === 'filesystem') {
       throw new Error('This mode has no encryption passphrase.')
@@ -766,7 +801,7 @@ export default {
   exportVmd() {
     return outline.getVMD('root')
   },
-  importVmd(vmdText) {
+  importVmd(vmdText: string) {
     outline.reset()
     if (vmdText && vmdText.trim()) {
       outline.setRootVMD(vmdText)

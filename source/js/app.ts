@@ -1,15 +1,19 @@
 import { html, render } from 'htm/preact';
+import { useEffect } from 'preact/hooks';
 import { signal, effect } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, DebugPanel, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
-import persistence from './persistence.js';
+import { Outline, StatusToolbar, MainToolbar, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
+import persistence, { type PersistenceMode } from './persistence.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync } from './sync.js';
 import outline from './outline.js';
-import { appVersion } from './devtools.js';
-import { store } from './utils.js';
-import inbox from './inbox.js';
+import { appVersion, store } from './utils.js';
+import { DEFAULT_ITERATIONS } from './crypto2.js';
+import inbox, { type CaptureIntent } from './inbox.js';
 
-const splashVisible = signal(true);
+// Splash lifecycle. `appReady` flips once the initial auth state and the
+// webfont are ready; `splashDismissed` removes the node once its fade-out ends.
+const appReady = signal(false);
+const splashDismissed = signal(false);
 
 // B4: Restore persisted theme preference on load
 const savedTheme = store.theme.get();
@@ -17,7 +21,7 @@ if (savedTheme) {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }
 
-const authMode = signal('local');
+const authMode = signal<PersistenceMode>('local');
 const authScenario = signal('empty-local');
 const authHasLocalData = signal(false);
 const authHasSupabase = signal(false);
@@ -30,7 +34,7 @@ const unlockMessage = signal('');
 const canResetRemoteData = signal(false);
 const canResetLocalData = signal(false);
 const isBusy = signal(false);
-const authUser = signal(null);
+const authUser = signal<any>(null);
 const authStep = signal('unlock');
 // Remote unlock staging: when true, email+password were collected and we await the passphrase
 const remotePasswordStage = signal(false);
@@ -45,13 +49,18 @@ const adminMessage = signal('');
 const newEmail = signal('');
 const newPassword = signal('');
 const newPassphrase = signal('');
+const editingOption = signal<'email' | 'password' | 'passphrase' | null>(null);
 const inboxNodeName = signal(inbox.getNodeName());
 const quickCaptureOpen = signal(false);
 const quickCaptureText = signal('');
 const quickCaptureNotice = signal('');
-let quickCaptureNoticeTimer = null;
+// null while the capture prompt is open; true/false once a capture was attempted.
+const captureSaved = signal<boolean | null>(null);
+const bookmarkletCopied = signal(false);
+let quickCaptureNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+let bookmarkletCopiedTimer: ReturnType<typeof setTimeout> | null = null;
 
-function announceQuickCapture(message) {
+function announceQuickCapture(message: string) {
   quickCaptureNotice.value = message;
   if (quickCaptureNoticeTimer !== null) {
     clearTimeout(quickCaptureNoticeTimer);
@@ -71,8 +80,8 @@ function reconcileInbox() {
   return imported;
 }
 
-function enqueueIncomingCapture(text) {
-  if (!inbox.enqueue(text)) {
+function enqueueIncomingCapture(text: string, description = '') {
+  if (!inbox.enqueue(text, description)) {
     announceQuickCapture('Quick capture could not be saved on this device.');
     return false;
   }
@@ -93,53 +102,111 @@ function closeQuickCapture() {
   quickCaptureText.value = '';
 }
 
-function submitQuickCapture(e) {
+function submitQuickCapture(e: any) {
   e.preventDefault();
   if (!quickCaptureText.value.trim()) {
     announceQuickCapture('Enter some text before adding it.');
     return;
   }
+
+  if (captureOnly) {
+    // Capture-only visit: write the queue and leave. The document is never
+    // loaded, so there is nothing to reconcile into here.
+    if (!inbox.enqueue(quickCaptureText.value)) {
+      announceQuickCapture('Quick capture could not be saved on this device.');
+      return;
+    }
+    captureSaved.value = true;
+    closeQuickCapture();
+    closeCaptureWindow();
+    return;
+  }
+
   if (enqueueIncomingCapture(quickCaptureText.value)) {
     closeQuickCapture();
   }
 }
 
-function sharedCaptureText(url) {
-  const parts = ['title', 'text', 'url']
-    .map(key => url.searchParams.get(key)?.trim() || '')
-    .filter(Boolean);
-  return [...new Set(parts)].join('\n');
+/** Remove the capture parameters so a reload or re-share does not queue twice. */
+function stripCaptureParams() {
+  const url = new URL(window.location.href);
+  ['quick-add', 'quick-capture', ...inbox.SHARE_TARGET_KEYS].forEach(key => url.searchParams.delete(key));
+  const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`;
+  window.history.replaceState(null, '', cleanUrl || '/');
 }
 
+/**
+ * Handle capture URLs that arrive while the app is already running (a share
+ * target re-entry, or a history navigation). Cold loads never reach here: they
+ * are handled by the capture fast-path before the app boots.
+ */
 function consumeQuickCaptureUrl() {
   if (typeof window === 'undefined') return;
 
-  const url = new URL(window.location.href);
-  const shareKeys = ['title', 'text', 'url'];
-  const hasDirectCapture = url.searchParams.has('quick-add');
-  const hasCapturePrompt = url.searchParams.has('quick-capture');
-  const hasSharePayload = shareKeys.some(key => url.searchParams.has(key));
-  let consumed = false;
-  let text = '';
+  const intent = inbox.parseCaptureUrl(new URL(window.location.href));
+  if (!intent) return;
 
-  if (hasDirectCapture) {
-    consumed = true;
-    text = url.searchParams.get('quick-add')?.trim() || '';
-    if (!text) quickCaptureOpen.value = true;
-  } else if (hasCapturePrompt) {
-    consumed = true;
+  if (intent.kind === 'direct') enqueueIncomingCapture(intent.text, intent.description);
+  else quickCaptureOpen.value = true;
+
+  stripCaptureParams();
+}
+
+// Decide the capture fast-path before anything boots. Only a script-opened
+// window (the bookmarklet popup) may close itself; elsewhere `window.close()`
+// is ignored and the confirmation card stays on screen.
+const initialCaptureIntent = typeof window === 'undefined'
+  ? null
+  : inbox.parseCaptureUrl(new URL(window.location.href));
+const captureOnly = initialCaptureIntent !== null;
+
+function closeCaptureWindow() {
+  try {
+    window.close();
+  } catch {
+    /* Closing the window is best-effort. */
+  }
+}
+
+/**
+ * Capture-only boot: queue the text (or ask for it) and render a minimal
+ * surface. Deliberately skips auth bootstrap, decryption and biometric unlock.
+ */
+function startCaptureOnly(intent: CaptureIntent) {
+  if (intent.kind === 'direct') {
+    captureSaved.value = inbox.enqueue(intent.text, intent.description);
+  } else {
     quickCaptureOpen.value = true;
-  } else if (hasSharePayload) {
-    consumed = true;
-    text = sharedCaptureText(url);
   }
 
-  if (text) enqueueIncomingCapture(text);
-  if (!consumed) return;
+  stripCaptureParams();
+  render(html`<${CaptureSurface} />`, document.getElementById('app')!);
 
-  ['quick-add', 'quick-capture', ...shareKeys].forEach(key => url.searchParams.delete(key));
-  const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`;
-  window.history.replaceState(null, '', cleanUrl || '/');
+  if (intent.kind === 'direct' && captureSaved.value) closeCaptureWindow();
+}
+
+function captureAppUrl() {
+  if (typeof window === 'undefined') return '/';
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+const bookmarkletHref = inbox.buildBookmarklet(captureAppUrl());
+
+// The bookmarklet is a single control: clicking copies its source so it can be
+// pasted into a bookmark, while dragging (native anchor drag) installs it.
+async function handleBookmarkletClick(event: any) {
+  event.preventDefault();
+  try {
+    await navigator.clipboard.writeText(bookmarkletHref);
+    bookmarkletCopied.value = true;
+    if (bookmarkletCopiedTimer !== null) clearTimeout(bookmarkletCopiedTimer);
+    bookmarkletCopiedTimer = setTimeout(() => {
+      bookmarkletCopied.value = false;
+      bookmarkletCopiedTimer = null;
+    }, 3000);
+  } catch {
+    adminError.value = 'Could not copy the bookmarklet. Drag it onto your bookmarks bar instead.';
+  }
 }
 
 // Reconcile a queue that was captured while the app was locked as soon as a
@@ -153,7 +220,7 @@ effect(() => {
 });
 
 async function refreshAccountInfo() {
-  let user = null;
+  let user: any = null;
   try { user = await persistence.getUser(); } catch { /* ignore */ }
   accountInfo.value = {
     email: user?.email || '',
@@ -164,6 +231,7 @@ async function refreshAccountInfo() {
 
 effect(() => {
   if (optionsOpen.value) {
+    editingOption.value = null;
     void refreshAccountInfo();
     void biometrics.hasEnrolled().then(v => { bioEnrolled.value = v });
   }
@@ -173,7 +241,7 @@ if (typeof window !== 'undefined' && biometrics.isSupported()) {
   biometrics.hasEnrolled().then(v => { bioEnrolled.value = v });
 }
 
-async function runAdminAction(action, successMessage) {
+async function runAdminAction(action: () => Promise<unknown>, successMessage: string) {
   adminError.value = '';
   adminMessage.value = '';
   adminBusy.value = true;
@@ -182,40 +250,46 @@ async function runAdminAction(action, successMessage) {
     adminMessage.value = successMessage;
     await refreshAccountInfo();
   } catch (error) {
-    adminError.value = String(error?.message || 'Something went wrong.');
+    adminError.value = String((error as { message?: string } | null)?.message || 'Something went wrong.');
   } finally {
     adminBusy.value = false;
   }
 }
 
-function submitChangeEmail(e) {
+function submitChangeEmail(e: any) {
   e.preventDefault();
   if (!newEmail.value.trim()) {
     adminError.value = 'Email cannot be empty.';
     return;
   }
-  void runAdminAction(() => remoteSync.updateEmail(newEmail.value.trim()), 'Email updated. Confirm the change from the new address if required.');
+  const next = newEmail.value.trim();
   newEmail.value = '';
+  editingOption.value = null;
+  void runAdminAction(() => remoteSync.updateEmail(next), 'Email updated. Confirm the change from the new address if required.');
 }
 
-function submitChangePassword(e) {
+function submitChangePassword(e: any) {
   e.preventDefault();
   if (!newPassword.value) {
     adminError.value = 'Password cannot be empty.';
     return;
   }
-  void runAdminAction(() => remoteSync.updatePassword(newPassword.value), 'Account password updated.');
+  const next = newPassword.value;
   newPassword.value = '';
+  editingOption.value = null;
+  void runAdminAction(() => remoteSync.updatePassword(next), 'Account password updated.');
 }
 
-function submitChangePassphrase(e) {
+function submitChangePassphrase(e: any) {
   e.preventDefault();
   if (!newPassphrase.value) {
     adminError.value = 'New passphrase cannot be empty.';
     return;
   }
-  void runAdminAction(() => persistence.changePassphrase(newPassphrase.value), 'Encryption passphrase changed. Data was re-encrypted.');
+  const next = newPassphrase.value;
   newPassphrase.value = '';
+  editingOption.value = null;
+  void runAdminAction(() => persistence.changePassphrase(next), 'Encryption passphrase changed. Data was re-encrypted.');
 }
 
 function enrollBiometric() {
@@ -234,7 +308,7 @@ function forgetBiometric() {
       adminMessage.value = 'This device can no longer unlock with biometrics.';
     })
     .catch(err => {
-      adminError.value = String(err?.message || 'Failed to remove biometric unlock.');
+      adminError.value = String((err as { message?: string } | null)?.message || 'Failed to remove biometric unlock.');
     });
 }
 
@@ -253,11 +327,11 @@ function exportDoc() {
     URL.revokeObjectURL(url);
     adminMessage.value = 'Exported .vmd backup.';
   } catch (error) {
-    adminError.value = String(error?.message || 'Export failed.');
+    adminError.value = String((error as { message?: string } | null)?.message || 'Export failed.');
   }
 }
 
-async function importDoc(e) {
+async function importDoc(e: any) {
   const file = e.target?.files?.[0];
   e.target.value = '';
   if (!file) return;
@@ -266,19 +340,19 @@ async function importDoc(e) {
     persistence.importVmd(text);
     adminMessage.value = 'Imported document. It will be re-encrypted and saved.';
   } catch (error) {
-    adminError.value = String(error?.message || 'Import failed.');
+    adminError.value = String((error as { message?: string } | null)?.message || 'Import failed.');
   }
 }
 
-function handleInboxNodeNameChange(e) {
+function handleInboxNodeNameChange(e: any) {
   inboxNodeName.value = inbox.setNodeName(e.currentTarget.value);
 }
 
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
 
-let stagedMemoryDocJson = null;
-let cachedIntroText = null;
+let stagedMemoryDocJson: string | null = null;
+let cachedIntroText: string | null = null;
 
 async function getIntroText() {
   if (cachedIntroText !== null) return cachedIntroText;
@@ -303,7 +377,7 @@ async function loadLockedBackgroundIntro() {
 
 async function initAuthState() {
   const bootstrap = await persistence.getAuthBootstrap();
-  authMode.value = bootstrap.mode;
+  authMode.value = bootstrap.mode as PersistenceMode;
   authScenario.value = bootstrap.scenario;
   authHasLocalData.value = bootstrap.hasLocalData;
   authHasSupabase.value = bootstrap.hasSupabase;
@@ -323,10 +397,37 @@ async function initAuthState() {
   }
 }
 
-setTimeout(async () => {
-  await initAuthState();
-  splashVisible.value = false;
-}, 300);
+// Fallback when the splash's computed transition can't be read.
+const DEFAULT_SPLASH_FADE_MS = 700;
+
+let splashFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+function dismissSplash() {
+  if (splashFallbackTimer !== null) {
+    clearTimeout(splashFallbackTimer);
+    splashFallbackTimer = null;
+  }
+  splashDismissed.value = true;
+}
+
+// A capture visit must not boot the app: no auth bootstrap, no key derivation,
+// no decryption, no biometric prompt. `startCaptureOnly` performs the queue
+// write instead, at the tail of this module.
+//
+// The splash is a readiness gate for the *app*, not for the webfont: awaiting
+// `document.fonts.ready` cost ~23ms of time-to-reveal, so the reveal no longer
+// blocks on it and the webfont swaps in underneath the splash fade instead.
+if (!captureOnly) {
+  void (async () => {
+    try {
+      await initAuthState();
+    } catch (error) {
+      console.error('Failed to initialise app state', error);
+    } finally {
+      appReady.value = true;
+    }
+  })();
+}
 
 async function requestChangeMode() {
   if (authMode.value === 'local' && authHasLocalData.value) {
@@ -349,7 +450,7 @@ async function requestChangeMode() {
   autoBioAttempted.value = false;
 }
 
-function pickMode(nextMode) {
+function pickMode(nextMode: PersistenceMode) {
   if (nextMode === 'filesystem' && !persistence.hasFilesystem()) {
     unlockError.value = 'File System Access API is not supported in this browser.';
     return;
@@ -371,7 +472,7 @@ function pickMode(nextMode) {
   autoBioAttempted.value = false;
 }
 
-async function submitUnlock(e) {
+async function submitUnlock(e: any) {
   e.preventDefault();
   if (isBusy.value) return;
   unlockError.value = '';
@@ -415,7 +516,7 @@ async function submitUnlock(e) {
       canResetLocalData.value = authMode.value === 'local' && authHasLocalData.value;
     }
   } catch (error) {
-    const message = String(error?.message || 'Failed to unlock.');
+    const message = String((error as { message?: string } | null)?.message || 'Failed to unlock.');
     unlockError.value = message;
     canResetRemoteData.value = authMode.value === 'remote' && message.includes('Authenticated, but data could not be decrypted');
   } finally {
@@ -442,7 +543,7 @@ async function submitSignUp() {
       unlockMessage.value = 'Sign-up submitted. Confirm your email if confirmation is enabled.';
     }
   } catch (error) {
-    unlockError.value = String(error?.message || 'Failed to sign up.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to sign up.');
   } finally {
     isBusy.value = false;
   }
@@ -461,7 +562,7 @@ async function submitSignOut() {
     stagedMemoryDocJson = null;
     document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
-    unlockError.value = String(error?.message || 'Failed to sign out.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to sign out.');
   } finally {
     isBusy.value = false;
   }
@@ -490,7 +591,7 @@ async function submitResetLocalData() {
       unlockError.value = 'Failed to create new local data.';
     }
   } catch (error) {
-    unlockError.value = String(error?.message || 'Failed to reset local data.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to reset local data.');
   } finally {
     isBusy.value = false;
   }
@@ -515,7 +616,7 @@ async function submitResetRemoteData() {
     canResetRemoteData.value = false;
     document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
-    unlockError.value = String(error?.message || 'Failed to reset remote data.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to reset remote data.');
   } finally {
     isBusy.value = false;
   }
@@ -548,7 +649,7 @@ function openSecureStorageSetup() {
   document.body.removeAttribute('data-main-view');
 }
 
-async function submitRemotePassword(e) {
+async function submitRemotePassword(e: any) {
   e.preventDefault();
   if (isBusy.value) return;
   if (!username.value.trim() || !password.value) {
@@ -570,7 +671,7 @@ async function submitRemotePassword(e) {
     store.user.set(username.value.trim());
     remotePasswordStage.value = true;
   } catch (error) {
-    unlockError.value = String(error?.message || 'Sign-in failed. Check your email and password.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Sign-in failed. Check your email and password.');
   } finally {
     isBusy.value = false;
   }
@@ -604,13 +705,16 @@ async function unlockWithBiometrics() {
       unlockError.value = 'Invalid passphrase.';
     }
   } catch (error) {
-    unlockError.value = String(error?.message || 'Biometric unlock failed.');
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Biometric unlock failed.');
   } finally {
     isBusy.value = false;
   }
 }
 
 effect(() => {
+  // Capture-only visits stay locked on purpose and must not prompt for WebAuthn.
+  if (captureOnly) return;
+
   const isLocked = persistence.isLocked();
   if (!isLocked) {
     autoBioAttempted.value = false;
@@ -691,12 +795,12 @@ const LockScreen = () => {
             <form onSubmit=${submitRemotePassword}>
               <div class="input-group">
                 <label for="auth-username" class="input-label">Email</label>
-                <input value=${username.value} onInput=${(e) => username.value = e.target.value}
+                <input value=${username.value} onInput=${(e: any) => username.value = e.target.value}
                   id="auth-username" type="text" placeholder="you@example.com" class="input-field" autocomplete="email" />
               </div>
               <div class="input-group">
                 <label for="auth-password" class="input-label">Account password</label>
-                <input value=${password.value} onInput=${(e) => password.value = e.target.value}
+                <input value=${password.value} onInput=${(e: any) => password.value = e.target.value}
                   id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
               </div>
               ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
@@ -736,7 +840,7 @@ const LockScreen = () => {
                 </label>
                 <input
                   value=${passphrase.value}
-                  onInput=${(e) => passphrase.value = e.target.value}
+                  onInput=${(e: any) => passphrase.value = e.target.value}
                   id="auth-passphrase"
                   type="password"
                   placeholder=${isLocalCreate() ? 'Create passphrase' : 'Passphrase'}
@@ -780,13 +884,37 @@ const LockScreen = () => {
   `;
 };
 
+const CaptureSurface = () => {
+  const appHref = typeof window === 'undefined'
+    ? '/'
+    : `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+  return html`
+    <div class="capture-only">
+      ${captureSaved.value === null ? null : html`
+        <div class="capture-only-card">
+          <div class="capture-only-logo">Virgulas</div>
+          ${captureSaved.value
+            ? html`
+              <p class="capture-only-title" role="status">Saved to the ${inboxNodeName.value} queue</p>
+              <p class="capture-only-hint">It will be filed into your document the next time you unlock secure storage.</p>`
+            : html`
+              <p class="capture-only-title" role="status">Quick capture could not be saved on this device</p>
+              <p class="capture-only-hint">Check that this browser allows local storage, then try again.</p>`}
+          <a class="btn btn-secondary" href=${appHref}>Open Virgulas</a>
+        </div>`}
+      ${quickCaptureOpen.value && html`<${QuickCapturePrompt} />`}
+      <${QuickCaptureToast} />
+    </div>`;
+};
+
 const QuickCapturePrompt = () => {
   if (!quickCaptureOpen.value) return null;
 
   const locked = persistence.isLocked() || persistence.isMemory();
   return html`
     <div class="modal-overlay quick-capture-overlay"
-      onClick=${e => { if (e.target === e.currentTarget) closeQuickCapture(); }}>
+      onClick=${(e: any) => { if (e.target === e.currentTarget) closeQuickCapture(); }}>
       <div class="modal-dialog quick-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-capture-title">
         <div class="modal-header">
           <h2 class="modal-title" id="quick-capture-title">Quick capture</h2>
@@ -799,15 +927,15 @@ const QuickCapturePrompt = () => {
             class="input-field quick-capture-input"
             rows="4"
             value=${quickCaptureText.value}
-            onInput=${e => quickCaptureText.value = e.currentTarget.value}
-            onKeyDown=${e => {
+            onInput=${(e: any) => quickCaptureText.value = e.currentTarget.value}
+            onKeyDown=${(e: any) => {
               if (e.key === 'Escape') {
                 closeQuickCapture();
                 e.preventDefault();
                 e.stopPropagation();
               }
             }}
-            ref=${el => {
+            ref=${(el: any) => {
               if (el && document.activeElement !== el) el.focus();
             }}
             placeholder="What do you want to remember?"
@@ -890,7 +1018,7 @@ const OptionsModal = () => {
       stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } catch (err) {
-      unlockError.value = String(err?.message || 'Failed to sign out.');
+      unlockError.value = String((err as { message?: string } | null)?.message || 'Failed to sign out.');
     } finally {
       isBusy.value = false;
     }
@@ -931,7 +1059,7 @@ const OptionsModal = () => {
   }
 
   return html`
-    <div class="modal-overlay" onClick=${e => { if (e.target === e.currentTarget) optionsOpen.value = false; }}>
+    <div class="modal-overlay" onClick=${(e: any) => { if (e.target === e.currentTarget) optionsOpen.value = false; }}>
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="options-title">
         <div class="modal-header">
           <h2 class="modal-title" id="options-title">Options</h2>
@@ -940,44 +1068,68 @@ const OptionsModal = () => {
         <div class="modal-body options-body admin-body">
 
           <dl class="admin-info">
-            <dt>Email</dt><dd>${info.email || '—'}</dd>
-            <dt>Storage mode</dt><dd>${currentMode}</dd>
-            <dt>Encrypted blob</dt><dd>${info.encryptedBytes} characters</dd>
+            <dt>Mode</dt>
+            <dd>${currentMode}${hasPassphrase ? ' · encrypted' : currentMode === 'filesystem' ? ' · not encrypted' : ' · in-memory only'}</dd>
+
+            <dt>Email</dt>
+            <dd>
+              ${!isRemote
+                ? html`${info.email || '—'}`
+                : editingOption.value === 'email'
+                  ? html`<form class="admin-inline-form" onSubmit=${submitChangeEmail}>
+                      <input id="admin-email" type="email" value=${newEmail.value}
+                        onInput=${(e: any) => newEmail.value = e.target.value}
+                        class="input-field" placeholder="New email" autocomplete="email" />
+                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
+                    </form>`
+                  : html`<div class="admin-inline-row">
+                      <span class="admin-inline-value">${info.email || '—'}</span>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'email'} aria-label="Change email">Change</button>
+                    </div>`}
+            </dd>
+
+            ${isRemote && html`
+              <dt>Password</dt>
+              <dd>
+                ${editingOption.value === 'password'
+                  ? html`<form class="admin-inline-form" onSubmit=${submitChangePassword}>
+                      <input id="admin-password" type="password" value=${newPassword.value}
+                        onInput=${(e: any) => newPassword.value = e.target.value}
+                        class="input-field" placeholder="New password" autocomplete="new-password" />
+                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
+                    </form>`
+                  : html`<div class="admin-inline-row">
+                      <span class="admin-inline-value">••••••••</span>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'password'} aria-label="Change password">Change</button>
+                    </div>`}
+              </dd>
+            `}
+
+            ${hasPassphrase && html`
+              <dt>Passphrase</dt>
+              <dd>
+                ${editingOption.value === 'passphrase'
+                  ? html`<form class="admin-inline-form" onSubmit=${submitChangePassphrase}>
+                      <input id="admin-passphrase" type="password" value=${newPassphrase.value}
+                        onInput=${(e: any) => newPassphrase.value = e.target.value}
+                        class="input-field" placeholder="New passphrase" autocomplete="new-password" />
+                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
+                    </form>`
+                  : html`<div class="admin-inline-row">
+                      <span class="admin-inline-value">••••••••</span>
+                      <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'passphrase'} aria-label="Change passphrase">Change</button>
+                    </div>`}
+              </dd>
+            `}
+
+            ${hasPassphrase && html`
+              <dt>Blob</dt>
+              <dd class="admin-inline-value">${info.encryptedBytes} chars · AES-GCM-256 · PBKDF2 ${DEFAULT_ITERATIONS / 1000}k</dd>
+            `}
           </dl>
-
-          ${isRemote && html`
-            <section class="admin-section">
-              <h3 class="admin-section-title">Account security</h3>
-              <form onSubmit=${submitChangeEmail}>
-                <label class="input-label" for="admin-email">Change email</label>
-                <input id="admin-email" type="email" value=${newEmail.value}
-                  onInput=${e => newEmail.value = e.target.value}
-                  class="input-field" placeholder="new@example.com" autocomplete="email" />
-                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Update email</button>
-              </form>
-              <form onSubmit=${submitChangePassword}>
-                <label class="input-label" for="admin-password">Change account password</label>
-                <input id="admin-password" type="password" value=${newPassword.value}
-                  onInput=${e => newPassword.value = e.target.value}
-                  class="input-field" placeholder="New account password" autocomplete="new-password" />
-                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Update password</button>
-              </form>
-            </section>
-          `}
-
-          ${hasPassphrase && html`
-            <section class="admin-section">
-              <h3 class="admin-section-title">Encryption passphrase</h3>
-              <form onSubmit=${submitChangePassphrase}>
-                <label class="input-label" for="admin-passphrase">Change passphrase (keeps your data)</label>
-                <input id="admin-passphrase" type="password" value=${newPassphrase.value}
-                  onInput=${e => newPassphrase.value = e.target.value}
-                  class="input-field" placeholder="New encryption passphrase" autocomplete="new-password" />
-                <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Change passphrase</button>
-              </form>
-              <p class="admin-hint">Your data is encrypted with this passphrase. If you forget it, your data is unrecoverable — Virgulas cannot decrypt it without it.</p>
-            </section>
-          `}
 
           ${hasPassphrase && html`
             <section class="admin-section">
@@ -985,9 +1137,9 @@ const OptionsModal = () => {
               <p class="admin-hint">
                 ${biometrics.isSupported()
         ? bioEnrolled.value
-          ? 'This device can unlock with your fingerprint, face, or device PIN.'
-          : 'Enable it to unlock without typing the passphrase. The passphrase is stored encrypted on this device and released only after a biometric prompt.'
-        : 'Biometric unlock is not supported in this browser.'}
+          ? 'Unlocks with your fingerprint, face, or device PIN.'
+          : 'Unlock without typing the passphrase — it is sealed on this device.'
+        : 'Not supported in this browser.'}
               </p>
               ${biometrics.isSupported() && html`
                 <div class="options-row">
@@ -1004,11 +1156,28 @@ const OptionsModal = () => {
 
           <section class="admin-section">
             <h3 class="admin-section-title">Quick capture</h3>
-            <label class="input-label" for="admin-inbox-node-name">Inbox node name</label>
-            <input id="admin-inbox-node-name" type="text" value=${inboxNodeName.value}
-              onChange=${handleInboxNodeNameChange} class="input-field" maxlength="100"
-              autocomplete="off" />
-            <p class="admin-hint">Shared and voice captures wait unencrypted on this device until they are filed here after unlock.</p>
+            <p class="admin-hint">Captures queue on this device (unencrypted) and are filed into your Inbox node on unlock.</p>
+
+            <h4 class="admin-subtitle">Ways to capture</h4>
+            <ul class="admin-list">
+              <li><strong>Installed app:</strong> long-press the icon, or share text to Virgulas.</li>
+              <li><strong>Automation:</strong> open <code class="admin-code">/?quick-add=your%20text</code> (URL-encoded).</li>
+              <li><strong>Bookmarklet:</strong> click <em>Save to</em> to copy it, or drag it onto your bookmarks bar; then click the bookmark on any page.</li>
+            </ul>
+
+            <div class="admin-inline-form">
+              <a class="btn btn-secondary" href=${bookmarkletHref} draggable="true"
+                title="Click to copy, or drag onto your bookmarks bar"
+                onClick=${handleBookmarkletClick}>Save to</a>
+              <input id="admin-inbox-node-name" type="text" value=${inboxNodeName.value}
+                onChange=${handleInboxNodeNameChange} class="input-field" maxlength="100"
+                autocomplete="off" aria-label="Inbox node name" />
+            </div>
+            <p class="admin-hint">
+              ${bookmarkletCopied.value
+                ? html`Bookmarklet copied — paste it as the URL of a new bookmark.`
+                : html`Captures the page as <code class="admin-code">[title](url)</code>, with highlighted text as the description.`}
+            </p>
           </section>
 
           <section class="admin-section">
@@ -1066,28 +1235,60 @@ const OptionsModal = () => {
 };
 
 const Splash = () => {
-  if (splashVisible.value) return html`
-    <div id="splash">
-      <div class="logo">Virgulas</div>
-      <div class="tagline">Local-first browser outliner</div>
-    </div>`;
+  const ready = appReady.value;
+  let isLocked = false;
 
-  const isLocked = persistence.isLocked();
+  // `transitionend` is the normal path to removal. This timer is the safety net
+  // for a transition that never runs (reduced motion, background tab). It is
+  // derived from the element's own computed transition so it cannot drift from
+  // the CSS, and is scheduled after the `hidden` class has been committed.
+  useEffect(() => {
+    if (!ready) return;
+    const element = document.getElementById('splash');
+    const styles = element ? window.getComputedStyle(element) : null;
+    const seconds = styles
+      ? (parseFloat(styles.transitionDuration) || 0) + (parseFloat(styles.transitionDelay) || 0)
+      : 0;
+    const fadeMs = seconds > 0 ? seconds * 1000 : DEFAULT_SPLASH_FADE_MS;
+    splashFallbackTimer = setTimeout(dismissSplash, fadeMs + 400);
+    return () => {
+      if (splashFallbackTimer !== null) {
+        clearTimeout(splashFallbackTimer);
+        splashFallbackTimer = null;
+      }
+    };
+  }, [ready]);
 
-  if (isLocked) {
-    document.body.removeAttribute('data-main-view');
-  } else {
-    document.body.setAttribute('data-main-view', 'rendered');
+  if (ready) {
+    isLocked = persistence.isLocked();
+
+    if (isLocked) {
+      document.body.removeAttribute('data-main-view');
+    } else {
+      document.body.setAttribute('data-main-view', 'rendered');
+    }
   }
 
   return html`
+    ${!splashDismissed.value && html`
+      <div
+        id="splash"
+        class=${ready ? 'hidden' : ''}
+        onTransitionEnd=${(event: TransitionEvent) => {
+          if (event.propertyName === 'opacity' && event.target === event.currentTarget) dismissSplash();
+        }}
+      >
+        <div class="logo">Virgulas</div>
+        <div class="tagline">Local-first browser outliner</div>
+      </div>`}
+
+    ${ready && html`
     <div class="app-shell">
       <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
         <div class="main-content">
           <${MainToolbar} />
           <${SecureStoragePrompt} />
           <${Outline} />
-          <${DebugPanel} />
         </div>
         <${StatusToolbar} />
         ${!isLocked && html`<${OptionsModal} />`}
@@ -1098,12 +1299,48 @@ const Splash = () => {
       <${QuickCapturePrompt} />
       <${QuickCaptureToast} />
     </div>
+    `}
   `;
 };
 
-render(html`<${Splash} />`, document.getElementById('app'));
-consumeQuickCaptureUrl();
-if (typeof window !== 'undefined') {
-  window.addEventListener('pageshow', consumeQuickCaptureUrl);
-  window.addEventListener('popstate', consumeQuickCaptureUrl);
+if (captureOnly && initialCaptureIntent) {
+  startCaptureOnly(initialCaptureIntent);
+} else {
+  render(html`<${Splash} />`, document.getElementById('app')!);
+  consumeQuickCaptureUrl();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pageshow', consumeQuickCaptureUrl);
+    window.addEventListener('popstate', consumeQuickCaptureUrl);
+  }
 }
+
+// Register the service worker from the bundle so index.html needs no inline script
+// (the page ships a strict script-src CSP without 'unsafe-inline').
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.isSecureContext && !navigator.webdriver) {
+  window.addEventListener('load', () => {
+    const swUrl = new URL('./sw.js', window.location.href);
+    navigator.serviceWorker.register(swUrl).catch((error) => {
+      console.warn('Service worker registration failed', error);
+    });
+  });
+}
+
+// ── Introspection surface for e2e specs ──────────────────────────────────────
+// The app ships as a single bundle; specs import these from the bundle so they
+// observe the exact same module singletons the running app uses.
+export { default as outline } from './outline.js'
+export { default as persistence } from './persistence.js'
+export { default as inbox } from './inbox.js'
+export { encrypt, decrypt, randomId, generateSalt } from './crypto2.js'
+export { pendingConflicts, mergeDocuments } from './sync.js'
+export { currentSearchMatchId, getFirstClosedParent } from './search.js'
+
+// Styles are bundled by Bun. Modules may import their own CSS alongside this
+// entry; all imports are concatenated (in order) into dist/js/app.css.
+import '../css/base.css'
+import '../css/controls.css'
+import '../css/shell.css'
+import '../css/outline.css'
+import '../css/account.css'
+import '../css/views.css'
+import '../css/tasks.css'

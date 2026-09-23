@@ -12,7 +12,9 @@
 // The registry recognises `due` (a date) and `rec` (a recurrence interval).
 // `rec` only has an effect on a task that also carries a `due` date.
 
-const META_REGISTRY = {
+export type MetaMap = Record<string, string>
+
+const META_REGISTRY: Record<string, RegExp> = {
     due: /^\d{4}-\d{2}-\d{2}$/,
     rec: /^\d*(y|m|w|d)$/
 }
@@ -24,8 +26,8 @@ const TOKEN_RE = /\S+/g
  * @param {string} text
  * @returns {{ meta: Record<string, string>, text: string }}
  */
-export function parseMeta(text) {
-    const meta = {}
+export function parseMeta(text: string): { meta: MetaMap; text: string } {
+    const meta: MetaMap = {}
     const tokens = String(text || '').match(TOKEN_RE) || []
     if (tokens.length === 0) return { meta, text: String(text || '') }
 
@@ -66,7 +68,7 @@ export function parseMeta(text) {
  * @param {Record<string, string>} meta
  * @returns {string}
  */
-export function formatMeta(text, meta) {
+export function formatMeta(text: string, meta: MetaMap): string {
     const parts = [String(text || '')]
     for (const [key, value] of Object.entries(meta)) {
         parts.push(`${key}:${value}`)
@@ -74,7 +76,7 @@ export function formatMeta(text, meta) {
     return parts.filter(Boolean).join(' ')
 }
 
-export function isValidDueDate(dueStr) {
+export function isValidDueDate(dueStr: string): boolean {
     return parseDate(dueStr) !== null
 }
 
@@ -84,7 +86,7 @@ export function isValidDueDate(dueStr) {
  * @param {Date} [now]
  * @returns {boolean}
  */
-export function isOverdue(dueStr, now = new Date()) {
+export function isOverdue(dueStr: string, now: Date = new Date()): boolean {
     const due = parseDate(dueStr)
     if (!due) return false
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -98,7 +100,7 @@ export function isOverdue(dueStr, now = new Date()) {
  * @param {Date} [now]
  * @returns {string}
  */
-export function formatDueDate(dueStr, now = new Date()) {
+export function formatDueDate(dueStr: string, now: Date = new Date()): string {
     const due = parseDate(dueStr)
     if (!due) return dueStr
     const month = due.toLocaleString('en-US', { month: 'short' })
@@ -114,7 +116,7 @@ export function formatDueDate(dueStr, now = new Date()) {
  * @param {string} str
  * @returns {Date|null}
  */
-function parseDate(str) {
+function parseDate(str: string): Date | null {
     if (!META_REGISTRY.due.test(str)) return null
     const [y, m, d] = str.split('-').map(Number)
     const date = new Date(y, m - 1, d)
@@ -125,18 +127,18 @@ function parseDate(str) {
     return date
 }
 
-function parseRecurrence(recStr) {
+function parseRecurrence(recStr: string): { count: number; unit: string } | null {
     const match = META_REGISTRY.rec.exec(String(recStr || ''))
     if (!match) return null
     const count = match[0].slice(0, -1) ? parseInt(match[0].slice(0, -1), 10) : 1
     return { count, unit: match[1] }
 }
 
-function daysInMonth(year, monthIndex) {
+function daysInMonth(year: number, monthIndex: number): number {
     return new Date(year, monthIndex + 1, 0).getDate()
 }
 
-function formatDateISO(date) {
+function formatDateISO(date: Date): string {
     const y = date.getFullYear()
     const m = String(date.getMonth() + 1).padStart(2, '0')
     const d = String(date.getDate()).padStart(2, '0')
@@ -153,7 +155,7 @@ function formatDateISO(date) {
  * @param {string} recStr
  * @returns {string|null} next due date in yyyy-MM-dd, or null if inputs are invalid
  */
-export function advanceDueDate(dueStr, recStr) {
+export function advanceDueDate(dueStr: string, recStr: string): string | null {
     const due = parseDate(dueStr)
     const rec = parseRecurrence(recStr)
     if (!due || !rec) return null
@@ -181,7 +183,7 @@ export function advanceDueDate(dueStr, recStr) {
  * @param {Date} [now]
  * @returns {boolean}
  */
-export function isFutureDue(dueStr, now = new Date()) {
+export function isFutureDue(dueStr: string, now: Date = new Date()): boolean {
     const due = parseDate(dueStr)
     if (!due) return false
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -194,9 +196,9 @@ export function isFutureDue(dueStr, now = new Date()) {
  * @param {Date} [now]
  * @returns {number|null}
  */
-export function daysUntilDue(dueStr, now = new Date()) {
+export function daysUntilDue(dueStr: string, now: Date = new Date()): number | null {
     const due = parseDate(dueStr)
     if (!due) return null
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    return Math.round((due - today) / 86400000)
+    return Math.round((due.getTime() - today.getTime()) / 86400000)
 }

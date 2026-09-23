@@ -1,4 +1,4 @@
-import { signal, effect, createModel } from "@preact/signals"
+import { signal, effect, createModel, type Signal } from "@preact/signals"
 import { randomId } from "./crypto2.js"
 import { log } from './utils.js';
 import { parseMeta, advanceDueDate } from './meta.js';
@@ -11,17 +11,65 @@ import { parseMeta, advanceDueDate } from './meta.js';
 // the manipulations on the doc are done by updating the signals, and the view will react to the changes
 // done: null = plain node (not a task), false = unchecked task, true = completed task
 
-const NodeModel = createModel((model = {}) => {
+export type DoneState = boolean | null
+
+export interface NodeInput {
+    id?: string
+    parentId?: string | null
+    text?: string
+    description?: string
+    children?: string[]
+    open?: boolean
+    done?: DoneState
+    lastModified?: number
+}
+
+export interface NodeSnapshot {
+    id: string
+    parentId: string | null
+    text: string
+    description: string
+    children: string[]
+    open: boolean
+    done: DoneState
+    lastModified: number
+}
+
+export interface NodeUpdate {
+    text?: string
+    description?: string
+    parentId?: string | null
+    open?: boolean
+    done?: DoneState
+}
+
+export interface OutlineStats {
+    wordCount: number
+    charCount: number
+    maxDepth: number
+    collapsedCount: number
+    openCount: number
+    nodeCount: number
+}
+
+export interface SearchMatch {
+    id: string
+    text: string
+    children: SearchMatch[]
+    isMatch?: boolean
+}
+
+function nodeFactory(model: NodeInput = {}) {
     const id = model.id
     if (!id) {
         throw new Error('Node must have an id')
     }
-    let parentId = model.parentId
+    let parentId: string | null = model.parentId ?? null
     const text = signal(model.text || '')
     const description = signal(model.description || '')
-    const children = signal(model.children || [])
+    const children = signal<string[]>(model.children || [])
     const open = signal(model.open === undefined ? true : !!model.open)
-    const done = signal(model.done !== undefined ? model.done : null)
+    const done = signal<DoneState>(model.done !== undefined ? model.done : null)
     let lastModified = model.lastModified || 0
 
     // A pending task with rec:<n><y|m|w|d> and due:<date> advances its due date
@@ -111,7 +159,7 @@ const NodeModel = createModel((model = {}) => {
             done.value = current === null ? false : !current
             lastModified = Date.now()
         },
-        update(update) {
+        update(update: NodeUpdate) {
             let changed = false
             if (update.text !== undefined && update.text !== text.peek()) { text.value = update.text; changed = true }
             if (update.description !== undefined && update.description !== description.peek()) { description.value = update.description; changed = true }
@@ -120,11 +168,11 @@ const NodeModel = createModel((model = {}) => {
             if (update.done !== undefined && update.done !== done.peek()) { done.value = update.done; changed = true }
             if (changed) lastModified = Date.now()
         },
-        removeChild(childId) {
+        removeChild(childId: string) {
             children.value = children.peek().filter(id => id !== childId)
             lastModified = Date.now()
         },
-        addChild(childId, index = -1) {
+        addChild(childId: string, index = -1) {
             const peek = children.peek()
             if (index < 0 || index >= peek.length) {
                 children.value = [...peek, childId]
@@ -133,7 +181,7 @@ const NodeModel = createModel((model = {}) => {
             }
             lastModified = Date.now()
         },
-        move(childId, direction = 'up') {
+        move(childId: string, direction: 'up' | 'down' = 'up') {
             const peek = children.peek()
             const index = peek.indexOf(childId)
             if (index === -1) {
@@ -159,7 +207,7 @@ const NodeModel = createModel((model = {}) => {
                 return
             }
         },
-        getChild(currentChildId, direction = 'next') {
+        getChild(currentChildId: string, direction: 'next' | 'prev' = 'next'): string | null | undefined {
             const peek = children.peek()
             const index = peek.indexOf(currentChildId)
             if (index === -1) {
@@ -181,9 +229,13 @@ const NodeModel = createModel((model = {}) => {
             }
         },
     }
-});
+}
 
-const OutlineModel = createModel(() => {
+type NodeModelShape = ReturnType<typeof nodeFactory>
+export type Node = NodeModelShape & { [Symbol.dispose](): void }
+const NodeModel = createModel(nodeFactory as unknown as (...args: any[]) => any) as unknown as new (model?: NodeInput) => Node
+
+function outlineFactory() {
     const rootNodeId = 'root'
     const modelVersion = 'v1' // for future compatibility, in case we need to change the structure
     const dataVersion = signal(0) // incremented on every change, but debounced to avoid excessive updates during rapid changes
@@ -193,8 +245,8 @@ const OutlineModel = createModel(() => {
     // re-run even though the node map was fully replaced.
     const structureVersion = signal(0)
     const dirtyWrites = signal(0) // mark if there are unsaved changes, used to trigger version update
-    const map = new Map()
-    const zoomId = signal(rootNodeId) // the currently zoomed in node, used for rendering and keyboard navigation
+    const map = new Map<string, Node>()
+    const zoomId = signal<string>(rootNodeId) // the currently zoomed in node, used for rendering and keyboard navigation
 
 
     function getNewId() {
@@ -210,12 +262,12 @@ const OutlineModel = createModel(() => {
         throw new Error('Failed to generate a unique id after 5 attempts, this is extremely unlikely. Consider using a more robust id generation strategy if this happens frequently.')
     }
 
-    function setVersion(newVersion) {
+    function setVersion(newVersion: number) {
         dataVersion.value = newVersion
         dirtyWrites.value = 0
     }
 
-    function addChild(parentId, optionalData = {}, previousSiblingId) {
+    function addChild(parentId?: string, optionalData: NodeInput = {}, previousSiblingId?: string | false): Node | undefined {
         const parent = map.get(parentId || zoomId.value)
         if (!parent) {
             console.error('Parent node not found, cannot add new node')
@@ -244,7 +296,7 @@ const OutlineModel = createModel(() => {
         if (previousSiblingId === false) {
             idx = 0
         } else {
-            const baseIndex = parent.children.peek().indexOf(previousSiblingId)
+            const baseIndex = previousSiblingId ? parent.children.peek().indexOf(previousSiblingId) : -1
             idx = baseIndex === -1 ? -1 : baseIndex + 1
         }
         parent.addChild(node.id, idx)
@@ -253,14 +305,14 @@ const OutlineModel = createModel(() => {
         return node
     }
 
-    function deleteNode(id, force) {
+    function deleteNode(id: string, force?: boolean) {
         if (id === zoomId.value) {
             log('Cannot delete the current node at the root level')
             return
         }
 
 
-        function innerDelete(n) {
+        function innerDelete(n: Node | undefined) {
             if (n) {
                 const ch = n.children.peek()
                 if (ch) ch.map(i => map.get(i)).forEach(innerDelete)
@@ -274,14 +326,14 @@ const OutlineModel = createModel(() => {
             return
         }
 
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (parent) {
             if (parent.children.peek().length === 1 && parent.id === zoomId.value && !force) {
                 log('Cannot delete the only child of the root node, skipping deletion to prevent empty outline')
                 node.text.value = '' // instead of deleting the node, just clear its text to keep the outline from being empty
                 const ch = node.children.peek()
                 if (ch)
-                    ch.map(i => map.get(i)).forEach(deleteNode)
+                    ch.map(i => map.get(i)).forEach(n => { if (n) deleteNode(n.id) })
             }
             else {
                 innerDelete(node)
@@ -330,7 +382,7 @@ const OutlineModel = createModel(() => {
         }, null, pretty ? 2 : 0)
     }
 
-    function deserialize(json) {
+    function deserialize(json: string) {
         log('Deserializing outline, version:', dataVersion.value)
         const previousZoomId = zoomId.peek()
         const obj = JSON.parse(json)
@@ -341,14 +393,19 @@ const OutlineModel = createModel(() => {
             throw new Error('Invalid data format: missing nodes')
         }
 
-        const nodes = Object.fromEntries(obj.nodes.map(n => [n.id, n]))
+        // Null-prototype map so an id/parentId of `constructor`, `toString`, or
+        // `__proto__` cannot resolve an inherited Object property and pass validation.
+        const nodes: Record<string, any> = Object.create(null)
+        for (const nodeData of obj.nodes) {
+            nodes[nodeData.id] = nodeData
+        }
         if (nodes[rootNodeId] === undefined) {
             throw new Error('Invalid data format: missing root node')
         }
 
         const visitedChildren = new Set()
 
-        function validateNode(nodeData) {
+        function validateNode(nodeData: any) {
             const isRoot = !nodeData.parentId && nodeData.id === rootNodeId
             const parent = nodes[nodeData.parentId]
             if (!isRoot && !parent) {
@@ -357,7 +414,7 @@ const OutlineModel = createModel(() => {
             }
 
             // children should be an array of valid ids
-            nodeData.children = (nodeData.children || []).filter(childId => {
+            nodeData.children = (nodeData.children || []).filter((childId: string) => {
                 // child should not be itself
                 if (childId === nodeData.id) {
                     log(`Node with id ${nodeData.id} has itself as child, skipping child ${childId}`)
@@ -388,7 +445,7 @@ const OutlineModel = createModel(() => {
 
         const validNodes = Object.values(nodes).filter(validateNode)
         reset()
-        map.get(rootNodeId).children.value = validNodes.filter(n => n.parentId === rootNodeId).map(n => n.id)
+        map.get(rootNodeId)!.children.value = validNodes.filter(n => n.parentId === rootNodeId).map(n => n.id)
 
         for (const nodeData of validNodes) {
             if (nodeData.id === rootNodeId) continue // root node is already created with its children, so we can skip it in the loop
@@ -418,17 +475,17 @@ const OutlineModel = createModel(() => {
     }
 
 
-    function update(id, fn) {
+    function update(id: string, fn: (node: Node, parent: Node | undefined) => void) {
         const node = map.get(id)
         if (!node) {
             log('Node not found, cannot update')
             return
         }
-        fn(node, map.get(node.parentId))
+        fn(node, node.parentId ? map.get(node.parentId) : undefined)
         dirtyWrites.value = dirtyWrites.peek() + 1
     }
 
-    function moveUp(node, parent) {
+    function moveUp(node: Node, parent: Node | undefined) {
         if (!parent) {
             log('Node has no parent, cannot move')
             return
@@ -438,7 +495,7 @@ const OutlineModel = createModel(() => {
             parent.move(node.id, 'up')
         } else {
             // try to move to grandparent level
-            const grandParent = map.get(parent.parentId)
+            const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
             if (grandParent) {
                 parent.removeChild(node.id) // Remove from current parent
                 const parentIndex = grandParent.children.peek().indexOf(parent.id)
@@ -451,7 +508,7 @@ const OutlineModel = createModel(() => {
         }
     }
 
-    function moveDown(node, parent) {
+    function moveDown(node: Node, parent: Node | undefined) {
         if (!parent) {
             log('Node has no parent, cannot move')
             return
@@ -462,7 +519,7 @@ const OutlineModel = createModel(() => {
             parent.move(node.id, 'down')
         } else {
             // try to move to grandparent level
-            const grandParent = map.get(parent.parentId)
+            const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
             if (grandParent) {
                 parent.removeChild(node.id) // Remove from current parent
                 const parentIndex = grandParent.children.peek().indexOf(parent.id)
@@ -475,7 +532,7 @@ const OutlineModel = createModel(() => {
         }
     }
 
-    function indent(node, parent) {
+    function indent(node: Node, parent: Node | undefined) {
         if (!parent) {
             log('Node has no parent, cannot indent')
             return
@@ -500,12 +557,12 @@ const OutlineModel = createModel(() => {
         }
     }
 
-    function outdent(node, parent) {
+    function outdent(node: Node, parent: Node | undefined) {
         if (!parent) {
             log('Node has no parent, cannot outdent')
             return
         }
-        const grandParent = map.get(parent.parentId)
+        const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
         if (!grandParent) {
             log('Parent has no grandparent, cannot outdent')
             return
@@ -520,7 +577,7 @@ const OutlineModel = createModel(() => {
             node.open.value = true // make sure the node is open to show the moved children
             node.children.value = [...node.children.peek(), ...siblingsToMove]
             siblingsToMove.forEach(siblingId => {
-                map.get(siblingId).update({ parentId: node.id }) // Update parentId of the moved node
+                map.get(siblingId)!.update({ parentId: node.id }) // Update parentId of the moved node
             })
         }
         parent.removeChild(node.id) // Remove from current parent
@@ -529,7 +586,7 @@ const OutlineModel = createModel(() => {
         log('Node outdented successfully')
     }
 
-    function getVMD(nodeId, level = 0) {
+    function getVMD(nodeId: string, level = 0): string {
         const node = map.get(nodeId)
         if (!node) return ''
         const peek = node.peek()
@@ -560,15 +617,15 @@ const OutlineModel = createModel(() => {
         return result;
     }
 
-    function parseNodeLine(rawNodeText) {
+    function parseNodeLine(rawNodeText: string): { text: string; done: DoneState } {
         let nodeText = rawNodeText.trim()
-        let taskDone = null
+        let taskDone: DoneState = null
         const cbMatch = nodeText.match(/^\[([ xX])\]\s*(.*)/)
         if (cbMatch) { taskDone = cbMatch[1].toLowerCase() === 'x'; nodeText = cbMatch[2].trim() }
         return { text: nodeText, done: taskDone }
     }
 
-    function setVMD(text, nodeId) {
+    function setVMD(text: string, nodeId: string) {
         if (nodeId === rootNodeId) {
             log('Cannot set VMD on root node, skipping')
             return
@@ -578,16 +635,16 @@ const OutlineModel = createModel(() => {
             log('Node not found, cannot set VMD')
             return
         }
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (!parent) {
             log('Parent node not found, cannot set VMD')
             return
         }
-        const stack = [{ node: parent, indentLevel: -1 }, { node, indentLevel: 0 }];
+        const stack: { node: Node; indentLevel: number }[] = [{ node: parent, indentLevel: -1 }, { node, indentLevel: 0 }];
         const ser = serialize()
         try {
             // delete existing children before parsing new ones
-            node.children.peek().forEach(deleteNode)
+            node.children.peek().forEach(id => deleteNode(id))
 
             const lines = text.split(/\r?\n/);
             let firstLine = true
@@ -614,7 +671,7 @@ const OutlineModel = createModel(() => {
                         const c = lastOnStack.node.children.peek()
                         const prevSiblingId = c[c.length - 1]
                         let lastNode = addChild(lastOnStack.node.id, nodeData, prevSiblingId)
-                        stack.push({ node: lastNode, indentLevel: indentStr.length });
+                        stack.push({ node: lastNode!, indentLevel: indentStr.length });
                     }
                 } else {
                     // Handle description lines (indented content without bullets)
@@ -638,7 +695,7 @@ const OutlineModel = createModel(() => {
         }
     }
 
-    function lastOpenChild(id) {
+    function lastOpenChild(id: string): string | null {
         const node = map.get(id)
         if (!node) return null
         const peek = node.peek()
@@ -649,7 +706,7 @@ const OutlineModel = createModel(() => {
         return lastOpenChild(peek.children[peek.children.length - 1])
     }
 
-    function next(currentId, drillDown = true) {
+    function next(currentId: string, drillDown = true): string | null {
         const node = map.get(currentId)
         if (!node) return null
         if (drillDown) {
@@ -659,7 +716,7 @@ const OutlineModel = createModel(() => {
             }
         }
 
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (!parent) return null
 
         const nextSiblingId = parent.getChild(currentId, 'next')
@@ -675,10 +732,10 @@ const OutlineModel = createModel(() => {
         return next(parent.id, false)
     }
 
-    function prev(currentId) {
+    function prev(currentId: string): string | null {
         const node = map.get(currentId)
         if (!node) return null
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (!parent) return null
         const prevSiblingId = parent.getChild(currentId, 'prev')
         if (prevSiblingId) {
@@ -705,44 +762,51 @@ const OutlineModel = createModel(() => {
         return () => clearTimeout(t)
     })
 
-    function smartCaseIncludes(text, query) {
-        if (!query || !text) return false;
-        const hasUppercase = /[A-Z]/.test(query);
-        if (hasUppercase) {
-            return text.includes(query);
+    function search(query: string): SearchMatch {
+        // The query is normalized once here. Doing it inside the walk re-tested
+        // the uppercase check and re-lowercased the query for every node and
+        // every field.
+        const lowerQuery = query.toLowerCase()
+        const caseSensitive = /[A-Z]/.test(query)
+        const includes = (text: string) => {
+            if (!text) return false
+            return caseSensitive ? text.includes(query) : text.toLowerCase().includes(lowerQuery)
         }
-        return text.toLowerCase().includes(query.toLowerCase());
-    }
 
-    function search(query) {
-        function getMatches(nodeId) {
+        function getMatches(nodeId: string): SearchMatch {
             const node = map.get(nodeId)
             if (!node) return { id: nodeId, text: '', children: [] }
-            const peek = node.peek()
-            const isMatch = smartCaseIncludes(peek.text, query) || smartCaseIncludes(peek.description, query)
-            const children = peek.children.map(getMatches).filter(n => n.isMatch || n.children.length > 0)
-            return { id: nodeId, text: peek.text, children, isMatch }
+            // Read the underlying signals directly. node.peek() allocates a full
+            // snapshot object per node, which is pure garbage for this walk.
+            const text = node.text.peek()
+            const isMatch = includes(text) || includes(node.description.peek())
+            const children: SearchMatch[] = []
+            for (const childId of node.children.peek()) {
+                const child = getMatches(childId)
+                if (child.isMatch || child.children.length > 0) children.push(child)
+            }
+            return { id: nodeId, text, children, isMatch }
         }
         return getMatches(rootNodeId)
     }
 
-    function nextSibling(id) {
+    function nextSibling(id: string): string | null | undefined {
         const node = map.get(id)
         if (!node) return null
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (!parent) return null
         return parent.getChild(id, 'next')
     }
 
-    function prevSibling(id) {
+    function prevSibling(id: string): string | null | undefined {
         const node = map.get(id)
         if (!node) return null
-        const parent = map.get(node.parentId)
+        const parent = node.parentId ? map.get(node.parentId) : undefined
         if (!parent) return null
         return parent.getChild(id, 'prev')
     }
 
-    function setRootVMD(text) {
+    function setRootVMD(text: string) {
         const root = map.get(zoomId.value)
         if (!root) return
         const serializedBeforeChange = serialize()
@@ -771,7 +835,7 @@ const OutlineModel = createModel(() => {
                     const parentNode = stack[stack.length - 1].node
                     const prevSiblingId = parentNode.children.peek().slice(-1)[0]
                     const newNode = addChild(parentNode.id, nodeData, prevSiblingId)
-                    stack.push({ node: newNode, indentLen })
+                    stack.push({ node: newNode!, indentLen })
                     continue
                 }
 
@@ -827,7 +891,7 @@ const OutlineModel = createModel(() => {
             let collapsedCount = 0
             let openCount = 0
 
-            function visit(id, depth) {
+            function visit(id: string, depth: number) {
                 const node = map.get(id)
                 if (!node) return
                 const peek = node.peek()
@@ -854,22 +918,22 @@ const OutlineModel = createModel(() => {
 
         // search operations
         search,
-        get: (id) => map.get(id),
+        get: (id: string) => map.get(id),
         zoomId,
         getRoot: () => map.get(zoomId.value),
-        zoomIn: (id) => zoomId.value = id,
+        zoomIn: (id: string) => zoomId.value = id,
         zoomOut: () => {
             const current = map.get(zoomId.value)
             if (current && current.parentId) {
                 zoomId.value = current.parentId
             }
         },
-        next: (id) => next(id, true),
+        next: (id: string) => next(id, true),
         prev,
         nextSibling,
         prevSibling,
 
-        getVMD: (id) => getVMD(id || zoomId.value),
+        getVMD: (id?: string) => getVMD(id || zoomId.value),
         setVMD,
         setRootVMD,
         serialize,
@@ -878,19 +942,19 @@ const OutlineModel = createModel(() => {
         // mutations
         reset,
         addChild,
-        deleteNode: (id) => deleteNode(id),
-        update: (id, data) => update(id, node => node.update(data)),
-        moveUp: (id) => update(id, moveUp),
-        moveDown: (id) => update(id, moveDown),
-        toggleOpen: (id) => update(id, node => node.toggleOpen()),
-        updateNode: (id, { text, description }) => update(id, node => node.update({ text, description })),
-        indent: (id) => update(id, indent),
-        outdent: (id) => update(id, outdent),
-        toggleDone: (id) => update(id, node => node.toggleDone()),
-        checkboxToggleDone: (id) => update(id, node => node.checkboxToggleDone()),
-        removeTaskMark: (id) => update(id, node => node.removeTaskMark()),
+        deleteNode: (id: string) => deleteNode(id),
+        update: (id: string, data: NodeUpdate) => update(id, node => node.update(data)),
+        moveUp: (id: string) => update(id, moveUp),
+        moveDown: (id: string) => update(id, moveDown),
+        toggleOpen: (id: string) => update(id, node => node.toggleOpen()),
+        updateNode: (id: string, { text, description }: { text?: string; description?: string }) => update(id, node => node.update({ text, description })),
+        indent: (id: string) => update(id, indent),
+        outdent: (id: string) => update(id, outdent),
+        toggleDone: (id: string) => update(id, node => node.toggleDone()),
+        checkboxToggleDone: (id: string) => update(id, node => node.checkboxToggleDone()),
+        removeTaskMark: (id: string) => update(id, node => node.removeTaskMark()),
         getAllTasks: () => [...map.values()].filter(node => node.done.peek() !== null),
-        updateTextRaw: (id, rawText) => update(id, node => {
+        updateTextRaw: (id: string, rawText: string) => update(id, node => {
             // Parse the [ ] / [x] prefix without trimming the rest of the text,
             // so that trailing spaces during editing are preserved.
             const cbMatch = rawText.match(/^\[([ xX])\]\s?(.*)$/)
@@ -903,7 +967,9 @@ const OutlineModel = createModel(() => {
         }),
 
     }
-})
+}
+
+const OutlineModel = createModel(outlineFactory as unknown as (...args: any[]) => any) as unknown as new () => ReturnType<typeof outlineFactory>
 
 const localDoc = new OutlineModel() // singleton instance of the document model, used by the app and tests
 localDoc.reset() // initialize with root node

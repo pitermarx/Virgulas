@@ -1,17 +1,22 @@
 import { signal } from '@preact/signals'
 import outline from "./outline.js"
-import { searchQuery, searchResultIndex, flatMatches, getFirstClosedParent, resetSearchNavigation } from './search.js'
+import { searchQuery, searchResults, searchResultIndex, getFirstClosedParent, resetSearchNavigation } from './search.js'
 import { log, store, isMobile } from './utils.js';
-import { devPanelOpen } from './devtools.js';
 
 export const tasksPanelOpen = signal(false)
 
-export function handleSearchKeyDown(e, focus) {
-    const results = searchQuery.value ? outline.search(searchQuery.value) : null
-    const matches = results ? flatMatches(results) : []
+/** Minimum shape of the editor focus object shared by ui.ts and the tests. */
+export interface EditorFocus {
+    Id: { value: any }
+    Type: { value: any }
+    SelectedIds: { value: any[] }
+}
+
+export function handleSearchKeyDown(e: any, focus: EditorFocus) {
+    const matches = searchResults.value.ids
     const idx = Math.min(searchResultIndex.value, Math.max(matches.length - 1, 0))
 
-    function cycleNext(reverse) {
+    function cycleNext(reverse: boolean) {
         if (matches.length === 0) return
         if (reverse) {
             searchResultIndex.value = (idx - 1 + matches.length) % matches.length
@@ -46,7 +51,7 @@ export function handleSearchKeyDown(e, focus) {
     }
 }
 
-export function zoomIn(id, focus) {
+export function zoomIn(id: string, focus: EditorFocus) {
     const prevFocusId = focus.Id.value
     outline.zoomIn(id)
     window.location.hash = id
@@ -58,11 +63,11 @@ export function zoomIn(id, focus) {
     }
 }
 
-export function zoomOut(focus) {
+export function zoomOut(focus: EditorFocus) {
     const zoomId = outline.zoomId.value
     outline.zoomOut()
 
-    const zoomedOutNode = outline.get(outline.zoomId.value).peek()
+    const zoomedOutNode = outline.get(outline.zoomId.value)!.peek()
     if (zoomedOutNode && zoomedOutNode.parentId) {
         window.location.hash = zoomedOutNode.id
     } else {
@@ -73,7 +78,7 @@ export function zoomOut(focus) {
     focus.Type.value = 'text'
 }
 
-function confirmDeleteNodeWithChildren(id) {
+function confirmDeleteNodeWithChildren(id: string) {
     const nodeToDelete = outline.get(id)
     if (!nodeToDelete || nodeToDelete.children.peek().length === 0) {
         return true
@@ -86,13 +91,13 @@ function confirmDeleteNodeWithChildren(id) {
     return confirm('Delete this node and all its children?')
 }
 
-function blurFocus(focus) {
+function blurFocus(focus: EditorFocus) {
     focus.Id.value = null
     focus.Type.value = null
     document.body.focus()
 }
 
-function focusTextOrBlur(focus, nextId) {
+function focusTextOrBlur(focus: EditorFocus, nextId: string | null) {
     if (nextId && nextId !== outline.zoomId.value) {
         focus.Id.value = nextId
         focus.Type.value = 'text'
@@ -101,7 +106,7 @@ function focusTextOrBlur(focus, nextId) {
     blurFocus(focus)
 }
 
-function handleKeyDownOnFocusedNode(k, focus) {
+function handleKeyDownOnFocusedNode(k: string, focus: EditorFocus) {
     switch (k) {
         case 'Shift+Enter':
             focus.Type.value = focus.Type.value === 'text' ? 'description' : 'text'
@@ -163,6 +168,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
         case 'Enter':
             if (focus.Type.value === 'text') {
                 const focusedNode = outline.get(focus.Id.value)
+                if (!focusedNode) break
                 let n
                 // If the focused node has children and is expanded, add a new child.
                 if (focusedNode.children.value.length > 0 && focusedNode.open.value) {
@@ -170,9 +176,9 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 }
                 // Otherwise, add a sibling node
                 else {
-                    n = outline.addChild(focusedNode.parentId, { text: '' }, focus.Id.value)
+                    n = outline.addChild(focusedNode.parentId!, { text: '' }, focus.Id.value)
                 }
-                focus.Id.value = n.id
+                focus.Id.value = n!.id
                 return true
             }
             break;
@@ -185,7 +191,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
         case 'Ctrl+ ':
             if (focus.SelectedIds?.value?.length > 0) {
                 const ids = focus.SelectedIds.value
-                const allCollapsed = ids.every(id => {
+                const allCollapsed = ids.every((id: string) => {
                     const node = outline.get(id)
                     return !node || node.children.peek().length === 0 || !node.open.peek()
                 })
@@ -199,6 +205,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 return true
             }
             const nodeToOpenToggle = outline.get(focus.Id.value)
+            if (!nodeToOpenToggle) return true
             if (nodeToOpenToggle.children.value.length > 0) {
                 outline.update(focus.Id.value, { open: !nodeToOpenToggle.open.value })
             }
@@ -219,7 +226,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
             break;
         case 'Backspace':
             if (focus.Type.value === 'text') {
-                if (outline.get(focus.Id.value).text.value === '') {
+                if (outline.get(focus.Id.value)!.text.value === '') {
                     const idToDelete = focus.Id.value
                     if (!confirmDeleteNodeWithChildren(idToDelete)) {
                         return true
@@ -232,7 +239,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 // Non-empty text: let the browser handle normal character deletion
                 break
             }
-            if (focus.Type.value === 'description' && outline.get(focus.Id.value).description.value === '') {
+            if (focus.Type.value === 'description' && outline.get(focus.Id.value)!.description.value === '') {
                 focus.Type.value = 'text'
                 return true
             }
@@ -248,7 +255,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
                 outline.deleteNode(idToDelete)
                 return true
             }
-            if (focus.Type.value === 'description' && outline.get(focus.Id.value).description.value === '') {
+            if (focus.Type.value === 'description' && outline.get(focus.Id.value)!.description.value === '') {
                 focus.Type.value = 'text'
                 return true
             }
@@ -317,7 +324,7 @@ function handleKeyDownOnFocusedNode(k, focus) {
     }
 }
 
-function handleKeyDown(e, focus) {
+function handleKeyDown(e: any, focus: EditorFocus) {
 
     // While the lock screen (bottom-sheet) is visible, do not intercept keys so the
     // browser's default behaviour works — e.g. pressing Enter in the passphrase field
@@ -348,13 +355,10 @@ function handleKeyDown(e, focus) {
             return true
         case 'Ctrl+Alt+w':
             // Toggle wide mode. norma = .main-content max-width: 800px, wide = max-width: none
-            const mainContent = document.querySelector('.main-content')
+            const mainContent = document.querySelector('.main-content') as HTMLElement | null
             if (mainContent) {
                 mainContent.style.maxWidth = mainContent.style.maxWidth === 'none' ? '800px' : 'none'
             }
-            return true
-        case 'Ctrl+Alt+d':
-            devPanelOpen.value = !devPanelOpen.peek()
             return true
         case 'Ctrl+Alt+k':
             tasksPanelOpen.value = !tasksPanelOpen.peek()
@@ -369,11 +373,11 @@ function handleKeyDown(e, focus) {
         // on down arrow, focus first child of document
         // on up arrow, focus last child of document
         case 'ArrowDown':
-            const first = outline.getRoot().peek().children[0]
+            const first = outline.getRoot()!.peek().children[0]
             focusTextOrBlur(focus, first)
             return true
         case 'ArrowUp':
-            function findLastVisibleDescendant(id) {
+            function findLastVisibleDescendant(id: string | null): string | null {
                 if (!id) return null
                 const node = outline.get(id)
                 if (!node) return null
@@ -381,13 +385,13 @@ function handleKeyDown(e, focus) {
                 if (!p.open || p.children.length === 0) return id
                 return findLastVisibleDescendant(p.children[p.children.length - 1]) || id
             }
-            const root = outline.getRoot().peek()
+            const root = outline.getRoot()!.peek()
             const lastTopLevelId = root.children[root.children.length - 1]
             const last = findLastVisibleDescendant(lastTopLevelId)
             focusTextOrBlur(focus, last)
             return true
         case 'Enter':
-            focus.Id.value = outline.addChild().id
+            focus.Id.value = outline.addChild()!.id
             focus.Type.value = 'text'
             return true
         case 'Escape':
@@ -399,8 +403,8 @@ function handleKeyDown(e, focus) {
     }
 }
 
-export function keydown(focus) {
-    return function keydownHandler(e) {
+export function keydown(focus: EditorFocus) {
+    return function keydownHandler(e: any) {
         if (handleKeyDown(e, focus)) {
             e.preventDefault()
             e.stopPropagation()
@@ -408,8 +412,8 @@ export function keydown(focus) {
     }
 }
 
-let prevFocusType = {}
-export function enterSearchMode(focus) {
+let prevFocusType: string | null = null
+export function enterSearchMode(focus: EditorFocus) {
     if (focus.Type.value === 'search') {
         resetSearchNavigation()
         return
@@ -419,7 +423,7 @@ export function enterSearchMode(focus) {
     resetSearchNavigation()
 }
 
-export function toggleSearchMode(focus) {
+export function toggleSearchMode(focus: EditorFocus) {
     if (focus.Type.value === 'search') {
         focus.Type.value = prevFocusType
         resetSearchNavigation()

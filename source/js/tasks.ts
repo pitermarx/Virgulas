@@ -1,29 +1,45 @@
 import { computed } from '@preact/signals'
-import outline from './outline.js'
+import outline, { type DoneState } from './outline.js'
 import { parseMeta, isOverdue, isFutureDue } from './meta.js'
+
+export interface TaskItem {
+    id: string
+    text: string
+    done: DoneState
+    breadcrumb: string[]
+    due?: string
+    overdue?: boolean
+    rec?: string
+}
+
+export interface TaskGroups {
+    pending: TaskItem[]
+    scheduled: TaskItem[]
+    done: TaskItem[]
+}
 
 // Returns ancestor texts for breadcrumb display (up to 2 ancestors), stopping
 // at stopId (the current zoom root) or the document root, whichever comes first.
-export function breadcrumb(nodeId, stopId = 'root') {
-    const crumbs = []
-    let node = outline.get(nodeId)
+export function breadcrumb(nodeId: string, stopId = 'root'): string[] {
+    const crumbs: string[] = []
+    const node = outline.get(nodeId)
     if (!node) return crumbs
-    let current = outline.get(node.parentId)
+    let current = node.parentId ? outline.get(node.parentId) : undefined
     while (current && current.id !== stopId && current.id !== 'root' && crumbs.length < 2) {
         const t = current.text.peek()
         if (t) crumbs.unshift(t)
-        current = outline.get(current.parentId)
+        current = current.parentId ? outline.get(current.parentId) : undefined
     }
     return crumbs
 }
 
 // True when nodeId is zoomId itself or one of its descendants.
-function isWithinZoom(nodeId, zoomId) {
+function isWithinZoom(nodeId: string, zoomId: string): boolean {
     if (zoomId === 'root') return true
     let current = outline.get(nodeId)
     while (current) {
         if (current.id === zoomId) return true
-        current = outline.get(current.parentId)
+        current = current.parentId ? outline.get(current.parentId) : undefined
     }
     return false
 }
@@ -47,12 +63,12 @@ export const groupedTasks = computed(() => {
 
     const tasks = outline.getAllTasks().filter(node => isWithinZoom(node.peek().id, zoomId))
 
-    const groups = { pending: [], scheduled: [], done: [] }
+    const groups: TaskGroups = { pending: [], scheduled: [], done: [] }
 
     for (const node of tasks) {
         const peek = node.peek()
         const { meta, text } = parseMeta(peek.text)
-        const item = {
+        const item: TaskItem = {
             id: peek.id,
             text,
             done: peek.done,
@@ -93,7 +109,7 @@ export const groupedTasks = computed(() => {
     })
 
     // Sort scheduled by due date ascending (soonest first).
-    groups.scheduled.sort((a, b) => a.due.localeCompare(b.due))
+    groups.scheduled.sort((a, b) => (a.due ?? '').localeCompare(b.due ?? ''))
 
     return groups
 })

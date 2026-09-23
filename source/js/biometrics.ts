@@ -19,8 +19,8 @@ const KEY_CREDENTIAL = 'credential'
 const KEY_AES = 'aes-key'
 const KEY_WRAPPED = 'wrapped-passphrase'
 
-function openDB() {
-  return new Promise((resolve, reject) => {
+function openDB(): Promise<IDBDatabase> {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, 1)
     req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE)
     req.onsuccess = () => resolve(req.result)
@@ -28,9 +28,9 @@ function openDB() {
   })
 }
 
-async function kvGet(key) {
+async function kvGet(key: string): Promise<any> {
   const db = await openDB()
-  return new Promise((resolve, reject) => {
+  return new Promise<any>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readonly')
     const req = tx.objectStore(IDB_STORE).get(key)
     req.onsuccess = () => resolve(req.result ?? null)
@@ -38,9 +38,9 @@ async function kvGet(key) {
   })
 }
 
-async function kvSet(key, value) {
+async function kvSet(key: string, value: any): Promise<void> {
   const db = await openDB()
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite')
     tx.objectStore(IDB_STORE).put(value, key)
     tx.oncomplete = () => resolve()
@@ -48,9 +48,9 @@ async function kvSet(key, value) {
   })
 }
 
-async function kvDelete(key) {
+async function kvDelete(key: string): Promise<void> {
   const db = await openDB()
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     const tx = db.transaction(IDB_STORE, 'readwrite')
     tx.objectStore(IDB_STORE).delete(key)
     tx.oncomplete = () => resolve()
@@ -58,13 +58,13 @@ async function kvDelete(key) {
 }
 
 const b64 = {
-  encode(buf) {
+  encode(buf: any) {
     const bytes = new Uint8Array(buf)
     let s = ''
     for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
     return btoa(s)
   },
-  decode(str) {
+  decode(str: string) {
     const s = atob(str)
     const bytes = new Uint8Array(s.length)
     for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i)
@@ -80,7 +80,7 @@ async function generateAesKey() {
   )
 }
 
-async function wrapPassphrase(passphrase, key) {
+async function wrapPassphrase(passphrase: string, key: CryptoKey) {
   const iv = window.crypto.getRandomValues(new Uint8Array(12))
   const encoded = new TextEncoder().encode(passphrase)
   const ciphertext = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)
@@ -90,7 +90,7 @@ async function wrapPassphrase(passphrase, key) {
   return b64.encode(combined)
 }
 
-async function unwrapPassphrase(wrapped, key) {
+async function unwrapPassphrase(wrapped: string, key: CryptoKey) {
   const combined = new Uint8Array(b64.decode(wrapped))
   const iv = combined.slice(0, 12)
   const ciphertext = combined.slice(12)
@@ -113,7 +113,7 @@ export const biometrics = {
     }
   },
 
-  async enroll(passphrase, userLabel = 'Virgulas user') {
+  async enroll(passphrase: string, userLabel = 'Virgulas user') {
     if (!this.isSupported()) {
       throw new Error('Biometric unlock is not supported in this browser.')
     }
@@ -138,7 +138,7 @@ export const biometrics = {
       }
     })
 
-    const storedCredential = { id: b64.encode(credential.rawId) }
+    const storedCredential = { id: b64.encode((credential as PublicKeyCredential).rawId) }
 
     // 2. Wrap the passphrase with a fresh non-extractable key
     const aesKey = await generateAesKey()
