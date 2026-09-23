@@ -8,6 +8,20 @@ async function visibleNodeTexts(page: import('@playwright/test').Page) {
   }));
 }
 
+/** Children of the Inbox node as stored in the model (raw markdown, not rendered). */
+async function inboxNodeEntries(page: import('@playwright/test').Page) {
+  return page.evaluate(async () => {
+    const { outline } = await import('/js/app.js' as string);
+    const root = outline.get('root')!;
+    const inboxId = root.children.peek().find((id: string) => outline.get(id)!.text.peek() === 'Inbox');
+    if (!inboxId) return [];
+    return outline.get(inboxId)!.children.peek().map((id: string) => ({
+      text: outline.get(id)!.text.peek(),
+      description: outline.get(id)!.description.peek()
+    }));
+  });
+}
+
 async function setupEmptyLocalDoc(page: import('@playwright/test').Page) {
   await setupDoc(page, {
     id: 'root',
@@ -44,25 +58,33 @@ test.describe('Quick capture inbox', () => {
   test('direct quick-add is queued while locked and reconciled after unlock', async ({ page }) => {
     await setupEmptyLocalDoc(page);
 
+    // A capture visit never boots the app: it stays locked and writes the queue.
     await page.goto('/?quick-add=buy%20milk');
-    await expect(page.locator('#auth-passphrase')).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_queue')))
+      .toContain('buy milk');
+    expect(new URL(page.url()).search).toBe('');
+
+    // The next real visit unlocks and files the queued capture.
+    await page.goto('/');
     await unlockApp(page);
 
     await expect.poll(() => visibleNodeTexts(page)).toEqual(['Inbox', 'buy milk']);
-    expect(new URL(page.url()).search).toBe('');
     await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_queue')))
       .toBeNull();
   });
 
-  test('share-target text is captured with shared URL content', async ({ page }) => {
+  test('share-target text is captured as a markdown link with the selection as its description', async ({ page }) => {
     await setupEmptyLocalDoc(page);
 
     await page.goto('/?title=Buy%20milk&text=Remember%20to%20buy%20milk&url=https%3A%2F%2Fexample.com');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_queue')))
+      .toContain('Remember to buy milk');
+
+    await page.goto('/');
     await unlockApp(page);
 
-    await expect.poll(() => visibleNodeTexts(page)).toEqual([
-      'Inbox',
-      'Buy milk\nRemember to buy milk\nhttps://example.com'
+    await expect.poll(() => inboxNodeEntries(page)).toEqual([
+      { text: '[Buy milk](https://example.com)', description: 'Remember to buy milk' }
     ]);
   });
 
@@ -72,10 +94,16 @@ test.describe('Quick capture inbox', () => {
     await page.goto('/?quick-capture=1');
     const captureInput = page.locator('#quick-capture-input');
     await expect(captureInput).toBeVisible();
+    await expect(page.locator('#auth-passphrase')).toHaveCount(0);
+
     await captureInput.fill('from shortcut');
     await page.getByRole('button', { name: 'Add to Inbox' }).click();
     await expect(captureInput).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_queue')))
+      .toContain('from shortcut');
 
+    // Still locked: the capture is filed on the next real unlock.
+    await page.goto('/');
     await unlockApp(page);
     await expect.poll(() => visibleNodeTexts(page)).toEqual(['Inbox', 'from shortcut']);
   });
@@ -104,6 +132,11 @@ test.describe('Quick capture inbox', () => {
     await options.getByRole('button', { name: 'Close' }).click();
 
     await page.goto('/?quick-add=custom%20name');
+    // Capture only: the queue is written and nothing is unlocked.
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_queue')))
+      .toContain('custom name');
+
+    await page.goto('/');
     await unlockApp(page);
     await expect.poll(() => visibleNodeTexts(page)).toEqual(['Captured', 'custom name']);
   });

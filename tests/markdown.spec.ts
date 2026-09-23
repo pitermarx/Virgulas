@@ -88,7 +88,12 @@ test.describe('Markdown Rendering', () => {
     await expect(link).toHaveText('Virgulas');
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    await expect(page.locator('img[src="https://example.com/logo.png"][alt="Logo"]')).toBeVisible();
+
+    const image = page.locator('img[src="https://example.com/logo.png"][alt="Logo"]');
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute('referrerpolicy', 'no-referrer');
+    await expect(image).toHaveAttribute('loading', 'lazy');
+
     await expect(page.locator('code', { hasText: 'const x = 1' })).toBeVisible();
   });
 
@@ -124,8 +129,70 @@ test.describe('Markdown Rendering', () => {
     const image = page.locator('img[src="https://x.com"]');
     await expect(image).toBeVisible();
     await expect(image).toHaveAttribute('alt', '" onerror="alert(1)');
+    await expect(image).toHaveAttribute('referrerpolicy', 'no-referrer');
 
     const hasInlineOnError = await image.evaluate((el) => el.hasAttribute('onerror'));
     expect(hasInlineOnError).toBe(false);
+  });
+
+  test('Loads images normally but strips referrer and event handlers', async ({ page }) => {
+    await page.route('https://tracker.example/**', (route) => route.abort());
+
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{
+        id: 'tracked',
+        text: '![beacon](https://tracker.example/pixel.png) <img src="https://tracker.example/raw.png" onerror="window.__pwned=1">',
+        children: []
+      }]
+    });
+
+    const markdownImage = page.locator('img[src="https://tracker.example/pixel.png"]');
+    await expect(markdownImage).toHaveCount(1);
+    await expect(markdownImage).toHaveAttribute('referrerpolicy', 'no-referrer');
+
+    const rawImage = page.locator('img[src="https://tracker.example/raw.png"]');
+    await expect(rawImage).toHaveCount(1);
+    await expect(rawImage).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(await rawImage.evaluate((el) => el.hasAttribute('onerror'))).toBe(false);
+  });
+
+  test('Raw HTML cannot spoof app chrome or render forms', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{
+        id: 'injected',
+        text: '<div class="modal-overlay" id="app" style="position:fixed;inset:0">spoof</div><form action="https://evil.example"><input name="p"><button>Sign in</button></form>',
+        children: []
+      }]
+    });
+
+    const rendered = page.locator('.node-text-md').first();
+    await expect(rendered).toContainText('spoof');
+    await expect(rendered.locator('.modal-overlay')).toHaveCount(0);
+    await expect(rendered.locator('form')).toHaveCount(0);
+    await expect(rendered.locator('input')).toHaveCount(0);
+  });
+
+  // The unit suite runs in happy-dom, where DOMPurify does not behave like a real
+  // DOM (it drops allowed <strong> and lets <script> through), so sanitisation is
+  // only meaningfully verified here, in Chromium.
+  test('Raw script and event handlers never reach the DOM', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{
+        id: 'scripted',
+        text: '<script>window.__pwned = 1</script>after<script src="https://evil.example/x.js"></script>',
+        children: []
+      }]
+    });
+
+    const rendered = page.locator('.node-text-md').first();
+    await expect(rendered).toContainText('after');
+    await expect(rendered.locator('script')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).__pwned)).toBeUndefined();
   });
 });
