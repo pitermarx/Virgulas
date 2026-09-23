@@ -4,25 +4,27 @@
     "description": "Local-first browser outliner",
     "type": "module",
     "scripts": {
-        "test": "node tests/run-all-tests.mjs",
-        "test:e2e": "playwright test --grep-invert @unit",
-        "test:unit": "playwright test --grep @unit",
-        "vendor:sync": "node scripts/sync-vendor.mjs",
-        "sw:bump": "node scripts/bump-sw-caches.mjs",
-        "sw:hooks": "node scripts/install-hooks.mjs",
-        "commit:check": "node scripts/check-conventional-commits.mjs",
-        "commit:check:range": "node scripts/check-conventional-commits.mjs --range",
-        "release:plan": "node scripts/release-from-commits.mjs",
-        "version:stamp": "node scripts/stamp-app-version.mjs",
-        "serve": "serve -p 3000 source",
-        "postinstall": "npm run vendor:sync && npm run sw:bump",
+        "dev": "bun scripts/build-bun.mjs source dist --local && bun scripts/serve-bun.mjs dist",
+        "dev:test": "bun scripts/build-bun.mjs source dist --test-hooks --local && bun scripts/serve-bun.mjs dist",
+        "build": "bun scripts/build-bun.mjs source dist --no-sourcemap",
+        "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+        "test": "bun run test:unit && bun run test:e2e",
+        "test:unit": "bun test tests/unit",
+        "test:e2e": "bunx playwright test",
+        "sw:bump": "bun scripts/bump-sw-caches.mjs",
+        "sw:hooks": "bun scripts/install-hooks.mjs",
+        "commit:check": "bun scripts/check-conventional-commits.mjs",
         "db:start": "supabase start --ignore-health-check",
-        "db:stop": "supabase stop --no-backup --yes"
+        "db:stop": "supabase stop --no-backup --yes",
+        "postinstall": "bun scripts/bump-sw-caches.mjs"
     },
     "devDependencies": {
+        "@happy-dom/global-registrator": "^20.14.5",
         "@playwright/test": "^1.62.1",
-        "serve": "^14.2.6",
-        "supabase": "^2.116.0"
+        "@types/bun": "^1.4.2",
+        "happy-dom": "^20.14.5",
+        "supabase": "^2.116.0",
+        "typescript": "^7.0.2"
     },
     "dependencies": {
         "@preact/signals": "^2.11.1",
