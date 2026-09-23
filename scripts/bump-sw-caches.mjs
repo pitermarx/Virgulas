@@ -18,9 +18,6 @@ const SW_PATH = join(ROOT, 'source', 'sw.js')
 const HASHES_PATH = join(__dirname, '.sw-cache-hashes.json')
 
 const GROUPS = {
-    VENDOR_CACHE: [
-        join(ROOT, 'source', 'vendor'),
-    ],
     FONTS_CACHE: [
         join(ROOT, 'source', 'fonts'),
         join(ROOT, 'source', 'media'),
@@ -31,6 +28,8 @@ const GROUPS = {
         join(ROOT, 'source', 'site.webmanifest'),
         join(ROOT, 'source', 'css'),
         join(ROOT, 'source', 'js'),
+        join(ROOT, 'tsconfig.json'),
+        join(ROOT, 'package.json'),
     ],
 }
 
