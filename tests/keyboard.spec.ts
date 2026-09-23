@@ -224,8 +224,8 @@ test.describe('Keyboard', () => {
     await page.keyboard.press('Tab'); // INDENT B
 
     const structure = await page.evaluate(async () => {
-      const outlineModulePath: string = '/js/outline.js';
-      const outline = (await import(outlineModulePath)).default;
+      const outlineModulePath: string = '/js/app.js';
+      const outline = (await import(outlineModulePath)).outline;
       return {
         rootChildren: outline.get('root')?.children.peek() || [],
         aChildren: outline.get('A')?.children.peek() || [],

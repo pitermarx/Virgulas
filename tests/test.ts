@@ -71,7 +71,7 @@ export async function seedEncryptedDoc(
 ) {
     await page.evaluate(async ({ json, passphrase }) => {
         localStorage.clear();
-        const cryptoModulePath: string = '/js/crypto2.js';
+        const cryptoModulePath: string = '/js/app.js';
         const { encrypt } = await import(cryptoModulePath);
         const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
         const salt = btoa(String.fromCharCode(...saltBytes));
@@ -82,12 +82,33 @@ export async function seedEncryptedDoc(
     }, { json, passphrase });
 }
 
+/**
+ * Fill the lock screen passphrase and submit.
+ *
+ * The lock screen can re-render while the app is still booting, which clears the
+ * filled input and re-disables the Unlock button. A plain fill+click therefore
+ * races: the click hits a disabled button and the app silently stays locked
+ * (this was the cause of flaky unlock failures across the sync/zoom specs).
+ * Retry the fill until the button is genuinely enabled before clicking.
+ */
+export async function submitUnlock(
+    page: import('@playwright/test').Page,
+    passphrase = 'password'
+) {
+    const input = page.locator('#auth-passphrase');
+    const unlock = page.getByRole('button', { name: 'Unlock' });
+    await expect(async () => {
+        await input.fill(passphrase);
+        await expect(unlock).toBeEnabled({ timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+    await unlock.click();
+}
+
 export async function unlockApp(
     page: import('@playwright/test').Page,
     passphrase = 'password'
 ) {
-    await page.locator('#auth-passphrase').fill(passphrase);
-    await page.getByRole('button', { name: 'Unlock' }).click();
+    await submitUnlock(page, passphrase);
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 }
 

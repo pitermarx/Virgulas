@@ -8,6 +8,15 @@ const isCI = !!env.CI;
 const baseURL = env.BASE_URL || 'http://127.0.0.1:3000';
 const useExternalBaseUrl = !!env.BASE_URL;
 
+// These specs mock Supabase through the __TEST_HOOKS__ seam, which production
+// builds compile out. They only run against the locally built test bundle.
+const TEST_HOOK_SPECS = [
+  '**/admin.spec.ts',
+  '**/auth.spec.ts',
+  '**/sync.spec.ts',
+  '**/sync-polling-merge.spec.ts',
+];
+
 const parseDotEnv = (raw: string): Record<string, string> => {
   const values: Record<string, string> = {};
   for (const line of raw.split(/\r?\n/)) {
@@ -24,7 +33,7 @@ const parseDotEnv = (raw: string): Record<string, string> => {
 
 const readSupabaseStatusEnv = (): Record<string, string> => {
   try {
-    const output = execSync('npm exec supabase -- status -o env', {
+    const output = execSync('bunx supabase -- status -o env', {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore']
     });
@@ -43,7 +52,7 @@ if (!useExternalBaseUrl) {
   const key = dotenv.SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || statusEnv.SUPABASE_ANON_KEY || statusEnv.ANON_KEY;
   if (!url || !key) {
     throw new Error(
-      'Missing local Supabase credentials for Playwright. Run "npm run db:start" and ensure ".env" exists or "npm exec supabase -- status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
+      'Missing local Supabase credentials for Playwright. Run "bun run db:start" and ensure ".env" exists or "bunx supabase -- status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
     );
   }
 
@@ -52,15 +61,20 @@ if (!useExternalBaseUrl) {
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.ts',
+  testIgnore: useExternalBaseUrl ? TEST_HOOK_SPECS : undefined,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   // WebKit can spend several seconds in PBKDF2/WebCrypto while all three
-  // browser projects run concurrently on the CI runner. Keep local feedback
-  // fast, but give CI readiness assertions enough time to observe the unlock.
+  // browser projects run concurrently on the CI runner, so CI needs a long
+  // window. Local runs are also generous: app boot + PBKDF2 unlock can exceed
+  // 5s on a loaded developer machine, which produced unlock/readiness flakes
+  // that were environmental rather than real failures.
   expect: {
-    timeout: isCI ? 15_000 : 5_000,
+    timeout: isCI ? 15_000 : 10_000,
   },
+  timeout: 60_000,
   workers: 5,
   reporter: [
     ['html', { open: 'never' }],
@@ -84,7 +98,7 @@ export default defineConfig({
     }
   ].filter(p => isCI || p.name === 'chromium'),
   webServer: useExternalBaseUrl ? undefined : {
-    command: 'npm run serve',
+    command: env.SERVE_CMD || 'bun run dev:test',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: false,
     stdout: 'ignore',

@@ -93,7 +93,7 @@ test.describe('Empty new document', () => {
       localStorage.setItem('vmd_last_mode', 'local');
     });
     await page.reload();
-    await unlockApp(page);
+    await unlockApp(page, 'new-local-pass');
 
     // There should be one node (the empty initial node)
     await expect(page.locator('.node-content')).toHaveCount(1);
