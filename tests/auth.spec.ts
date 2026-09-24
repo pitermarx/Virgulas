@@ -820,7 +820,7 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Skip — continue in memory' }).click();
 
     // App should be in memory mode now
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-memory-badge')).toBeVisible();
 
     // Memory mode is now remembered — the next visit stays in memory
@@ -836,7 +836,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page);
     await page.goto('/');
 
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-memory-badge')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toHaveCount(0);
   });

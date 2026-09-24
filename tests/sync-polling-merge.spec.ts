@@ -114,7 +114,7 @@ const unlockRemote = async (page: Page, email: string, accountPass: string, pass
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByLabel('Encryption passphrase').fill(passphrase);
     await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 };
 
 test.describe('Sync polling', () => {
