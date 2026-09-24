@@ -31,16 +31,25 @@ const parseDotEnv = (raw: string): Record<string, string> => {
   return values;
 };
 
+// NOTE: the subcommand must not be separated from `supabase` by `--`. The CLI
+// parses `supabase -- status` as a bare help request and prints usage to stdout
+// with exit code 0, so a string-matching guard can't catch it — it just yields
+// no credentials. Keep this as `supabase status`.
 const readSupabaseStatusEnv = (): Record<string, string> => {
-  try {
-    const output = execSync('bunx supabase -- status -o env', {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    });
-    return parseDotEnv(output);
-  } catch {
-    return {};
+  const attempts = ['supabase status -o env', 'supabase -- status -o env'];
+  for (const command of attempts) {
+    try {
+      const output = execSync(`bunx ${command}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      const values = parseDotEnv(output);
+      if (values.SUPABASE_URL || values.API_URL) return values;
+    } catch {
+      // Try the next form; the CLI can be unavailable in this environment.
+    }
   }
+  return {};
 };
 
 if (!useExternalBaseUrl) {
@@ -52,7 +61,7 @@ if (!useExternalBaseUrl) {
   const key = dotenv.SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || statusEnv.SUPABASE_ANON_KEY || statusEnv.ANON_KEY;
   if (!url || !key) {
     throw new Error(
-      'Missing local Supabase credentials for Playwright. Run "bun run db:start" and ensure ".env" exists or "bunx supabase -- status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
+      'Missing local Supabase credentials for Playwright. Run "bun run db:start" and ensure ".env" exists or "bunx supabase status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
     );
   }
 

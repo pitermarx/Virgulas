@@ -134,10 +134,10 @@ jobs:
           echo "project_ref=$PROJECT_REF" >> "$GITHUB_OUTPUT"
 
       - name: Link Supabase project
-        run: bunx supabase -- link --project-ref "${{ steps.project.outputs.project_ref }}"
+        run: bunx supabase link --project-ref "${{ steps.project.outputs.project_ref }}"
 
       - name: Publish latest migrations
-        run: bunx supabase -- db push --linked --include-all
+        run: bunx supabase db push --linked --include-all
 
   release:
     name: Publish Release

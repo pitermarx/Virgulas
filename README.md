@@ -159,7 +159,7 @@ All Supabase commands in this repository use the locally pinned CLI (`supabase` 
 
 5. Get local API URL and anon key from CLI output:
   ```bash
-  bunx supabase -- status
+  bunx supabase status
   ```
 
 6. Reset local DB to migrations only:
@@ -196,23 +196,23 @@ Auth tests that require a specific account attempt sign-in first and create the 
 
 1. Log in and link your hosted Supabase project:
   ```bash
-  bunx supabase -- login
-  bunx supabase -- link --project-ref <your-project-ref>
+  bunx supabase login
+  bunx supabase link --project-ref <your-project-ref>
   ```
 
 2. Apply local migrations to the linked project:
   ```bash
-  bunx supabase -- db push --linked
+  bunx supabase db push --linked
   ```
 
 3. If needed, inspect migration plan before applying:
   ```bash
-  bunx supabase -- db push --linked --dry-run
+  bunx supabase db push --linked --dry-run
   ```
 
 4. To reset a linked remote database and apply only local migrations (no seed):
   ```bash
-  bunx supabase -- db reset --linked --no-seed --yes
+  bunx supabase db reset --linked --no-seed --yes
   ```
 
 ## CI/CD

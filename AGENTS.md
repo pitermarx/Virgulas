@@ -117,7 +117,7 @@ Tests override `localStorage.supabaseconfig` from `.env` before every page load.
 Get local URL and anon key for `.env`:
 
 ```bash
-bunx supabase -- status
+bunx supabase status
 ```
 
 Generate a migration after editing `supabase/schemas/*.sql`:
@@ -145,15 +145,15 @@ bun run db:stop
 Link the hosted project and push migrations:
 
 ```bash
-bunx supabase -- login
-bunx supabase -- link --project-ref <your-project-ref>
-bunx supabase -- db push --linked
+bunx supabase login
+bunx supabase link --project-ref <your-project-ref>
+bunx supabase db push --linked
 ```
 
 Preview migration application without applying:
 
 ```bash
-bunx supabase -- db push --linked --dry-run
+bunx supabase db push --linked --dry-run
 ```
 
 ### Running tests
@@ -185,8 +185,8 @@ Required repository secrets for CI:
 Main-branch CI must always run migration publish before deploy:
 
 ```bash
-bunx supabase -- link --project-ref "$SUPABASE_PROJECT"
-bunx supabase -- db push --linked --include-all
+bunx supabase link --project-ref "$SUPABASE_PROJECT"
+bunx supabase db push --linked --include-all
 ```
 
 Workflows install Bun (`oven-sh/setup-bun`) and run `bun install --frozen-lockfile`;
