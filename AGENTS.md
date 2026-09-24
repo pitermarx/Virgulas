@@ -52,6 +52,18 @@ bun run dev
 `source/css/*.css` modules into `dist/js/app.js` + `dist/js/app.css`, then stamps the
 version into `dist/index.html` and `dist/version.json`.
 
+- The build also appends `?v=<version>` to the `js/app.js` / `js/app.css` URLs in
+  `dist/index.html` **and** to the matching `APP_SHELL` entries in `dist/sw.js`
+  (`scripts/asset-version.ts`). The service worker serves navigations from the
+  network but subresources from cache, so a stable bundle URL lets one load pair a
+  fresh `index.html` with a stale `js/app.js` — which is what broke the v2 release
+  for returning visitors (new HTML without an import map + cached script with a bare
+  `htm/preact` specifier). Cache lookups match on the full URL, so the query also
+  protects users still running the previous service worker. Do not remove the
+  stamping: without it the bundle URL is cache-unsafe. Because the URL is versioned,
+  specs must not hard-code `/js/app.js` — use the `window.__appModule()` helper
+  provided by `tests/test.ts`.
+
 - Runtime dependencies (`preact`, `@preact/signals`, `htm`, `marked`, `dompurify`,
   `@supabase/supabase-js`) are resolved from `node_modules` at build time.
 - There is **no import map and no CDN dependency at runtime**.
@@ -264,7 +276,7 @@ Whenever you add or change a feature or behaviour, add or update the correspondi
 
 - Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.ts`, run with `bun test`. Register the suite in `tests/unit/unit.test.ts`.
 - UI behaviour and integration flows → Playwright spec in `tests/*.spec.ts`.
-- E2E specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module instances as the running app.
+- E2E specs reach the app singletons through the bundle so they observe the same module instances as the running app. Import the *versioned* URL via the `window.__appModule()` helper from `tests/test.ts`; importing a hard-coded `/js/app.js` resolves to a different module URL than the one the page loaded and yields a second, empty copy of the app.
 - A feature is not considered implemented until its tests pass
 - Tests must cover the happy path and all edge cases described in `SPEC.vmd`
 - Do not mark a task complete if any test is failing

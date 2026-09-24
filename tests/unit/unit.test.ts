@@ -66,6 +66,9 @@ replay('shortcuts', (await shortcuts.runShortcutsTests(undefined)).sections)
 const csp = await import('./suites/cspTests.js')
 replay('csp', csp.sections)
 
+const assetVersion = await import('./suites/assetVersionTests.js')
+replay('asset versioning', assetVersion.sections)
+
 const staticPath = await import('./suites/staticPathTests.js')
 replay('dev server path safety', staticPath.sections)
 

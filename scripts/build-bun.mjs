@@ -22,6 +22,7 @@
 import { cp, mkdir, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { extractDefaultSupabaseUrl, resolveSupabaseOrigin, tightenConnectSrc } from './csp.ts'
+import { stampAssetVersion, stampShellVersion } from './asset-version.ts'
 
 const args = process.argv.slice(2)
 const positional = args.filter((a) => !a.startsWith('--'))
@@ -109,7 +110,27 @@ if (!isLocalBuild) {
     })
     html = tightenConnectSrc(html, supabaseOrigin)
 }
+
+// Version the bundled entry assets so a cached js/app.js can never be paired with
+// a different release's index.html (see scripts/asset-version.ts). Failing loudly
+// here is deliberate: shipping an unversioned bundle reintroduces a silent
+// cache-poisoning bug that only shows up in users' browsers.
+const stampedHtml = stampAssetVersion(html, version)
+if (stampedHtml === html) {
+    throw new Error(`No js/app.js or js/app.css reference to version in ${indexPath}`)
+}
+html = stampedHtml
 await writeFile(indexPath, html)
+
+// Keep the service worker's APP_SHELL in step with the markup: the precache keys
+// must be the URLs the page actually requests, or the precache is dead weight.
+const swPath = path.join(outDir, 'sw.js')
+const swSource = await readFile(swPath, 'utf8')
+const stampedSw = stampShellVersion(swSource, version)
+if (stampedSw === swSource) {
+    throw new Error(`No js/app.js or js/app.css entry to version in ${swPath}`)
+}
+await writeFile(swPath, stampedSw)
 
 await writeFile(
     path.join(outDir, 'version.json'),

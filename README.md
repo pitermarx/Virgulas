@@ -108,10 +108,21 @@ The target node name is configurable under **Options → Quick capture → Inbox
   and `dist/version.json`. Dependencies are resolved from `node_modules` at build time;
   there is no `source/vendor/` tree.
 
+  The build also appends `?v=<version>` to the `js/app.js` and `js/app.css` URLs in
+  `dist/index.html` and to the matching `APP_SHELL` entries in `dist/sw.js` (see
+  `scripts/asset-version.ts`). This keeps the HTML and the bundle it loads atomic:
+  the service worker serves navigations from the network but subresources from
+  cache, so a stable asset URL lets one load pair a fresh `index.html` with a
+  stale `js/app.js`. That mismatch is what broke the v2 release for returning
+  visitors — the new HTML had no import map while the cached script still used a
+  bare `htm/preact` specifier. Because cache lookups match the full URL, the
+  version query also protects users whose browser still runs the previous
+  service worker.
+
   Offline support notes:
   - A service worker (`source/sw.js`) caches assets in two buckets so the app works offline after the first successful load:
     - **Fonts & icons cache** — `source/fonts/` and `source/media/` files; served **cache-first**
-    - **App cache** — `index.html`, `version.json`, `js/app.js`, `js/app.css`; served **stale-while-revalidate**
+    - **App cache** — `index.html`, `version.json`, `js/app.js`, `js/app.css`, each versioned with `?v=`; served **stale-while-revalidate**
   - Cache version constants in `sw.js` are bumped automatically by `scripts/bump-sw-caches.mjs`, which hashes each file group and increments only the versions whose files have changed
   - `bun install` runs the bump script automatically
   - For app/font/icon changes, run `bun run sw:bump` before committing, or install Git hooks (`bun run sw:hooks`) to run `sw:bump` on push and validate Conventional Commit headers on commit

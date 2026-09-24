@@ -60,3 +60,29 @@ test('splash does not wait for the webfont', async ({ page }) => {
   await expect(page.locator('#splash')).toBeHidden();
   await expect(page.locator('#app .app-shell')).toBeVisible();
 });
+
+/**
+ * The bundle URL must carry a version query. Without it a service worker can
+ * serve a cached `js/app.js` alongside a freshly fetched `index.html`, which is
+ * how the v2 release shipped a bundled script into a page that no longer had an
+ * import map and failed with a bare `htm/preact` specifier.
+ */
+test('bundle assets are version-stamped and resolve', async ({ page }) => {
+  const response = await page.goto('/');
+  const html = await response!.text();
+
+  const script = html.match(/src="(js\/app\.js\?v=[^"]+)"/)?.[1];
+  const style = html.match(/href="(js\/app\.css\?v=[^"]+)"/)?.[1];
+
+  expect(script, 'the module script is versioned').toBeTruthy();
+  expect(style, 'the stylesheet link is versioned').toBeTruthy();
+
+  // Both assets must carry the same version, so a release swaps them together.
+  expect(script!.split('?v=')[1]).toBe(style!.split('?v=')[1]);
+
+  // The service worker precaches these exact URLs, so they must be fetchable.
+  for (const asset of [script!, style!]) {
+    const assetResponse = await page.request.get('/' + asset);
+    expect(assetResponse.status(), asset).toBe(200);
+  }
+});
