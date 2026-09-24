@@ -20,18 +20,18 @@
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.14.5",
-        "@playwright/test": "^1.62.1",
+        "@playwright/test": "^1.63.0",
         "@types/bun": "^1.4.2",
         "happy-dom": "^20.14.5",
-        "supabase": "^2.116.0",
+        "supabase": "^2.117.0",
         "typescript": "^7.0.2"
     },
     "dependencies": {
-        "@preact/signals": "^2.11.1",
-        "@supabase/supabase-js": "^2.112.4",
-        "dompurify": "^3.4.14",
+        "@preact/signals": "^2.11.2",
+        "@supabase/supabase-js": "^2.116.0",
+        "dompurify": "^3.4.15",
         "htm": "^3.1.1",
-        "marked": "^18.0.11",
+        "marked": "^18.0.12",
         "preact": "^10.29.8"
     }
 }
