@@ -29,7 +29,13 @@ test.describe('Service worker offline shell', () => {
                 if (!appCacheName) return false;
                 const appCache = await caches.open(appCacheName);
                 const shell = await appCache.match('./index.html');
-                const appEntry = await appCache.match('./js/app.js');
+                // The bundle URL carries a version query, so assert the precache
+                // holds the exact URL the page loads rather than an unversioned
+                // one (see scripts/asset-version.ts).
+                const scriptEl = document.querySelector('script[type="module"][src*="js/app.js"]');
+                const scriptSrc = scriptEl ? (scriptEl as HTMLScriptElement).src : '';
+                if (!scriptSrc) return false;
+                const appEntry = await appCache.match(scriptSrc);
                 return !!shell && !!appEntry;
             }),
             { timeout: 10000 }

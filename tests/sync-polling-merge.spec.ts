@@ -2,7 +2,7 @@ import { test, expect, type Page } from './test';
 
 const buildEncryptedPayload = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { encrypt } = await import('/js/app.js' as string);
+        const { encrypt } = await (window as any).__appModule();
         const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
         const salt = btoa(String.fromCharCode(...saltBytes));
         const doc = {
@@ -143,7 +143,7 @@ test.describe('Sync polling', () => {
         ).toBeGreaterThan(0);
 
         await page.evaluate(async () => {
-            const persistence = (await import('/js/app.js' as string)).persistence;
+            const persistence = (await (window as any).__appModule()).persistence;
             persistence.lock();
         });
         await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
@@ -205,7 +205,7 @@ test.describe('Sync polling', () => {
         const baseline = await page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls);
 
         await page.evaluate(async () => {
-            const { pendingConflicts } = await import('/js/app.js' as string);
+            const { pendingConflicts } = await (window as any).__appModule();
             pendingConflicts.value = [{
                 nodeId: 'n1',
                 nodeText: 'Sync Node',
@@ -221,7 +221,7 @@ test.describe('Sync polling', () => {
         ).toBeLessThanOrEqual(1);
 
         await page.evaluate(async () => {
-            const { pendingConflicts } = await import('/js/app.js' as string);
+            const { pendingConflicts } = await (window as any).__appModule();
             pendingConflicts.value = [];
         });
 
@@ -237,7 +237,7 @@ test.describe('Sync merge edge cases', () => {
         await page.goto('/');
 
         const result = await page.evaluate(async () => {
-            const { mergeDocuments } = await import('/js/app.js' as string);
+            const { mergeDocuments } = await (window as any).__appModule();
             const localNodes = [
                 { id: 'root', parentId: null, text: '', description: '', children: ['n1'], open: true, lastModified: 0 },
                 { id: 'n1', parentId: 'root', text: 'Node', description: '', children: [], open: true, lastModified: 110 }
@@ -262,7 +262,7 @@ test.describe('Sync merge edge cases', () => {
         await page.goto('/');
 
         const result = await page.evaluate(async () => {
-            const { mergeDocuments } = await import('/js/app.js' as string);
+            const { mergeDocuments } = await (window as any).__appModule();
             const localNodes = [
                 { id: 'root', parentId: null, text: '', description: '', children: ['n1'], open: true, lastModified: 0 },
                 { id: 'n1', parentId: 'root', text: 'Local Node', description: '', children: [], open: true, lastModified: 90 }
@@ -285,7 +285,7 @@ test.describe('Sync merge edge cases', () => {
         await page.goto('/');
 
         const result = await page.evaluate(async () => {
-            const { mergeDocuments } = await import('/js/app.js' as string);
+            const { mergeDocuments } = await (window as any).__appModule();
             const localNodes = [
                 { id: 'root', parentId: null, text: '', description: '', children: ['n1'], open: true, lastModified: 0 },
                 { id: 'n1', parentId: 'root', text: 'Locally Modified', description: '', children: [], open: true, lastModified: 150 }
@@ -304,7 +304,7 @@ test.describe('Sync merge edge cases', () => {
         await page.goto('/');
 
         const result = await page.evaluate(async () => {
-            const { mergeDocuments } = await import('/js/app.js' as string);
+            const { mergeDocuments } = await (window as any).__appModule();
             const localNodes = [
                 { id: 'root', parentId: null, text: '', description: '', children: ['orphan'], open: true, lastModified: 0 },
                 { id: 'orphan', parentId: 'missing-parent', text: 'Orphan Node', description: '', children: [], open: true, lastModified: 160 }

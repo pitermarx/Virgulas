@@ -9,6 +9,23 @@ export const test = base.extend({
     page: async ({ page }, use) => {
         await page.route('https://um.vps.pitermarx.com/**', route => route.abort());
 
+        // The bundle URL is version-stamped at build time (`js/app.js?v=…`, see
+        // scripts/asset-version.ts). Importing a hard-coded '/js/app.js' would
+        // resolve to a *different* module URL than the one the page loaded, so
+        // the browser would instantiate a second copy of the app with empty
+        // singletons. Resolve the URL from the shell markup instead, so specs
+        // always observe the running app's instances.
+        await page.addInitScript(() => {
+            Object.defineProperty(window, '__appModule', {
+                configurable: true,
+                value: () => {
+                    const script = document.querySelector('script[type="module"][src*="js/app.js"]');
+                    const src = script ? (script as HTMLScriptElement).src : '/js/app.js';
+                    return import(src);
+                }
+            });
+        });
+
         if (configJson) {
             await page.addInitScript((value: string) => {
                 localStorage.setItem('supabaseconfig', value);
@@ -71,8 +88,7 @@ export async function seedEncryptedDoc(
 ) {
     await page.evaluate(async ({ json, passphrase }) => {
         localStorage.clear();
-        const cryptoModulePath: string = '/js/app.js';
-        const { encrypt } = await import(cryptoModulePath);
+        const { encrypt } = await (window as any).__appModule();
         const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
         const salt = btoa(String.fromCharCode(...saltBytes));
         const encrypted = await encrypt(json, passphrase, salt);

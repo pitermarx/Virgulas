@@ -11,7 +11,7 @@ async function visibleNodeTexts(page: import('@playwright/test').Page) {
 /** Children of the Inbox node as stored in the model (raw markdown, not rendered). */
 async function inboxNodeEntries(page: import('@playwright/test').Page) {
   return page.evaluate(async () => {
-    const { outline } = await import('/js/app.js' as string);
+    const { outline } = await (window as any).__appModule();
     const root = outline.get('root')!;
     const inboxId = root.children.peek().find((id: string) => outline.get(id)!.text.peek() === 'Inbox');
     if (!inboxId) return [];

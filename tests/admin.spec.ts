@@ -76,8 +76,8 @@ const installMockSupabase = async (
 
 const createEncryptedPayload = async (page: Page, passphrase: string, doc: Record<string, unknown>) => {
   return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = await (window as any).__appModule();
+    const outline = (await (window as any).__appModule()).outline;
     outline.reset();
     const load = (children: any[], parentId: string) => {
       for (const child of children || []) {

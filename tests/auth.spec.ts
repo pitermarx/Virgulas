@@ -80,8 +80,8 @@ const createEncryptedPayload = async (
   doc: Record<string, unknown>
 ) => {
   return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = await (window as any).__appModule();
+    const outline = (await (window as any).__appModule()).outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -105,8 +105,8 @@ const seedEncryptedLocalDoc = async (
 ) => {
   await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
     localStorage.clear();
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = await (window as any).__appModule();
+    const outline = (await (window as any).__appModule()).outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -182,7 +182,7 @@ test.describe('Authentication', () => {
 
     // Seed a pre-v2 payload: raw base64 at the legacy 310k iterations.
     await page.evaluate(async () => {
-      const app = await import('/js/app.js' as string);
+      const app = await (window as any).__appModule();
       app.outline.reset();
       app.outline.addChild('root', { text: 'Legacy doc' });
       const json = app.outline.serialize();
@@ -523,7 +523,7 @@ test.describe('Authentication', () => {
 
     // Verify unlocked outline contains the expected first node text.
     const firstNodeText = await page.evaluate(async () => {
-      const outline = (await import('/js/app.js' as string)).outline;
+      const outline = (await (window as any).__appModule()).outline;
       const root = outline.get('root');
       const firstChildId = root?.children.peek()?.[0];
       if (!firstChildId) return null;
@@ -740,7 +740,7 @@ test.describe('Authentication', () => {
     await page.getByLabel('Create a passphrase').fill('double-submit-pass');
 
     await page.evaluate(async () => {
-      const persistence = (await import('/js/app.js' as string)).persistence as any;
+      const persistence = (await (window as any).__appModule()).persistence as any;
       const originalUnlock = persistence.unlock.bind(persistence);
       let unlockCalls = 0;
 
@@ -790,8 +790,8 @@ test.describe('Authentication', () => {
     await page.goto('/#remote-parent');
 
     const unlockResult = await page.evaluate(async () => {
-      const persistence = (await import('/js/app.js' as string)).persistence as any;
-      const outline = (await import('/js/app.js' as string)).outline;
+      const persistence = (await (window as any).__appModule()).persistence as any;
+      const outline = (await (window as any).__appModule()).outline;
       const success = await persistence.unlock('remote-passphrase', { mode: 'remote', trustSession: true });
       return {
         success,

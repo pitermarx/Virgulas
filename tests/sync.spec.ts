@@ -79,8 +79,8 @@ const installFailingMockSupabase = async (
 /** Encrypts a doc and returns { salt, data } using the page's crypto module. */
 const buildEncryptedPayload = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { encrypt } = await import('/js/app.js' as string);
-        const outline = (await import('/js/app.js' as string)).outline;
+        const { encrypt } = await (window as any).__appModule();
+        const outline = (await (window as any).__appModule()).outline;
         outline.reset();
         outline.addChild('root', { text: 'Sync Test Node' });
         const json = outline.serialize();
@@ -125,7 +125,7 @@ const editFirstNode = async (page: Page, text: string) => {
 
 const updateFirstNodeViaModel = async (page: Page, text: string) => {
     await page.evaluate(async ({ text }: { text: string }) => {
-        const outline = (await import('/js/app.js' as string)).outline as any;
+        const outline = (await (window as any).__appModule()).outline as any;
         const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
         if (rootChildren.length > 0) {
             outline.updateNode(rootChildren[0], { text });
@@ -135,7 +135,7 @@ const updateFirstNodeViaModel = async (page: Page, text: string) => {
 
 const readRemoteFirstNodeText = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { decrypt } = await import('/js/app.js' as string);
+        const { decrypt } = await (window as any).__appModule();
         const record = (window as any).__mockSupabaseState.serverRecord;
         if (!record?.data || !record?.salt) return null;
         const json = await decrypt(record.data, passphrase, record.salt);
@@ -581,7 +581,7 @@ const buildConflictPayload = async (
         async ({ passphrase, remoteNodeText, remoteLastModified }: {
             passphrase: string; remoteNodeText: string; remoteLastModified: number;
         }) => {
-            const { encrypt } = await import('/js/app.js' as string);
+            const { encrypt } = await (window as any).__appModule();
             const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
             const doc = {
@@ -619,7 +619,7 @@ const buildChildrenConflictPayload = async (
                 childLastModified: number;
             };
         }) => {
-            const { encrypt } = await import('/js/app.js' as string);
+            const { encrypt } = await (window as any).__appModule();
             const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
             const doc = {
@@ -736,7 +736,7 @@ test.describe('Pull-before-push', () => {
         // For auto-merge: use different node ids so they merge cleanly
         const remotePayload = await page.evaluate(
             async ({ passphrase }: { passphrase: string }) => {
-                const { encrypt } = await import('/js/app.js' as string);
+                const { encrypt } = await (window as any).__appModule();
                 const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
                 const salt = btoa(String.fromCharCode(...saltBytes));
                 const doc = {
@@ -762,7 +762,7 @@ test.describe('Pull-before-push', () => {
 
         // Zoom into n1 and edit it. Sync merge-apply should not reset zoom to root.
         await page.evaluate(async () => {
-            const outline = (await import('/js/app.js' as string)).outline as any;
+            const outline = (await (window as any).__appModule()).outline as any;
             outline.zoomIn('n1');
             outline.updateNode('n1', { text: 'Local Edit' });
         });
@@ -772,7 +772,7 @@ test.describe('Pull-before-push', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
         await expect.poll(
             () => page.evaluate(async () => {
-                const outline = (await import('/js/app.js' as string)).outline as any;
+                const outline = (await (window as any).__appModule()).outline as any;
                 return outline.zoomId.value;
             }),
             { timeout: 2000, intervals: [100] }

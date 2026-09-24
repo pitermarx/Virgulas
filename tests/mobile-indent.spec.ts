@@ -111,7 +111,7 @@ test.describe('Mobile swipe indentation', () => {
 
 async function getParentId(page: Page, nodeId: string): Promise<string | null> {
     return page.evaluate(async ({ id }) => {
-        const outline = (await import('/js/app.js' as string)).outline;
+        const outline = (await (window as any).__appModule()).outline;
         const node = outline.get(id);
         return node ? node.parentId : null;
     }, { id: nodeId });
