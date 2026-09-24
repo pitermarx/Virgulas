@@ -127,8 +127,20 @@ test.describe('Quick capture inbox', () => {
 
     await page.getByRole('button', { name: 'Options' }).click();
     const options = page.getByRole('dialog', { name: 'Options' });
-    await options.locator('#admin-inbox-node-name').fill('Captured');
-    await options.locator('#admin-inbox-node-name').press('Tab');
+    const inboxNameField = options.locator('#admin-inbox-node-name');
+    // Type the new name instead of using fill(). Firefox only emits `change`
+    // (which is what Preact's onChange listens for) on blur when the value was
+    // changed by real user input, so a programmatic fill() intermittently
+    // skips the commit and the rename is silently lost.
+    await inboxNameField.click();
+    await inboxNameField.selectText();
+    await inboxNameField.pressSequentially('Captured');
+    await inboxNameField.press('Tab');
+    // The rename is only committed on blur; wait for the write to land before
+    // navigating away so a slow commit cannot surface as a confusing failure
+    // much later, when the queued capture reconciles into the default "Inbox".
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_node_name')))
+      .toBe('Captured');
     await options.getByRole('button', { name: 'Close' }).click();
 
     await page.goto('/?quick-add=custom%20name');
