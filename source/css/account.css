@@ -1,0 +1,377 @@
+/* Virgulas styles — account. Split from the former monolithic style.css. Order matters: imported in app.css order. */
+/* ── Admin (account) modal ── */
+.admin-body {
+  gap: var(--space-3);
+  min-width: min(420px, 80vw);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.admin-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.admin-info dt {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-info dd {
+  margin: 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.admin-section-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.admin-section form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-section .input-label {
+  margin-bottom: 0;
+}
+
+.admin-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+/* Compact inline editors living inside the admin-info grid rows. */
+.admin-inline-row,
+.admin-inline-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.admin-inline-row {
+  justify-content: space-between;
+}
+
+.admin-inline-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-inline-label {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.admin-inline-form .input-field {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.875rem;
+}
+
+.admin-inline-row .btn,
+.admin-inline-form .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8rem;
+}
+
+.admin-subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.admin-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background-color: var(--color-accent-soft);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.admin-recovery-code {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: var(--space-2);
+  color: var(--color-accent-primary);
+  background-color: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  user-select: all;
+}
+
+.admin-file-btn {
+  cursor: pointer;
+}
+
+.admin-footer-note {
+  padding-top: var(--space-2);
+  color: var(--color-text-faint);
+}
+
+
+.search-token-tag {
+  background: var(--color-tag-chip-bg);
+  color: var(--color-tag-chip-text);
+}
+
+.search-token-mention {
+  background: var(--color-mention-chip-bg);
+  color: var(--color-mention-chip-text);
+}
+
+/* ── Due date chip (inline in node text) ── */
+.due-date {
+  display: inline-block;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-full);
+  font: inherit;
+  line-height: inherit;
+  color: var(--color-due-chip-text);
+  background: var(--color-due-chip-bg);
+  white-space: nowrap;
+}
+
+/* ── Recurrence badge (inline in node text) ── */
+.rec-badge {
+  display: inline-block;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-full);
+  font: inherit;
+  line-height: inherit;
+  color: var(--color-rec-chip-text);
+  background: var(--color-rec-chip-bg);
+  white-space: nowrap;
+}
+
+/* ── Node text: edit mode (input) ── */
+.node-text-input {
+  cursor: text;
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  line-height: 1.5rem;
+}
+
+/* ── Node description: read mode (markdown) ── */
+.node-desc-md {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  cursor: text;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.node-desc-md:not(:empty) {
+  margin-top: 6px;
+}
+
+/* ── Node description: edit mode (textarea, auto-grow) ── */
+.node-desc-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  padding: 0;
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  resize: none;
+  display: block;
+  line-height: 1.4;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+/* ── Modal title ── */
+.modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* ── Status toolbar ── */
+.status-toolbar {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-4);
+  padding-bottom: calc(var(--space-2) + var(--keyboard-inset, 0px));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.toolbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 700px) {
+  .status-user {
+    display: none;
+  }
+}
+
+/* ── Options modal ── */
+.options-section {
+  margin-bottom: var(--space-5);
+}
+
+.options-theme-buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.repo-link {
+  color: var(--color-accent-primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repo-link:hover {
+  text-decoration: underline;
+}
+
+.options-hint {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: var(--space-2);
+}
+
+.options-auth-form {
+  margin-top: var(--space-2);
+}
+
+.options-auth-signed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.options-auth-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sync-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 32vh;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.sync-conflict-item {
+  background: var(--color-hover-surface);
+}
+
+.sync-conflict-item+.sync-conflict-item {
+  border-top: 1px solid var(--color-border);
+}
+
+.sync-conflict-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.3rem var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.sync-conflict-row:first-child {
+  border-top: none;
+}
+
+.sync-conflict-value {
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-conflict-meta {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  margin-bottom: var(--space-1);
+}
+
+.sync-conflict-choice {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.btn-xs {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+

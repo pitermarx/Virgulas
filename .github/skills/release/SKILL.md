@@ -16,11 +16,12 @@ Before branching, determine what changed:
 
 | Changed files | Script to run |
 |---|---|
-| `source/vendor/` | `npm run vendor:sync` then `npm run sw:bump` |
-| `source/css/`, `source/js/`, `source/index.html`, `source/fonts/`, `source/media/` | `npm run sw:bump` |
+| `source/css/`, `source/js/`, `source/index.html`, `source/sw.js`, `source/fonts/`, `source/media/` | `bun run sw:bump` |
 | Nothing in the above groups | No script needed |
 
-Run `npm run sw:bump` whenever any app or vendor file changes. It is idempotent and safe to run even when nothing changed — it will report "nothing bumped".
+Run `bun run sw:bump` whenever any app file changes. It hashes the source groups
+and bumps `APP_CACHE`/`FONTS_CACHE` in `source/sw.js`. It is idempotent and safe to
+run even when nothing changed — it will report "nothing bumped".
 
 ## Procedure
 
@@ -32,24 +33,15 @@ git diff --staged
 
 Understand what changed to write the commit message and decide which scripts to run.
 
-### 2. Run cache-busting (and vendor sync if needed)
+### 2. Run cache-busting
 
-If vendor files changed:
 ```bash
-npm run vendor:sync
-npm run sw:bump
+bun run sw:bump
 ```
 
-If only app/font/media files changed:
-```bash
-npm run sw:bump
-```
-
-Then stage any files modified by these scripts:
+Then stage any files modified by the script:
 ```bash
 git add source/sw.js scripts/.sw-cache-hashes.json
-# if vendor:sync ran, also:
-git add source/vendor/
 ```
 
 ### 3. Create a branch
@@ -100,7 +92,7 @@ gh pr create \
 
 ## Notes
 
-- `npm run sw:bump` is automatically called by `npm install` (postinstall), so vendor bumps are hands-off when dependencies change.
-- The `pre-push` Git hook (if installed via `npm run sw:hooks`) also runs `sw:bump` and aborts if `sw.js` was modified but not committed.
+- `bun run sw:bump` is automatically called by `bun install` (postinstall), so cache versions are refreshed when dependencies change.
+- The `pre-push` Git hook (if installed via `bun run sw:hooks`) also runs `sw:bump` and aborts if `sw.js` was modified but not committed.
 - Do **not** skip `sw:bump` — stale caches will serve outdated app files to users.
-- `vendor:sync` is only needed when a dependency version changes in `package.json` (it copies CDN-resolved bundles into `source/vendor/`).
+- The app is built by `bun run build` (`bun scripts/build-bun.mjs`), which bundles `source/js/app.ts` and the `source/css/*.css` modules into `dist/js/app.js` + `dist/js/app.css`, then stamps the version into `dist/index.html` and `dist/version.json`. Dependencies are resolved from `node_modules`; there is no `source/vendor/` directory.

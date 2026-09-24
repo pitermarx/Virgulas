@@ -1,0 +1,118 @@
+/* Virgulas styles — views. Split from the former monolithic style.css. Order matters: imported in app.css order. */
+/* ── Main view ── */
+.main-view {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: scroll;
+  overscroll-behavior-y: none;
+  scrollbar-width: none;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.main-content::-webkit-scrollbar {
+  display: none;
+}
+
+.main-toolbar {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ── Search bar ── */
+.search-bar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.search-bar-inner {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-base);
+  font-size: 0.9rem;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.search-counter {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  padding: 0 var(--space-1);
+}
+
+/* ── Zoom description area ── */
+.zoom-description-area {
+  margin-bottom: var(--space-3);
+}
+
+.zoom-desc-display {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  cursor: text;
+  white-space: pre-wrap;
+  padding: 2px 0;
+  border-radius: var(--radius-sm);
+}
+
+.zoom-desc-placeholder {
+  color: var(--color-text-faint);
+  font-style: italic;
+}
+
+.zoom-desc-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  color: var(--color-text-muted);
+  resize: none;
+  display: block;
+  min-height: 1.4em;
+  height: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+/* ── Empty state placeholder ── */
+.empty-state {
+  padding: var(--space-3) var(--space-2);
+  color: var(--color-text-faint);
+  font-style: italic;
+  cursor: text;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-base), color var(--transition-base);
+  outline: none;
+}
+
+.empty-state:hover,
+.empty-state:focus {
+  background-color: var(--color-hover-surface);
+  color: var(--color-text-muted);
+}
+

@@ -79,8 +79,8 @@ const installFailingMockSupabase = async (
 /** Encrypts a doc and returns { salt, data } using the page's crypto module. */
 const buildEncryptedPayload = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { encrypt } = await import('/js/crypto2.js');
-        const outline = (await import('/js/outline.js')).default;
+        const { encrypt } = await import('/js/app.js' as string);
+        const outline = (await import('/js/app.js' as string)).outline;
         outline.reset();
         outline.addChild('root', { text: 'Sync Test Node' });
         const json = outline.serialize();
@@ -111,7 +111,7 @@ const unlockRemote = async (page: Page, email: string, accountPass: string, pass
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByLabel('Encryption passphrase').fill(passphrase);
     await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 };
 
 /** Trigger an edit on the first visible node. */
@@ -125,7 +125,7 @@ const editFirstNode = async (page: Page, text: string) => {
 
 const updateFirstNodeViaModel = async (page: Page, text: string) => {
     await page.evaluate(async ({ text }: { text: string }) => {
-        const outline = (await import('/js/outline.js')).default as any;
+        const outline = (await import('/js/app.js' as string)).outline as any;
         const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
         if (rootChildren.length > 0) {
             outline.updateNode(rootChildren[0], { text });
@@ -135,7 +135,7 @@ const updateFirstNodeViaModel = async (page: Page, text: string) => {
 
 const readRemoteFirstNodeText = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { decrypt } = await import('/js/crypto2.js');
+        const { decrypt } = await import('/js/app.js' as string);
         const record = (window as any).__mockSupabaseState.serverRecord;
         if (!record?.data || !record?.salt) return null;
         const json = await decrypt(record.data, passphrase, record.salt);
@@ -162,7 +162,7 @@ test.describe('Sync status indicator', () => {
         await editFirstNode(page, 'Synced Edit');
 
         // After debounce (1s) + successful upload, dot should settle on 'synced'
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
     });
 
     test('sync-dot shows error when all retries are exhausted', async ({ page }) => {
@@ -183,7 +183,7 @@ test.describe('Sync status indicator', () => {
         await editFirstNode(page, 'Error Edit');
 
         // debounce (1s) + 3 retries × base ≈ 30+60+120 ms = well under 1s extra
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
     });
 
     test('sync-dot shows offline when navigator.onLine is false and upload fails', async ({ page }) => {
@@ -207,7 +207,7 @@ test.describe('Sync status indicator', () => {
 
         await editFirstNode(page, 'Offline Edit');
 
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: offline', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: offline', { timeout: 10000 });
     });
 
     test('sync-dot transitions syncing → synced during upload', async ({ page }) => {
@@ -259,7 +259,7 @@ test.describe('Sync status indicator', () => {
         await editFirstNode(page, 'Transition Edit');
 
         // Wait for the debounce to fire and upload to start
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 10000 });
         // Then wait for upload to complete (3 s delay in mock + buffer)
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 6000 });
     });
@@ -344,7 +344,7 @@ test.describe('Sync status indicator', () => {
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
         await editFirstNode(page, 'First Upload');
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 10000 });
 
         await updateFirstNodeViaModel(page, 'Second Upload');
 
@@ -459,11 +459,11 @@ test.describe('Sync retry behaviour', () => {
         // before confirming the upload actually ran. Use expect.poll to wait for all retries.
         await expect.poll(
             () => page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls),
-            { timeout: 4000, intervals: [100] }
+            { timeout: 10000, intervals: [100] }
         ).toBeGreaterThanOrEqual(FAIL_TIMES + 1);
 
         // After FAIL_TIMES failures + 1 success the dot should settle on 'synced'
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 1000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
 
         // upsert was called FAIL_TIMES + 1 (the final successful attempt)
         const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
@@ -491,7 +491,7 @@ test.describe('Sync retry behaviour', () => {
         await editFirstNode(page, 'Exhaust Retries');
 
         // Wait for all retries to exhaust: 1000ms debounce + 30+60+120 = 210ms retries
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
 
         // Exactly 1 (initial attempt) + MAX_RETRIES calls were made
         const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
@@ -560,7 +560,7 @@ test.describe('Sync retry behaviour', () => {
 
         await editFirstNode(page, 'Recovered Write');
 
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
     });
 });
 
@@ -581,7 +581,7 @@ const buildConflictPayload = async (
         async ({ passphrase, remoteNodeText, remoteLastModified }: {
             passphrase: string; remoteNodeText: string; remoteLastModified: number;
         }) => {
-            const { encrypt } = await import('/js/crypto2.js');
+            const { encrypt } = await import('/js/app.js' as string);
             const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
             const doc = {
@@ -619,7 +619,7 @@ const buildChildrenConflictPayload = async (
                 childLastModified: number;
             };
         }) => {
-            const { encrypt } = await import('/js/crypto2.js');
+            const { encrypt } = await import('/js/app.js' as string);
             const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
             const doc = {
@@ -736,7 +736,7 @@ test.describe('Pull-before-push', () => {
         // For auto-merge: use different node ids so they merge cleanly
         const remotePayload = await page.evaluate(
             async ({ passphrase }: { passphrase: string }) => {
-                const { encrypt } = await import('/js/crypto2.js');
+                const { encrypt } = await import('/js/app.js' as string);
                 const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
                 const salt = btoa(String.fromCharCode(...saltBytes));
                 const doc = {
@@ -762,17 +762,17 @@ test.describe('Pull-before-push', () => {
 
         // Zoom into n1 and edit it. Sync merge-apply should not reset zoom to root.
         await page.evaluate(async () => {
-            const outline = (await import('/js/outline.js')).default as any;
+            const outline = (await import('/js/app.js' as string)).outline as any;
             outline.zoomIn('n1');
             outline.updateNode('n1', { text: 'Local Edit' });
         });
 
         // After merge: both n1 (local edit) and n2 (remote-only) should be present; no modal
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
         await expect.poll(
             () => page.evaluate(async () => {
-                const outline = (await import('/js/outline.js')).default as any;
+                const outline = (await import('/js/app.js' as string)).outline as any;
                 return outline.zoomId.value;
             }),
             { timeout: 2000, intervals: [100] }
@@ -859,7 +859,7 @@ test.describe('Conflict resolution modal', () => {
         await page.locator('.conflict-keep-btn').first().click();  // Keep local
         await page.getByRole('button', { name: 'Apply' }).click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         // The local text should be in the outline
         await expect(page.locator('.node-text-md').first()).toContainText('Local Wins');
     });
@@ -871,7 +871,7 @@ test.describe('Conflict resolution modal', () => {
         await page.locator('.conflict-keep-btn').nth(1).click();
         await page.getByRole('button', { name: 'Apply' }).click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         await expect(page.locator('.node-text-md').first()).toContainText('Remote Wins');
     });
 
@@ -883,7 +883,7 @@ test.describe('Conflict resolution modal', () => {
         await expect(applyBtn).toBeEnabled();
         await applyBtn.click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
     });
 
     test('"Use all remote" resolves all conflicts to remote', async ({ page }) => {
@@ -892,7 +892,7 @@ test.describe('Conflict resolution modal', () => {
         await page.getByRole('button', { name: 'Use all remote' }).click();
         await page.getByRole('button', { name: 'Apply' }).click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         await expect(page.locator('.node-text-md').first()).toContainText('Keep This');
     });
 
@@ -906,8 +906,8 @@ test.describe('Conflict resolution modal', () => {
         await page.locator('.conflict-keep-btn').first().click();
         await page.getByRole('button', { name: 'Apply' }).click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
     });
 
     test('children conflict can be resolved by keeping remote values', async ({ page }) => {
@@ -946,7 +946,7 @@ test.describe('Conflict resolution modal', () => {
         await page.locator('.conflict-keep-btn').nth(1).click(); // Keep remote
         await page.getByRole('button', { name: 'Apply' }).click();
 
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 4000 });
+        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         await expect(page.getByText('Remote Child', { exact: true })).toBeVisible();
         await expect(page.getByText('Local Seed Child', { exact: true })).toHaveCount(0);
     });

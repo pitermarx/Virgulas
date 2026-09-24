@@ -101,6 +101,9 @@
       - Remembered mode is Remote
         - valid session → Remote unlock screen (passphrase only)
         - expired session → Remote unlock screen (email prefilled)
+      - The remote session and the File-mode handle are only probed in the mode that is actually
+        remembered: with no remembered remote mode the app neither contacts Supabase nor fetches the
+        remote client bundle, so startup never depends on a network round trip
       - Remembered mode is File, valid handle → File reopened silently; if permission denied → file picker
       - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
         Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
@@ -198,6 +201,35 @@
       - The ☑ icon button in the status toolbar opens and closes the sidebar on all platforms
       - On wide screens (≥ 1160 px) the panel docks alongside the document without dimming content
       - On narrow screens the panel slides up from the bottom as a sheet
+  + QUICK CAPTURE
+    Captures are collected into a device-local queue in `localStorage.vmd_inbox_queue`.
+    The queue is intentionally unencrypted, device-local, and never synced.
+    - Entry points
+      - `?quick-add=<url-encoded text>` enqueues the text directly, with no interaction
+      - `?quick-capture=1` opens the capture prompt
+      - The web app manifest exposes a "Quick capture" shortcut and a GET share target
+        (`title`, `text`, `url`); the page becomes the markdown link `[title](url)` in the node
+        text and the shared `text` becomes the node "Description"
+      - A bookmarklet offered under Options → Quick capture sends the page title, its URL and the
+        current selection to those same share-target parameters
+      - A payload with no title or URL falls back to using the text (or the title) as the node text
+      - Captured values are trimmed; a shared value identical to the URL or the title is not repeated
+        as a description
+    - A capture visit MUST NOT unlock anything
+      - No passphrase or biometric prompt, no PBKDF2, no decryption, no network
+      - The app is not booted: no lock screen, no document is decrypted or reconciled
+      - The only work performed is the queue write
+      - The capture parameters are consumed and removed from the URL
+      - The capture window closes itself when the browser allows it (a script-opened popup);
+        otherwise a minimal confirmation is shown
+    - Reconciling
+      - On the next unlock of Local, Remote, or File storage, queued entries are moved in
+        creation order into a configurable root-level Inbox node (default name `Inbox`),
+        creating the node if needed, preserving each entry's text and description, then the
+        queue is cleared
+      - Memory mode leaves the queue pending until persistent storage is unlocked
+      - Limits: 500 queued items, 10,000 characters per item, 100 characters for the node name
+      - Renaming the Inbox node affects future captures only; it never renames an existing node
   + ACCOUNTS AND SYNC
     Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
     The server stores only ciphertext and cannot decrypt user data.
@@ -269,9 +301,6 @@
     - Playwright E2E tests cover all the app's features and edge cases
     - The app shell and all static assets are cached by a Service Worker (`sw.js`) on first load
       After the first successful load the app opens fully offline (no network required)
-    - (DESKTOP ONLY) `Ctrl+Alt+D` toggles a developer panel at runtime
-      - Sections: outline stats, focus/zoom/search state, sync diagnostics, crypto timings, storage quota, focused node raw JSON
-      - Console debug messages are also printed while the panel is open
     + CI/CD
       - The app is hosted on GitHub Pages
       - On each commit, all E2E tests are run
@@ -298,5 +327,4 @@
       - Virtual scrolling: for outlines with thousands of nodes, render only the visible portion to keep the UI responsive
       - Node linking: internal references between nodes (e.g. `[[node-id]]` syntax) with click-to-zoom navigation
       - Undo/Redo stack: keep a history of structural and text edits (e.g., capped at 100 actions) to safely revert accidental deletions or complex tree moves using `Ctrl+Z` and `Ctrl+Shift+Z`.
-      - Developer Panel expansion: extend the `Ctrl+Alt+D` panel with active signal dependencies graph and additional runtime diagnostics.
       - Tasks — future extensions: `@mention` assignments, a "My Tasks" rollup view across documents.

@@ -7,7 +7,7 @@ test.describe('Encryption and Storage', () => {
 
   test('encrypts/decrypts with passphrase and salt', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      const { encrypt, decrypt } = await import('/js/crypto2.js');
+      const { encrypt, decrypt } = await import('/js/app.js' as string);
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const original = 'Hello World';
@@ -23,7 +23,7 @@ test.describe('Encryption and Storage', () => {
 
   test('decryption fails with wrong passphrase', async ({ page }) => {
     const failed = await page.evaluate(async () => {
-      const { encrypt, decrypt } = await import('/js/crypto2.js');
+      const { encrypt, decrypt } = await import('/js/app.js' as string);
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const encrypted = await encrypt('secret', 'password', salt);
@@ -39,14 +39,16 @@ test.describe('Encryption and Storage', () => {
 
   test('decryption fails when ciphertext is tampered', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      const { encrypt, decrypt } = await import('/js/crypto2.js');
+      const { encrypt, decrypt } = await import('/js/app.js' as string);
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const encrypted = await encrypt('Hello World', 'password', salt);
 
-      const bytes = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+      // Envelope is v2:<iterations>:<base64(iv||ct)>; tamper the base64 payload.
+      const parts = encrypted.split(':');
+      const bytes = Uint8Array.from(atob(parts[2]), c => c.charCodeAt(0));
       bytes[bytes.length - 1] = bytes[bytes.length - 1] ^ 0x01;
-      const tampered = btoa(String.fromCharCode(...bytes));
+      const tampered = `${parts[0]}:${parts[1]}:${btoa(String.fromCharCode(...bytes))}`;
 
       try {
         await decrypt(tampered, 'password', salt);
@@ -62,7 +64,7 @@ test.describe('Encryption and Storage', () => {
 
   test('storage stores encrypted data', async ({ page }) => {
     await page.evaluate(async () => {
-      const { encrypt } = await import('/js/crypto2.js');
+      const { encrypt } = await import('/js/app.js' as string);
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const encrypted = await encrypt('secret-value', 'password', salt);
@@ -76,7 +78,7 @@ test.describe('Encryption and Storage', () => {
 
     // Check decrypt
     const retrieved = await page.evaluate(async () => {
-      const { decrypt } = await import('/js/crypto2.js');
+      const { decrypt } = await import('/js/app.js' as string);
       const value = localStorage.getItem('test-key');
       if (!value) {
         return null;

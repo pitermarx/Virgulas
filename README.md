@@ -7,7 +7,7 @@
 ## Features
 
 - Infinite list of editable nodes with recursive children
-- Markdown rendering (bold, italic, links, images, inline code); markdown links always open in a new tab/window
+- Markdown rendering (bold, italic, links, images, inline code); markdown links always open in a new tab/window. Images load inline with `referrerpolicy="no-referrer"` and no event handlers
 - Inline `#tags` and `@mentions` are highlighted and clickable; tapping/clicking one opens Search with that token
 - Optional description field per node (auto-growing textarea when editing)
 - Node collapse/expand (button click or `Ctrl+Space`)
@@ -20,7 +20,6 @@
   - Zoomed node with no children shows an empty state to create the first child
   - Empty root document shows an empty state to create the first node
 - Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly; mobile includes a status-bar Search button
-- Developer panel (`Ctrl+Alt+D` toggles at runtime): outline stats, sync diagnostics, crypto timings, storage quota, focused node raw JSON
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
 - Theme toggle (light/dark) persisted in localStorage
@@ -58,44 +57,64 @@
   - Task state is preserved in Local/Remote JSON and in File mode (`.vmd`) via `[ ]` / `[x]` prefixes
 
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
-- Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data
-- **Quick capture inbox (PWA-only):** text shared to Virgulas or sent to `/?quick-add=...` is held in an unencrypted, device-local queue and filed under a configurable root-level Inbox node after secure storage is unlocked; the web app manifest also exposes a Quick capture shortcut
+- Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data; the top summary row shows the storage mode and encrypted blob size with short encryption details (AES-GCM-256, PBKDF2 600k, random salt), and email, account password, and encryption passphrase are edited inline in that same row
+- **Quick capture inbox:** text shared to Virgulas, sent to `/?quick-add=...`, or captured with the bookmarklet is held in an unencrypted, device-local queue and filed under a configurable root-level Inbox node after secure storage is unlocked; the web app manifest also exposes a Quick capture shortcut. A capture visit never boots the app or prompts for unlock — see below.
 - `Enter` on a collapsed node with children creates a sibling, not a child
 
 ## Quick capture
 
-Virgulas can receive text without a native Android wrapper or Play Store installation:
+Virgulas can receive text without a native Android wrapper or Play Store installation. **Options → Quick capture** lists these entry points in the app itself:
 
 - Use the installed PWA's **Quick capture** long-press shortcut and type or dictate the text.
 - Share text from another Android app to Virgulas through the Android share sheet.
 - Open `https://virgulas.com/?quick-add=buy%20milk` (URL-encode the text) from an automation tool such as Tasker.
+- Drag or copy the **Save to** bookmarklet from Options, then click it on any page. Note that bookmarklets are subject to the target page's Content-Security-Policy, so some strict sites (GitHub, X) will block them — use the app shortcut or share sheet there.
 
-Captured text is stored temporarily in `localStorage` under `vmd_inbox_queue`. This queue is intentionally **unencrypted and device-local**; it is never synced. On the next unlock of Local, Remote, or File storage, Virgulas creates (or reuses) the configured root-level Inbox node, moves queued entries into it in order, and clears the queue. Memory mode leaves the queue pending until persistent storage is unlocked.
+A captured page is stored as a markdown link: the node text becomes `[title](url)` and any highlighted text becomes that node's **Description**. A share payload without a title or URL falls back to using the text as the node text, and a value that merely repeats the URL or title is not duplicated into the description.
+
+A capture visit **stays locked**. It performs no key derivation, no decryption, no network request and never triggers the biometric prompt — it only appends to the queue. The browser closes the capture window itself when it is allowed to (for example the bookmarklet popup); otherwise a minimal "Saved to the Inbox queue" confirmation is shown.
+
+Captured text is stored temporarily in `localStorage` under `vmd_inbox_queue`. This queue is intentionally **unencrypted and device-local**; it is never synced. On the next unlock of Local, Remote, or File storage, Virgulas creates (or reuses) the configured root-level Inbox node, moves queued entries into it in order (text and description), and clears the queue. Memory mode leaves the queue pending until persistent storage is unlocked.
 
 The target node name is configurable under **Options → Quick capture → Inbox node name**. Changing the setting affects future captures; it does not rename an existing node.
+
+## Security
+
+- **Pinned third-party analytics.** The only external script is the Umami tracker. It is loaded with a `sha384` subresource-integrity hash and `crossorigin="anonymous"` and is the sole host allowed by `script-src`, so the analytics host cannot silently ship different code — a new Umami build must be re-hashed deliberately (README → this section). Everything else is bundled at build time. A strict `Content-Security-Policy` (`script-src 'self' https://um.vps.pitermarx.com`, `object-src 'none'`, `base-uri 'none'`, `frame-src 'none'`) is declared in `index.html` with no inline script. `connect-src` in the source shell allows localhost and the `*.supabase.co` wildcard for development; production builds (`bun run build`) replace both with the concrete Supabase origin from `sync.ts` (`--supabase-url` / `SUPABASE_PROJECT` / `SUPABASE_URL` can override), so the deployed artifact can only reach that one project. `bun run dev` and `dev:test` keep the local sources. `frame-ancestors`/HSTS/X-Frame-Options/Referrer-Policy cannot be set from a meta tag and must be configured at the host/CDN.
+- **Zero-knowledge sync.** Documents are gzip-compressed and encrypted with AES-GCM-256 under a key derived from your passphrase (PBKDF2-HMAC-SHA256 at 600,000 iterations, per-document random salt, random IV per write). The iteration count is recorded in the payload envelope (`v2:<iterations>:<base64>`), so it can be raised without breaking existing documents: pre-`v2` payloads still decrypt at 310k and are re-encrypted with the current parameters on the next save. The derived key is cached for the unlocked session so autosave does not re-run the KDF. Only `salt` + ciphertext leave the device; the server never sees plaintext.
+- **New passphrases must be at least 10 characters.** Existing shorter passphrases still unlock — only newly chosen ones are checked (create, reset, and change flows).
+- **Markdown sanitisation.** Rendered markdown is sanitised with an explicit allow-list (`strong, em, a, img, code, br`). Raw HTML cannot inject layout, forms, styling, ids, or classes into app chrome.
+- **Hardened remote images.** Images load normally. Every rendered image (markdown or raw HTML) drops any `src` that is not http(s) or same-origin relative, and is loaded with `referrerpolicy="no-referrer"`, `loading="lazy"`, and `decoding="async"`; the sanitizer strips event handlers and `srcset`. The image host can still see your IP/user-agent, which is inherent to any remote image — use a proxy or blocker if that matters to you.
+- **Encrypted passphrase for biometric unlock** is sealed on-device in IndexedDB behind WebAuthn user verification. Signing out, switching storage mode, and deleting local data all revoke that seal, so a shared device cannot recover the passphrase after a session ends. It is still a convenience gate rather than a hardware key binding — see `source/js/biometrics.ts` for the documented limitations.
+- **No source maps in the deployed bundle.** `bun run build` and the deploy pipeline build with `--no-sourcemap` (and CI fails if `dist/js/app.js.map` appears); `bun run dev` keeps them for local debugging.
+- **Supabase client test seam.** E2E specs can substitute the Supabase client through `window.supabase`, but that seam is compiled out of production builds via the `__TEST_HOOKS__` build flag, so a same-origin script cannot hijack sign-in or the session token.
 
 ## Setup
 
 1.  Install dependencies:
     ```bash
-    npm install
+    bun install
     ```
-  `npm install` also syncs browser runtime dependencies into `source/vendor/` (no bundler/build step required).
 
-2.  Run locally (serves the `source/` folder):
+2.  Run locally (builds `dist/` and serves it):
     ```bash
-    npm run serve
+    bun run dev
     ```
+
+  `bun run dev:test` is the same build with the `__TEST_HOOKS__` seam enabled; Playwright uses it automatically to install its mock Supabase client. Production builds (`bun run build`) leave the seam off.
+
+  `bun run build` bundles `source/js/app.ts` and the `source/css/*.css` modules into
+  `dist/js/app.js` + `dist/js/app.css`, and stamps the version into `dist/index.html`
+  and `dist/version.json`. Dependencies are resolved from `node_modules` at build time;
+  there is no `source/vendor/` tree.
 
   Offline support notes:
-  - Runtime dependencies are self-hosted from `source/vendor/` (no CDN dependency at runtime)
-  - A service worker (`source/sw.js`) caches assets in three separate buckets so the app works offline after the first successful load:
-    - **Vendor cache** — `source/vendor/` JS files; served **cache-first**
+  - A service worker (`source/sw.js`) caches assets in two buckets so the app works offline after the first successful load:
     - **Fonts & icons cache** — `source/fonts/` and `source/media/` files; served **cache-first**
-    - **App cache** — HTML, CSS, and `source/js/` modules; served **stale-while-revalidate**
+    - **App cache** — `index.html`, `version.json`, `js/app.js`, `js/app.css`; served **stale-while-revalidate**
   - Cache version constants in `sw.js` are bumped automatically by `scripts/bump-sw-caches.mjs`, which hashes each file group and increments only the versions whose files have changed
-  - `npm install` runs the bump script automatically, so vendor cache bumps after dependency updates require no manual work
-  - For font/icon/app file changes, run `npm run sw:bump` before committing, or install Git hooks (`npm run sw:hooks`) to run `sw:bump` on push and validate Conventional Commit headers on commit
+  - `bun install` runs the bump script automatically
+  - For app/font/icon changes, run `bun run sw:bump` before committing, or install Git hooks (`bun run sw:hooks`) to run `sw:bump` on push and validate Conventional Commit headers on commit
 
   The app reads Supabase settings from `localStorage.supabaseconfig` and seeds it automatically on first run with hosted defaults:
   - `url`: `https://gcpdascpdrakecpknrtt.supabase.co`
@@ -105,57 +124,58 @@ The target node name is configurable under **Options → Quick capture → Inbox
 
 3.  Run tests:
   ```bash
-  npm test
+  bun run test
   ```
-  `npm test` runs both suites in sequence (always executes both; exits non-zero if either fails):
-  - E2E Playwright specs (`npm run test:e2e`)
-  - Browser unit harness via `source/test.html` (`npm run test:unit`)
+  `bun run test` runs both suites in sequence (always executes both; exits non-zero if either fails):
+  - E2E Playwright specs (`bun run test:e2e`)
+  - Unit suites via `bun test tests/unit` (`bun run test:unit`)
+  - `bun run typecheck` runs the TypeScript checks (app + tests)
 
 ## Supabase Workflows
 
-All Supabase commands in this repository use the locally pinned CLI (`supabase` devDependency) via npm scripts or `npm exec`.
+All Supabase commands in this repository use the locally pinned CLI (`supabase` devDependency) via bun scripts or `bunx supabase`.
 
 ### Local (development)
 
 1. Initialize local Supabase files (first time only):
   ```bash
-  npm run db:init
+  bunx supabase init
   ```
 
 2. Start local Supabase manually:
   ```bash
-  npm run db:start
+  bun run db:start
   ```
 
 3. Serve the app:
   ```bash
-  npm run serve
+  bun run dev
   ```
 
 4. Stop local Supabase when finished:
   ```bash
-  npm run db:stop
+  bun run db:stop
   ```
 
 5. Get local API URL and anon key from CLI output:
   ```bash
-  npm exec supabase -- status
+  bunx supabase status
   ```
 
 6. Reset local DB to migrations only:
   ```bash
-  npm run db:reset
+  bunx supabase db reset
   ```
 
-Playwright local tests assume local Supabase is already running and `.env` exists (created by `npm run db:start`).
+Playwright local tests assume local Supabase is already running and `.env` exists (created by `bun run db:start`).
 The test fixture overrides `localStorage.supabaseconfig` from `.env` before each page load.
 
 Available test commands:
 
 ```bash
-npm run test:e2e   # Playwright feature/E2E specs only
-npm run test:unit  # Browser unit harness spec only
-npm test           # Runs e2e, then unit harness
+bun run test:e2e   # Playwright feature/E2E specs only
+bun run test:unit  # Browser unit harness spec only
+bun run test           # Runs e2e, then unit harness
 ```
 
 Auth tests that require a specific account attempt sign-in first and create the user only when it does not exist.
@@ -165,34 +185,34 @@ Auth tests that require a specific account attempt sign-in first and create the 
 1. Edit schema files in `supabase/schemas/*.sql`.
 2. Generate a migration from schema diff:
   ```bash
-  npm run db:migrate -- <migration-name>
+  bunx supabase migration new <migration-name>
   ```
 3. Apply migrations locally and re-seed:
   ```bash
-  npm run db:reset
+  bunx supabase db reset
   ```
 
 ### Production
 
 1. Log in and link your hosted Supabase project:
   ```bash
-  npm exec supabase -- login
-  npm exec supabase -- link --project-ref <your-project-ref>
+  bunx supabase login
+  bunx supabase link --project-ref <your-project-ref>
   ```
 
 2. Apply local migrations to the linked project:
   ```bash
-  npm exec supabase -- db push --linked
+  bunx supabase db push --linked
   ```
 
 3. If needed, inspect migration plan before applying:
   ```bash
-  npm exec supabase -- db push --linked --dry-run
+  bunx supabase db push --linked --dry-run
   ```
 
 4. To reset a linked remote database and apply only local migrations (no seed):
   ```bash
-  npm exec supabase -- db reset --linked --no-seed --yes
+  bunx supabase db reset --linked --no-seed --yes
   ```
 
 ## CI/CD
@@ -200,10 +220,7 @@ Auth tests that require a specific account attempt sign-in first and create the 
 - Pull requests and pushes run Playwright E2E tests in GitHub Actions.
 - Main branch CI validates commit policy, computes semantic version bumps from Conventional Commits, and publishes a GitHub release tag when releasable commits exist.
 - Main branch CI publishes the latest database migrations to the linked Supabase project before deploy.
-- Main branch deploys the static site to GitHub Pages, stamps the resolved app version into `index.html`, writes `version.json`, copies `source/preview.html` to `/preview/index.html`, and publishes PR previews under `/preview/<branch-slug>/`.
-- Preview bundles are only published when the main branch deploy pipeline runs successfully.
-- The `/preview/` page loads open PRs from the GitHub API at runtime and only displays links for previews that are already published.
-- Preview bundles are fetched from `refs/pull/<number>/head`, so previews also work for fork-based pull requests.
+- Main branch deploys the static site to GitHub Pages: `bun scripts/build-bun.mjs source dist --version <resolved>` bundles the app into `dist/`, stamps the version into `index.html` and `version.json`, and `dist/` is uploaded as the Pages artifact.
 - Pull request workflows (same-repo and forks) do not publish Pages artifacts.
 - A daily workflow runs E2E tests against `https://virgulas.com`.
 
@@ -244,18 +261,18 @@ Examples:
 
 Enforcement:
 
-- Local `commit-msg` hook validates the commit header (installed by `npm run sw:hooks`)
+- Local `commit-msg` hook validates the commit header (installed by `bun run sw:hooks`)
 - CI validates every commit in the PR/push range and fails on non-conforming headers
 
 You can run checks manually:
 
 ```bash
-npm run commit:check
-npm run commit:check:range -- "HEAD~5..HEAD"
+bun run commit:check
+bun scripts/check-conventional-commits.mjs --range "HEAD~5..HEAD"
 ```
 
 Release planning dry-run:
 
 ```bash
-npm run release:plan
+bun scripts/release-from-commits.mjs
 ```

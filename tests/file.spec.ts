@@ -161,7 +161,7 @@ test.describe('File mode', () => {
 
         await page.getByRole('button', { name: 'Unlock' }).click();
 
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.node-content').first()).toContainText('Hello File World');
         await expect(page.locator('.status-mode')).toHaveText('File');
     });
@@ -175,7 +175,7 @@ test.describe('File mode', () => {
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
         // Focus and edit the first node
         await page.locator('.node-text-md').first().click();
@@ -211,7 +211,7 @@ test.describe('File mode', () => {
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
 
         const pickerCallsAfterFirstOpen = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -221,7 +221,7 @@ test.describe('File mode', () => {
         await page.reload();
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
 
         const pickerCallsAfterReload = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -369,7 +369,7 @@ test.describe('File mode', () => {
 
         // Unlock: tryReopen finds the denied handle, falls back to showOpenFilePicker
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
         // The picker was invoked exactly once (fallback path)
         const pickerCalls = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -388,7 +388,7 @@ test.describe('File mode', () => {
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.status-mode')).toHaveText('File');
 
         await page.getByRole('button', { name: 'Options' }).click();
@@ -414,7 +414,7 @@ test.describe('File mode', () => {
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.status-mode')).toHaveText('File');
 
         await page.getByRole('button', { name: 'Options' }).click();

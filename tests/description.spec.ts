@@ -64,12 +64,12 @@ test.describe('Description', () => {
     const descTextarea = node.locator('textarea');
     await expect(descTextarea).toBeFocused();
 
-    const initialHeight = await descTextarea.evaluate(el => el.offsetHeight);
+    const initialHeight = await descTextarea.evaluate(el => (el as HTMLElement).offsetHeight);
 
     // Type multiple lines
     await descTextarea.fill('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
-    const newHeight = await descTextarea.evaluate(el => el.offsetHeight);
+    const newHeight = await descTextarea.evaluate(el => (el as HTMLElement).offsetHeight);
     expect(newHeight).toBeGreaterThan(initialHeight);
   });
 
@@ -91,12 +91,12 @@ test.describe('Description', () => {
     await descTextarea.fill('A');
     const firstLineMetrics = await descTextarea.evaluate(el => {
       const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
-      return { height: el.offsetHeight, lineHeight };
+      return { height: (el as HTMLElement).offsetHeight, lineHeight };
     });
     expect(firstLineMetrics.height).toBeLessThan(firstLineMetrics.lineHeight * 1.8);
 
     await descTextarea.fill('A\nB');
-    const secondLineHeight = await descTextarea.evaluate(el => el.offsetHeight);
+    const secondLineHeight = await descTextarea.evaluate(el => (el as HTMLElement).offsetHeight);
     expect(secondLineHeight).toBeGreaterThan(firstLineMetrics.height);
   });
 

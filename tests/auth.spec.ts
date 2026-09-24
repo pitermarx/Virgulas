@@ -80,8 +80,8 @@ const createEncryptedPayload = async (
   doc: Record<string, unknown>
 ) => {
   return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = await import('/js/crypto2.js');
-    const outline = (await import('/js/outline.js')).default;
+    const { encrypt } = await import('/js/app.js' as string);
+    const outline = (await import('/js/app.js' as string)).outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -105,8 +105,8 @@ const seedEncryptedLocalDoc = async (
 ) => {
   await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
     localStorage.clear();
-    const { encrypt } = await import('/js/crypto2.js');
-    const outline = (await import('/js/outline.js')).default;
+    const { encrypt } = await import('/js/app.js' as string);
+    const outline = (await import('/js/app.js' as string)).outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -161,6 +161,51 @@ test.describe('Authentication', () => {
     await expect.poll(async () => {
       return await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
     }).toContain('|');
+  });
+
+  test('rejects a too-short new passphrase when creating local storage', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.goto('/');
+
+    await page.getByLabel('Create a passphrase').fill('short');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText('Passphrase must be at least 10 characters.')).toBeVisible();
+    await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
+  });
+
+  test('upgrades a legacy envelope to the current KDF parameters on unlock', async ({ page }) => {
+    await page.goto('/');
+
+    // Seed a pre-v2 payload: raw base64 at the legacy 310k iterations.
+    await page.evaluate(async () => {
+      const app = await import('/js/app.js' as string);
+      app.outline.reset();
+      app.outline.addChild('root', { text: 'Legacy doc' });
+      const json = app.outline.serialize();
+      const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+      const salt = btoa(String.fromCharCode(...saltBytes));
+      const versioned = await app.encrypt(json, 'correct-horse', salt, 310000);
+      const legacy = versioned.split(':').slice(2).join(':');
+      localStorage.clear();
+      localStorage.setItem('vmd_data_enc', `${salt}|${legacy}`);
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+
+    await page.reload();
+    await page.locator('#auth-passphrase').fill('correct-horse');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.node-content').first()).toContainText('Legacy doc');
+
+    // The debounced save re-encrypts with the current parameters.
+    await expect.poll(
+      async () => page.evaluate(() => localStorage.getItem('vmd_data_enc')),
+      { timeout: 8000 }
+    ).toContain('|v2:600000:');
   });
 
   test('pressing Enter in the passphrase field unlocks like the Unlock button', async ({ page }) => {
@@ -248,6 +293,7 @@ test.describe('Authentication', () => {
   test('stale session preselects remote and prefills username only', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
       localStorage.setItem('vmd_last_username', 'stale@virgulas.com');
     });
     await installMockSupabase(page);
@@ -323,7 +369,10 @@ test.describe('Authentication', () => {
       children: [{ id: 'remote-1', text: 'From Server', children: [] }]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
@@ -348,7 +397,10 @@ test.describe('Authentication', () => {
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
@@ -378,7 +430,10 @@ test.describe('Authentication', () => {
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
@@ -408,7 +463,10 @@ test.describe('Authentication', () => {
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
@@ -465,7 +523,7 @@ test.describe('Authentication', () => {
 
     // Verify unlocked outline contains the expected first node text.
     const firstNodeText = await page.evaluate(async () => {
-      const outline = (await import('/js/outline.js')).default;
+      const outline = (await import('/js/app.js' as string)).outline;
       const root = outline.get('root');
       const firstChildId = root?.children.peek()?.[0];
       if (!firstChildId) return null;
@@ -682,7 +740,7 @@ test.describe('Authentication', () => {
     await page.getByLabel('Create a passphrase').fill('double-submit-pass');
 
     await page.evaluate(async () => {
-      const persistence = (await import('/js/persistence.js')).default as any;
+      const persistence = (await import('/js/app.js' as string)).persistence as any;
       const originalUnlock = persistence.unlock.bind(persistence);
       let unlockCalls = 0;
 
@@ -723,14 +781,17 @@ test.describe('Authentication', () => {
       ]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.goto('about:blank');
     await page.goto('/#remote-parent');
 
     const unlockResult = await page.evaluate(async () => {
-      const persistence = (await import('/js/persistence.js')).default as any;
-      const outline = (await import('/js/outline.js')).default;
+      const persistence = (await import('/js/app.js' as string)).persistence as any;
+      const outline = (await import('/js/app.js' as string)).outline;
       const success = await persistence.unlock('remote-passphrase', { mode: 'remote', trustSession: true });
       return {
         success,
@@ -759,7 +820,7 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Skip — continue in memory' }).click();
 
     // App should be in memory mode now
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-memory-badge')).toBeVisible();
 
     // Memory mode is now remembered — the next visit stays in memory
@@ -775,7 +836,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page);
     await page.goto('/');
 
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 5000 });
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-memory-badge')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toHaveCount(0);
   });
@@ -789,7 +850,10 @@ test.describe('Authentication', () => {
       children: [{ id: 'r1', text: 'Remote Data', children: [] }]
     });
 
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
@@ -805,5 +869,39 @@ test.describe('Authentication', () => {
     expect(savedMode).toBe('memory');
   });
 
+  // The Supabase client is a ~220KB code-split chunk. These two tests pin the
+  // rule that keeps it off the critical path: only a persisted remote mode may
+  // pull it in.
+  test('a persisted remote mode loads the supabase chunk on demand', async ({ page }) => {
+    const chunkRequests: string[] = [];
+    page.on('request', (request) => {
+      if (/\/js\/chunk-[^/]+\.js$/.test(request.url())) chunkRequests.push(request.url());
+    });
+
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
+    await page.goto('/');
+
+    await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
+    await expect.poll(() => chunkRequests.length).toBeGreaterThan(0);
+  });
+
+  test('local mode never downloads the supabase chunk', async ({ page }) => {
+    const chunkRequests: string[] = [];
+    page.on('request', (request) => {
+      if (/\/js\/chunk-[^/]+\.js$/.test(request.url())) chunkRequests.push(request.url());
+    });
+
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.goto('/');
+
+    await expect(page.locator('#auth-passphrase')).toBeVisible();
+    expect(chunkRequests).toEqual([]);
+  });
 });
 

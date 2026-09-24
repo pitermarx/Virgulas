@@ -1,24 +1,9 @@
-// Bump VENDOR_CACHE when vendor/ files change (after npm install / sync-vendor)
-const VENDOR_CACHE = 'virgulas-vendor-v13'
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v5'
-// Bump APP_CACHE when app JS, CSS, or HTML changes
-const APP_CACHE = 'virgulas-app-v47'
+// Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
+const APP_CACHE = 'virgulas-app-v75'
 
-const KNOWN_CACHES = new Set([VENDOR_CACHE, FONTS_CACHE, APP_CACHE])
-
-// Pinned library files — served cache-first; bump VENDOR_CACHE on any change
-const VENDOR_SHELL = [
-  './vendor/preact.module.js',
-  './vendor/hooks.module.js',
-  './vendor/htm.module.js',
-  './vendor/htm-preact.module.js',
-  './vendor/signals-core.module.js',
-  './vendor/signals.module.js',
-  './vendor/marked.esm.js',
-  './vendor/purify.es.mjs',
-  './vendor/supabase.js'
-]
+const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
 
 // Font and icon assets — served cache-first; bump FONTS_CACHE on any change
 const FONTS_SHELL = [
@@ -43,29 +28,14 @@ const APP_SHELL = [
   './',
   './index.html',
   './version.json',
-  './css/style.css',
+  './js/app.css',
   './site.webmanifest',
-  './js/app.js',
-  './js/biometrics.js',
-  './js/inbox.js',
-  './js/crypto2.js',
-  './js/devtools.js',
-  './js/outline.js',
-  './js/persistence.js',
-  './js/search.js',
-  './js/shortcuts.js',
-  './js/sync.js',
-  './js/markdown.js',
-  './js/meta.js',
-  './js/ui.js',
-  './js/utils.js',
-  './js/tasks.js'
+  './js/app.js'
 ]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
-      caches.open(VENDOR_CACHE).then((cache) => cache.addAll(VENDOR_SHELL)),
       caches.open(FONTS_CACHE).then((cache) => cache.addAll(FONTS_SHELL)),
       caches.open(APP_CACHE).then((cache) => cache.addAll(APP_SHELL))
     ]).then(() => self.skipWaiting())
@@ -97,10 +67,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   const path = url.pathname
-  if (path.includes('/vendor/')) {
-    event.respondWith(cacheFirst(request, VENDOR_CACHE))
-    return
-  }
   if (path.includes('/fonts/') || path.includes('/media/')) {
     event.respondWith(cacheFirst(request, FONTS_CACHE))
     return
