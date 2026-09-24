@@ -144,7 +144,14 @@ test.describe('Quick capture fast path', () => {
     expect(Math.abs(buttonMid - inputMid)).toBeLessThan(8);
   });
 
-  test('clicking the Save to button copies the bookmarklet to the clipboard', async ({ page, context }) => {
+  test('clicking the Save to button copies the bookmarklet to the clipboard', async ({ page, context, browserName }) => {
+    // Playwright only implements the clipboard-read/clipboard-write permissions
+    // for Chromium; Firefox and WebKit reject them outright rather than
+    // ignoring them, which aborted this spec in CI.
+    test.skip(
+      browserName !== 'chromium',
+      'Clipboard permissions are only supported in Chromium.'
+    );
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await setupDoc(page, { id: 'root', text: 'Root', children: [] });
 
