@@ -210,7 +210,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
       pull-requests: read
@@ -243,7 +243,7 @@ jobs:
           set -euo pipefail
 
           if [ -z "$APP_VERSION" ]; then
-            APP_VERSION=$(node -p "require('./package.json').version")
+            APP_VERSION=$(bun -e "console.log(JSON.parse(await Bun.file('package.json').text()).version)")
           fi
 
           # Build the app (bundles TS + CSS, stamps version.json and the meta tag).
@@ -258,6 +258,59 @@ jobs:
           mkdir -p _site
           cp -r dist/. _site/
           echo "Built app version: $APP_VERSION"
+
+      - name: Package dist as a release archive
+        id: package
+        env:
+          APP_VERSION: ${{ needs.release.outputs.resolved_version }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APP_VERSION" ]; then
+            APP_VERSION=$(bun -e "console.log(JSON.parse(await Bun.file('package.json').text()).version)")
+          fi
+
+          ARCHIVE="virgulas-${APP_VERSION}.zip"
+
+          # `zip` ships on the GitHub-hosted Ubuntu image; fail clearly if absent.
+          command -v zip >/dev/null 2>&1 || (echo "The 'zip' utility is required (apt install zip)" && exit 1)
+
+          # Zip the *contents* of dist/ (no wrapper directory) so the archive can be
+          # extracted directly into a web root. Built from inside dist/ so stored paths
+          # are relative (no absolute runner paths) and reproducible across runners.
+          # -X omits extra file attributes; source maps are never shipped anyway.
+          (cd dist && zip -r -X "../${ARCHIVE}" . -x '*.map')
+
+          test -f "$ARCHIVE" || (echo "Archive was not created" && exit 1)
+
+          # Guard the deploy contract: the archive must be a flat, directly servable site.
+          unzip -l "$ARCHIVE" | grep -q ' index.html$' || (echo "Archive is missing index.html at its root" && exit 1)
+          if unzip -l "$ARCHIVE" | grep -q '\.map$'; then
+            echo "Refusing to package source maps"
+            exit 1
+          fi
+
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "Packaged $(du -h "$ARCHIVE" | cut -f1) into $ARCHIVE"
+          unzip -l "$ARCHIVE"
+
+      - name: Attach archive to the release
+        if: needs.release.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="${{ needs.release.outputs.release_tag }}"
+          ARCHIVE="${{ steps.package.outputs.archive }}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not found; skipping asset upload."
+            exit 0
+          fi
+
+          gh release upload "$TAG" "$ARCHIVE" --clobber
+          echo "Attached $ARCHIVE to $TAG"
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6

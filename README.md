@@ -221,6 +221,7 @@ Auth tests that require a specific account attempt sign-in first and create the 
 - Main branch CI validates commit policy, computes semantic version bumps from Conventional Commits, and publishes a GitHub release tag when releasable commits exist.
 - Main branch CI publishes the latest database migrations to the linked Supabase project before deploy.
 - Main branch deploys the static site to GitHub Pages: `bun scripts/build-bun.mjs source dist --version <resolved>` bundles the app into `dist/`, stamps the version into `index.html` and `version.json`, and `dist/` is uploaded as the Pages artifact.
+- The same deploy job zips the contents of `dist/` (no wrapper directory, source maps excluded) into `virgulas-<version>.zip` and attaches it to the `v<version>` GitHub Release as a downloadable asset. The archive is only uploaded when a release tag exists for the run; `workflow_dispatch` runs without a new release skip the asset upload.
 - Pull request workflows (same-repo and forks) do not publish Pages artifacts.
 - A daily workflow runs E2E tests against `https://virgulas.com`.
 
