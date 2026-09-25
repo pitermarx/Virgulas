@@ -45,7 +45,8 @@
   - Pull-before-push: before every write, the remote `updated_at` timestamp is checked; if the remote is newer the doc is fetched and merged before uploading
   - Per-node `lastModified` timestamps drive node-level merge: one-side-only changes are applied silently; same-node different-field changes are also auto-merged
   - Conflict resolution when the same field is edited on both sides: a blocking modal shows each conflict side-by-side with "Keep local" / "Keep remote" per field and "Use all local" / "Use all remote" bulk buttons; "Apply" is disabled until every conflict is resolved
-  - Remote sync waits until typing pauses before checking or uploading, so active typing supersedes stale background sync attempts
+  - Remote sync waits until typing pauses before checking or uploading, so active typing supersedes stale background sync attempts. A push that is deferred this way is **rescheduled, not dropped** — the edit still reaches the server during a long typing burst
+  - Autosave is debounced (1 s after the last change) but bounded: continuous typing cannot postpone a save (and its push) indefinitely — a write is forced within ~3 s of the first unsaved change
   - 60-second background polling checks for remote updates while the app is open; it defers remote checks while local edits are still active and pauses when conflicts are pending
 - Task management: any node can become a task
   - Task nodes keep their bullet (click to zoom) and show a checkbox after it; clicking the checkbox toggles pending ↔ done

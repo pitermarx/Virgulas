@@ -198,6 +198,15 @@ export function canStartRemoteSync(now = Date.now()) {
     return now >= remoteSyncNotBefore.peek()
 }
 
+/**
+ * Milliseconds until a deferred remote push may run (0 when it can run now).
+ * Used to reschedule a push that was skipped because the user is still typing,
+ * instead of dropping it until the next unrelated save.
+ */
+export function remoteSyncRetryDelay(now = Date.now()) {
+    return Math.max(0, remoteSyncNotBefore.peek() - now)
+}
+
 export function isRemoteSyncAttemptStale(attempt: RemoteSyncAttempt | null, now = Date.now()) {
     if (!attempt) return true
     return attempt.epoch !== localWriteEpoch.peek() || now < remoteSyncNotBefore.peek()
