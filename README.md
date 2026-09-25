@@ -226,7 +226,7 @@ Auth tests that require a specific account attempt sign-in first and create the 
 - Main branch deploys the static site to GitHub Pages: `bun scripts/build-bun.mjs source dist --version <resolved>` bundles the app into `dist/`, stamps the version into `index.html` and `version.json`, and `dist/` is uploaded as the Pages artifact.
 - The same deploy job zips the contents of `dist/` (no wrapper directory, source maps excluded) into `virgulas-<version>.zip` and attaches it to the `v<version>` GitHub Release as a downloadable asset. The archive is only uploaded when a release tag exists for the run; `workflow_dispatch` runs without a new release skip the asset upload.
 - Pull request workflows (same-repo and forks) do not publish Pages artifacts.
-- A daily workflow runs E2E tests against `https://virgulas.com`.
+- A daily workflow runs E2E tests against `https://virgulas.com`. Specs that mock Supabase through the `__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded from that run, because production builds compile the seam out.
 
 Repository secrets expected by workflows:
 
