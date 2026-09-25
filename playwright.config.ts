@@ -15,6 +15,7 @@ const TEST_HOOK_SPECS = [
   '**/auth.spec.ts',
   '**/sync.spec.ts',
   '**/sync-polling-merge.spec.ts',
+  '**/synctrigger.spec.ts',
 ];
 
 const parseDotEnv = (raw: string): Record<string, string> => {

@@ -41,8 +41,16 @@ const installMock = async (page: Page) => {
 
 const unlockRemote = async (page: Page, pass: string) => {
   const email = page.getByLabel('Email');
+  const enableSecureStorage = page.getByRole('button', { name: /Enable Secure Storage/i });
+
+  // The lock screen is only rendered once the async auth bootstrap flips the
+  // app shell to ready, which can land *after* the reload's load event. Wait for
+  // either surface before branching: a bare isVisible() check races this first
+  // paint and sends the flow down the memory-mode path that never appears.
+  await expect(email.or(enableSecureStorage).first()).toBeVisible({ timeout: 15000 });
+
   if (!(await email.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: /Enable Secure Storage/i }).click();
+    await enableSecureStorage.click();
     await page.getByRole('button', { name: /Change mode/i }).click();
     await page.getByRole('button', { name: 'Remote', exact: true }).click();
   }
