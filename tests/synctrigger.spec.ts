@@ -90,10 +90,10 @@ test.describe('remote sync is triggered by edits', () => {
     await page.locator('.node-text-md').first().click();
     await page.locator('.node-content input').first().fill('Edited text');
     await page.locator('body').click();
-    await page.waitForTimeout(5000);
 
-    const after = await page.evaluate(() => (window as any).__mock.upserts.length);
-    expect(after, 'editing text must push to the server').toBeGreaterThan(before);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__mock.upserts.length), { timeout: 10000 })
+      .toBeGreaterThan(before);
   });
 
   test('creating a node pushes to the server', async ({ page }) => {
@@ -108,10 +108,10 @@ test.describe('remote sync is triggered by edits', () => {
     await page.keyboard.press('Enter');
     await page.locator('.node-content input').last().fill('Brand new node');
     await page.locator('body').click();
-    await page.waitForTimeout(5000);
 
-    const after = await page.evaluate(() => (window as any).__mock.upserts.length);
-    expect(after, 'creating a node must push to the server').toBeGreaterThan(before);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__mock.upserts.length), { timeout: 10000 })
+      .toBeGreaterThan(before);
   });
 
   test('an edit made while typing continuously still reaches the server', async ({ page }) => {
