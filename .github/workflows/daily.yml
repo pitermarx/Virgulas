@@ -11,8 +11,12 @@ permissions:
 
 jobs:
   test-production:
-    name: E2E Tests (virgulas.com)
+    name: E2E Tests (virgulas.com, shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -28,8 +32,8 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps
 
-      - name: Run E2E tests against production
-        run: bun run test:e2e
+      - name: Run E2E tests against production (shard ${{ matrix.shard }}/3)
+        run: bun run test:e2e -- --shard=${{ matrix.shard }}/3
         env:
           CI: true
           BASE_URL: https://virgulas.com
@@ -38,7 +42,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-results-production
+          name: playwright-results-production-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
