@@ -91,6 +91,7 @@ The target node name is configurable under **Options → Quick capture → Inbox
 - **Encrypted passphrase for biometric unlock** is sealed on-device in IndexedDB behind WebAuthn user verification. Signing out, switching storage mode, and deleting local data all revoke that seal, so a shared device cannot recover the passphrase after a session ends. It is still a convenience gate rather than a hardware key binding — see `source/js/biometrics.ts` for the documented limitations.
 - **No source maps in the deployed bundle.** `bun run build` and the deploy pipeline build with `--no-sourcemap` (and CI fails if `dist/js/app.js.map` appears); `bun run dev` keeps them for local debugging.
 - **Supabase client test seam.** E2E specs can substitute the Supabase client through `window.supabase`, but that seam is compiled out of production builds via the `__TEST_HOOKS__` build flag, so a same-origin script cannot hijack sign-in or the session token.
+- **Test-build KDF scaling.** The Playwright bundle (`bun run dev:test`) divides the PBKDF2 work factor by `__TEST_KDF_SCALE__` so deriving a key hundreds of times does not dominate the E2E suite. The envelope still records the nominal iteration count, so `getEnvelopeIterations`/`needsKdfUpgrade` and the on-screen `PBKDF2 600k` value are unchanged. Production builds define the scale as `1`.
 
 ## Setup
 
@@ -104,7 +105,7 @@ The target node name is configurable under **Options → Quick capture → Inbox
     bun run dev
     ```
 
-  `bun run dev:test` is the same build with the `__TEST_HOOKS__` seam enabled; Playwright uses it automatically to install its mock Supabase client. Production builds (`bun run build`) leave the seam off.
+  `bun run dev:test` is the same build with the `__TEST_HOOKS__` seam enabled and the PBKDF2 work factor scaled down by `__TEST_KDF_SCALE__`; Playwright uses it automatically to install its mock Supabase client and to keep E2E setup/unlock fast. Production builds (`bun run build`) leave both off.
 
   `bun run build` bundles `source/js/app.ts` and the `source/css/*.css` modules into
   `dist/js/app.js` + `dist/js/app.css`, and stamps the version into `dist/index.html`
@@ -220,13 +221,13 @@ Auth tests that require a specific account attempt sign-in first and create the 
 
 ## CI/CD
 
-- Pull requests and pushes run Playwright E2E tests in GitHub Actions.
+- Pull requests and pushes run Playwright E2E tests in GitHub Actions, sharded across three parallel jobs (`--shard=<i>/3`) so the wall-clock time stays low. The shared `setupDoc` helper encrypts in the test runner and seeds storage before the app boots, so each test pays one navigation instead of two.
 - Main branch CI validates commit policy, computes semantic version bumps from Conventional Commits, and publishes a GitHub release tag when releasable commits exist.
 - Main branch CI publishes the latest database migrations to the linked Supabase project before deploy.
 - Main branch deploys the static site to GitHub Pages: `bun scripts/build-bun.mjs source dist --version <resolved>` bundles the app into `dist/`, stamps the version into `index.html` and `version.json`, and `dist/` is uploaded as the Pages artifact.
 - The same deploy job zips the contents of `dist/` (no wrapper directory, source maps excluded) into `virgulas-<version>.zip` and attaches it to the `v<version>` GitHub Release as a downloadable asset. The archive is only uploaded when a release tag exists for the run; `workflow_dispatch` runs without a new release skip the asset upload.
 - Pull request workflows (same-repo and forks) do not publish Pages artifacts.
-- A daily workflow runs E2E tests against `https://virgulas.com`. Specs that mock Supabase through the `__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded from that run, because production builds compile the seam out.
+- A daily workflow runs E2E tests against `https://virgulas.com`, also sharded across three parallel jobs. Specs that mock Supabase through the `__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded from that run, because production builds compile the seam out.
 
 Repository secrets expected by workflows:
 
