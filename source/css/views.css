@@ -54,6 +54,11 @@
   transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
+.search-input:focus {
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--focus-halo);
+}
+
 .search-counter {
   font-size: 0.8rem;
   color: var(--color-text-muted);
@@ -71,8 +76,17 @@
   color: var(--color-text-muted);
   cursor: text;
   white-space: pre-wrap;
-  padding: 2px 0;
+  /* Inline padding with a matching negative margin keeps the text aligned with
+     the edit-mode textarea while giving the hover wash a block to paint on. */
+  padding: 2px var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
   border-radius: var(--radius-sm);
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.zoom-desc-display:hover {
+  background-color: var(--color-hover-surface);
+  color: var(--color-text-primary);
 }
 
 .zoom-desc-placeholder {

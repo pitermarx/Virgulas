@@ -198,6 +198,24 @@
   font-weight: 600;
 }
 
+.modal-close:focus-visible,
+.toolbar-btn:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+/* Touch targets: status-bar and close controls sit at the edge of the viewport. */
+@media (pointer: coarse) {
+  .toolbar-btn {
+    min-height: 32px;
+  }
+
+  .modal-close {
+    min-width: 36px;
+    min-height: 36px;
+  }
+}
+
 /* ── Keyboard keycaps ── */
 kbd {
   display: inline-block;
@@ -650,6 +668,6 @@ a:hover {
 
 .search-token-inline:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
+  box-shadow: var(--focus-halo);
 }
 

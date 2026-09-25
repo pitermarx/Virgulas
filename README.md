@@ -22,11 +22,13 @@
 - Search: substring match, `Tab`/`Shift+Tab` or `↑`/`↓` cycles results, pressing `Enter` or clicking a result zooms to the match; current result highlighted distinctly; mobile includes a status-bar Search button
 - Node typography hierarchy (root 1rem, level 2 0.9rem, level 3+ 0.85rem)
 - Distinct focus style (accent background + left border) separate from hover style
+- Keyboard-visible focus rings on every control: solid accent ring for buttons and icon controls, soft accent halo for text fields; text fields use an accent caret
+- Honours `prefers-reduced-motion`: design-system transitions collapse to zero and the splash fade is dropped
+- Touch devices get larger hit areas for the status-bar buttons, close controls, and Tasks panel pills
 - Theme toggle (light/dark) persisted in localStorage
 - Bottom-sheet lock screen flow with advanced mode switching:
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage; new document starts with one empty node
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
-    - If the Supabase project requires **email confirmation**, sign-up returns no session; the lock screen then says so explicitly ("Account created. Check your inbox and confirm your email address…") instead of later failing with a generic session error.
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase; new empty file gets one initial node
   - **Change mode** reveals the Local/Remote/File selector and full auth form
 - **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
@@ -45,8 +47,7 @@
   - Pull-before-push: before every write, the remote `updated_at` timestamp is checked; if the remote is newer the doc is fetched and merged before uploading
   - Per-node `lastModified` timestamps drive node-level merge: one-side-only changes are applied silently; same-node different-field changes are also auto-merged
   - Conflict resolution when the same field is edited on both sides: a blocking modal shows each conflict side-by-side with "Keep local" / "Keep remote" per field and "Use all local" / "Use all remote" bulk buttons; "Apply" is disabled until every conflict is resolved
-  - Remote sync waits until typing pauses before checking or uploading, so active typing supersedes stale background sync attempts. A push that is deferred this way is **rescheduled, not dropped** — the edit still reaches the server during a long typing burst
-  - Autosave is debounced (1 s after the last change) but bounded: continuous typing cannot postpone a save (and its push) indefinitely — a write is forced within ~3 s of the first unsaved change
+  - Remote sync waits until typing pauses before checking or uploading, so active typing supersedes stale background sync attempts
   - 60-second background polling checks for remote updates while the app is open; it defers remote checks while local edits are still active and pauses when conflicts are pending
 - Task management: any node can become a task
   - Task nodes keep their bullet (click to zoom) and show a checkbox after it; clicking the checkbox toggles pending ↔ done
@@ -59,8 +60,7 @@
   - Task state is preserved in Local/Remote JSON and in File mode (`.vmd`) via `[ ]` / `[x]` prefixes
 
 - Keyboard shortcuts modal (`?` button) — desktop only (hidden on mobile)
-- Options modal: theme toggle, mode-specific session action (Sign out / Lock / Change file), purge data, and — in Remote mode — **Delete account**; the top summary row shows the storage mode and encrypted blob size with short encryption details (AES-GCM-256, PBKDF2 600k, random salt), and email, account password, and encryption passphrase are edited inline in that same row. The source repository is linked from the version text at the bottom of the panel.
-- **Delete account** (Remote mode): removes the encrypted `outlines` row from the server through a row-level-security-scoped DELETE policy, clears the local session (ciphertext, biometric seal, quick-capture queue, remembered mode and sync timestamp) and signs out, landing in Memory mode. The `auth.users` record itself is not removed — deleting it requires the service role, which the browser client never holds; the panel says so explicitly.
+- Options modal: theme toggle, source link, mode-specific session action (Sign out / Lock / Change file), purge data; the top summary row shows the storage mode and encrypted blob size with short encryption details (AES-GCM-256, PBKDF2 600k, random salt), and email, account password, and encryption passphrase are edited inline in that same row
 - **Quick capture inbox:** text shared to Virgulas, sent to `/?quick-add=...`, or captured with the bookmarklet is held in an unencrypted, device-local queue and filed under a configurable root-level Inbox node after secure storage is unlocked; the web app manifest also exposes a Quick capture shortcut. A capture visit never boots the app or prompts for unlock — see below.
 - `Enter` on a collapsed node with children creates a sibling, not a child
 
@@ -84,7 +84,6 @@ The target node name is configurable under **Options → Quick capture → Inbox
 ## Security
 
 - **Pinned third-party analytics.** The only external script is the Umami tracker. It is loaded with a `sha384` subresource-integrity hash and `crossorigin="anonymous"` and is the sole host allowed by `script-src`, so the analytics host cannot silently ship different code — a new Umami build must be re-hashed deliberately (README → this section). Everything else is bundled at build time. A strict `Content-Security-Policy` (`script-src 'self' https://um.vps.pitermarx.com`, `object-src 'none'`, `base-uri 'none'`, `frame-src 'none'`) is declared in `index.html` with no inline script. `connect-src` in the source shell allows localhost and the `*.supabase.co` wildcard for development; production builds (`bun run build`) replace both with the concrete Supabase origin from `sync.ts` (`--supabase-url` / `SUPABASE_PROJECT` / `SUPABASE_URL` can override), so the deployed artifact can only reach that one project. `bun run dev` and `dev:test` keep the local sources. `frame-ancestors`/HSTS/X-Frame-Options/Referrer-Policy cannot be set from a meta tag and must be configured at the host/CDN.
-- **Self-service erasure.** Remote accounts can be deleted from Options → **Delete account**. The client removes the encrypted `outlines` row through a row-level-security DELETE policy scoped to `auth.uid() = user_id`, then clears the local session and signs out. The `auth.users` record is not removed by the browser client (that requires the service role); the row's foreign key already cascades from `auth.users`, so deleting the auth user removes the data too.
 - **Zero-knowledge sync.** Documents are gzip-compressed and encrypted with AES-GCM-256 under a key derived from your passphrase (PBKDF2-HMAC-SHA256 at 600,000 iterations, per-document random salt, random IV per write). The iteration count is recorded in the payload envelope (`v2:<iterations>:<base64>`), so it can be raised without breaking existing documents: pre-`v2` payloads still decrypt at 310k and are re-encrypted with the current parameters on the next save. The derived key is cached for the unlocked session so autosave does not re-run the KDF. Only `salt` + ciphertext leave the device; the server never sees plaintext.
 - **New passphrases must be at least 10 characters.** Existing shorter passphrases still unlock — only newly chosen ones are checked (create, reset, and change flows).
 - **Markdown sanitisation.** Rendered markdown is sanitised with an explicit allow-list (`strong, em, a, img, code, br`). Raw HTML cannot inject layout, forms, styling, ids, or classes into app chrome.

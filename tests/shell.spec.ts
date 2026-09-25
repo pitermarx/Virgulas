@@ -60,3 +60,19 @@ test('splash does not wait for the webfont', async ({ page }) => {
   await expect(page.locator('#splash')).toBeHidden();
   await expect(page.locator('#app .app-shell')).toBeVisible();
 });
+
+test('reduced motion collapses design-system transitions', async ({ page }) => {
+  // Browsers serialise the token differently (150ms vs .15s), so compare the
+  // parsed duration instead of the raw string.
+  const transitionSeconds = () =>
+    page.evaluate(() =>
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--transition-base'))
+    );
+
+  await page.goto('/');
+  await expect(page.locator('#splash')).toBeHidden();
+  expect(await transitionSeconds()).toBeGreaterThan(0);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await transitionSeconds()).toBe(0);
+});

@@ -293,16 +293,31 @@
   background: none;
   border: none;
   cursor: pointer;
+  font-family: var(--font-base);
   font-size: 1.25rem;
   color: var(--color-text-muted);
   line-height: 1;
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  transition: color var(--transition-base);
+  transition: color var(--transition-base), background-color var(--transition-base);
 }
 
 .tasks-panel-close:hover {
   color: var(--color-text-primary);
+  background-color: var(--color-hover-surface);
+}
+
+.tasks-panel-close:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+/* Touch targets: the icon-only close control needs a comfortable hit area. */
+@media (pointer: coarse) {
+  .tasks-panel-close {
+    min-width: 36px;
+    min-height: 36px;
+  }
 }
 
 .tasks-panel-body {
@@ -354,6 +369,7 @@
   padding: var(--space-2) var(--space-4);
   text-align: left;
   color: var(--color-text-muted);
+  font-family: var(--font-base);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -363,6 +379,12 @@
 
 .tasks-group-header:hover {
   background: var(--color-hover-surface);
+}
+
+/* Full-bleed row: keep the ring inside the panel's scroll container. */
+.tasks-group-header:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -2px;
 }
 
 .tasks-group-toggle {
@@ -419,6 +441,11 @@
 
 .task-row-check:hover {
   opacity: 0.7;
+}
+
+.task-row-check:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 1px;
 }
 
 .task-row-body {
@@ -503,6 +530,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   color: var(--color-text-muted);
+  font-family: var(--font-base);
   font-size: 0.7rem;
   padding: 1px 8px;
   cursor: pointer;
@@ -513,10 +541,23 @@
   background: var(--color-hover-surface);
 }
 
+.tasks-window-btn:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
 .tasks-window-btn--active {
   background: var(--color-accent-primary);
   border-color: var(--color-accent-primary);
   color: #fff;
+}
+
+/* Touch targets: the window pills are the smallest controls in the panel. */
+@media (pointer: coarse) {
+  .tasks-window-btn {
+    min-height: 32px;
+    padding-inline: var(--space-3);
+  }
 }
 
 .tasks-scheduled-hidden {

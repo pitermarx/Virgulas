@@ -394,7 +394,7 @@ test.describe('Keyboard', () => {
   });
 
   test('Shortcuts popup includes multi-select and search shortcuts', async ({ page }) => {
-    await page.getByRole('button', { name: '?' }).click();
+    await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
 
     const shortcutsModal = page.locator('#keyboard-shortcuts');
     await expect(shortcutsModal).toBeVisible();

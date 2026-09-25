@@ -610,7 +610,7 @@ export function StatusToolbar() {
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
         </div>
         <div class="toolbar-brand">
-            ${!isMobile && html`<button class="toolbar-btn" onClick=${() => openModal('keyboard-shortcuts')}>?</button>`}
+            ${!isMobile && html`<button class="toolbar-btn" onClick=${() => openModal('keyboard-shortcuts')} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>`}
             <button class=${'toolbar-btn toolbar-btn-tasks' + (hasOverdueTasks.value ? ' toolbar-btn-tasks--overdue' : '')} onClick=${() => tasksPanelOpen.value = !tasksPanelOpen.peek()} title="Tasks (Ctrl+Alt+K)" aria-label="Open tasks panel">
                 <svg viewBox="-1 -1 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="" y="1" width="14" height="14" rx="3" stroke-width="1.5" />
@@ -646,7 +646,7 @@ export function MainToolbar() {
             }}
                         onKeyDown=${(e: any) => handleSearchKeyDown(e, focus)} />
                     ${counterText ? html`<span class="search-counter">${counterText}</span>` : null}
-                    <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)}>×</button>
+                    <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)} aria-label="Close search" title="Close search">×</button>
                 </div>
             </div>
         </div>`

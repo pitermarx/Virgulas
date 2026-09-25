@@ -109,6 +109,7 @@ Usage guidance:
 - Use transitions for color, border, box-shadow, transform, and opacity
 - Loading spinner: continuous linear rotation (~0.8s)
 - Splash/intro fade: longer fade (~700ms)
+- `prefers-reduced-motion: reduce` collapses `--transition-base` to zero, drops the splash fade, and disables the locked-canvas blur fade
 
 ## 7. Layout Structure
 
@@ -200,8 +201,11 @@ Usage guidance:
 ## 9. Accessibility Baseline
 
 - Ensure visible keyboard focus for all interactive elements.
+  - Controls on a surface (buttons, toolbar/close icons, panel rows, pills) draw a 2px accent outline with a 2px offset (`--focus-outline`); full-bleed panel rows use a negative offset so the ring stays inside the scroll container.
+  - Text fields use an accent border plus a 3px soft accent halo (`--focus-halo`), matching the search and dialog inputs.
+- Text editing surfaces (node text, descriptions, passphrase and dialog fields) show an accent-coloured caret.
 - Preserve sufficient contrast in both themes for text and controls.
-- Keep touch targets comfortable on mobile.
+- Keep touch targets comfortable on mobile: status-bar buttons, close controls, and Tasks panel pills grow on coarse pointers.
 - Avoid relying on color alone where practical (pair with icon/shape/state).
 
 ## 10. Implementation Notes

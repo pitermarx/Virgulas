@@ -146,6 +146,13 @@
   transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s;
 }
 
+/* Reduced motion: the blurred lock background snaps into place (see base.css). */
+@media (prefers-reduced-motion: reduce) {
+  .main-view.is-locked {
+    transition: none;
+  }
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -216,4 +216,29 @@ test.describe('Search', () => {
     await expect(nodes).toHaveCount(3);
     await expect(searchInput).not.toBeVisible();
   });
+
+  test('search input shows the accent focus ring while typing', async ({ page }) => {
+    await page.keyboard.press('Escape');
+    const searchInput = page.getByPlaceholder('Search...');
+    await expect(searchInput).toBeFocused();
+
+    // The border colour animates for 150ms, so poll until it settles on
+    // --color-accent-primary (rgb(42, 92, 170) in the light theme).
+    await expect
+      .poll(() => searchInput.evaluate((el) => getComputedStyle(el).borderTopColor))
+      .toBe('rgb(42, 92, 170)');
+
+    // The shared --focus-halo token paints the soft ring around the field.
+    const boxShadow = await searchInput.evaluate((el) => getComputedStyle(el).boxShadow);
+    expect(boxShadow).not.toBe('none');
+  });
+
+  test('the search close control is a labelled button', async ({ page }) => {
+    await page.keyboard.press('Escape');
+    const close = page.getByRole('button', { name: 'Close search' });
+    await expect(close).toBeVisible();
+
+    await close.click();
+    await expect(page.getByPlaceholder('Search...')).not.toBeVisible();
+  });
 });
