@@ -3,6 +3,7 @@ import {
     createRemoteSyncAttempt,
     isRemoteSyncAttemptStale,
     canStartRemoteSync,
+    remoteSyncRetryDelay,
     noteLocalWriteActivity,
     beginRemotePush,
     recordCompletedRemotePush,
@@ -45,6 +46,20 @@ await test('a new local write invalidates an in-flight attempt', () => {
 
 await test('null attempts are always stale', () => {
     assertEqual(isRemoteSyncAttemptStale(null), true, 'null attempt')
+})
+
+// Placed last in this section: `remoteSyncNotBefore` is monotonic for the whole
+// suite, and this uses the largest offset so it cannot affect earlier cases.
+await test('remoteSyncRetryDelay reports how long a push is deferred', () => {
+    outline.dirtyDebounceTimeout = 200
+    const base = Date.now() + 100_000_000
+
+    noteLocalWriteActivity(base)
+    // This is what lets a deferred push be rescheduled instead of dropped.
+    assertEqual(remoteSyncRetryDelay(base), 200, 'full window remaining at the write')
+    assertEqual(remoteSyncRetryDelay(base + 120), 80, 'counting down mid-window')
+    assertEqual(remoteSyncRetryDelay(base + 200), 0, 'ready exactly at the boundary')
+    assertEqual(remoteSyncRetryDelay(base + 500), 0, 'never negative once ready')
 })
 
 await test('beginRemotePush records the start time and returns an ISO timestamp', () => {

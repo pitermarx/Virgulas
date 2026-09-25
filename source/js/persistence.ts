@@ -19,6 +19,7 @@ import {
   noteLocalWriteActivity,
   createRemoteSyncAttempt,
   canStartRemoteSync,
+  remoteSyncRetryDelay,
   isRemoteSyncAttemptStale,
   beginRemotePush,
   recordCompletedRemotePush,
@@ -236,6 +237,127 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promis
 }
 
 let lastTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+// The save debounce below is reset by every change, so continuous typing would
+// postpone autosave (and the remote push) indefinitely. This separate timer is
+// armed on the first unsaved change and is NOT cleared by later keystrokes, so a
+// save is guaranteed within saveMaxWaitMs even while the user keeps typing.
+const saveMaxWaitMs = 3000
+let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
+let pendingSave: (() => void) | null = null
+
+function armMaxWaitSave() {
+  if (maxWaitTimer !== null) return
+  maxWaitTimer = setTimeout(() => {
+    maxWaitTimer = null
+    pendingSave?.()
+  }, saveMaxWaitMs)
+}
+
+function clearMaxWaitSave() {
+  if (maxWaitTimer !== null) {
+    clearTimeout(maxWaitTimer)
+    maxWaitTimer = null
+  }
+}
+
+// A remote push is skipped while the user is still typing (`canStartRemoteSync`
+// is false until the write debounce elapses). Previously that skip silently
+// dropped the push: the edit only reached the server on the next unrelated save.
+// These track a deferred push so it is retried once typing stops.
+let deferredPushTimer: ReturnType<typeof setTimeout> | null = null
+let deferredPushPayload: { encrypted: string; salt: string; passphrase: string } | null = null
+
+function clearDeferredPush() {
+  if (deferredPushTimer !== null) {
+    clearTimeout(deferredPushTimer)
+    deferredPushTimer = null
+  }
+  deferredPushPayload = null
+}
+
+/**
+ * Schedules the most recent encrypted payload to be pushed once the write
+ * debounce has elapsed. Only one retry is ever queued: a newer payload replaces
+ * an older one, so the server converges on the latest state.
+ */
+function scheduleDeferredPush(encrypted: string, salt: string, passphrase: string) {
+  deferredPushPayload = { encrypted, salt, passphrase }
+  if (deferredPushTimer !== null) {
+    clearTimeout(deferredPushTimer)
+  }
+  // +50ms so we land just after `remoteSyncNotBefore` rather than exactly on it.
+  const delay = remoteSyncRetryDelay() + 50
+  deferredPushTimer = setTimeout(() => {
+    deferredPushTimer = null
+    void flushDeferredPush()
+  }, delay)
+}
+
+async function flushDeferredPush() {
+  const payload = deferredPushPayload
+  // Keep the payload until the retry actually runs; a later edit replaces it.
+  if (!payload) return
+  if (!canStartRemoteSync()) {
+    // Still typing — re-arm for the remaining deferral.
+    scheduleDeferredPush(payload.encrypted, payload.salt, payload.passphrase)
+    return
+  }
+  if (pendingConflicts.peek().length > 0) {
+    // A merge is pending; the conflict flow owns the upload.
+    deferredPushPayload = null
+    return
+  }
+
+  const attempt = createRemoteSyncAttempt()
+  await runExclusiveRemoteSync(async () => {
+    if (pendingConflicts.peek().length > 0) return
+    // This push targets whatever the latest payload is, not a specific edit, so
+    // it must not bail on a newer write epoch — the whole point is to converge
+    // the server on the newest state once typing pauses.
+
+    try {
+      syncStatus.value = 'syncing'
+      const lastSyncedAt = parseInt(store.syncTs.get('0') || '0') || 0
+      let isRemoteNewer = false
+      try {
+        isRemoteNewer = await checkRemoteNewer(lastSyncedAt)
+      } catch { /* proceed with a direct push */ }
+
+      if (isRemoteNewer) {
+        const result = await pullAndMerge(payload.passphrase, payload.salt)
+        if (!result.clean) {
+          syncStatus.value = 'synced'
+          deferredPushPayload = null
+          return
+        }
+        if (result.mergedJson) {
+          const mergedEncrypted = await encrypt(result.mergedJson, payload.passphrase, payload.salt)
+          const updatedAt = beginRemotePush(attempt)
+          await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, payload.salt, updatedAt))
+          recordCompletedRemotePush(attempt)
+          localEncryptedData.set(mergedEncrypted, payload.salt)
+          setLastSyncedAt(Date.now())
+          skipNextRemotePush.value = true
+          outline.deserialize(result.mergedJson)
+          syncStatus.value = 'synced'
+          deferredPushPayload = null
+          return
+        }
+      }
+
+      const updatedAt = beginRemotePush(attempt)
+      await retryWithBackoff(() => remoteSync.upsert(payload.encrypted, payload.salt, updatedAt))
+      recordCompletedRemotePush(attempt)
+      setLastSyncedAt(Date.now())
+      syncStatus.value = 'synced'
+      deferredPushPayload = null
+    } catch (error) {
+      log('[Persistence] Deferred push failed:', error)
+      syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+    }
+  })
+}
 effect(() => {
   const mode = authMode.value
   if (mode !== 'remote') return
@@ -248,6 +370,13 @@ effect(() => {
 
 effect(() => {
   const version = outline.version.value // subscribe to changes on doc
+  // Also subscribe to the raw write counter. `version` only advances after the
+  // outline's own 800ms write debounce fires, and every keystroke restarts that
+  // timer — so while the user is actively typing the version never changes and
+  // this effect never re-runs, meaning no save (and therefore no sync) is armed
+  // at all. Subscribing to dirtyWrites makes the effect react to each change so
+  // the save timer is armed immediately.
+  void outline.dirtyWrites.value
   const passphraseValue = passphrase.value // subscribe to changes on passphrase
   const fsReady = filesystemReady.value   // subscribe for filesystem mode
   const _memReady = memoryReady.value     // subscribe for memory mode
@@ -255,53 +384,75 @@ effect(() => {
 
   // Memory mode: no persistence at all
   if (mode === 'memory') {
+    clearMaxWaitSave()
     return // skip all saves
   }
 
   // Filesystem mode: plain VMD text, no encryption
   if (mode === 'filesystem' && fsReady) {
-    let timeoutId = lastTimeoutId = setTimeout(async () => {
+    const doWrite = async () => {
       try {
-        if (lastTimeoutId !== timeoutId) return
         const vmd = outline.getVMD('root')
         await filesystemStorage.write(vmd)
         log('[Persistence] Saved filesystem doc v' + version)
       } catch (error) {
         console.error('[Persistence] Filesystem write failed:', error)
       }
+    }
+    pendingSave = () => {
+      clearMaxWaitSave()
+      if (lastTimeoutId) clearTimeout(lastTimeoutId)
+      void doWrite()
+    }
+    // Bound the debounce so continuous typing cannot postpone the write.
+    if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
+    let timeoutId = lastTimeoutId = setTimeout(async () => {
+      clearMaxWaitSave()
+      await doWrite()
     }, 1000)
     return () => clearTimeout(timeoutId)
   }
 
   if (!passphraseValue) {
+    clearMaxWaitSave()
     log('No passphrase, skipping encryption')
     return
   }
 
-  let saltValue = localEncryptedData.get().salt
-  if (!saltValue) {
-    log('No salt found, creating new salt for encryption')
-    saltValue = generateSalt()
-  }
+  const saltValue: string = localEncryptedData.get().salt || generateSalt()
 
-  let timeoutId = lastTimeoutId = setTimeout(async () => {
+  pendingSave = () => {
+    if (lastTimeoutId) clearTimeout(lastTimeoutId)
+    void doSave()
+  }
+  // Bound the debounce so continuous typing cannot postpone the save.
+  if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
+
+  let timeoutId = lastTimeoutId = setTimeout(doSave, 1000)
+  return () => clearTimeout(timeoutId)
+
+  async function doSave() {
+    clearMaxWaitSave()
+    const pass = passphraseValue
+    const salt = saltValue
     try {
       log('[Persistence] Compressing and encrypting doc v' + version + '...')
       const json = outline.serialize() // get latest doc state
-      if (lastTimeoutId !== timeoutId) {
-        log('[Persistence] Newer encryption in progress, skipping this one')
-        return
-      }
-      const encrypted = await encrypt(json, passphraseValue, saltValue)
-      if (lastTimeoutId !== timeoutId) {
-        log('[Persistence] Newer encryption in progress, skipping this one')
-        return
-      }
-      localEncryptedData.set(encrypted, saltValue)
+      const encrypted = await encrypt(json, pass, salt)
+      localEncryptedData.set(encrypted, salt)
       if (mode === 'remote' && pendingConflicts.peek().length === 0) {
+        // Deferring because the user is still typing must not drop the push.
+        if (!canStartRemoteSync()) {
+          log('[Persistence] Push deferred until typing pauses')
+          scheduleDeferredPush(encrypted, salt, pass)
+          return
+        }
         const remoteAttempt = createRemoteSyncAttempt()
         await runExclusiveRemoteSync(async () => {
-          if (lastTimeoutId !== timeoutId || !canStartRemoteSync() || isRemoteSyncAttemptStale(remoteAttempt)) {
+          if (!canStartRemoteSync() || isRemoteSyncAttemptStale(remoteAttempt)) {
+            // Superseded by newer typing: queue the latest payload instead of
+            // silently abandoning this edit's remote push.
+            scheduleDeferredPush(encrypted, salt, pass)
             return
           }
 
@@ -312,6 +463,7 @@ effect(() => {
             return
           }
 
+          clearDeferredPush()
           syncStatus.value = 'syncing'
 
           // Pull-before-push: check if remote has changes since last sync
@@ -321,12 +473,12 @@ effect(() => {
             isRemoteNewer = await checkRemoteNewer(lastSyncedAt)
           } catch { /* ignore, proceed with direct push */ }
 
-          if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
+          if (isRemoteSyncAttemptStale(remoteAttempt)) return
 
           if (isRemoteNewer) {
             try {
-              const result = await pullAndMerge(passphraseValue, saltValue)
-              if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
+              const result = await pullAndMerge(pass, salt)
+              if (isRemoteSyncAttemptStale(remoteAttempt)) return
 
               if (!result.clean) {
                 log('[Persistence] Sync blocked by conflicts')
@@ -335,13 +487,13 @@ effect(() => {
               }
 
               if (result.mergedJson) {
-                const mergedEncrypted = await encrypt(result.mergedJson, passphraseValue, saltValue)
-                if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
+                const mergedEncrypted = await encrypt(result.mergedJson, pass, salt)
+                if (isRemoteSyncAttemptStale(remoteAttempt)) return
                 const updatedAt = beginRemotePush(remoteAttempt)
-                await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, saltValue, updatedAt))
+                await retryWithBackoff(() => remoteSync.upsert(mergedEncrypted, salt, updatedAt))
                 recordCompletedRemotePush(remoteAttempt)
-                if (lastTimeoutId !== timeoutId || isRemoteSyncAttemptStale(remoteAttempt)) return
-                localEncryptedData.set(mergedEncrypted, saltValue)
+                if (isRemoteSyncAttemptStale(remoteAttempt)) return
+                localEncryptedData.set(mergedEncrypted, salt)
                 setLastSyncedAt(Date.now())
                 syncStatus.value = 'synced'
                 // Apply merged doc; flag prevents the triggered save from re-pushing
@@ -350,16 +502,16 @@ effect(() => {
               } else {
                 // Remote not newer after all (race) or no data to merge
                 const updatedAt = beginRemotePush(remoteAttempt)
-                await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue, updatedAt))
+                await retryWithBackoff(() => remoteSync.upsert(encrypted, salt, updatedAt))
                 recordCompletedRemotePush(remoteAttempt)
-                if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+                if (!isRemoteSyncAttemptStale(remoteAttempt)) {
                   setLastSyncedAt(Date.now())
                   syncStatus.value = 'synced'
                 }
               }
             } catch (pullErr) {
               console.error('[Persistence] Pull-merge failed:', pullErr)
-              if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+              if (!isRemoteSyncAttemptStale(remoteAttempt)) {
                 syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
               }
             }
@@ -369,15 +521,15 @@ effect(() => {
           // Remote not newer — direct push
           try {
             const updatedAt = beginRemotePush(remoteAttempt)
-            await retryWithBackoff(() => remoteSync.upsert(encrypted, saltValue, updatedAt))
+            await retryWithBackoff(() => remoteSync.upsert(encrypted, salt, updatedAt))
             recordCompletedRemotePush(remoteAttempt)
-            if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+            if (!isRemoteSyncAttemptStale(remoteAttempt)) {
               setLastSyncedAt(Date.now())
               syncStatus.value = 'synced'
             }
           } catch (syncError) {
             console.error('[Persistence] Remote sync upload failed after retries:', syncError)
-            if (lastTimeoutId === timeoutId && !isRemoteSyncAttemptStale(remoteAttempt)) {
+            if (!isRemoteSyncAttemptStale(remoteAttempt)) {
               syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
             }
           }
@@ -387,9 +539,7 @@ effect(() => {
     } catch (error) {
       console.error('[Persistence] Error encrypting doc v' + version + ':', error)
     }
-  }, 1000) // debounce encryption by 1 second
-
-  return () => clearTimeout(timeoutId)
+  }
 })
 
 function parseRemoteDecryptError(error: unknown) {
@@ -749,6 +899,7 @@ export default {
   syncStatus,
   lock() {
     stopPolling()
+    clearDeferredPush()
     clearCredentials()
     passphrase.value = ''
     filesystemReady.value = false
@@ -756,6 +907,7 @@ export default {
   },
   async signOut() {
     stopPolling()
+    clearDeferredPush()
     clearCredentials()
     // Revoke the device-local biometric seal: signing out means this device may no
     // longer recover the passphrase without the user typing it.
@@ -784,6 +936,7 @@ export default {
     // Stop background writes before the row disappears, so an in-flight upload
     // cannot recreate it after deletion.
     stopPolling()
+    clearDeferredPush()
     clearCredentials()
 
     await remoteSync.deleteOutline()
