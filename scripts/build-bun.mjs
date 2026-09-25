@@ -12,7 +12,8 @@
 //                          *.supabase.co). Omit for production builds, which pin
 //                          the concrete Supabase origin instead.
 //   --supabase-url <url>   override the Supabase origin pinned into the CSP
-//   --test-hooks           enable the __TEST_HOOKS__ seam (Playwright only)
+//   --test-hooks           enable the __TEST_HOOKS__ seam (Playwright only) and
+//                          scale PBKDF2 work down for faster E2E runs
 //   --sourcemap[=<mode>]   none | linked (default) | inline | external
 //   --no-sourcemap         shorthand for --sourcemap=none
 //   --minify / --no-minify override the minify default (minified)
@@ -22,6 +23,7 @@
 import { cp, mkdir, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { extractDefaultSupabaseUrl, resolveSupabaseOrigin, tightenConnectSrc } from './csp.ts'
+import { TEST_KDF_SCALE } from '../source/js/crypto2.ts'
 
 const args = process.argv.slice(2)
 const positional = args.filter((a) => !a.startsWith('--'))
@@ -67,7 +69,15 @@ const build = await Bun.build({
     // Code splitting keeps the on-demand Supabase chunk out of the initial
     // bundle (see sync.ts). Without it the dynamic import is inlined.
     splitting: true,
-    define: { 'process.env.NODE_ENV': '"production"', '__TEST_HOOKS__': testHooks ? 'true' : 'false' },
+    define: {
+        'process.env.NODE_ENV': '"production"',
+        '__TEST_HOOKS__': testHooks ? 'true' : 'false',
+        // Playwright runs derive keys hundreds of times; dividing the PBKDF2 work
+        // keeps setup/unlock from dominating the suite. The envelope still records
+        // the nominal iteration count (source/js/crypto2.ts), so key format and
+        // upgrade behaviour are unchanged. Production keeps the full cost.
+        '__TEST_KDF_SCALE__': testHooks ? String(TEST_KDF_SCALE) : '1'
+    },
 })
 
 if (!build.success) {

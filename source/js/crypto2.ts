@@ -14,6 +14,25 @@ export const DEFAULT_ITERATIONS = 600000
 /** Minimum length for a *new* encryption passphrase (existing ones still unlock). */
 export const MIN_PASSPHRASE_LENGTH = 10
 
+/**
+ * PBKDF2 work divisor for the Playwright build. Dividing the work keeps E2E
+ * setup and unlock from dominating the suite while the stored envelope still
+ * records the nominal iteration count, so the key format and the KDF-upgrade
+ * behaviour are unchanged. `scripts/build-bun.mjs` bakes this into
+ * `__TEST_KDF_SCALE__`; the E2E seeding helper applies the same value through
+ * `globalThis.__kdfScale` so runner-side encryption and in-browser decryption
+ * derive identical keys.
+ */
+export const TEST_KDF_SCALE = 60
+
+// Production defines __TEST_KDF_SCALE__ as 1 and the branch folds away. Unit
+// tests run the source directly, where the constant is undefined.
+function kdfScale(): number {
+    const runtime = (globalThis as { __kdfScale?: number }).__kdfScale
+    if (typeof runtime === 'number' && runtime > 1) return runtime
+    return typeof __TEST_KDF_SCALE__ === 'number' && __TEST_KDF_SCALE__ > 1 ? __TEST_KDF_SCALE__ : 1
+}
+
 const ENVELOPE_PREFIX = 'v2'
 
 async function compress(string: string): Promise<ArrayBuffer> {
@@ -46,11 +65,16 @@ async function deriveKey(passphrase: string, saltBase64: string, iterations: num
 
     const salt = fromBase64(saltBase64)
 
+    // Derive at the (test-)scaled work factor while callers keep using the nominal
+    // iteration count for the envelope and the derived-key cache.
+    const scale = kdfScale()
+    const workIterations = scale > 1 ? Math.max(1, Math.round(iterations / scale)) : iterations
+
     return await window.crypto.subtle.deriveKey(
         {
             name: "PBKDF2",
             salt: salt as unknown as BufferSource,
-            iterations,
+            iterations: workIterations,
             hash: "SHA-256"
         },
         keyMaterial,

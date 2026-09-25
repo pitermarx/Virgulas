@@ -11,6 +11,14 @@ declare global {
      */
     const __TEST_HOOKS__: boolean
 
+    /**
+     * Build-time KDF work divisor. `1` in production; the Playwright bundle
+     * (`bun run dev:test`) defines it as a value greater than 1 so E2E setup and
+     * unlock derive faster. The recorded envelope iteration count is unaffected.
+     * See scripts/build-bun.mjs and source/js/crypto2.ts.
+     */
+    const __TEST_KDF_SCALE__: number
+
     interface Window {
         /**
          * Test-only seam for E2E specs. Read exclusively behind __TEST_HOOKS__ so a
