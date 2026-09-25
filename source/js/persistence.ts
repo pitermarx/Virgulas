@@ -3,6 +3,7 @@ import { encrypt, decrypt, generateSalt, MIN_PASSPHRASE_LENGTH } from "./crypto2
 import outline from "./outline.js"
 import { log, store } from './utils.js'
 import { biometrics } from './biometrics.js'
+import inbox from './inbox.js'
 import {
   remoteSync,
   syncStatus,
@@ -744,6 +745,42 @@ export default {
     passphrase.value = ''
     filesystemReady.value = false
     rememberMode('remote')
+  },
+  /**
+   * Deletes the signed-in user's server-side data, then clears the local session
+   * and signs out.
+   *
+   * The encrypted `outlines` row is removed through the RLS-scoped DELETE policy.
+   * The `auth.users` record itself is NOT removed: deleting it requires the
+   * service role, which the browser client never holds. Local data is cleared
+   * regardless, so the device cannot resurrect the deleted document.
+   */
+  async deleteAccount() {
+    const user = await remoteSync.getUser()
+    if (!user) {
+      throw new Error('Not signed in. Sign in again before deleting your account.')
+    }
+
+    // Stop background writes before the row disappears, so an in-flight upload
+    // cannot recreate it after deletion.
+    stopPolling()
+    clearCredentials()
+
+    await remoteSync.deleteOutline()
+
+    // Local cleanup: queue, biometric seal, remembered mode, and ciphertext.
+    await biometrics.forget().catch(() => { })
+    inbox.clear()
+    localEncryptedData.set(null, null)
+    store.user.del()
+    store.mode.del()
+    store.syncTs.del()
+
+    await remoteSync.signOut()
+    authMode.value = 'remote'
+    passphrase.value = ''
+    filesystemReady.value = false
+    memoryReady.value = false
   },
   async pickNewFile() {
     const text = await filesystemStorage.pickNewFile()

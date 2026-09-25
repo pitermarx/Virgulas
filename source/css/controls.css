@@ -94,6 +94,13 @@
 .options-footer-version {
   font-family: var(--font-mono);
   letter-spacing: 0.01em;
+  color: var(--color-accent-primary);
+  text-decoration: none;
+}
+
+.options-footer-version:hover,
+.options-footer-version:focus-visible {
+  text-decoration: underline;
 }
 
 .options-row .btn,

@@ -20,7 +20,8 @@ const installMockSupabase = async (
   await page.addInitScript(({ userEmail, downloadData }) => {
     const state: any = {
       serverRecord: downloadData ? { ...downloadData, updated_at: new Date().toISOString() } : null,
-      updateCalls: [] as Array<Record<string, string>>
+      updateCalls: [] as Array<Record<string, string>>,
+      deleteCalls: [] as Array<Record<string, string>>
     };
     (window as any).__mockSupabaseState = state;
 
@@ -38,6 +39,16 @@ const installMockSupabase = async (
       upsert: async (payload: { salt: string; data: string; updated_at: string }) => {
         state.serverRecord = { salt: payload.salt, data: payload.data, updated_at: payload.updated_at };
         return { error: null };
+      },
+      delete: () => {
+        const chain = {
+          eq: async (column: string, value: string) => {
+            state.deleteCalls.push({ [column]: value });
+            state.serverRecord = null;
+            return { data: null, error: null };
+          }
+        };
+        return chain;
       }
     };
 
@@ -349,5 +360,40 @@ test.describe('Admin / Options modal', () => {
 
     await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
     await expect.poll(() => readBiometricSeal(page), { timeout: 5000 }).toBe(false);
+  });
+
+  test('deletes the server-side outline row and signs out', async ({ page }) => {
+    await page.goto('/');
+    const remoteDoc = await createEncryptedPayload(page, 'remote-pass', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'r1', text: 'Server data', children: [] }]
+    });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.reload();
+    await unlockRemote(page, 'remote-pass');
+
+    await openOptions(page);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Delete account' }).click();
+
+    // Lands in memory mode after deletion.
+    await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+
+    const state = await page.evaluate(() => (window as any).__mockSupabaseState);
+    expect(state.deleteCalls).toContainEqual({ user_id: 'user-1' });
+    expect(state.serverRecord).toBeNull();
+    // Local ciphertext and remembered mode are cleared, so the device cannot
+    // resurrect the deleted document.
+    const leftover = await page.evaluate(() => ({
+      data: localStorage.getItem('vmd_data_enc'),
+      mode: localStorage.getItem('vmd_last_mode')
+    }));
+    expect(leftover.data).toBeNull();
+    expect(leftover.mode).toBe('memory');
   });
 });

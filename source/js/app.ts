@@ -1029,6 +1029,33 @@ const OptionsModal = () => {
     await persistence.pickNewFile();
   }
 
+  async function handleDeleteAccount() {
+    const confirmed = confirm(
+      'Delete your account and all server data? This erases the encrypted document stored for your account and signs you out on this device. This cannot be undone, and your remote backup is unrecoverable without your passphrase.'
+    );
+    if (!confirmed) return;
+
+    isBusy.value = true;
+    adminError.value = '';
+    adminMessage.value = '';
+    try {
+      await persistence.deleteAccount();
+      optionsOpen.value = false;
+      authUser.value = null;
+      authHasLocalData.value = false;
+      remotePasswordStage.value = false;
+      stagedMemoryDocJson = null;
+      // Land in memory mode with the intro doc, same as sign-out.
+      await persistence.unlock('', { mode: 'memory' });
+      persistence.setPreferredMode('memory');
+      document.body.setAttribute('data-main-view', 'rendered');
+    } catch (err) {
+      adminError.value = String((err as { message?: string } | null)?.message || 'Failed to delete the account.');
+    } finally {
+      isBusy.value = false;
+    }
+  }
+
   async function handlePurge() {
     const purgeLabel = currentMode === 'remote'
       ? 'Clear browser session and sign out? Your remote data on the server is unaffected.'
@@ -1194,11 +1221,8 @@ const OptionsModal = () => {
           <div class="options-row">
             <button class="btn btn-secondary" onClick=${handleThemeToggle}>Toggle theme</button>
           </div>
-          <div class="options-row">
-            <a href=${REPO_URL} target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Source repository ↗</a>
-          </div>
 
-          ${currentMode === 'remote' && html`
+          ${isRemote && html`
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${handleSignOut} disabled=${isBusy.value}>Sign out</button>
             </div>
@@ -1221,14 +1245,27 @@ const OptionsModal = () => {
             </div>
           `}
 
+          ${isRemote && html`
+            <div class="options-row">
+              <button class="btn btn-danger" onClick=${handleDeleteAccount} disabled=${isBusy.value}>Delete account</button>
+            </div>
+            <p class="admin-hint">
+              Deletes the encrypted document stored for your account on the server and signs out on this device. The account record itself is retained; contact support to remove it.
+            </p>
+          `}
+
           ${adminError.value && html`<div class="form-error">${adminError.value}</div>`}
           ${adminMessage.value && html`<div class="form-success">${adminMessage.value}</div>`}
 
           <p class="admin-hint admin-footer-note">
-            Account deletion and signing out other sessions are not available yet. Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
+            Signing out other sessions is not available yet. Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
           </p>
 
-          <div class="options-footer-meta">Version <span class="options-footer-version" data-app-version>${appVersion.value}</span></div>
+          <div class="options-footer-meta">
+            Version
+            <a class="options-footer-version" data-app-version href=${REPO_URL}
+              target="_blank" rel="noopener noreferrer" title="Open the Virgulas source repository">${appVersion.value}</a>
+          </div>
         </div>
       </div>
     </div>`;

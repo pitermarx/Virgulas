@@ -10,22 +10,28 @@
 .admin-info {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   background-color: var(--color-surface);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
+  /* Stretch every row to the same height so labels and values share a baseline
+     even when a value is an inline editor with buttons. */
+  align-items: center;
 }
 
 .admin-info dt {
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
+  /* Match the value line-height so the label sits on the same baseline. */
+  line-height: 1.4;
 }
 
 .admin-info dd {
   margin: 0;
   font-size: 0.875rem;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
@@ -71,6 +77,9 @@
 }
 
 .admin-inline-row {
+  /* Fill the value column so the value and its button align left/right
+     consistently with plain-text rows, instead of shrinking to content. */
+  width: 100%;
   justify-content: space-between;
 }
 
@@ -280,19 +289,6 @@
 .options-theme-buttons {
   display: flex;
   gap: var(--space-2);
-}
-
-.repo-link {
-  color: var(--color-accent-primary);
-  text-decoration: none;
-  font-size: 0.875rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.repo-link:hover {
-  text-decoration: underline;
 }
 
 .options-hint {

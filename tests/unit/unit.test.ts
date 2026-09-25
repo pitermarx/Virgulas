@@ -69,6 +69,9 @@ replay('csp', csp.sections)
 const staticPath = await import('./suites/staticPathTests.js')
 replay('dev server path safety', staticPath.sections)
 
+const account = await import('./suites/accountTests.js')
+replay('account deletion & options', account.sections)
+
 // Runs last: installs fake IndexedDB / WebAuthn globals.
 const biometrics = await import('./suites/biometricsTests.js')
 replay('biometrics', biometrics.sections)
