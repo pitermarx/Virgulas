@@ -59,9 +59,13 @@ jobs:
         run: node scripts/check-conventional-commits.mjs --range "${{ steps.range.outputs.range }}"
 
   test:
-    name: E2E Tests
+    name: E2E Tests (shard ${{ matrix.shard }}/3)
     needs: commit-policy
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -80,8 +84,13 @@ jobs:
       - name: Start local Supabase
         run: bun run db:start
 
-      - name: Run E2E tests
-        run: bun run test
+      - name: Run unit tests
+        run: bun run test:unit
+        env:
+          CI: true
+
+      - name: Run E2E tests (shard ${{ matrix.shard }}/3)
+        run: bun run test:e2e -- --shard=${{ matrix.shard }}/3
         env:
           CI: true
 
@@ -93,7 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-results
+          name: playwright-results-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
