@@ -46,20 +46,42 @@ await test('the client exposes a server-delete path', () => {
     assert(/\.delete\(\)\.eq\('user_id'/.test(src), 'delete must be scoped by user_id')
 })
 
-section('Options footer and account controls')
+section('Email-confirmation sign-up')
 
+const readPersistence = () => readFileSync(path.join(ROOT, 'source/js/persistence.ts'), 'utf8')
 const readApp = () => readFileSync(path.join(ROOT, 'source/js/app.ts'), 'utf8')
 
-await test('the source repository is a link on the version footer, not a button', () => {
+await test('sign-up records the confirmation-required state', () => {
+    const src = readPersistence()
+    assert(/pendingEmailConfirmation\s*=\s*!!res\?\.user && !res\?\.session/.test(src), 'signUp must detect a null session')
+    assert(/needsEmailConfirmation/.test(src), 'the state must be readable by the UI')
+    assert(/clearEmailConfirmation/.test(src), 'the state must be clearable after sign-in')
+})
+
+await test('the lock screen surfaces a confirmation message instead of a generic failure', () => {
+    const src = readApp()
+    assert(/remote-email-unconfirmed/.test(src), 'a dedicated scenario must exist')
+    assert(/confirm your email address/i.test(src), 'the message must tell the user to confirm')
+})
+
+section('Options footer and account controls')
+
+
+await test('the source repository is a link in the version footer, not a button', () => {
     const src = readApp()
     assert(
         !/Source repository/.test(src),
         'the standalone Source repository button must be removed'
     )
     assert(
-        /class="options-footer-version"[^>]*href=\$\{REPO_URL\}/.test(src),
-        'the version text must link to the repository'
+        /class="options-footer-link"[^>]*href=\$\{REPO_URL\}/.test(src),
+        'the footer must link to the repository'
     )
+    assert(
+        /options-footer-version"[^>]*>\$\{appVersion\.value\}/.test(src),
+        'the version must render as its own element'
+    )
+    assert(/See on GitHub/.test(src), 'the link must be labelled')
 })
 
 await test('the delete account action is offered only in Remote mode', () => {

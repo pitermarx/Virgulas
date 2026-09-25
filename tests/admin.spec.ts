@@ -15,9 +15,9 @@ const closeOptions = async (page: Page) => {
 /** Mock Supabase client that also supports account `updateUser` calls. */
 const installMockSupabase = async (
   page: Page,
-  options: { userEmail?: string; downloadData?: { salt: string; data: string } | null } = {}
+  options: { userEmail?: string; downloadData?: { salt: string; data: string } | null; confirmRequired?: boolean } = {}
 ) => {
-  await page.addInitScript(({ userEmail, downloadData }) => {
+  await page.addInitScript(({ userEmail, downloadData, confirmRequired }) => {
     const state: any = {
       serverRecord: downloadData ? { ...downloadData, updated_at: new Date().toISOString() } : null,
       updateCalls: [] as Array<Record<string, string>>,
@@ -59,8 +59,14 @@ const installMockSupabase = async (
           return { data: { user: session.user }, error: null };
         },
         signUp: async ({ email }: { email: string }) => {
+          // When the project requires confirmation, Supabase returns a user but no
+          // session; `confirmRequired` makes the mock reproduce that.
+          if (confirmRequired) {
+            session.user = null;
+            return { data: { user: { id: 'user-1', email }, session: null }, error: null };
+          }
           session.user = { id: 'user-1', email };
-          return { data: { user: session.user }, error: null };
+          return { data: { user: session.user, session: { access_token: 't' } }, error: null };
         },
         signOut: async () => {
           session.user = null;
@@ -360,6 +366,30 @@ test.describe('Admin / Options modal', () => {
 
     await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
     await expect.poll(() => readBiometricSeal(page), { timeout: 5000 }).toBe(false);
+  });
+
+  test('sign-up requiring email confirmation explains the state instead of failing silently', async ({ page }) => {
+    // Reproduces the hosted-project behaviour: signUp returns a user but no
+    // session because the email must be confirmed first. Previously the app
+    // showed no message and the later unlock failed with a generic error.
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await installMockSupabase(page, { confirmRequired: true });
+    await page.reload();
+
+    // Boots into Memory mode on a fresh profile. "Enable Secure Storage" opens
+    // the Local unlock step, where "Change mode" reveals the mode chooser.
+    await page.getByRole('button', { name: /Enable Secure Storage/i }).click();
+    await page.getByRole('button', { name: /Change mode/i }).click();
+    const modeSwitch = page.locator('.auth-mode-switch');
+    await expect(modeSwitch).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: 'Remote', exact: true }).click();
+
+    await page.getByLabel('Email').fill('new@virgulas.com');
+    await page.getByLabel('Account password').fill('account-password-123');
+    await page.getByRole('button', { name: 'Sign up', exact: true }).click();
+
+    await expect(page.getByText(/confirm your email/i)).toBeVisible({ timeout: 10000 });
   });
 
   test('deletes the server-side outline row and signs out', async ({ page }) => {

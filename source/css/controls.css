@@ -86,7 +86,10 @@
 
 .options-footer-meta {
   margin-top: var(--space-1);
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   color: var(--color-text-faint);
   font-size: 0.75rem;
 }
@@ -94,12 +97,15 @@
 .options-footer-version {
   font-family: var(--font-mono);
   letter-spacing: 0.01em;
+}
+
+.options-footer-link {
   color: var(--color-accent-primary);
   text-decoration: none;
 }
 
-.options-footer-version:hover,
-.options-footer-version:focus-visible {
+.options-footer-link:hover,
+.options-footer-link:focus-visible {
   text-decoration: underline;
 }
 

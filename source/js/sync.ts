@@ -113,6 +113,12 @@ async function withClient<T = any>(fn: (client: any) => Promise<{ data: T; error
 export const remoteSync = {
     withClient,
     signIn: (email: string, password: string) => withClient((c) => c.auth.signInWithPassword({ email, password })),
+    /**
+     * Creates an account. Supabase returns `{ user, session }`; when the project
+     * requires email confirmation, `session` is null and no session exists until
+     * the user confirms. Callers must treat that as "confirmation required"
+     * rather than "signed in".
+     */
     signUp: (email: string, password: string) => withClient((c) => c.auth.signUp({ email, password })),
     signOut: async () => {
         const c = await ensureClient()
