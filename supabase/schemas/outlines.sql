@@ -25,3 +25,12 @@ create policy "Users can update their own outline"
   for update
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
+
+-- Self-service erasure: a signed-in user may delete only their own row.
+-- This is the server-data half of account deletion; the browser cannot remove
+-- the auth.users record itself (that requires the service role).
+drop policy if exists "Users can delete their own outline" on public.outlines;
+create policy "Users can delete their own outline"
+  on public.outlines
+  for delete
+  using ((select auth.uid()) = user_id);

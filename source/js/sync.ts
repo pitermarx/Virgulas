@@ -132,7 +132,18 @@ export const remoteSync = {
         return withClient(() => _mainTable.upsert(payload, { onConflict: 'user_id' }))
     },
     updatePassword: (newPassword: string) => withClient((c) => c.auth.updateUser({ password: newPassword })),
-    updateEmail: (newEmail: string) => withClient((c) => c.auth.updateUser({ email: newEmail }))
+    updateEmail: (newEmail: string) => withClient((c) => c.auth.updateUser({ email: newEmail })),
+    /**
+     * Deletes the signed-in user's own `outlines` row (RLS-scoped DELETE policy).
+     * This removes the encrypted document from the server. It cannot remove the
+     * `auth.users` record — that needs the service role and is out of reach of
+     * the browser client.
+     */
+    deleteOutline: async () => {
+        const user = await remoteSync.getUser()
+        if (!user?.id) throw new Error('Not signed in. Sign in again before deleting your account.')
+        return withClient(() => _mainTable.delete().eq('user_id', user.id))
+    }
 }
 
 // ── Sync status + conflict signals ───────────────────────────────────────────

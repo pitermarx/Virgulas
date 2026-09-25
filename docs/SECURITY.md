@@ -28,6 +28,7 @@ Status legend: **Fixed** (mitigation shipped), **Open** (tracked here), **Accept
 | KDF parameters below guidance and unversioned | Payloads carry a `v2:<iterations>:<base64(iv||ct)>` envelope (legacy raw base64 still decrypts at 310k); default raised to 600,000 PBKDF2-HMAC-SHA256 iterations, and the normal save re-encrypts older envelopes transparently. The derived key is cached for the unlocked session so autosave does not re-run the KDF. New passphrases must be at least 10 characters; existing shorter ones still unlock | `source/js/crypto2.ts`, `source/js/persistence.ts` |
 | `deserialize` parent lookup resolved inherited properties | Node map uses `Object.create(null)`, so `constructor`/`toString`/`__proto__` parents no longer pass validation | `source/js/outline.ts` |
 | Base64 helpers broke on large documents | Chunked `toBase64`/`fromBase64`, so a large payload no longer throws `RangeError: Maximum call stack size exceeded` on save/unlock | `source/js/crypto2.ts` |
+| No self-service erasure (GDPR/right-to-be-forgotten) | Scoped `Users can delete their own outline` DELETE policy (`auth.uid() = user_id`) plus the Options → **Delete account** path that removes the `outlines` row, clears the local session and signs out | `supabase/schemas/outlines.sql`, `source/js/sync.ts`, `source/js/persistence.ts` |
 
 ---
 
@@ -64,25 +65,27 @@ nodes as changed.
 **Evidence:** `supabase/schemas/outlines.sql` and
 `supabase/migrations/*_initial-schema.sql`. The generated grants give `anon` and
 `authenticated` `TRUNCATE`, `TRIGGER`, and `REFERENCES` (plus select/insert/update/
-delete). RLS scopes DML with `(select auth.uid()) = user_id` and there is **no DELETE
-policy** (safe default).
+delete). RLS scopes DML with `(select auth.uid()) = user_id`.
 
 **Impact:**
 - `TRUNCATE` is **not subject to RLS**. It is not reachable through PostgREST today, so
   this is defense-in-depth, but an over-broad grant is a foot-gun if a SQL path ever
   appears.
-- No DELETE policy means no self-service erasure (GDPR/right-to-be-forgotten).
 - `updated_at` is entirely client-controlled (no server trigger), and there is no size
   cap on `data`/`salt`, so a buggy or hostile client can set arbitrary timestamps or
   bloat the row.
 
 **Remediation:**
 1. `revoke truncate, trigger, references on public.outlines from anon, authenticated;`
-2. Add a scoped DELETE policy if erasure is intended, plus a delete path in the UI.
-3. Add a server-side `updated_at` trigger and stop trusting the client value.
-4. Add `check (octet_length(data) < N)` to bound row size.
+2. Add a server-side `updated_at` trigger and stop trusting the client value.
+3. Add `check (octet_length(data) < N)` to bound row size.
 
 Update the schema file and generate a migration in the same change (AGENTS Rule 4).
+
+**Resolved:** self-service erasure (previously remediation #2) now ships: a scoped
+`Users can delete their own outline` DELETE policy plus the Options → **Delete account**
+path. The browser cannot remove the `auth.users` record itself, so an erasure request
+that must remove the account identity still needs the service role.
 
 ---
 
