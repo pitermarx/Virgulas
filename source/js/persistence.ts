@@ -217,6 +217,11 @@ const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
 
+// Set when a sign-up succeeded but produced no session because the project
+// requires email confirmation. Consumed by the lock screen so the user gets an
+// actionable message instead of an unexplained unlock failure.
+let pendingEmailConfirmation = false
+
 async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
   for (let i = 0; i <= maxRetries; i++) {
@@ -447,8 +452,16 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   const user = await remoteSync.getUser()
   if (!user) {
-    throw new Error('Could not validate remote session. Please sign in again.')
+    // A newly created account that still needs email confirmation has no session,
+    // so this is the state the user most often hits. Say so instead of implying
+    // the credentials were wrong.
+    throw new Error(
+      pendingEmailConfirmation
+        ? 'Confirm your email address first — the confirmation link creates the session that cloud sync needs.'
+        : 'Could not validate remote session. Please sign in again.'
+    )
   }
+  pendingEmailConfirmation = false
   if (user.email) {
     store.user.set(user.email)
   }
@@ -593,6 +606,9 @@ export default {
   getPassphrase: () => passphrase.value,
   getLastUsername: () => store.user.get('') || '',
   getPreferredMode: () => normalizeMode(store.mode.get(null)),
+  /** True when the last sign-up still needs the email confirmed before a session exists. */
+  needsEmailConfirmation: () => pendingEmailConfirmation,
+  clearEmailConfirmation: () => { pendingEmailConfirmation = false },
   setPreferredMode(mode: string | null) {
     rememberMode(mode)
   },
@@ -690,6 +706,10 @@ export default {
     const res = await remoteSync.signUp(email.trim(), password)
     store.user.set(email.trim())
     rememberMode('remote')
+    // `res.session` is null when the project requires email confirmation, even
+    // though Supabase still returns a user object. Remember it so the lock
+    // screen can explain the state instead of silently failing on unlock.
+    pendingEmailConfirmation = !!res?.user && !res?.session
     return res
   },
   async resetRemoteData(newPassphrase: string, options: { username?: string; password?: string } = {}) {

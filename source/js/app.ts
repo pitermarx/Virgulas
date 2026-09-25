@@ -539,6 +539,21 @@ async function submitSignUp() {
       authScenario.value = 'remote-session-valid';
       remotePasswordStage.value = false;
     }
+
+    // Supabase returns a user object but no session when email confirmation is
+    // required. Without this branch the app silently continued and the unlock
+    // attempt later failed with "Could not validate remote session", which made
+    // cloud sync look broken. Reset the password stage so the unlock step (where
+    // unlockMessage renders) is shown instead of the credentials form.
+    if (persistence.needsEmailConfirmation()) {
+      authScenario.value = 'remote-email-unconfirmed';
+      // `isRemotePasswordStep` is true when remotePasswordStage is false, so set
+      // it true to render the unlock step where unlockMessage is displayed.
+      remotePasswordStage.value = true;
+      unlockMessage.value = 'Account created. Check your inbox and confirm your email address, then sign in to unlock cloud sync.';
+      return;
+    }
+
     if (!result?.user) {
       unlockMessage.value = 'Sign-up submitted. Confirm your email if confirmation is enabled.';
     }
@@ -668,6 +683,8 @@ async function submitRemotePassword(e: any) {
       unlockError.value = 'Sign-in failed. Check your email and password.';
       return;
     }
+    // A successful sign-in clears any earlier "confirm your email" state.
+    persistence.clearEmailConfirmation();
     store.user.set(username.value.trim());
     remotePasswordStage.value = true;
   } catch (error) {
@@ -1262,9 +1279,9 @@ const OptionsModal = () => {
           </p>
 
           <div class="options-footer-meta">
-            Version
-            <a class="options-footer-version" data-app-version href=${REPO_URL}
-              target="_blank" rel="noopener noreferrer" title="Open the Virgulas source repository">${appVersion.value}</a>
+            <span class="options-footer-version" data-app-version>${appVersion.value}</span>
+            <a class="options-footer-link" href=${REPO_URL} target="_blank"
+              rel="noopener noreferrer" title="Open the Virgulas source repository">See on GitHub ↗</a>
           </div>
         </div>
       </div>

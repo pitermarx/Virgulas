@@ -26,6 +26,7 @@
 - Bottom-sheet lock screen flow with advanced mode switching:
   - **Local** 🔒 — passphrase-only create/unlock; data encrypted in localStorage; new document starts with one empty node
   - **Remote** 🔒 — account email + password + encryption passphrase; encrypted cloud sync via Supabase
+    - If the Supabase project requires **email confirmation**, sign-up returns no session; the lock screen then says so explicitly ("Account created. Check your inbox and confirm your email address…") instead of later failing with a generic session error.
   - **Filesystem** 📄 — open/create a local `.vmd` file via File System Access API; no encryption, no passphrase; new empty file gets one initial node
   - **Change mode** reveals the Local/Remote/File selector and full auth form
 - **Memory mode** (first-ever visit): on the very first visit the app skips the lock screen entirely
