@@ -113,8 +113,38 @@ export async function unlockApp(
 }
 
 /**
- * Shared test helper: encrypts a nested doc using the app's crypto,
- * stores it in the correct localStorage format, and unlocks via UI.
+ * Encrypts a document inside the test runner itself.
+ *
+ * `setupDoc` needs the ciphertext before the page navigates, so it cannot use the
+ * browser's crypto without paying a throwaway page load first. `crypto2.ts`
+ * targets the browser but only touches `window.crypto`, so a temporary Node alias
+ * lets the runner reuse the exact same envelope code byte-for-byte.
+ */
+async function encryptForSeed(text: string, passphrase: string, salt: string): Promise<string> {
+    const global = globalThis as { window?: unknown; __kdfScale?: number };
+    const { encrypt, TEST_KDF_SCALE } = await import('../source/js/crypto2');
+    const hadWindow = global.window !== undefined;
+    const hadScale = global.__kdfScale;
+    if (!hadWindow) global.window = globalThis;
+    // Match the work factor the Playwright bundle derived its keys with, or the
+    // app cannot decrypt what we seed.
+    global.__kdfScale = TEST_KDF_SCALE;
+    try {
+        return await encrypt(text, passphrase, salt);
+    } finally {
+        if (!hadWindow) delete global.window;
+        if (hadScale === undefined) delete global.__kdfScale; else global.__kdfScale = hadScale;
+    }
+}
+
+/**
+ * Shared test helper: encrypts a document in the runner, seeds it into storage
+ * before the app boots, and unlocks via the UI.
+ *
+ * The seed is applied from an `addInitScript`, so the first (and only) navigation
+ * already boots into the document. This replaces the previous goto + in-page
+ * encrypt + reload round trip. A one-shot `sessionStorage` guard keeps the seed
+ * from firing again on later reloads, so edits a test makes still persist.
  */
 export async function setupDoc(
     page: import('@playwright/test').Page,
@@ -123,9 +153,18 @@ export async function setupDoc(
 ) {
     const flat = nestedToFlat(doc);
     const json = JSON.stringify(flat);
+    const salt = Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(16))).toString('base64');
+    const encrypted = await encryptForSeed(json, passphrase, salt);
+    const seedKey = `vmd-seed-${Math.random().toString(36).slice(2)}`;
+
+    await page.addInitScript(({ salt, encrypted, seedKey }) => {
+        if (sessionStorage.getItem(seedKey)) return;
+        sessionStorage.setItem(seedKey, '1');
+        localStorage.clear();
+        localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+        localStorage.setItem('vmd_last_mode', 'local');
+    }, { salt, encrypted, seedKey });
 
     await page.goto('/');
-    await seedEncryptedDoc(page, json, passphrase);
-    await page.reload();
     await unlockApp(page, passphrase);
 }
