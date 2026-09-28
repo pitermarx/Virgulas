@@ -161,6 +161,7 @@ Metadata is parsed only on item lines, anchored to the end of the content string
 
 **Registered Keys:**
 - `due` — value must match `\d{4}-\d{2}-\d{2}` and represent a valid Gregorian calendar date (a `yyyy-MM-dd` date). Used to mark a task's due date. Overdue tasks (due date strictly before today) are highlighted and prioritized in the Tasks sidebar; the tasks toolbar icon is highlighted when any pending task is overdue.
+- `rec` — value must match `\d*(y|m|w|d)`: an optional repeat count (default 1) plus a unit (`y` years, `m` months, `w` weeks, `d` days). Used to mark a task's recurrence. It only has an effect on a task that also carries a `due` date, where completing the task advances the due date instead of marking it done. For `m` and `y` units the day of month is clamped to the last valid day of the resulting month.
 
 **Parsing Pipeline (per item line):**
 1. Extract checkbox (if present).
@@ -192,6 +193,7 @@ Metadata is parsed only on item lines, anchored to the end of the content string
     \- neither does this
     -or this
 - Final Item priority:high priority:low
+- [ ] Renew passport due:2026-08-01 rec:1y
 ```
 
 **Parsed Structure:**
@@ -225,6 +227,16 @@ Metadata is parsed only on item lines, anchored to the end of the content string
     "open": true,
     "meta": {
       "priority": "low"
+    }
+  },
+  {
+    "id": 5,
+    "text": "Renew passport",
+    "open": true,
+    "status": "TODO",
+    "meta": {
+      "due": "2026-08-01",
+      "rec": "1y"
     }
   }
 ]

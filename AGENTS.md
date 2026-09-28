@@ -1,246 +1,21 @@
 # Agents
 
-This document defines the rules every agent or contributor must follow, and everything needed
-to run the app and tests locally. Read it completely before starting any task.
+This is the contributor and agent handbook for Virgulas. It contains the binding rules,
+the local setup, the architecture, and the test/CI workflow.
+
+- Using Virgulas? Read [`README.md`](./README.md) and the in-app tour (`source/intro.vmd`).
+- Changing Virgulas? Read this file completely before starting.
+
+Companion documents:
+
+| Document | Role |
+| --- | --- |
+| [`docs/SPEC.vmd`](./docs/SPEC.vmd) | Normative product behaviour (source of truth) |
+| [`docs/VMD.md`](./docs/VMD.md) | The VMD plain-text outline format |
+| [`docs/design.md`](./docs/design.md) | Visual and interaction design system |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | Security register (fixed / open / accepted) |
 
 ---
-
-## Environment setup
-
-### Prerequisites
-
-- Bun 1.4 or later (runs TypeScript directly, the bundler, and the unit test runner)
-- Node.js 20 or later (only needed to launch Playwright)
-- A Supabase project (free tier is sufficient)
-
-### Environment variables
-
-For normal local development, `.env` is optional.
-
-If you want to point tests or the app to a specific external environment, create a `.env` file in the project root (gitignored, never commit it):
-
-```
-SUPABASE_URL=https://<your-project-ref>.supabase.co
-SUPABASE_ANON_KEY=<your-anon-key>
-```
-
-The app reads Supabase settings from `localStorage.supabaseconfig`.
-On first run, it seeds this key with hosted defaults:
-
-```json
-{
-  "url": "https://gcpdascpdrakecpknrtt.supabase.co",
-  "key": "sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc"
-}
-```
-
-To use local Supabase in the browser, set `localStorage.supabaseconfig` with your local URL/key.
-
-### Running locally
-
-The browser only ever loads the built bundle; it cannot run `source/js/*.ts` directly.
-
-Build and serve locally (builds `dist/` then serves it):
-
-```bash
-bun run dev
-```
-
-### Bundling and dependencies
-
-`bun run build` (`scripts/build-bun.mjs`) bundles `source/js/app.ts` and the
-`source/css/*.css` modules into `dist/js/app.js` + `dist/js/app.css`, then stamps the
-version into `dist/index.html` and `dist/version.json`.
-
-- Runtime dependencies (`preact`, `@preact/signals`, `htm`, `marked`, `dompurify`,
-  `@supabase/supabase-js`) are resolved from `node_modules` at build time.
-- There is **no import map and no CDN dependency at runtime**.
-- `scripts/serve-bun.mjs` is a Bun static server used for local dev and Playwright.
-- Do not add a runtime CDN import; add dependencies to `package.json` and import them.
-- **Code splitting:** `@supabase/supabase-js` (~220 KB minified) is imported **dynamically** in
-  `sync.ts` and emitted as a separate `dist/js/chunk-*.js`. It is fetched only when Remote is the
-  persisted mode (`persistence.getAuthBootstrap` gates the session probe on it), so local, memory
-  and file users never download or parse it. Do not turn that import back into a static one — a
-  top-level `import` puts it back on the critical path for everyone. The chunk name is
-  content-hashed, so it is intentionally **not** listed in the service worker `APP_SHELL`; the
-  SW's stale-while-revalidate handler caches it on first use.
-- **Startup-path rule:** `getAuthBootstrap` must not probe IndexedDB or the network unless the
-  persisted mode needs it. The File-mode handle lookup is gated on `filesystem` and the Supabase
-  session probe on `remote`; both were previously unconditional and cost ~30 ms of time-to-reveal.
-- Source maps: both `bun run dev` and `bun run build` emit a linked `dist/js/app.js.map`
-  (with `sourcesContent`, so the pruned `.ts` files still resolve in DevTools). Pass
-  `--no-sourcemap` for a lean release artifact, or `--sourcemap=inline|external|none` to
-  change the mode; `--no-minify` produces a readable unminified bundle. Bun's bundler emits
-  JS maps only — there is no CSS source map. Source maps are intentionally **not** in the
-  service worker `APP_SHELL`, so they are never pre-cached.
-
-### Service worker caches (`source/sw.js`)
-
-The service worker uses two versioned caches. Each cache has a dedicated strategy.
-
-| Cache constant  | Cache name pattern       | Covers                                           | Strategy               |
-| --------------- | ------------------------ | ------------------------------------------------ | ---------------------- |
-| `FONTS_CACHE`   | `virgulas-fonts-v<N>`    | `source/fonts/` and `source/media/` assets       | Cache-first            |
-| `APP_CACHE`     | `virgulas-app-v<N>`      | built `js/app.js`, `js/app.css`, `index.html`    | Stale-while-revalidate |
-
-**Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed).
-
-- `bun install` runs the bump script automatically (via `postinstall`).
-- For changes to fonts, media, or app files, run `bun run sw:bump` before committing.
-- To automate this for every push and enforce commit format, install Git hooks once per clone:
-  ```bash
-  bun run sw:hooks
-  ```
-  Installed hooks:
-  - `pre-push` runs `sw:bump` and aborts the push if `sw.js` was modified, prompting you to commit the version bump first.
-  - `commit-msg` validates Conventional Commits headers.
-
-**Adding a new file to a pre-cached shell:** add the path to the appropriate `*_SHELL` array in `source/sw.js`, add the same path (or its parent directory) to the matching group in `scripts/bump-sw-caches.mjs`, then run `bun run sw:bump`.
-
-### Database setup
-
-Initialize local Supabase files (first time only):
-
-```bash
-bunx supabase init
-```
-
-Start local Supabase:
-
-```bash
-bun run db:start
-```
-
-Playwright local tests assume `bun run db:start` has been run and `.env` exists.
-Tests override `localStorage.supabaseconfig` from `.env` before every page load.
-
-Get local URL and anon key for `.env`:
-
-```bash
-bunx supabase status
-```
-
-Generate a migration after editing `supabase/schemas/*.sql`:
-
-```bash
-bunx supabase migration new <migration-name>
-```
-
-Apply migrations locally (no seed):
-
-```bash
-bunx supabase db reset
-```
-
-Tests that require a signed-in state should first attempt sign-in and create the user if it does not exist.
-
-Stop local Supabase:
-
-```bash
-bun run db:stop
-```
-
-### Production migrations
-
-Link the hosted project and push migrations:
-
-```bash
-bunx supabase login
-bunx supabase link --project-ref <your-project-ref>
-bunx supabase db push --linked
-```
-
-Preview migration application without applying:
-
-```bash
-bunx supabase db push --linked --dry-run
-```
-
-### Running tests
-
-```bash
-bun run test                     # unit + e2e
-bun run test:e2e                 # e2e specs only
-bun run test:e2e -- tests/sync.spec.ts
-bun run test:e2e -- --headed     # visible browser
-bun run test:unit                # bun test (tests/unit)
-```
-
-`bun run test` always runs both suites and returns non-zero if either suite fails.
-
-Playwright starts the app automatically via `bun run dev` (build + static server) — no separate server step needed.
-
-- Local Playwright runs require local Supabase credentials (`.env` or `supabase status`) and fail fast if missing.
-- Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
-- Unit tests run in-process under `bun test` with happy-dom (`tests/setup/dom.ts`, preloaded via `bunfig.toml`).
-- `bun run typecheck` runs both TypeScript configs (app strict + tests strict) and must report 0 errors.
-
-### CI/CD
-
-Required repository secrets for CI:
-
-- `SUPABASE_PROJECT` for main-branch migration publishing
-- `SUPABASE_ACCESS_TOKEN` for main-branch migration publishing
-
-Main-branch CI must always run migration publish before deploy:
-
-```bash
-bunx supabase link --project-ref "$SUPABASE_PROJECT"
-bunx supabase db push --linked --include-all
-```
-
-Workflows install Bun (`oven-sh/setup-bun`) and run `bun install --frozen-lockfile`;
-tests run with `bun run test`. The deploy job builds `dist/` and uploads it as the Pages artifact.
-
----
-
-## Frontend module map (`source/js`)
-
-Use this as the default responsibility split. Keep files focused and avoid mixing concerns.
-
-- `app.ts`:
-  App bootstrap, lock screen/auth flow, top-level render tree, modal orchestration.
-- `ui.ts`:
-  Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, tasks panel, debug panels).
-- `search.ts`:
-  Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
-- `shortcuts.ts`:
-  Keyboard interaction and focus/navigation behaviour (including search key handling).
-- `outline.ts`:
-  Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
-- `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring.
-- `sync.ts`:
-  Remote sync protocol logic (timestamp checks, merge/conflict resolution, background upload scheduling) and the Supabase client.
-- `crypto2.ts`:
-  Cryptographic primitives and key derivation (Web Crypto only).
-- `markdown.ts`:
-  Inline markdown rendering and sanitisation.
-- `meta.ts`:
-  `due:` / `rec:` metadata parsing and formatting.
-- `tasks.ts`:
-  Grouped task selectors (pending/scheduled/done) and breadcrumbs.
-- `inbox.ts`:
-  Quick-capture queue and Inbox node reconciliation.
-- `biometrics.ts`:
-  WebAuthn passkey enrolment and passphrase sealing.
-- `utils.ts`:
-  Tiny shared utilities, `appVersion`, and the `localStorage` store slots.
-- `globals.d.ts`, `css.d.ts`:
-  Ambient declarations for browser globals and CSS imports.
-
-Unit test suites live in `tests/unit/suites/` (see Testing below).
-
-### Naming and splitting rules
-
-- Name files by responsibility
-- If a module exceeds ~350-450 lines and mixes unrelated concerns, split it.
-  Preferred split order:
-  1. shared state/helpers into a focused module
-  2. feature-specific logic into that feature module
-  3. keep orchestration in the original module
-- Avoid circular dependencies.
-  If two modules need shared state, extract that state into a third module (as done with `search.ts`).
 
 ## Rules
 
@@ -255,8 +30,9 @@ Unit test suites live in `tests/unit/suites/` (see Testing below).
 
 ### Rule 2 — Keep README.md in sync
 
-`README.md` is the authoritative human-readable description of the app.
-Whenever you add, remove, or change a feature, update `README.md` in the same commit.
+`README.md` is the user-facing description of the app (what it does and why it is useful).
+Whenever you add, remove, or change a user-visible feature, update `README.md` in the same commit.
+Contributor workflow changes belong in this file instead, not in `README.md`.
 
 ### Rule 3 — Every feature must have tests
 
@@ -289,32 +65,35 @@ Do not create files outside these locations without explicit instruction:
 
 ```
 /
+├── .github/workflows/      — ci.yml (test, db publish, release, deploy), daily.yml
+├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png
+├── scripts/                — build, cache-bump, hooks, release, serve, CSP helpers
 ├── source/
 │   ├── index.html          — HTML entry point (loads js/app.js + js/app.css)
+│   ├── intro.vmd           — in-app tour loaded in Memory mode
+│   ├── site.webmanifest    — PWA manifest (Quick capture shortcut, share target)
+│   ├── version.json        — version/sha/GitHub timestamp; stamped by the build
+│   ├── sw.js               — service worker
 │   ├── css/                — modular stylesheets bundled into app.css
 │   ├── js/                 — TypeScript application modules (entry: app.ts)
 │   ├── fonts/              — self-hosted Inter webfonts
-│   ├── media/              — icons and static assets
-│   └── sw.js               — service worker
-├── tests/
-│   ├── *.spec.ts           — Playwright E2E specs
-│   ├── test.ts             — shared Playwright fixtures/helpers
-│   └── unit/
-│       ├── unit.test.ts    — bun test entry (replays the suites)
-│       ├── testing.ts      — section harness (asserts + runner)
-│       ├── setup/dom.ts    — happy-dom preload
-│       └── suites/*.ts     — unit suites
-├── scripts/                — build, cache-bump, hooks, release, serve scripts
+│   └── media/              — icons and static assets (PWA icons, Quick capture icon)
 ├── supabase/
 │   ├── schemas/            — SQL schema files, one per table
 │   ├── migrations/         — generated migrations
+│   ├── config.toml         — local Supabase configuration
 │   └── seed.sql            — optional local seed script (currently no-op)
-├── docs/
-│   ├── SPEC.vmd            — source of truth, do not modify unless instructed
-│   ├── design.md
-│   └── VMD.md
+├── tests/
+│   ├── *.spec.ts           — Playwright E2E specs
+│   ├── test.ts             — shared Playwright fixtures/helpers
+│   ├── setup/dom.ts        — happy-dom preload for unit tests
+│   └── unit/
+│       ├── unit.test.ts    — bun test entry (replays the suites)
+│       ├── testing.ts      — section harness (asserts + runner)
+│       └── suites/*.ts     — unit suites
 ├── AGENTS.md               — this file
-├── README.md               — keep in sync with all changes
+├── README.md               — user-facing description, keep in sync
+├── LICENSE                 — Unlicense (public domain)
 ├── package.json / bun.lock — dependencies and scripts
 ├── bunfig.toml             — bun test preload (happy-dom)
 ├── tsconfig.json           — strict app config
@@ -362,7 +141,7 @@ A task is complete only when all of the following are true:
 - [ ] All existing unit tests pass (`bun run test:unit`)
 - [ ] All existing Playwright tests pass (`bun run test:e2e`)
 - [ ] New/updated unit and/or Playwright tests cover the changed behaviour
-- [ ] `README.md` is updated to reflect the change
+- [ ] `README.md` and `docs/SPEC.vmd` are updated to reflect the change
 - [ ] If the schema changed, the relevant `supabase/schemas/*.sql` file is updated and the migration generated
 - [ ] No new dependencies have been introduced
 - [ ] No files exist outside the locations defined in Rule 5
@@ -405,16 +184,6 @@ If any of the following are true, stop and ask rather than proceeding:
 - A test is failing and the fix is not obvious
 - Two rules in this document appear to conflict
 
-## Known drift (documented)
-
-These are known gaps between the spec and the current implementation. Do not assume the
-feature exists; update this list when a gap is closed.
-
-- **Undo/Redo** is listed in `docs/SPEC.vmd` (`Ctrl+Z` / `Ctrl+Shift+Z`) but is not implemented.
-  Do not document or reference it as a working feature.
-
----
-
 ### Rule 11 — Conventional Commits are required
 
 All commits (human and agent-authored) must use a Conventional Commits header:
@@ -438,3 +207,399 @@ Enforcement:
 
 - Local `commit-msg` hook: run `bun run sw:hooks` once per clone
 - CI validation: all commits in push/PR range must pass Conventional Commits checks
+
+### Known drift (documented)
+
+These are known gaps between the spec and the current implementation. Do not assume the
+feature exists; update this list when a gap is closed.
+
+- **Undo/Redo** is listed in `docs/SPEC.vmd` under ROADMAP (`Ctrl+Z` / `Ctrl+Shift+Z`) but is not
+  implemented. Do not document or reference it as a working feature.
+
+---
+
+## Environment setup
+
+### Prerequisites
+
+- Bun 1.4 or later (runs TypeScript directly, the bundler, and the unit test runner)
+- Node.js 20 or later (only needed to launch Playwright)
+- A Supabase project (free tier is sufficient)
+
+### Environment variables
+
+For normal local development, `.env` is optional.
+
+If you want to point tests or the app to a specific external environment, create a `.env` file in the project root (gitignored, never commit it):
+
+```
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_ANON_KEY=<your-anon-key>
+```
+
+The app reads Supabase settings from `localStorage.supabaseconfig`.
+On first run, it seeds this key with hosted defaults:
+
+```json
+{
+  "url": "https://gcpdascpdrakecpknrtt.supabase.co",
+  "key": "sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc"
+}
+```
+
+To use local Supabase in the browser, set `localStorage.supabaseconfig` with your local URL/key.
+
+### Running locally
+
+The browser only ever loads the built bundle; it cannot run `source/js/*.ts` directly.
+
+Build and serve locally (builds `dist/` then serves it):
+
+```bash
+bun run dev
+```
+
+To run the Playwright-shaped build (test hooks enabled, PBKDF2 scaled down) manually:
+
+```bash
+bun run dev:test
+```
+
+Both scripts watch nothing; re-run them after source changes.
+
+### Database setup
+
+Initialize local Supabase files (first time only):
+
+```bash
+bunx supabase init
+```
+
+Start local Supabase:
+
+```bash
+bun run db:start
+```
+
+Playwright local tests assume `bun run db:start` has been run. They read credentials from
+`.env` when present, otherwise from `bunx supabase status -o env`.
+
+Get local URL and anon key for `.env`:
+
+```bash
+bunx supabase status
+```
+
+Generate a migration after editing `supabase/schemas/*.sql`:
+
+```bash
+bunx supabase migration new <migration-name>
+```
+
+Apply migrations locally (no seed):
+
+```bash
+bunx supabase db reset
+```
+
+Tests that require a signed-in state should first attempt sign-in and create the user if it does not exist.
+
+Stop local Supabase:
+
+```bash
+bun run db:stop
+```
+
+### Production migrations
+
+Link the hosted project and push migrations:
+
+```bash
+bunx supabase login
+bunx supabase link --project-ref <your-project-ref>
+bunx supabase db push --linked
+```
+
+Preview migration application without applying:
+
+```bash
+bunx supabase db push --linked --dry-run
+```
+
+---
+
+## Architecture
+
+### Runtime shape
+
+Virgulas is a static site. There is no application server: `index.html` loads the bundled
+`js/app.js` and `js/app.css` from the same origin, and every document operation happens in the
+browser. The only network access is Supabase in Remote mode, plus the SRI-pinned Umami tracker.
+
+`source/js/app.ts` is the entry point. It renders the Preact tree, owns the lock screen and modal
+orchestration, and delegates everything else to the focused modules listed under
+[Frontend module map](#frontend-module-map-sourcejs).
+
+### Storage modes and boot
+
+| Mode | Where the document lives | Encryption |
+| --- | --- | --- |
+| Memory | JS memory only; lost on reload | none |
+| Local | `localStorage.vmd_data_enc` | passphrase → PBKDF2 → AES-GCM |
+| Remote | Supabase `outlines` row (plus the local cache) | passphrase → PBKDF2 → AES-GCM |
+| File | a user-chosen `.vmd` file (File System Access API) | none |
+
+`persistence.getAuthBootstrap` picks the mode from the remembered mode and existing data signals
+before any document work happens.
+
+- **Startup-path rule:** the File-mode handle lookup is gated on `filesystem` and the Supabase
+  session probe on `remote`. Do not make either unconditional — both cost time-to-reveal.
+- **Memory mode** is the first-visit default and loads `source/intro.vmd` (served as
+  `/intro.vmd`). If the fetch fails the app falls back to a single empty node.
+- A **quick-capture visit never boots the app**: no lock screen, no KDF, no decryption, no network.
+  It only appends to `vmd_inbox_queue`. Keep it that way.
+
+### Encryption
+
+- `crypto2.ts` is the only module allowed to encrypt or decrypt document data (Rule 7).
+- The stored value is `localStorage.vmd_data_enc` = `<salt>|<envelope>`; the salt is generated
+  once and reused.
+- The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; legacy payloads are raw base64 and
+  decrypt at 310,000 iterations. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
+  AES-GCM-256, and a normal save re-encrypts an older envelope at the current parameters.
+- The derived key is cached for the unlocked session, so autosave does not re-run the KDF.
+- `biometrics.ts` may wrap the passphrase behind WebAuthn for device unlock. That wrapping key
+  never encrypts the document (Rule 7).
+
+### Sync
+
+All Supabase access goes through `sync.ts` (`remoteSync`) — Rule 7.
+
+- Uploads are scheduled after typing pauses; a 60-second poll checks for remote updates while the
+  app is open in Remote mode, and defers to active local edits.
+- Pull-before-push: the remote `outlines.updated_at` is compared with `vmd_sync_ts`; a newer remote
+  is fetched and merged before the local write is uploaded.
+- Merge is per node using `lastModified` timestamps. Same-node different-field edits auto-merge;
+  same-field conflicts open a blocking modal.
+- `@supabase/supabase-js` is imported dynamically and emitted as a separate chunk so Local, Memory
+  and File users never download it. Do not turn that into a static import.
+
+---
+
+## Frontend module map (`source/js`)
+
+Use this as the default responsibility split. Keep files focused and avoid mixing concerns.
+
+- `app.ts`:
+  App bootstrap, lock screen/auth flow, top-level render tree, modal orchestration.
+- `ui.ts`:
+  Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, tasks panel, debug panels).
+- `search.ts`:
+  Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
+- `shortcuts.ts`:
+  Keyboard interaction and focus/navigation behaviour (including search key handling).
+- `outline.ts`:
+  Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+- `persistence.ts`:
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
+- `sync.ts`:
+  Remote sync protocol logic (timestamp checks, merge/conflict resolution, background upload scheduling) and the Supabase client.
+- `crypto2.ts`:
+  Cryptographic primitives and key derivation (Web Crypto only).
+- `markdown.ts`:
+  Inline markdown rendering and sanitisation.
+- `meta.ts`:
+  `due:` / `rec:` metadata parsing and formatting.
+- `tasks.ts`:
+  Grouped task selectors (pending/scheduled/done) and breadcrumbs.
+- `inbox.ts`:
+  Quick-capture queue and Inbox node reconciliation.
+- `biometrics.ts`:
+  WebAuthn passkey enrolment and passphrase sealing.
+- `utils.ts`:
+  Tiny shared utilities, `appVersion`, and the `localStorage` store slots.
+- `globals.d.ts`, `css.d.ts`:
+  Ambient declarations for browser globals and CSS imports.
+
+Unit test suites live in `tests/unit/suites/` (see Testing below).
+
+### Naming and splitting rules
+
+- Name files by responsibility
+- If a module exceeds ~350-450 lines and mixes unrelated concerns, split it.
+  Preferred split order:
+  1. shared state/helpers into a focused module
+  2. feature-specific logic into that feature module
+  3. keep orchestration in the original module
+- Avoid circular dependencies.
+  If two modules need shared state, extract that state into a third module (as done with `search.ts`).
+
+---
+
+## Building and bundling
+
+`bun run build` (`scripts/build-bun.mjs`) copies `source/` to `dist/`, bundles
+`source/js/app.ts` and the `source/css/*.css` modules, prunes the TypeScript sources and
+`dist/css/`, then stamps the version into `dist/index.html` and `dist/version.json`.
+
+Build flags (`bun scripts/build-bun.mjs source dist [flags]`):
+
+- `--version <semver>` overrides the version stamped into the app (defaults to `package.json`)
+- `--local` keeps the development `connect-src` (localhost + `*.supabase.co`); production builds
+  tighten it to the concrete Supabase origin from `sync.ts` (`--supabase-url` / `SUPABASE_PROJECT` /
+  `SUPABASE_URL` can override)
+- `--test-hooks` enables the `__TEST_HOOKS__` seam (`window.supabase`) and scales PBKDF2 down for
+  Playwright. Production must leave this off
+- `--sourcemap[=none|linked|inline|external]`, `--no-sourcemap`; `--minify` / `--no-minify`
+
+Notes:
+
+- Runtime dependencies (`preact`, `@preact/signals`, `htm`, `marked`, `dompurify`,
+  `@supabase/supabase-js`) are resolved from `node_modules` at build time.
+- There is **no import map and no CDN dependency at runtime**.
+- `scripts/serve-bun.mjs` is a Bun static server used for local dev and Playwright.
+- Do not add a runtime CDN import; add dependencies to `package.json` and import them.
+- **Code splitting:** `@supabase/supabase-js` (~220 KB minified) is imported **dynamically** in
+  `sync.ts` and emitted as a separate `dist/js/chunk-*.js`. It is fetched only when Remote is the
+  persisted mode (`persistence.getAuthBootstrap` gates the session probe on it), so local, memory
+  and file users never download or parse it. Do not turn that import back into a static one — a
+  top-level `import` puts it back on the critical path for everyone. The chunk name is
+  content-hashed, so it is intentionally **not** listed in the service worker `APP_SHELL`; the
+  SW's stale-while-revalidate handler caches it on first use.
+- **Source maps:** `bun run dev` emits a linked `dist/js/app.js.map` (with `sourcesContent`, so the
+  pruned `.ts` files still resolve in DevTools). `bun run build` passes `--no-sourcemap`, and CI
+  fails the deploy if `dist/js/app.js.map` exists. Bun's bundler emits JS maps only — there is no
+  CSS source map. Source maps are intentionally **not** in the service worker `APP_SHELL`.
+
+## Service worker caches (`source/sw.js`)
+
+The service worker uses two versioned caches. Each cache has a dedicated strategy.
+
+| Cache constant  | Cache name pattern       | Covers                                           | Strategy               |
+| --------------- | ------------------------ | ------------------------------------------------ | ---------------------- |
+| `FONTS_CACHE`   | `virgulas-fonts-v<N>`    | `source/fonts/` and `source/media/` assets       | Cache-first            |
+| `APP_CACHE`     | `virgulas-app-v<N>`      | built `js/app.js`, `js/app.css`, `index.html`    | Stale-while-revalidate |
+
+**Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed).
+
+- `bun install` runs the bump script automatically (via `postinstall`).
+- For changes to fonts, media, or app files, run `bun run sw:bump` before committing.
+- To automate this for every push and enforce commit format, install Git hooks once per clone:
+  ```bash
+  bun run sw:hooks
+  ```
+  Installed hooks:
+  - `pre-push` runs `sw:bump` and aborts the push if `sw.js` was modified, prompting you to commit the version bump first.
+  - `commit-msg` validates Conventional Commits headers.
+
+**Adding a new file to a pre-cached shell:** add the path to the appropriate `*_SHELL` array in `source/sw.js`, add the same path (or its parent directory) to the matching group in `scripts/bump-sw-caches.mjs`, then run `bun run sw:bump`.
+
+---
+
+## Testing
+
+```bash
+bun run test                     # unit + e2e
+bun run test:e2e                 # e2e specs only
+bun run test:e2e -- tests/sync.spec.ts
+bun run test:e2e -- --headed     # visible browser
+bun run test:unit                # bun test (tests/unit)
+bun run typecheck                # tsc app config + test config
+```
+
+`bun run test` always runs both suites and returns non-zero if either suite fails.
+
+### Unit tests
+
+- Run in-process under `bun test` with happy-dom, preloaded through `bunfig.toml` →
+  `tests/setup/dom.ts`.
+- Suites live in `tests/unit/suites/*.ts` and must be registered in `tests/unit/unit.test.ts`.
+- `tests/unit/testing.ts` provides the shared assert/runner harness.
+- `tests/unit/suites/cspTests.ts` and `staticPathTests.ts` cover build/server helpers rather than
+  browser modules; keep that pattern when adding tooling tests.
+
+### Playwright tests
+
+- `playwright.config.ts` starts the app automatically via `bun run dev` (build + static server) —
+  no separate server step.
+- Local runs require Supabase credentials: `.env`, or a running local Supabase reachable via
+  `bunx supabase status -o env`. The config fails fast when neither is available.
+- The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
+  page load.
+- Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
+- CI shards the suite across three jobs with `--shard=<i>/3`.
+- Specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module
+  instances as the running app.
+- `tests/browserTestsInNode.js` is a legacy Node runner; the supported entry points are the bun
+  unit suite and Playwright.
+
+### Test seams
+
+- `__TEST_HOOKS__` (build define) gates the `window.supabase` seam used by admin/auth/sync specs.
+  It is `false` in production, so shipped code never reads that global.
+- `__TEST_KDF_SCALE__` divides the PBKDF2 work factor in test builds so deriving keys hundreds of
+  times does not dominate the suite. The envelope still records the nominal iteration count, so
+  `getEnvelopeIterations` / `needsKdfUpgrade` and the on-screen `PBKDF2 600k` value are unchanged.
+  Production defines the scale as `1`.
+
+---
+
+## CI/CD
+
+Workflows live in `.github/workflows/`.
+
+### `ci.yml` — CI and Deploy
+
+| Job | When | What |
+| --- | --- | --- |
+| `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
+| `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
+| `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
+| `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
+| `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, purges Cloudflare |
+
+- `publish-db` must run before `deploy`.
+- The deploy build passes `--no-sourcemap` and refuses to deploy if `dist/js/app.js.map` appears.
+- The deploy job zips `dist/` contents (no wrapper directory, no maps) into
+  `virgulas-<version>.zip` and attaches it to the `v<version>` release when that tag exists.
+- Pull-request workflows do not publish Pages artifacts.
+
+### `daily.yml` — production E2E
+
+Runs the suite against `https://virgulas.com`, sharded the same way. Specs that rely on the
+`__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded, because
+production builds compile that seam out.
+
+### Repository secrets and variables
+
+- `SUPABASE_PROJECT` (repository **variable**: project ref; used to pin the production CSP origin and by `publish-db`)
+- `SUPABASE_ACCESS_TOKEN` (secret: CI migration publish)
+- `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN` (optional secrets: cache purge after deploy)
+
+## Releases and versioning
+
+- `scripts/release-from-commits.mjs` reads the commits since the last `vX.Y.Z` tag and derives the
+  bump: breaking → major, `feat` → minor, `fix`/`perf`/`refactor`/`revert` → patch. It writes
+  grouped release notes and emits `GITHUB_OUTPUT` values for the workflow.
+- On `main`, the release job creates the tag and Release, bumps `package.json` and
+  `source/version.json`, and pushes `chore: bump version to <version> [skip ci]`.
+- The deploy build stamps `<version>` into the `app-version` meta tag and into `dist/version.json`
+  (`version`, `sha`, `generatedAt`). The in-app version label reads it.
+- Dry-run locally:
+  ```bash
+  bun scripts/release-from-commits.mjs
+  ```
+
+## Adding a feature
+
+1. Check `docs/SPEC.vmd` (Rule 1). If the behaviour is not there, stop and ask.
+2. Pick the module from the [module map](#frontend-module-map-sourcejs); extract shared state
+   instead of importing across features.
+3. Implement, keeping Rule 7 conventions (crypto through `crypto2.ts`, Supabase through `sync.ts`,
+   `localStorage` through `store` slots).
+4. Add or update tests (Rule 3): pure logic → unit suite; UI/integration → Playwright spec.
+5. Update `docs/SPEC.vmd` if it was missing the behaviour, and `README.md` (Rule 2).
+6. If you touched `source/fonts/`, `source/media/`, the app shell, or the manifest, run
+   `bun run sw:bump` and commit the version bump.
+7. Run `bun run typecheck`, `bun run test:unit`, `bun run test:e2e` (Rule 8).
+8. Commit with a Conventional Commit header (Rule 11).
