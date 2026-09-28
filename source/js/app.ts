@@ -1200,13 +1200,13 @@ const OptionsModal = () => {
 
           <section class="admin-section">
             <h3 class="admin-section-title">Quick capture</h3>
-            <p class="admin-hint">Captures queue on this device (unencrypted) and are filed into your Inbox node on unlock.</p>
+            <p class="admin-hint">Captures are stored unencrypted on this device and filed into your Inbox node when you next unlock.</p>
 
             <h4 class="admin-subtitle">Ways to capture</h4>
             <ul class="admin-list">
-              <li><strong>Installed app:</strong> long-press the icon, or share text to Virgulas.</li>
+              <li><strong>Long-press the app icon</strong> and choose Quick capture, or <strong>share text</strong> to Virgulas from another app.</li>
               <li><strong>Automation:</strong> open <code class="admin-code">/?quick-add=your%20text</code> (URL-encoded).</li>
-              <li><strong>Bookmarklet:</strong> click <em>Save to</em> to copy it, or drag it onto your bookmarks bar; then click the bookmark on any page.</li>
+              <li><strong>Bookmarklet:</strong> drag <em>Save to</em> onto your bookmarks bar and click it on any page.</li>
             </ul>
 
             <div class="admin-inline-form">
@@ -1267,7 +1267,7 @@ const OptionsModal = () => {
               <button class="btn btn-danger" onClick=${handleDeleteAccount} disabled=${isBusy.value}>Delete account</button>
             </div>
             <p class="admin-hint">
-              Deletes the encrypted document stored for your account on the server and signs out on this device. The account record itself is retained; contact support to remove it.
+              Deletes the encrypted document stored for your account on the server and signs out on this device. The account itself is kept; contact support to remove it.
             </p>
           `}
 
@@ -1275,7 +1275,7 @@ const OptionsModal = () => {
           ${adminMessage.value && html`<div class="form-success">${adminMessage.value}</div>`}
 
           <p class="admin-hint admin-footer-note">
-            Signing out other sessions is not available yet. Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
+            Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
           </p>
 
           <div class="options-footer-meta">
