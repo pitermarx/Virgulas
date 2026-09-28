@@ -30,6 +30,11 @@ Status legend: **Fixed** (mitigation shipped), **Open** (tracked here), **Accept
 | Base64 helpers broke on large documents | Chunked `toBase64`/`fromBase64`, so a large payload no longer throws `RangeError: Maximum call stack size exceeded` on save/unlock | `source/js/crypto2.ts` |
 | No self-service erasure (GDPR/right-to-be-forgotten) | Scoped `Users can delete their own outline` DELETE policy (`auth.uid() = user_id`) plus the Options → **Delete account** path that removes the `outlines` row, clears the local session and signs out | `supabase/schemas/outlines.sql`, `source/js/sync.ts`, `source/js/persistence.ts` |
 
+**Analytics maintenance.** The Umami tracker is the only remote script. When it is upgraded,
+recompute the `sha384` digest, update the `integrity` attribute and the `script-src` allow-list in
+`source/index.html`, and keep this table accurate. The digest is deliberately committed so a new
+tracker build cannot ship silently.
+
 ---
 
 ## Open
@@ -162,9 +167,10 @@ CSP for directives that do work in meta.
   fully would need self-hosting the tracker or `script-src 'self' 'sha384-…'` with its
   narrower browser support. Accepted for now.
 - **Plaintext device-local metadata.** The quick-capture queue (`vmd_inbox_queue`,
-  capped at 500 × 10 KB), the last username/email, theme, mode, and sync timestamps are
-  stored unencrypted. The encrypted document payload (`vmd_data_enc`) is the only
-  ciphertext at rest. Documented in `README.md`.
+  capped at 500 × 10 KB), the last username/email, theme, mode, scheduled-window setting,
+  inbox node name, Supabase config, and sync timestamps are stored unencrypted. The encrypted
+  document payload (`vmd_data_enc`, which also carries the salt) is the only ciphertext at rest.
+  The full list is in `docs/SPEC.vmd` → ENCRYPTION → PLAINTEXT METADATA.
 - **Service worker** serves the app bundle stale-while-revalidate; a stale or
   compromised `app.js` persists until revalidation. Cache versioning is automated.
 - **`img-src … http:`** in the CSP is mostly moot: on an https origin the browser

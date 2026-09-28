@@ -16,41 +16,55 @@ Use semantic tokens instead of hardcoded colors.
 
 ### Light Theme
 
-- Background: `#f7f5f0`
-- Surface: `#fdfbf7`
-- Border: `#ddd9d0`
-- Border (subtle): `#ece9e2`
-- Text (primary): `#1a1814`
-- Text (muted): `#6b6760`
-- Text (faint): `#aaa79f`
-- Accent (primary): `#2a5caa`
-- Accent (soft background): `#e8eef8`
-- Hover surface: `#f0ede6`
-- Selected surface: `#e8eef8`
-- Danger: `#c0392b`
-- Search match: `#fff8e1`
-- Search current match: `#fff0b0`
-- Overlay: `rgba(20, 18, 14, 0.45)`
-- Success: `#2e7d32`
-- Error: `#d32f2f`
-- Synced state: `#4caf50`
+- Background (`--color-background`): `#f7f5f0`
+- Surface (`--color-surface`): `#fdfbf7`
+- Border (`--color-border`): `#ddd9d0`
+- Border subtle (`--color-border-subtle`): `#ece9e2`
+- Text primary (`--color-text-primary`): `#1a1814`
+- Text muted (`--color-text-muted`): `#6b6760`
+- Text faint (`--color-text-faint`): `#aaa79f`
+- Accent primary (`--color-accent-primary`): `#2a5caa`
+- Accent soft (`--color-accent-soft`): `#e8eef8`
+- Hover surface (`--color-hover-surface`): `#f0ede6`
+- Selected surface (`--color-selected-surface`): `#e8eef8`
+- Danger (`--color-danger`): `#c0392b`
+- Search match (`--color-search-match`): `#fff8e1`
+- Search current (`--color-search-current`): `#fff0b0`
+- Overlay (`--color-overlay`): `rgba(20, 18, 14, 0.45)`
+- Success (`--color-success`): `#2e7d32`
+- Error (`--color-error`): `#d32f2f`
+- Synced (`--color-synced`): `#4caf50`
+- Syncing (`--color-syncing`): `#f39c12`
+- Offline (`--color-offline`): `#7f8c8d`
+- Tag chip (`--color-tag-chip-bg` / `--color-tag-chip-text`): `#e4f2d8` / `#2d6a2f`
+- Mention chip (`--color-mention-chip-bg` / `--color-mention-chip-text`): `#efe6f8` / `#6b3fa0`
+- Due chip (`--color-due-chip-bg` / `--color-due-chip-text`): `#fdf0d5` / `#8a5a00`
+- Recurrence chip (`--color-rec-chip-bg` / `--color-rec-chip-text`): `#dff2ef` / `#1f7a6c`
 
 ### Dark Theme
 
-- Background: `#1a1714`
-- Surface: `#242220`
-- Border: `#3a3733`
-- Border (subtle): `#2e2c2a`
-- Text (primary): `#ede9e3`
-- Text (muted): `#9b9790`
-- Text (faint): `#605d58`
-- Accent (primary): `#5c8ed6`
-- Accent (soft background): `#1c2c46`
-- Hover surface: `#2e2c28`
-- Selected surface: `#1c2c46`
-- Danger: `#e05c4a`
-- Search match: `#473a18`
-- Search current match: `#6a5318`
+Applies to `[data-theme="dark"]`, and to the OS dark preference when no explicit theme is set.
+
+- Background (`--color-background`): `#1a1714`
+- Surface (`--color-surface`): `#242220`
+- Border (`--color-border`): `#3a3733`
+- Border subtle (`--color-border-subtle`): `#2e2c2a`
+- Text primary (`--color-text-primary`): `#ede9e3`
+- Text muted (`--color-text-muted`): `#9b9790`
+- Text faint (`--color-text-faint`): `#605d58`
+- Accent primary (`--color-accent-primary`): `#5c8ed6`
+- Accent soft (`--color-accent-soft`): `#1c2c46`
+- Hover surface (`--color-hover-surface`): `#2e2c28`
+- Selected surface (`--color-selected-surface`): `#1c2c46`
+- Danger (`--color-danger`): `#e05c4a`
+- Search match (`--color-search-match`): `#473a18`
+- Search current (`--color-search-current`): `#6a5318`
+- Overlay (`--color-overlay`): `rgba(0, 0, 0, 0.7)`
+- Tag chip: `#2b3f2c` / `#98d89d`
+- Mention chip: `#2d2440` / `#b794f4`
+- Due chip: `#3a2f1a` / `#e8b84b`
+- Recurrence chip: `#183833` / `#5fcbb8`
+- `--color-success`, `--color-error`, `--color-synced`, `--color-syncing`, and `--color-offline` are shared with the light theme.
 
 ## 3. Typography
 
@@ -75,9 +89,17 @@ Use semantic tokens instead of hardcoded colors.
 
 ## 4. Spacing System
 
-Base spacing scale (px):
+Base spacing tokens (`--space-1` … `--space-6`):
 
-- 0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40
+- `--space-1`: 4px
+- `--space-2`: 8px
+- `--space-3`: 12px
+- `--space-4`: 16px
+- `--space-5`: 20px
+- `--space-6`: 24px
+
+Finer values (1, 2, 6, 10, 14, 28, 32, 40 px) may appear for one-off adjustments, but
+standard rhythm should use the tokens.
 
 Usage guidance:
 
@@ -89,7 +111,11 @@ Usage guidance:
 
 ### Corner Radius
 
-- 2px, 3px, 4px, 6px, 8px, 12px, full circle
+- `--radius-xs`: 2px
+- `--radius-sm`: 4px
+- `--radius-md`: 8px
+- `--radius-lg`: 12px
+- `--radius-full`: 9999px (pill / full circle)
 
 ### Borders
 
@@ -104,8 +130,8 @@ Usage guidance:
 
 ## 6. Motion and Interaction
 
-- Standard transition duration: 150ms
-- Standard easing: `cubic-bezier(0.4, 0, 0.2, 1)`
+- Standard transition (`--transition-base`): 150ms
+- Standard easing (`--ease-base`): `cubic-bezier(0.4, 0, 0.2, 1)`
 - Use transitions for color, border, box-shadow, transform, and opacity
 - Loading spinner: continuous linear rotation (~0.8s)
 - Splash/intro fade: longer fade (~700ms)
@@ -113,7 +139,7 @@ Usage guidance:
 
 ## 7. Layout Structure
 
-- Main content is centered with a readable max width (~760px).
+- Main content is centered with a readable max width (800px; wide mode removes the cap).
 - A fixed top utility/search region can appear above content.
 - A fixed bottom status/action bar is always docked.
 - Content padding adapts when top utility region is visible.
