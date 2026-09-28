@@ -1,7 +1,7 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
-const FONTS_CACHE = 'virgulas-fonts-v5'
+const FONTS_CACHE = 'virgulas-fonts-v6'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
-const APP_CACHE = 'virgulas-app-v83'
+const APP_CACHE = 'virgulas-app-v85'
 
 const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
 
@@ -20,7 +20,9 @@ const FONTS_SHELL = [
   './media/favicon-96x96.png',
   './media/apple-touch-icon.png',
   './media/web-app-manifest-192x192.png',
-  './media/web-app-manifest-512x512.png'
+  './media/web-app-manifest-512x512.png',
+  './media/quick-capture-96x96.png',
+  './media/quick-capture-192x192.png'
 ]
 
 // App shell — served stale-while-revalidate; bump APP_CACHE to force immediate refresh
