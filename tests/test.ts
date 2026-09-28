@@ -121,19 +121,17 @@ export async function unlockApp(
  * lets the runner reuse the exact same envelope code byte-for-byte.
  */
 async function encryptForSeed(text: string, passphrase: string, salt: string): Promise<string> {
-    const global = globalThis as { window?: unknown; __kdfScale?: number };
-    const { encrypt, TEST_KDF_SCALE } = await import('../source/js/crypto2');
+    const global = globalThis as { window?: unknown };
+    const { encrypt, DEFAULT_ITERATIONS, TEST_KDF_SCALE } = await import('../source/js/crypto2');
     const hadWindow = global.window !== undefined;
-    const hadScale = global.__kdfScale;
     if (!hadWindow) global.window = globalThis;
-    // Match the work factor the Playwright bundle derived its keys with, or the
-    // app cannot decrypt what we seed.
-    global.__kdfScale = TEST_KDF_SCALE;
     try {
-        return await encrypt(text, passphrase, salt);
+        // Pass the Playwright work factor explicitly so the runner derives the same
+        // key the bundled app will use to decrypt. Nothing in the app reads a
+        // runtime scale, so this cannot downgrade the app's own KDF.
+        return await encrypt(text, passphrase, salt, DEFAULT_ITERATIONS, TEST_KDF_SCALE);
     } finally {
         if (!hadWindow) delete global.window;
-        if (hadScale === undefined) delete global.__kdfScale; else global.__kdfScale = hadScale;
     }
 }
 
