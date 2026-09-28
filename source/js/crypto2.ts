@@ -18,18 +18,18 @@ export const MIN_PASSPHRASE_LENGTH = 10
  * PBKDF2 work divisor for the Playwright build. Dividing the work keeps E2E
  * setup and unlock from dominating the suite while the stored envelope still
  * records the nominal iteration count, so the key format and the KDF-upgrade
- * behaviour are unchanged. `scripts/build-bun.mjs` bakes this into
- * `__TEST_KDF_SCALE__`; the E2E seeding helper applies the same value through
- * `globalThis.__kdfScale` so runner-side encryption and in-browser decryption
- * derive identical keys.
+ * behaviour are unchanged.
+ *
+ * The scale is a build-time constant for every derivation the app performs; it is
+ * never read from a mutable global or any other runtime source a same-origin
+ * script could set. The runner-side seeding helper passes the value explicitly to
+ * `encrypt`, which cannot influence how the app derives keys on unlock or save.
  */
 export const TEST_KDF_SCALE = 60
 
-// Production defines __TEST_KDF_SCALE__ as 1 and the branch folds away. Unit
-// tests run the source directly, where the constant is undefined.
+// Production defines __TEST_KDF_SCALE__ as 1 and this folds away. Unit tests run
+// the source directly, where the constant is undefined.
 function kdfScale(): number {
-    const runtime = (globalThis as { __kdfScale?: number }).__kdfScale
-    if (typeof runtime === 'number' && runtime > 1) return runtime
     return typeof __TEST_KDF_SCALE__ === 'number' && __TEST_KDF_SCALE__ > 1 ? __TEST_KDF_SCALE__ : 1
 }
 
@@ -53,7 +53,7 @@ async function decompress(bytes: ArrayBuffer | Uint8Array): Promise<string> {
     return new TextDecoder().decode(decompressed)
 }
 
-async function deriveKey(passphrase: string, saltBase64: string, iterations: number): Promise<CryptoKey> {
+async function deriveKey(passphrase: string, saltBase64: string, iterations: number, scale: number): Promise<CryptoKey> {
     const enc = new TextEncoder()
     const keyMaterial = await window.crypto.subtle.importKey(
         "raw",
@@ -65,9 +65,8 @@ async function deriveKey(passphrase: string, saltBase64: string, iterations: num
 
     const salt = fromBase64(saltBase64)
 
-    // Derive at the (test-)scaled work factor while callers keep using the nominal
+    // Derive at the scaled work factor while callers keep using the nominal
     // iteration count for the envelope and the derived-key cache.
-    const scale = kdfScale()
     const workIterations = scale > 1 ? Math.max(1, Math.round(iterations / scale)) : iterations
 
     return await window.crypto.subtle.deriveKey(
@@ -87,15 +86,15 @@ async function deriveKey(passphrase: string, saltBase64: string, iterations: num
 // Deriving a 600k-iteration key is deliberately slow, and autosave encrypts on
 // every pause. Cache the last derived key for the unlocked session so the cost is
 // paid once per (passphrase, salt, iterations) instead of on every write.
-let cachedKey: { passphrase: string; salt: string; iterations: number; key: CryptoKey } | null = null
+let cachedKey: { passphrase: string; salt: string; iterations: number; scale: number; key: CryptoKey } | null = null
 
-async function getDerivedKey(passphrase: string, salt: string, iterations: number): Promise<CryptoKey> {
+async function getDerivedKey(passphrase: string, salt: string, iterations: number, scale: number): Promise<CryptoKey> {
     const cached = cachedKey
-    if (cached && cached.passphrase === passphrase && cached.salt === salt && cached.iterations === iterations) {
+    if (cached && cached.passphrase === passphrase && cached.salt === salt && cached.iterations === iterations && cached.scale === scale) {
         return cached.key
     }
-    const key = await deriveKey(passphrase, salt, iterations)
-    cachedKey = { passphrase, salt, iterations, key }
+    const key = await deriveKey(passphrase, salt, iterations, scale)
+    cachedKey = { passphrase, salt, iterations, scale, key }
     return key
 }
 
@@ -167,11 +166,11 @@ export function needsKdfUpgrade(envelope: string): boolean {
 
 // Encrypts text with AES-GCM-256.
 // Returns a versioned envelope: v2:<iterations>:<base64(iv || ciphertext)>
-async function encrypt(text: string, passphrase: string, salt: string, iterations: number = DEFAULT_ITERATIONS): Promise<string> {
+async function encrypt(text: string, passphrase: string, salt: string, iterations: number = DEFAULT_ITERATIONS, scale: number = kdfScale()): Promise<string> {
     const encodedText = await compress(text)
 
     const iv = window.crypto.getRandomValues(new Uint8Array(12))
-    const key = await getDerivedKey(passphrase, salt, iterations)
+    const key = await getDerivedKey(passphrase, salt, iterations, scale)
     const ciphertext = await window.crypto.subtle.encrypt(
         { name: "AES-GCM", iv: iv },
         key,
@@ -196,7 +195,7 @@ async function decrypt(envelope: string, passphrase: string, salt: string): Prom
         const iv = combined.slice(0, 12)
         const ciphertext = combined.slice(12)
 
-        const key = await getDerivedKey(passphrase, salt, iterations)
+        const key = await getDerivedKey(passphrase, salt, iterations, kdfScale())
         const decrypted = await window.crypto.subtle.decrypt(
             { name: "AES-GCM", iv: iv },
             key,
