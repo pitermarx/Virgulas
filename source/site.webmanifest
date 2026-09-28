@@ -26,7 +26,19 @@
       "name": "Quick capture",
       "short_name": "Quick capture",
       "description": "Capture text into the Inbox",
-      "url": "/?quick-capture=1"
+      "url": "/?quick-capture=1",
+      "icons": [
+        {
+          "src": "/media/quick-capture-96x96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        },
+        {
+          "src": "/media/quick-capture-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "share_target": {

@@ -41,7 +41,11 @@ test.describe('Quick capture inbox', () => {
     expect(manifest.shortcuts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         name: 'Quick capture',
-        url: '/?quick-capture=1'
+        url: '/?quick-capture=1',
+        icons: expect.arrayContaining([
+          expect.objectContaining({ src: '/media/quick-capture-96x96.png', sizes: '96x96', type: 'image/png' }),
+          expect.objectContaining({ src: '/media/quick-capture-192x192.png', sizes: '192x192', type: 'image/png' })
+        ])
       })
     ]));
     expect(manifest.share_target).toEqual({
