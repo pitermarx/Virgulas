@@ -139,18 +139,21 @@ export async function runShortcutsTests(onProgress: any) {
 
     section('Direct zoom helpers')
 
-    await test('zoomIn updates zoom id, location hash, and focuses previous child', async () => {
+    await test('zoomIn updates zoom id and hash without focusing anything', async () => {
         const a = addChild('root', { id: 'A', text: 'A' })
         const b = addChild('root', { id: 'B', text: 'B' })
-        const a1 = addChild('A', { id: 'A1', text: 'A1' })
+        addChild('A', { id: 'A1', text: 'A1' })
         const focus = createFocus(a.id, 'text')
+        focus.SelectedIds.value = ['A']
 
         zoomIn(b.id, focus)
 
         assertEqual(outline.zoomId.value, b.id, 'zoomIn should move zoom to selected id')
         assertEqual(hashId(), b.id, 'zoomIn should update location hash')
-        assertEqual(focus.Id.value, a1.id, 'focus id should move to first child of previous focus')
-        assertEqual(focus.Type.value, 'text', 'focus type should remain text after zoomIn')
+        // Zooming is a view change: it must not pick a node for the user.
+        assertEqual(focus.Id.value, null, 'zoomIn should leave nothing focused')
+        assertEqual(focus.Type.value, null, 'zoomIn should leave no focus type')
+        assertEqual(focus.SelectedIds.value.length, 0, 'zoomIn should clear the multi-selection')
     })
 
     await test('zoomOut updates zoom id, hash, and focused id', async () => {
@@ -251,7 +254,7 @@ export async function runShortcutsTests(onProgress: any) {
 
         assertEqual(outline.zoomId.value, 'A', 'Alt+ArrowRight should zoom into focused node')
         assertEqual(hashId(), 'A', 'Alt+ArrowRight should set hash to focused node id')
-        assertEqual(focus.Id.value, 'A1', 'Alt+ArrowRight should move focus to first child of previous focus')
+        assertEqual(focus.Id.value, null, 'Alt+ArrowRight should leave nothing focused')
         assert(event.defaultPrevented, 'Handled shortcut should prevent default')
     })
 
