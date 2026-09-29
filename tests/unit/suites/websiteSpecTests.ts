@@ -155,7 +155,7 @@ await test('the Pages artifact keeps dotfiles so /.well-known is served', () => 
     // only this source-level check catches the regression before production.
     const ci = read('.github/workflows/ci.yml')
     assert(
-        /uses:\s*actions\/upload-pages-artifact@v\d+[\s\S]*?include-hidden-files:\s*true/.test(ci),
+        /uses:\s*actions\/upload-pages-artifact@[\w.-]+[\s\S]*?include-hidden-files:\s*true/.test(ci),
         'upload-pages-artifact must set include-hidden-files: true or /.well-known/* 404s'
     )
 })
