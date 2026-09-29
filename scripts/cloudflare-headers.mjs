@@ -17,7 +17,13 @@
 //
 // Usage: CLOUDFLARE_ZONE_ID=... CLOUDFLARE_API_TOKEN=... bun scripts/cloudflare-headers.mjs
 //
-// Required token permission: Zone → Config → Edit (Transform Rules + zone settings).
+// Required token permissions:
+//   - Zone → Zone Settings → Edit   (Always Use HTTPS)
+//   - Zone → Transform Rules → Edit (the response-header ruleset; the API name is
+//     `Zone Transform Rules Write`)
+// "Config Rules" is a different product (Configuration Rules) and does not grant
+// access to the Rulesets API — a token with only that will get
+// `403: request is not authorized` on the entrypoint PUT below.
 
 const zoneId = process.env.CLOUDFLARE_ZONE_ID
 const token = process.env.CLOUDFLARE_API_TOKEN
