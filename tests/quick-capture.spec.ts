@@ -121,15 +121,13 @@ test.describe('Quick capture fast path', () => {
     await page.getByRole('button', { name: 'Options' }).click();
 
     await expect(page.getByRole('heading', { name: 'Quick capture' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Ways to capture' })).toBeVisible();
-    await expect(page.getByText('long-press the icon')).toBeVisible();
+    await expect(page.getByText('Long-press the app icon or share text to Virgulas')).toBeVisible();
     await expect(page.getByText('/?quick-add=your%20text')).toBeVisible();
 
     const bookmarklet = page.getByRole('link', { name: 'Save to', exact: true });
     await expect(bookmarklet).toHaveAttribute('href', /^javascript:/);
     await expect(bookmarklet).toHaveAttribute('draggable', 'true');
     await expect(page.getByRole('button', { name: 'Copy bookmarklet' })).toHaveCount(0);
-    await expect(page.getByText('Bookmarklet:')).toBeVisible();
 
     // The button replaces the old "Inbox node" label and sits inline with the
     // destination text box, which keeps its accessible name.

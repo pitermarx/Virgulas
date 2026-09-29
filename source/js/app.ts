@@ -1200,14 +1200,11 @@ const OptionsModal = () => {
 
           <section class="admin-section">
             <h3 class="admin-section-title">Quick capture</h3>
-            <p class="admin-hint">Captures are stored unencrypted on this device and filed into your Inbox node when you next unlock.</p>
-
-            <h4 class="admin-subtitle">Ways to capture</h4>
-            <ul class="admin-list">
-              <li><strong>Long-press the app icon</strong> and choose Quick capture, or <strong>share text</strong> to Virgulas from another app.</li>
-              <li><strong>Automation:</strong> open <code class="admin-code">/?quick-add=your%20text</code> (URL-encoded).</li>
-              <li><strong>Bookmarklet:</strong> drag <em>Save to</em> onto your bookmarks bar and click it on any page.</li>
-            </ul>
+            <p class="admin-hint">
+              Long-press the app icon or share text to Virgulas. Captures are stored unencrypted on
+              this device and filed into your Inbox node on unlock. Automations can open
+              <code class="admin-code">/?quick-add=your%20text</code>.
+            </p>
 
             <div class="admin-inline-form">
               <a class="btn btn-secondary" href=${bookmarkletHref} draggable="true"
@@ -1217,11 +1214,9 @@ const OptionsModal = () => {
                 onChange=${handleInboxNodeNameChange} class="input-field" maxlength="100"
                 autocomplete="off" aria-label="Inbox node name" />
             </div>
-            <p class="admin-hint">
-              ${bookmarkletCopied.value
-                ? html`Bookmarklet copied — paste it as the URL of a new bookmark.`
-                : html`Captures the page as <code class="admin-code">[title](url)</code>, with highlighted text as the description.`}
-            </p>
+            ${bookmarkletCopied.value && html`
+              <p class="admin-hint">Bookmarklet copied — paste it as the URL of a new bookmark.</p>
+            `}
           </section>
 
           <section class="admin-section">

@@ -239,7 +239,7 @@
       - Options → Data shows the mode, the signed-in email, and (Remote) controls to change email
         and account password inline
       - Options → Delete account (Remote) deletes the encrypted document row on the server and signs
-        out on this device. The account record itself is retained; removing it needs the service role
+        out on this device. The account itself is kept; removing it needs the service role
       - There is no way to revoke other sessions yet
   + SEARCH
     - Search can be done with simple substring matches
