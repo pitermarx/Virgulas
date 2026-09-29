@@ -649,9 +649,9 @@ async function continueInMemory() {
   document.body.setAttribute('data-main-view', 'rendered');
 }
 
-function openSecureStorageSetup() {
+async function openSecureStorageSetup() {
   stagedMemoryDocJson = outline.serialize();
-  persistence.lock();
+  await persistence.lock();
   authMode.value = 'local';
   authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
   authStep.value = 'unlock';
@@ -1020,7 +1020,7 @@ const OptionsModal = () => {
 
   async function handleLock() {
     optionsOpen.value = false;
-    persistence.lock();
+    await persistence.lock();
     authMode.value = 'local';
     authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
     authStep.value = 'unlock';

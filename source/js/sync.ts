@@ -199,6 +199,15 @@ export function canStartRemoteSync(now = Date.now()) {
 }
 
 /**
+ * Open the typing gate so the next push runs immediately. Teardown paths (lock,
+ * sign-out) call this: the user has stopped typing and the session is about to
+ * end, so a pending edit must be uploaded now rather than deferred past it.
+ */
+export function allowImmediateRemoteSync() {
+    remoteSyncNotBefore.value = 0
+}
+
+/**
  * Milliseconds until a deferred remote push may run (0 when it can run now).
  * Used to reschedule a push that was skipped because the user is still typing,
  * instead of dropping it until the next unrelated save.
