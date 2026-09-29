@@ -1,7 +1,8 @@
 import { html, render } from 'htm/preact';
 import { useEffect } from 'preact/hooks';
 import { signal, effect } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, optionsOpen, ConflictModal, TasksPanel } from "./ui.js";
+import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
+import { optionsOpen } from './shortcuts.js';
 import persistence, { type PersistenceMode } from './persistence.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync } from './sync.js';

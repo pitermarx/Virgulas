@@ -393,6 +393,27 @@ test.describe('Keyboard', () => {
     await expect(lastInput).toBeInViewport();
   });
 
+  test('Escape closes the Options panel instead of toggling search', async ({ page }) => {
+    await page.getByRole('button', { name: 'Options' }).click();
+    await expect(page.locator('#options-title')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('#options-title')).toHaveCount(0);
+    await expect(page.getByPlaceholder('Search...')).not.toBeVisible();
+  });
+
+  test('Escape closes the keyboard shortcuts modal instead of toggling search', async ({ page }) => {
+    await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
+    const shortcutsModal = page.locator('#keyboard-shortcuts');
+    await expect(shortcutsModal).toBeVisible();
+
+    await page.keyboard.press('Escape');
+
+    await expect(shortcutsModal).not.toBeVisible();
+    await expect(page.getByPlaceholder('Search...')).not.toBeVisible();
+  });
+
   test('Shortcuts popup includes multi-select and search shortcuts', async ({ page }) => {
     await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
 

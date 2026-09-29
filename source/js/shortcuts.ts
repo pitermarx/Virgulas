@@ -4,6 +4,7 @@ import { searchQuery, searchResults, searchResultIndex, getFirstClosedParent, re
 import { log, store, isMobile } from './utils.js';
 
 export const tasksPanelOpen = signal(false)
+export const optionsOpen = signal(false)
 
 /** Minimum shape of the editor focus object shared by ui.ts and the tests. */
 export interface EditorFocus {
@@ -324,6 +325,27 @@ function handleKeyDownOnFocusedNode(k: string, focus: EditorFocus) {
     }
 }
 
+/**
+ * Escape closes a modal that is visibly open, before it falls through to the
+ * outline (blur the focused node) or the document (toggle search) shortcuts.
+ * The Options panel is state-driven; the keyboard-shortcuts modal is a static
+ * shell element toggled by inline display.
+ */
+function closeOpenModal(): boolean {
+    if (optionsOpen.value) {
+        optionsOpen.value = false
+        return true
+    }
+    const shellModal = typeof document !== 'undefined'
+        ? document.getElementById('keyboard-shortcuts')
+        : null
+    if (shellModal && window.getComputedStyle(shellModal).display !== 'none') {
+        shellModal.style.display = 'none'
+        return true
+    }
+    return false
+}
+
 function handleKeyDown(e: any, focus: EditorFocus) {
 
     // While the lock screen (bottom-sheet) is visible, do not intercept keys so the
@@ -363,6 +385,10 @@ function handleKeyDown(e: any, focus: EditorFocus) {
         case 'Ctrl+Alt+k':
             tasksPanelOpen.value = !tasksPanelOpen.peek()
             return true
+    }
+
+    if (k === 'Escape' && closeOpenModal()) {
+        return true
     }
 
     if (focus.Id.value) {

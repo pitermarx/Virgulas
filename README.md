@@ -93,6 +93,7 @@ biometric unlock (fingerprint/face/device PIN) for this device.
 - Light/dark theme (`Ctrl+Alt+T`), persisted
 - Wide mode (`Ctrl+Alt+W`) for large screens
 - Status toolbar: storage mode, sync state, tasks, search, `?` shortcut reference, and Options
+- `Escape` closes an open dialog (Options or shortcuts) instead of toggling search
 - Mobile: larger touch targets, swipe to indent, keyboard-aware status bar
 - Respects `prefers-reduced-motion` and shows visible keyboard focus rings everywhere
 

@@ -4,7 +4,7 @@ import outline from "./outline.js"
 import persistence from './persistence.js';
 import { renderInlineMarkdown } from './markdown.js';
 import { log, isMobile, store, appVersion } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen } from './shortcuts.js';
 import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './sync.js';
 import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
@@ -581,8 +581,6 @@ export function TasksPanel() {
         </div>
     </div>`
 }
-
-export const optionsOpen = signal(false)
 
 export function StatusToolbar() {
     const mode = persistence.getMode()

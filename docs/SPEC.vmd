@@ -358,6 +358,7 @@
       - Quick capture section: entry-point summary, the "Save to" bookmarklet, and the Inbox node name
       - Data section: export and import `.vmd`
       - Theme toggle
+      - `Escape` closes the panel rather than toggling search
       - Mode-specific session action: Lock (Local), Change file (File)
       - Mode-specific danger action: "Sign out" (Remote, ends the remote session and clears this
         device), "Clear file session" (File), "Delete local data" (Local); hidden in Memory mode
@@ -366,6 +367,7 @@
     + KEYBOARD SHORTCUTS MODAL
       - Opened by the "?" button in the status toolbar; desktop only (the button is hidden on mobile)
       - Lists the navigation, editing, structural, zoom, search, and task shortcuts
+      - `Escape` closes the modal rather than toggling search
     + THEME AND WIDE MODE
       - Light and dark themes over shared design tokens; the default follows the OS preference
         `Ctrl+Alt+T` or Options toggles the theme, and the choice is persisted in `vmd_theme`
