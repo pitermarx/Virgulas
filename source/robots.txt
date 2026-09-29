@@ -1,0 +1,16 @@
+# robots.txt — https://virgulas.com
+# Virgulas follows The Website Specification (https://specification.website).
+
+User-Agent: *
+Allow: /
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+# Training-only crawlers are asked to leave the corpus alone. Search and
+# answer/grounding crawlers (ai-input) remain welcome.
+User-Agent: Google-Extended
+Disallow: /
+
+User-Agent: Applebot-Extended
+Disallow: /
+
+Sitemap: https://virgulas.com/sitemap.xml

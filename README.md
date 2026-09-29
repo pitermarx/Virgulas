@@ -142,6 +142,13 @@ worker, database workflow, CI/CD, and the contribution rules — lives in [`AGEN
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Security register: fixed, open, and accepted risks |
 | [`AGENTS.md`](AGENTS.md) | Contributor handbook: rules, setup, architecture, tests, CI |
 
+## Standards
+
+Virgulas follows [The Website Specification](https://specification.website) — a platform-agnostic
+checklist of the technical features a good website should have. The compliance notes (edge
+security headers, crawl and discovery files, the privacy and 404 pages, and the accessibility
+baseline) live in [`docs/SPEC.vmd`](docs/SPEC.vmd) → SITE AND DISCOVERABILITY.
+
 ## License
 
 Released into the public domain under the [Unlicense](LICENSE).

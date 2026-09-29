@@ -1,0 +1,26 @@
+# Virgulas
+
+> Virgulas is a local-first browser outliner. Your outline lives in your browser
+> (Memory, Local, or a user-chosen `.vmd` file) or in your own encrypted Supabase
+> row in Remote mode. Encryption happens on the device; the server only ever holds
+> ciphertext it cannot read.
+
+Virgulas follows [The Website Specification](https://specification.website).
+
+## Pages
+
+- [Virgulas](https://virgulas.com/): the single-page outliner application.
+- [Privacy](https://virgulas.com/privacy.html): what data is stored, where, and why.
+- [Source (GitHub)](https://github.com/pitermarx/Virgulas): MIT-licensed codebase.
+
+## Plain-text formats
+
+- The in-app tour is an outline in the VMD format: <https://virgulas.com/intro.vmd>.
+- The format is documented in the repository at <https://github.com/pitermarx/Virgulas/blob/main/docs/VMD.md>.
+
+## Notes for agents
+
+- The app is client-rendered; the initial HTML is an app shell. Structured facts
+  about the product are in the JSON-LD `SoftwareApplication` block on the home page.
+- `robots.txt` allows search and AI-input (grounding) use and reserves the right to
+  object to model training (`Content-Signal: ai-train=no`).

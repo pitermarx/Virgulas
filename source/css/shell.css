@@ -167,6 +167,29 @@
   border: 0;
 }
 
+/* First focusable element on the page: hidden until it takes keyboard focus. */
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  z-index: 1000;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--space-6)));
+  transition: transform var(--transition-base);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
 @media (max-width: 640px) {
   .bottom-sheet {
     padding: var(--space-4) var(--space-3) calc(var(--space-5) + var(--space-2));

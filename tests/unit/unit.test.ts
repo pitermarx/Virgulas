@@ -75,6 +75,9 @@ replay('account deletion & options', account.sections)
 const viewport = await import('./suites/viewportTests.js')
 replay('mobile viewport', viewport.sections)
 
+const websiteSpec = await import('./suites/websiteSpecTests.js')
+replay('website specification', websiteSpec.sections)
+
 // Runs last: installs fake IndexedDB / WebAuthn globals.
 const biometrics = await import('./suites/biometricsTests.js')
 replay('biometrics', biometrics.sections)
