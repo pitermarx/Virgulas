@@ -123,6 +123,7 @@ test.describe('Quick capture fast path', () => {
     await expect(page.getByRole('heading', { name: 'Quick capture' })).toBeVisible();
     await expect(page.getByText('Long-press the app icon or share text to Virgulas')).toBeVisible();
     await expect(page.getByText('/?quick-add=your%20text')).toBeVisible();
+    await expect(page.getByText('Bookmarklet:')).toBeVisible();
 
     const bookmarklet = page.getByRole('link', { name: 'Save to', exact: true });
     await expect(bookmarklet).toHaveAttribute('href', /^javascript:/);

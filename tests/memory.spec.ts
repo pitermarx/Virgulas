@@ -47,6 +47,11 @@ test.describe('Memory mode (first-ever visit)', () => {
 
         await page.getByRole('button', { name: 'Options' }).click();
         await expect(page.locator('[data-app-version]')).toHaveText(expectedVersion || '');
+
+        // The GitHub link sits to the right of the version with a visible gap.
+        const versionBox = (await page.locator('[data-app-version]').boundingBox())!;
+        const linkBox = (await page.getByRole('link', { name: /See on GitHub/ }).boundingBox())!;
+        expect(linkBox.x - (versionBox.x + versionBox.width)).toBeGreaterThanOrEqual(8);
     });
 
     test('Enable Secure Storage banner opens the lock screen', async ({ page }) => {

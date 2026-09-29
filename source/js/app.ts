@@ -1205,6 +1205,7 @@ const OptionsModal = () => {
             </p>
 
             <div class="admin-inline-form">
+              <span class="admin-inline-label">Bookmarklet:</span>
               <a class="btn btn-secondary" href=${bookmarkletHref} draggable="true"
                 title="Click to copy, or drag onto your bookmarks bar"
                 onClick=${handleBookmarkletClick}>Save to</a>

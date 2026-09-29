@@ -103,6 +103,10 @@
   letter-spacing: 0.01em;
 }
 
+.options-footer-link {
+  margin-left: var(--space-2);
+}
+
 .options-row .btn,
 .options-row a.btn {
   flex: 1;
