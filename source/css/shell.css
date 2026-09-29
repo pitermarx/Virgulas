@@ -1,7 +1,9 @@
 /* Virgulas styles — shell. Split from the former monolithic style.css. Order matters: imported in app.css order. */
 /* ── App shell, locksheet, and memory prompt ── */
 .app-shell {
+  /* Match the live viewport so the shell never extends past the URL bar. */
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 
