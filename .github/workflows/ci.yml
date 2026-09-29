@@ -335,10 +335,10 @@ jobs:
 
       # GitHub Pages cannot set response headers; the required-tier headers
       # (HSTS, nosniff, frame-ancestors, Referrer-Policy, Permissions-Policy) are
-      # applied at the Cloudflare edge. Continue-on-error until the token is
-      # confirmed to carry Zone → Config → Edit.
+      # applied at the Cloudflare edge. This must fail the deploy: a silently
+      # skipped ruleset is how the clickjacking/HSTS gap came back before.
+      # The token needs Zone → Zone Settings → Edit and Zone → Config → Edit.
       - name: Apply Cloudflare edge headers
-        continue-on-error: true
         env:
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
