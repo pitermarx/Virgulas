@@ -19,6 +19,7 @@ import {
   noteLocalWriteActivity,
   createRemoteSyncAttempt,
   canStartRemoteSync,
+  allowImmediateRemoteSync,
   remoteSyncRetryDelay,
   isRemoteSyncAttemptStale,
   beginRemotePush,
@@ -246,6 +247,14 @@ const saveMaxWaitMs = 3000
 let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSave: (() => void) | null = null
 
+// The save effect installs its pipeline here so teardown paths (lock, sign-out)
+// can flush pending work — local write then remote push — before the key or the
+// session is dropped. `saveArmed` is set whenever a change arms the debounce and
+// cleared once a save runs; `lastSavedVersion` records what has been written.
+let activeSave: (() => Promise<boolean>) | null = null
+let saveArmed = false
+let lastSavedVersion = -1
+
 function armMaxWaitSave() {
   if (maxWaitTimer !== null) return
   maxWaitTimer = setTimeout(() => {
@@ -272,6 +281,24 @@ function clearPendingSave() {
   }
   pendingSave = null
   clearMaxWaitSave()
+}
+
+/**
+ * Flush pending work before the session is torn down (lock, sign-out).
+ *
+ * Cancels the debounce, opens the remote typing gate so the push is not deferred,
+ * then runs the save pipeline: the local ciphertext write first, followed by the
+ * remote upsert when a remote session is active. Returns false only when the
+ * remote push failed — the local write is the durable part and always runs.
+ */
+export async function flushPendingSave(): Promise<boolean> {
+  const save = activeSave
+  if (!save) return true
+  // Nothing armed and nothing changed since the last write: skip the round trip.
+  if (!saveArmed && outline.version.peek() === lastSavedVersion) return true
+  clearPendingSave()
+  allowImmediateRemoteSync()
+  return save()
 }
 
 // A remote push is skipped while the user is still typing (`canStartRemoteSync`
@@ -397,6 +424,7 @@ effect(() => {
 
   // Memory mode: no persistence at all
   if (mode === 'memory') {
+    activeSave = null
     clearMaxWaitSave()
     return // skip all saves
   }
@@ -412,21 +440,28 @@ effect(() => {
         console.error('[Persistence] Filesystem write failed:', error)
       }
     }
+    const flushWrite = async () => {
+      clearMaxWaitSave()
+      saveArmed = false
+      await doWrite()
+      lastSavedVersion = version
+      return true
+    }
+    activeSave = flushWrite
+    saveArmed = true
     pendingSave = () => {
       clearMaxWaitSave()
       if (lastTimeoutId) clearTimeout(lastTimeoutId)
-      void doWrite()
+      void flushWrite()
     }
     // Bound the debounce so continuous typing cannot postpone the write.
     if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
-    let timeoutId = lastTimeoutId = setTimeout(async () => {
-      clearMaxWaitSave()
-      await doWrite()
-    }, 1000)
+    let timeoutId = lastTimeoutId = setTimeout(() => { void flushWrite() }, 1000)
     return () => clearTimeout(timeoutId)
   }
 
   if (!passphraseValue) {
+    activeSave = null
     clearMaxWaitSave()
     log('No passphrase, skipping encryption')
     return
@@ -434,6 +469,8 @@ effect(() => {
 
   const saltValue: string = localEncryptedData.get().salt || generateSalt()
 
+  activeSave = doSave
+  saveArmed = true
   pendingSave = () => {
     if (lastTimeoutId) clearTimeout(lastTimeoutId)
     void doSave()
@@ -441,11 +478,12 @@ effect(() => {
   // Bound the debounce so continuous typing cannot postpone the save.
   if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
 
-  let timeoutId = lastTimeoutId = setTimeout(doSave, 1000)
+  let timeoutId = lastTimeoutId = setTimeout(() => { void doSave() }, 1000)
   return () => clearTimeout(timeoutId)
 
-  async function doSave() {
+  async function doSave(): Promise<boolean> {
     clearMaxWaitSave()
+    saveArmed = false
     const pass = passphraseValue
     const salt = saltValue
     try {
@@ -453,6 +491,7 @@ effect(() => {
       const json = outline.serialize() // get latest doc state
       const encrypted = await encrypt(json, pass, salt)
       localEncryptedData.set(encrypted, salt)
+      lastSavedVersion = version
       // A save that was already in flight when the session ended must not push:
       // signing out / deleting the account clears `passphrase`, so a mismatch
       // means this payload belongs to a session that no longer exists.
@@ -461,7 +500,7 @@ effect(() => {
         if (!canStartRemoteSync()) {
           log('[Persistence] Push deferred until typing pauses')
           scheduleDeferredPush(encrypted, salt, pass)
-          return
+          return true
         }
         const remoteAttempt = createRemoteSyncAttempt()
         await runExclusiveRemoteSync(async () => {
@@ -552,8 +591,10 @@ effect(() => {
         })
       }
       log('[Persistence] Saved encrypted doc v' + version + ' length=', encrypted.length)
+      return true
     } catch (error) {
       console.error('[Persistence] Error encrypting doc v' + version + ':', error)
+      return false
     }
   }
 })
@@ -913,7 +954,10 @@ export default {
     return true
   },
   syncStatus,
-  lock() {
+  async lock() {
+    // Flush pending work (local write; remote push if a remote session is active)
+    // before dropping the key, so locking cannot lose the most recent edit.
+    await flushPendingSave()
     stopPolling()
     clearDeferredPush()
     clearPendingSave()
@@ -924,11 +968,14 @@ export default {
   },
   async signOut() {
     stopPolling()
+    // Push pending edits while the session and passphrase are still valid, so
+    // signing out cannot silently drop the last change.
+    await flushPendingSave()
     clearDeferredPush()
     clearPendingSave()
     clearCredentials()
-    // Drop the passphrase before the awaits so an in-flight save cannot push to a
-    // session that is being torn down.
+    // Drop the passphrase before the remaining awaits so an in-flight save cannot
+    // push to a session that is being torn down.
     passphrase.value = ''
     // Revoke the device-local biometric seal: signing out means this device may no
     // longer recover the passphrase without the user typing it.

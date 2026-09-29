@@ -142,10 +142,13 @@
     + LOCAL MODE
       - The first unlock creates the passphrase; later visits only ask for it
       - The Options panel offers "Lock", which returns to the unlock screen and drops the key
+      - Locking flushes any pending write before the key is dropped, so the most recent edit is not lost
     + REMOTE MODE
       - The lock screen has separate Sign in / Create account tabs
       - Sign in requires the account email and password; the encryption passphrase is asked afterwards
       - The status toolbar shows the signed-in email/username when Remote mode is active
+      - Signing out flushes (and pushes) any pending change while the session is still valid
+        The push ignores the typing debounce, so signing out cannot drop the most recent edit
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper

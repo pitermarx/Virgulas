@@ -427,4 +427,76 @@ test.describe('Admin / Options modal', () => {
     expect(leftover.data).toBeNull();
     expect(leftover.mode).toBe('memory');
   });
+
+  test('locking flushes the pending write before dropping the key', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{ id: '1', text: 'Node 1', children: [] }]
+    });
+    const seeded = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+
+    // Edit, then lock immediately — inside the ~1s autosave debounce, so only the
+    // flush on lock can persist the change.
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const input = node.locator('input');
+    await expect(input).toBeVisible();
+    await input.press('End');
+    await page.keyboard.type(' Edited');
+
+    await openOptions(page);
+    await page.getByRole('button', { name: 'Lock' }).click();
+    await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+
+    // The flush wrote the edited document before the key was dropped.
+    const locked = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+    expect(locked).not.toBe(seeded);
+
+    await unlockApp(page);
+    await expect(page.locator('.node-content').first()).toContainText('Edited');
+  });
+
+  test('signing out pushes the pending edit before the session ends', async ({ page }) => {
+    await page.goto('/');
+    const remoteDoc = await createEncryptedPayload(page, 'remote-pass', {
+      id: 'root',
+      text: 'Remote Root',
+      children: [{ id: 'r1', text: 'Server data', children: [] }]
+    });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_last_mode', 'remote');
+    });
+    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
+    await page.reload();
+    await unlockRemote(page, 'remote-pass');
+
+    // Edit, then sign out immediately — inside the autosave debounce.
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const input = node.locator('input');
+    await expect(input).toBeVisible();
+    await input.press('End');
+    await page.keyboard.type(' Edited');
+
+    await openOptions(page);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+
+    // The server must hold the edited document, not the pre-edit snapshot. Sign-out
+    // clears the local ciphertext, so decrypt the pushed payload to prove it.
+    const state = await page.evaluate(() => (window as any).__mockSupabaseState);
+    expect(state.serverRecord).not.toBeNull();
+    expect(state.serverRecord.data).not.toBe(remoteDoc.data);
+
+    const pushed = await page.evaluate(async ({ data, salt, pass }: any) => {
+      const modulePath: string = '/js/app.js';
+      const { decrypt } = await import(modulePath);
+      return await decrypt(data, pass, salt);
+    }, { data: state.serverRecord.data, salt: state.serverRecord.salt, pass: 'remote-pass' });
+    const edited = JSON.parse(pushed).nodes.find((n: any) => n.id === 'r1');
+    expect(edited?.text).toContain('Edited');
+  });
 });
