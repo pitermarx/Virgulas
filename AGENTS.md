@@ -541,6 +541,10 @@ bun run typecheck                # tsc app config + test config
   times does not dominate the suite. The envelope still records the nominal iteration count, so
   `getEnvelopeIterations` / `needsKdfUpgrade` and the on-screen `PBKDF2 600k` value are unchanged.
   Production defines the scale as `1`.
+- `setupDoc` seeds the ciphertext from the Node runner, so it must derive at the same work factor
+  the target app will use to decrypt: the local Playwright scale (`60`) when the suite runs against
+  the built test bundle, and `1` whenever `BASE_URL` targets an external/production build. Seeding
+  at the wrong scale makes every unlock fail with a wrong-key error.
 
 ---
 
