@@ -571,7 +571,7 @@ Workflows live in `.github/workflows/`.
 | `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
-| `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, best-effort), purges Cloudflare |
+| `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
 - The deploy build passes `--no-sourcemap` and refuses to deploy if `dist/js/app.js.map` appears.
@@ -590,8 +590,8 @@ production builds compile that seam out.
 - `SUPABASE_PROJECT` (repository **variable**: project ref; used to pin the production CSP origin and by `publish-db`)
 - `SUPABASE_ACCESS_TOKEN` (secret: CI migration publish)
 - `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN` (optional secrets: cache purge after deploy, and
-  `bun run cf:headers` — the token needs **Zone → Config → Edit** to apply the response-header
-  ruleset and Always Use HTTPS)
+  `bun run cf:headers` — the token needs **Zone → Zone Settings → Edit** (Always Use HTTPS) and
+  **Zone → Config → Edit** (response-header ruleset). Without them the deploy fails.)
 
 ## Releases and versioning
 
