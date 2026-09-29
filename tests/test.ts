@@ -1,9 +1,15 @@
 import { test as base, expect } from '@playwright/test';
 
-const configJson = (
-    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-        ?.PLAYWRIGHT_SUPABASE_CONFIG
-);
+const env =
+    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const configJson = env.PLAYWRIGHT_SUPABASE_CONFIG;
+
+// The local Playwright build (`dev:test`) scales the PBKDF2 work factor down via
+// `__TEST_KDF_SCALE__`; an external/production build derives at the nominal
+// iteration count (scale 1). The runner must seed with the same work factor the
+// target app uses to decrypt, or every `setupDoc` unlock fails with a wrong key.
+// `BASE_URL` is set only when the suite targets an external build.
+const SEED_KDF_SCALE_OVERRIDE = env.BASE_URL ? 1 : undefined;
 
 export const test = base.extend({
     page: async ({ page }, use) => {
@@ -126,10 +132,11 @@ async function encryptForSeed(text: string, passphrase: string, salt: string): P
     const hadWindow = global.window !== undefined;
     if (!hadWindow) global.window = globalThis;
     try {
-        // Pass the Playwright work factor explicitly so the runner derives the same
-        // key the bundled app will use to decrypt. Nothing in the app reads a
-        // runtime scale, so this cannot downgrade the app's own KDF.
-        return await encrypt(text, passphrase, salt, DEFAULT_ITERATIONS, TEST_KDF_SCALE);
+        // Pass the work factor explicitly so the runner derives the same key the
+        // bundled app will use to decrypt. Nothing in the app reads a runtime
+        // scale, so this cannot downgrade the app's own KDF.
+        const scale = SEED_KDF_SCALE_OVERRIDE ?? TEST_KDF_SCALE;
+        return await encrypt(text, passphrase, salt, DEFAULT_ITERATIONS, scale);
     } finally {
         if (!hadWindow) delete global.window;
     }
