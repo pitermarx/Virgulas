@@ -261,6 +261,19 @@ function clearMaxWaitSave() {
   }
 }
 
+// Cancel the debounced autosave outright. Sign-out, account deletion, lock, and
+// local purge must call this: a save armed a moment earlier would otherwise fire
+// after the session is gone and re-upload (or re-create) the row the user just
+// removed. `clearDeferredPush` only covers the retry path, not this timer.
+function clearPendingSave() {
+  if (lastTimeoutId !== null) {
+    clearTimeout(lastTimeoutId)
+    lastTimeoutId = null
+  }
+  pendingSave = null
+  clearMaxWaitSave()
+}
+
 // A remote push is skipped while the user is still typing (`canStartRemoteSync`
 // is false until the write debounce elapses). Previously that skip silently
 // dropped the push: the edit only reached the server on the next unrelated save.
@@ -440,7 +453,10 @@ effect(() => {
       const json = outline.serialize() // get latest doc state
       const encrypted = await encrypt(json, pass, salt)
       localEncryptedData.set(encrypted, salt)
-      if (mode === 'remote' && pendingConflicts.peek().length === 0) {
+      // A save that was already in flight when the session ended must not push:
+      // signing out / deleting the account clears `passphrase`, so a mismatch
+      // means this payload belongs to a session that no longer exists.
+      if (mode === 'remote' && passphrase.peek() === pass && pendingConflicts.peek().length === 0) {
         // Deferring because the user is still typing must not drop the push.
         if (!canStartRemoteSync()) {
           log('[Persistence] Push deferred until typing pauses')
@@ -900,6 +916,7 @@ export default {
   lock() {
     stopPolling()
     clearDeferredPush()
+    clearPendingSave()
     clearCredentials()
     passphrase.value = ''
     filesystemReady.value = false
@@ -908,13 +925,16 @@ export default {
   async signOut() {
     stopPolling()
     clearDeferredPush()
+    clearPendingSave()
     clearCredentials()
+    // Drop the passphrase before the awaits so an in-flight save cannot push to a
+    // session that is being torn down.
+    passphrase.value = ''
     // Revoke the device-local biometric seal: signing out means this device may no
     // longer recover the passphrase without the user typing it.
     await biometrics.forget().catch(() => { })
     await remoteSync.signOut()
     authMode.value = 'remote'
-    passphrase.value = ''
     filesystemReady.value = false
     rememberMode('remote')
   },
@@ -934,10 +954,13 @@ export default {
     }
 
     // Stop background writes before the row disappears, so an in-flight upload
-    // cannot recreate it after deletion.
+    // cannot recreate it after deletion. Clearing the passphrase here (not after
+    // the awaits) invalidates any save that is already past its timer.
     stopPolling()
     clearDeferredPush()
+    clearPendingSave()
     clearCredentials()
+    passphrase.value = ''
 
     await remoteSync.deleteOutline()
 
@@ -951,7 +974,6 @@ export default {
 
     await remoteSync.signOut()
     authMode.value = 'remote'
-    passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
   },
@@ -968,6 +990,8 @@ export default {
     rememberMode('filesystem')
   },
   reset() {
+    clearDeferredPush()
+    clearPendingSave()
     outline.reset()
     localEncryptedData.set(null, null)
     authMode.value = 'local'
