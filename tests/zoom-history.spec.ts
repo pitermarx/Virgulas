@@ -27,6 +27,9 @@ test.describe('Zoom browser history', () => {
         await expect(page.locator('.node-content')).toHaveCount(1);
         await expect(page.locator('[data-node-id="1.1"]')).toBeVisible();
 
+        // Zooming leaves nothing focused, so step into the first child before
+        // zooming deeper.
+        await page.keyboard.press('ArrowDown');
         await page.keyboard.press('Alt+ArrowRight');
 
         await expect(page).toHaveURL(/#1\.1$/);
@@ -41,7 +44,7 @@ test.describe('Zoom browser history', () => {
         await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('');
         await expect(page.locator('.node-content')).toHaveCount(3);
         await expect(page.locator('.node-content').nth(0)).toContainText('Parent');
-        await expect(page.locator('[data-node-id="1.1"] input')).toHaveValue('Child');
+        await expect(page.locator('[data-node-id="1.1"]')).toContainText('Child');
         await expect(page.locator('.node-content').nth(2)).toContainText('Sibling');
 
         await page.goForward();

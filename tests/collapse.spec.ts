@@ -48,11 +48,15 @@ test.describe('Collapse/Expand', () => {
     const bullet = parentNode.locator('.bullet').nth(0);
     await bullet.click();
 
-    // After zooming into Parent, only Child is visible (focused as input)
+    // After zooming into Parent, only Child is visible. Zooming focuses nothing,
+    // so the child renders in read mode until `↓` steps into it.
     await expect(page.locator('.node-content')).toHaveCount(1);
-    const childInput = page.locator('.node-content').nth(0).locator('input');
-    await expect(childInput).toBeVisible();
-    await expect(childInput).toHaveValue('Child');
+    const zoomedChild = page.locator('.node-content').nth(0);
+    await expect(zoomedChild).toContainText('Child');
+    await expect(zoomedChild.locator('input')).toHaveCount(0);
+
+    await page.keyboard.press('ArrowDown');
+    await expect(zoomedChild.locator('input')).toHaveValue('Child');
 
     // Breadcrumb should show path
     await expect(page.locator('.breadcrumbs')).toBeVisible();

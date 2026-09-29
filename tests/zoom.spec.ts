@@ -47,16 +47,60 @@ test.describe('Zoom', () => {
 
     await expect(nodes).toHaveCount(1);
 
-    // Child is focused (input mode)
-    const childInput = nodes.nth(0).locator('input');
-    await expect(childInput).toBeVisible();
-    await expect(childInput).toHaveValue('Child');
-    await expect(childInput).toBeFocused();
+    // Zooming focuses nothing: the child renders in read mode, not as an input.
+    const zoomedChild = nodes.nth(0);
+    await expect(zoomedChild).toContainText('Child');
+    await expect(zoomedChild.locator('input')).toHaveCount(0);
+    await expect(page.locator('.zoom-desc-display')).toBeVisible();
 
     // Verify breadcrumbs
     const crumbs = page.locator('.breadcrumbs span');
     await expect(crumbs).toHaveCount(2); // Root > Parent
     await expect(crumbs.nth(1)).toHaveText('Parent');
+  });
+
+  test('zooming focuses nothing and opens no edit input', async ({ page }) => {
+    const parent = page.locator('.node-content').nth(0);
+    await parent.click();
+    await parent.locator('input').focus();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    await expect(page.locator('.node-content')).toHaveCount(1);
+
+    // The old behaviour focused the first child, so an edit input appeared purely
+    // as a side effect of zooming. Nothing should be focused or editable now.
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+    const active = await page.evaluate(() => (document.activeElement as HTMLElement)?.tagName);
+    expect(active).not.toBe('INPUT');
+    expect(active).not.toBe('TEXTAREA');
+
+    // `↓` with nothing focused still reaches the first child.
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('[data-node-id="1.1"] input')).toBeFocused();
+  });
+
+  test('a long zoomed description is shown in full, not clamped', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{
+        id: '1',
+        text: 'Parent',
+        description: 'First line of a long description.\nSecond line continues, and would be clipped by the two-line preview.',
+        children: [{ id: '1.1', text: 'Child', children: [] }]
+      }]
+    });
+
+    await page.locator('[data-node-id="1"] .node-text-md').click();
+    await page.keyboard.press('Alt+ArrowRight');
+
+    const display = page.locator('.zoom-desc-display');
+    await expect(display).toContainText('First line of a long description.');
+    await expect(display).toContainText('Second line continues');
+
+    // Nothing is clipped: the element is tall enough for all of its content.
+    const clipped = await display.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    expect(clipped).toBe(false);
   });
 
   test('Alt+Left zooms out', async ({ page }) => {
@@ -100,7 +144,7 @@ test.describe('Zoom', () => {
     // Expect all visible
     await expect(page.locator('.node-content')).toHaveCount(3);
     await expect(page.locator('.node-content').nth(0)).toContainText('Parent');
-    await expect(page.locator('[data-node-id="1.1"] input')).toHaveValue('Child');
+    await expect(page.locator('[data-node-id="1.1"]')).toContainText('Child');
     await expect(page.locator('.node-content').nth(2)).toContainText('Sibling');
   });
 
@@ -113,7 +157,7 @@ test.describe('Zoom', () => {
     await expect(page.locator('.node-content')).toHaveCount(1);
 
     await expect(page).toHaveURL(/#1$/);
-    await expect(page.locator('.node-content').first().locator('input')).toHaveValue('Child');
+    await expect(page.locator('.node-content').first()).toContainText('Child');
     await expect(page.locator('.breadcrumbs span').nth(1)).toHaveText('Parent');
   });
 
@@ -226,13 +270,17 @@ test.describe('Zoom', () => {
     const firstChildInput = page.locator('[data-node-id="1.1"] input');
     const lastChildInput = page.locator('[data-node-id="1.2"] input');
 
+    // Zooming focuses nothing — no node starts in edit mode.
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    // With nothing focused, ArrowDown moves into the first visible child.
+    await page.keyboard.press('ArrowDown');
     await expect(firstChildInput).toBeFocused();
 
     // ArrowUp on the first visible child should blur (not focus hidden parent).
     await firstChildInput.press('ArrowUp');
     await expect(page.locator('.node-content input')).toHaveCount(0);
 
-    // With no focus, ArrowDown should focus first visible child.
     await page.keyboard.press('ArrowDown');
     await expect(firstChildInput).toBeFocused();
 

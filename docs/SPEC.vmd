@@ -68,6 +68,7 @@
       - Each segment of the "Breadcrumb" is clickable and will zoom into that "Node"
       - When zoomed, the text of the "Node" is not editable
       - The description is also visible and editable
+        The zoomed description is shown in full, not clamped to the two-line preview
       - The "Children" of the zoomed "Node" will behave the exact same way as if they were root "Nodes"
       - Clicking the bullet point of a node zooms into it
       - (DESKTOP ONLY) `Alt+→` zooms into a node, `Alt+←` zooms back out
@@ -76,7 +77,9 @@
         If the URL contains a node ID hash on load, the app zooms into that node automatically after unlock
         This applies to all storage modes: Memory, Local, Remote, and File (including new/empty files)
         If the node no longer exists, the hash is ignored and the root is shown
-      - (DESKTOP ONLY) On zoom, the first child is automatically focused
+      - Zooming changes the view only: it focuses nothing and starts no edit session
+        With nothing focused the no-focus arrow rules apply, so `↓` moves to the first child
+        and `↑` to the last; zooming never selects the first child on the user's behalf
       - A zoomed node with no children shows an empty state offering to create the first child
       - An empty root document shows an empty state offering to create the first node
     + INDENT
