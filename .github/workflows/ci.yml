@@ -341,7 +341,8 @@ jobs:
       # (HSTS, nosniff, frame-ancestors, Referrer-Policy, Permissions-Policy) are
       # applied at the Cloudflare edge. This must fail the deploy: a silently
       # skipped ruleset is how the clickjacking/HSTS gap came back before.
-      # The token needs Zone → Zone Settings → Edit and Zone → Config → Edit.
+      # The token needs Zone → Zone Settings → Edit (Always Use HTTPS) and
+      # Zone → Transform Rules → Edit (the response-header ruleset).
       - name: Apply Cloudflare edge headers
         env:
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}

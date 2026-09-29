@@ -591,7 +591,8 @@ production builds compile that seam out.
 - `SUPABASE_ACCESS_TOKEN` (secret: CI migration publish)
 - `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN` (optional secrets: cache purge after deploy, and
   `bun run cf:headers` — the token needs **Zone → Zone Settings → Edit** (Always Use HTTPS) and
-  **Zone → Config → Edit** (response-header ruleset). Without them the deploy fails.)
+  **Zone → Transform Rules → Edit** (the response-header ruleset; the API calls this permission
+  `Zone Transform Rules Write`). Without them the deploy fails.)
 
 ## Releases and versioning
 
