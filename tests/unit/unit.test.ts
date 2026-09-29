@@ -81,6 +81,9 @@ replay('website specification', websiteSpec.sections)
 const workflowHardening = await import('./suites/workflowHardeningTests.js')
 replay('workflow hardening', workflowHardening.sections)
 
+const intro = await import('./suites/introTests.js')
+replay('intro tour', intro.sections)
+
 // Runs last: installs fake IndexedDB / WebAuthn globals.
 const biometrics = await import('./suites/biometricsTests.js')
 replay('biometrics', biometrics.sections)

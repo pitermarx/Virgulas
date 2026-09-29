@@ -1,61 +1,76 @@
 - Welcome to Virgulas
-  A local-first outliner for thinking in connected, expandable notes. This document is a guided tour: edit it freely, then choose storage when you are ready to keep your work. Sections marked ▶ hold the details — expand the ones you need.
-+ Start writing
-  Select a node to edit its title. Press `Escape` to leave editing. Press `Enter` to add the next node; when the current node has visible children, `Enter` adds the first child.
-  + Editing details
-    - `Shift+Enter` switches between a title and its optional **Description**. Empty descriptions stay out of the way, and longer ones preview while you browse.
-    - Use **bold**, __italic__, `code`, [links](https://virgulas.com), and images in a title or description. Markdown renders while browsing and returns to plain text while editing.
-    - Type `#project` or `@name` in any note. Select the rendered pill to search for that #tag or @mention.
-    - Paste a single line normally. Paste multiple lines, or text beginning with `-` or `+`, to turn a VMD outline fragment into nodes.
-- Shape the outline
-  Use `Tab` and `Shift+Tab` to indent or outdent the selected node. On mobile, swipe right or left instead. Use `Alt+↑` and `Alt+↓` to move a node among its siblings.
-  + Structure details
-    - Select neighboring siblings with `Shift+↑` or `Shift+↓`, then move, indent, outdent, collapse, or delete the group together.
-    - Press `Ctrl+Space`, or use the ▶/▼ control, to collapse and expand children. A collapsed node with hidden children shows a hollow bullet.
-    - Press `Ctrl+Backspace` to delete a node. Backspace on an empty title also deletes it; deleting a node with children asks for confirmation.
-    - On desktop, `Ctrl+C` with a title focused and no text selected copies that node and its descendants as VMD.
-  + A collapsed example
-    - Child notes stay here until you expand this node.
-    - Collapsing is useful for keeping a long plan calm and scannable.
-- Navigate and find
-  Select any bullet to zoom into that node. Its children become your working view; use the breadcrumb to go back. On desktop, `Alt+→` zooms in and `Alt+←` zooms out. The zoomed node is recorded in the URL, so a zoom can be reloaded or shared.
-  + Search details
-    - Press `Escape` with no note focused to search on desktop; on mobile use the Search button in the status bar.
-    - Matching text is highlighted and non-matches are hidden. Lowercase queries are case-insensitive; any uppercase letter makes the search case-sensitive.
-    - Use `Tab` and `Shift+Tab` (or `↑` and `↓`) to move through results, then `Enter` to open one. Opening a result zooms to its nearest collapsed ancestor. Press `Escape` again to close search.
-- Turn notes into tasks
-  Press `Ctrl+Enter` to cycle a note through plain, pending, and done. You can also begin its title with `[ ] ` or `[x] `. Click the checkbox to toggle it.
+  A guided tour you navigate, not a page you scroll. Zoom into a note to read it fully.
+  + Read it by zooming
+    Select a bullet, or press Alt+→, to zoom into a note. Alt+← comes back out.
+  + Step from note to note
+    ↓ and ↑ move. With nothing focused, ↓ starts at the first note.
+  + Nothing is saved yet
+    This tour lives in memory and disappears when the tab closes.
+
++ Move and zoom
+  Four keys carry the whole navigation model. Try them as you read.
+  + Select a note to edit it
+    Click a note, type, then press Escape to go back to browsing.
+  + Zoom in and out
+    Alt+→ and Alt+← on desktop; tapping a bullet works everywhere.
+  + Step between notes
+    ↓ and ↑ move; with nothing focused, ↓ starts at the first note.
+
++ Everything here is editable
+  This is a real document. Rewrite it, or delete it once you know the app.
+  + Add a note
+    Enter adds a note after this one, or the first child if it already has one.
+  + Give a note a description
+    Shift+Enter toggles between a note's title and its description.
+  + Reshape the tree
+    Tab indents, Alt+↑/↓ moves a note, Ctrl+Space folds its children.
+
++ Write with light markdown
+  Bold, italic, code, links, and images render while you browse.
+  + Tags and mentions become pills
+    Type #project or @name, then select the pill to search that token.
+  + Paste an outline as an outline
+    Pasted bulleted text becomes notes, not one long line.
+
++ Find anything
+  Escape with nothing focused opens search and hides what does not match.
+  + Narrow as you type
+    Lowercase ignores case; a single capital letter makes it exact.
+  + Open a result
+    Tab through the matches and press Enter to zoom to one.
+
++ Turn notes into tasks
+  Mark work done, give it a due date, and let it repeat.
   - [ ] Plan the next review due:2026-09-15
-    This task is overdue, so it is highlighted in the task list. Due dates render as chips and are written as `due:yyyy-MM-dd`.
+    Overdue work is highlighted. Dates are written due:yyyy-MM-dd.
   - [ ] Pay rent due:2026-09-28 rec:1m
-    `rec:1m` repeats this task monthly. Completing a recurring task advances its due date instead of marking it done.
-  + Task list details
-    - Open Tasks with `Ctrl+Alt+K` or the checklist button in the status bar. It groups work into Pending, Scheduled, and Done for your current zoom.
-    - Select a row to jump to that task; the checkbox in the row toggles it without navigating.
-    - Scheduled tasks can be filtered to a 3, 7, or 30 day window, or All, to hide distant recurring work.
-- Capture on the go
-  Virgulas can collect text without opening the app, and file it into an Inbox node later.
-  + Capture details
-    - Long-press the installed app icon and choose **Quick capture**, or share text to Virgulas from another app on Android.
-    - Open `https://virgulas.com/?quick-add=buy%20milk` from an automation tool such as Tasker.
-    - Copy the **Save to** bookmarklet from Options → Quick capture and click it on any page.
-    - A capture visit stays locked: no passphrase, no decryption, no network. Captures wait in a device-local queue and are filed into your Inbox node on the next unlock.
-    - A shared page becomes a `[title](url)` link, and highlighted text becomes its description.
-- Keep your work
-  This tour is in memory only and disappears when the tab closes. Select **Enable Secure Storage** above to choose a persistent mode.
-  + Storage modes
-    - **Memory** keeps the document in this tab only. It is the default until you choose something else, and the app remembers that choice.
-    - **Local** encrypts this browser's document with a passphrase you choose. The passphrase cannot be recovered.
-    - **Remote** signs in with an account email and password, then encrypts and syncs your document with a separate passphrase. Other devices need both the account and the passphrase.
-    - **File** opens or creates a plain `.vmd` file on your device. Changes are saved back to the file after you pause typing.
-  + Encryption and backups
-    - Local and Remote documents are encrypted with AES-GCM-256 under a PBKDF2 key (600,000 iterations, per-document salt). Only the salt and ciphertext leave the device.
-    - In Local or Remote mode, Options → Data lets you export or import a `.vmd` backup. Importing replaces the document and re-encrypts it on the next save.
-    - Options also lets you change your encryption passphrase and enable an optional biometric prompt on this device.
-    - Remote mode adds account controls, including Delete account, which removes the encrypted document stored on the server and signs you out here.
-- Make it yours
-  Select **Options** in the status bar to change the theme, manage the current storage session, export a backup, or open the source repository. The current mode and sync state are also shown there.
-  + Interface details
-    - On desktop, `Ctrl+Alt+T` toggles the theme and `Ctrl+Alt+W` toggles wide mode.
-    - The status bar shows the storage mode, the sync indicator when signed in, Tasks, Search on mobile, and the **?** button for the complete keyboard shortcut reference on desktop.
-    - Virgulas follows `prefers-reduced-motion` and shows visible focus rings for keyboard navigation.
+    rec:1m repeats monthly; completing it advances the date.
+  + The Tasks panel
+    Ctrl+Alt+K groups work into pending, scheduled, and done.
+
++ Capture on the go
+  Collect a thought now and file it into your Inbox on the next unlock.
+  + Share to Virgulas
+    Long-press the app icon for Quick capture, or share from another app.
+  + Capture from any page
+    Options → Quick capture has a bookmarklet you can click anywhere.
+  + A capture stays locked
+    No passphrase, no decryption, no network; it queues on this device.
+
++ Choose where notes live
+  This tour is in memory and vanishes when the tab closes. Keep it when ready.
+  + Local
+    Encrypted in this browser under a passphrase only you know.
+  + Remote
+    An account plus a separate passphrase syncs your devices.
+  + File
+    A plain .vmd file you own and can open anywhere.
+  + How encryption works
+    AES-GCM-256 under a PBKDF2 key of 600,000 iterations, per document.
+
++ Make it yours
+  Theme, wide mode, backups, and the source code all live in Options.
+  + Toggle the theme
+    Ctrl+Alt+T switches theme; Ctrl+Alt+W widens the outline.
+  + Back up a document
+    Options → Data exports and imports .vmd files.

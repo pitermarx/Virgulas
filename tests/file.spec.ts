@@ -430,6 +430,7 @@ test.describe('File mode', () => {
 
         await page.reload();
         await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
-        await expect(page.getByText('This tour is in memory only and disappears when the tab closes.')).toBeVisible();
+        // Falls back to the in-memory tour.
+        await expect(page.locator('.node-content').first()).toContainText('Welcome to Virgulas');
     });
 });
