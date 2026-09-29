@@ -7,7 +7,8 @@
   --color-border-subtle: #ece9e2;
   --color-text-primary: #1a1814;
   --color-text-muted: #6b6760;
-  --color-text-faint: #aaa79f;
+  /* #aaa79f was ~2.2:1 on the light background; darkened to meet WCAG AA 4.5:1. */
+  --color-text-faint: #6f6b63;
   --color-accent-primary: #2a5caa;
   --color-accent-soft: #e8eef8;
   --color-hover-surface: #f0ede6;
@@ -22,7 +23,7 @@
   --color-due-chip-bg: #fdf0d5;
   --color-due-chip-text: #8a5a00;
   --color-rec-chip-bg: #dff2ef;
-  --color-rec-chip-text: #1f7a6c;
+  --color-rec-chip-text: #1b7265;
   --color-overlay: rgba(20, 18, 14, 0.45);
   --color-success: #2e7d32;
   --color-error: #d32f2f;
@@ -79,12 +80,12 @@
     --color-border-subtle: #2e2c2a;
     --color-text-primary: #ede9e3;
     --color-text-muted: #9b9790;
-    --color-text-faint: #605d58;
+    --color-text-faint: #8a867e;
     --color-accent-primary: #5c8ed6;
     --color-accent-soft: #1c2c46;
     --color-hover-surface: #2e2c28;
     --color-selected-surface: #1c2c46;
-    --color-danger: #e05c4a;
+    --color-danger: #e8715f;
     --color-search-match: #473a18;
     --color-search-current: #6a5318;
     --color-tag-chip-bg: #2b3f2c;
@@ -107,12 +108,12 @@
   --color-border-subtle: #2e2c2a;
   --color-text-primary: #ede9e3;
   --color-text-muted: #9b9790;
-  --color-text-faint: #605d58;
+  --color-text-faint: #8a867e;
   --color-accent-primary: #5c8ed6;
   --color-accent-soft: #1c2c46;
   --color-hover-surface: #2e2c28;
   --color-selected-surface: #1c2c46;
-  --color-danger: #e05c4a;
+  --color-danger: #e8715f;
   --color-search-match: #473a18;
   --color-search-current: #6a5318;
   --color-tag-chip-bg: #2b3f2c;
@@ -199,6 +200,19 @@ textarea {
 
   #splash {
     transition: none;
+  }
+}
+
+/* ── Forced colours (Windows High Contrast and similar) ──
+   Keep the focus ring on the user's `Highlight` colour and stop the colour-only
+   sync dot from being flattened out of existence by the user's palette. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .sync-dot {
+    border: 1px solid CanvasText;
   }
 }
 

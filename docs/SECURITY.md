@@ -29,6 +29,7 @@ Status legend: **Fixed** (mitigation shipped), **Open** (tracked here), **Accept
 | `deserialize` parent lookup resolved inherited properties | Node map uses `Object.create(null)`, so `constructor`/`toString`/`__proto__` parents no longer pass validation | `source/js/outline.ts` |
 | Base64 helpers broke on large documents | Chunked `toBase64`/`fromBase64`, so a large payload no longer throws `RangeError: Maximum call stack size exceeded` on save/unlock | `source/js/crypto2.ts` |
 | No self-service erasure (GDPR/right-to-be-forgotten) | Scoped `Users can delete their own outline` DELETE policy (`auth.uid() = user_id`) plus the Options → **Delete account** path that removes the `outlines` row, clears the local session and signs out | `supabase/schemas/outlines.sql`, `source/js/sync.ts`, `source/js/persistence.ts` |
+| No CDN security headers; clickjacking possible | A Cloudflare response-header transform ruleset plus Always Use HTTPS is applied by `bun run cf:headers` from the deploy job (HSTS, `nosniff`, `frame-ancestors 'none'`, `X-Frame-Options`, Referrer-Policy, Permissions-Policy, COOP, CORP) and `/.well-known/security.txt` is published | `scripts/cloudflare-headers.mjs`, `.github/workflows/ci.yml`, `source/.well-known/security.txt` |
 
 **Analytics maintenance.** The Umami tracker is the only remote script. When it is upgraded,
 recompute the `sha384` digest, update the `integrity` attribute and the `script-src` allow-list in
@@ -124,21 +125,20 @@ enable secure password change (re-authentication).
 
 ---
 
-### No CDN security headers; clickjacking possible
+### CDN security headers depend on the Cloudflare token
 
-**Evidence:** no `_headers`, `netlify.toml`, `vercel.json`, or equivalent. GitHub Pages
-cannot set response headers, and `frame-ancestors` is **ignored when delivered in a
-`<meta>` CSP**.
+**Evidence:** `scripts/cloudflare-headers.mjs` sets HSTS, `nosniff`, `frame-ancestors
+'none'`, `X-Frame-Options`, Referrer-Policy, Permissions-Policy, COOP and CORP at the
+Cloudflare edge, and turns on Always Use HTTPS. The deploy job runs it with
+`continue-on-error: true`.
 
-**Impact:** the app can be framed by another site (UI redressing — e.g. clickjacking
-"Sign out", "Delete local data", or the unlock button). HSTS, `X-Frame-Options`,
-`Referrer-Policy`, `Permissions-Policy`, and `frame-ancestors` are all absent.
+**Impact:** none while the ruleset is applied. If `CLOUDFLARE_API_TOKEN` lacks
+Zone → Config → Edit, the step is skipped or fails and the headers silently regress to
+absent — the exact clickjacking/HSTS exposure this entry used to track.
 
-**Remediation:** front the app with Cloudflare (already used for cache purging in CI)
-or another proxy that can set response headers, and configure
-`Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`, HSTS,
-`Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy`. Keep the meta
-CSP for directives that do work in meta.
+**Remediation:** grant the token Zone → Config → Edit, then drop `continue-on-error` so a
+missing ruleset fails the deploy. Verify with
+`curl -sI https://virgulas.com/ | grep -i strict-transport-security`.
 
 ---
 

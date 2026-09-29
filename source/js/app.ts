@@ -784,7 +784,7 @@ const LockScreen = () => {
       <div class="sheet-content">
 
         ${step === 'choose-mode' && html`
-          <h1 class="auth-title" id="auth-title">Choose Storage</h1>
+          <h2 class="auth-title" id="auth-title">Choose Storage</h2>
           <div class="auth-mode-switch" role="group" aria-label="Storage mode">
             <button type="button" class=${'auth-mode-btn' + (isLocal ? ' is-active' : '')}
               onClick=${() => pickMode('local')}>Local</button>
@@ -793,7 +793,7 @@ const LockScreen = () => {
             <button type="button" class=${'auth-mode-btn' + (isFilesystem ? ' is-active' : '')}
               onClick=${() => pickMode('filesystem')}>File</button>
           </div>
-          ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+          ${unlockError.value && html`<div class="form-error" role="alert">${unlockError.value}</div>`}
           <div class="auth-memory-skip">
             <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
               Skip — continue in memory
@@ -802,7 +802,7 @@ const LockScreen = () => {
         `}
 
         ${step === 'unlock' && html`
-          <h1 class="auth-title" id="auth-title">Unlock Virgulas</h1>
+          <h2 class="auth-title" id="auth-title">Unlock Virgulas</h2>
           <div class="status-text">
             ${isLocal && (isLocalCreate() ? 'Secure Your Workspace' : 'Encrypted Local Storage')}
             ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — sign in')}
@@ -819,9 +819,11 @@ const LockScreen = () => {
               <div class="input-group">
                 <label for="auth-password" class="input-label">Account password</label>
                 <input value=${password.value} onInput=${(e: any) => password.value = e.target.value}
-                  id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password" />
+                  id="auth-password" type="password" placeholder="Account password" class="input-field" autocomplete="current-password"
+                  aria-invalid=${unlockError.value ? 'true' : undefined}
+                  aria-describedby=${unlockError.value ? 'auth-password-error' : undefined} />
               </div>
-              ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+              ${unlockError.value && html`<div class="form-error" id="auth-password-error" role="alert">${unlockError.value}</div>`}
               <button type="submit" class="lock-submit-btn" disabled=${passwordStepDisabled} aria-label="Continue" title="Continue">
                 ${isBusy.value ? '...' : 'Continue'}
               </button>
@@ -864,11 +866,13 @@ const LockScreen = () => {
                   placeholder=${isLocalCreate() ? 'Create passphrase' : 'Passphrase'}
                   class="huge-input"
                   autocomplete=${isLocalCreate() ? 'new-password' : 'current-password'}
+                  aria-invalid=${unlockError.value ? 'true' : undefined}
+                  aria-describedby=${unlockError.value ? 'auth-unlock-error' : undefined}
                 />
                 <p class="auth-hint">If you lose this passphrase, your data cannot be recovered — not even by Virgulas.</p>
               `}
-              ${unlockMessage.value && html`<div class="form-success">${unlockMessage.value}</div>`}
-              ${unlockError.value && html`<div class="form-error">${unlockError.value}</div>`}
+              ${unlockMessage.value && html`<div class="form-success" role="status">${unlockMessage.value}</div>`}
+              ${unlockError.value && html`<div class="form-error" id="auth-unlock-error" role="alert">${unlockError.value}</div>`}
               ${canResetLocalData.value && html`
                 <div class="auth-secondary-actions">
                   <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
@@ -996,6 +1000,7 @@ const SecureStoragePrompt = () => {
 };
 
 const REPO_URL = 'https://github.com/pitermarx/Virgulas';
+const SPEC_URL = 'https://specification.website';
 
 const OptionsModal = () => {
   if (!optionsOpen.value) return null;
@@ -1260,8 +1265,8 @@ const OptionsModal = () => {
             </p>
           `}
 
-          ${adminError.value && html`<div class="form-error">${adminError.value}</div>`}
-          ${adminMessage.value && html`<div class="form-success">${adminMessage.value}</div>`}
+          ${adminError.value && html`<div class="form-error" role="alert">${adminError.value}</div>`}
+          ${adminMessage.value && html`<div class="form-success" role="status">${adminMessage.value}</div>`}
 
           <p class="admin-hint admin-footer-note">
             Your data is always encrypted before it leaves this device — the server cannot read it, and there is no way to reset a forgotten passphrase.
@@ -1271,6 +1276,9 @@ const OptionsModal = () => {
             <span class="options-footer-version" data-app-version>${appVersion.value}</span>
             <a class="options-footer-link" href=${REPO_URL} target="_blank"
               rel="noopener noreferrer" title="Open the Virgulas source repository">See on GitHub ↗</a>
+            <a class="options-footer-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
+            <a class="options-footer-link" href=${SPEC_URL} target="_blank" rel="noopener noreferrer"
+              title="This site follows The Website Specification">Follows The Website Specification ↗</a>
           </div>
         </div>
       </div>
@@ -1328,11 +1336,12 @@ const Splash = () => {
     ${ready && html`
     <div class="app-shell">
       <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
-        <div class="main-content">
+        <main class="main-content" id="main-content" tabindex="-1"
+          inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
           <${MainToolbar} />
           <${SecureStoragePrompt} />
           <${Outline} />
-        </div>
+        </main>
         <${StatusToolbar} />
         ${!isLocked && html`<${OptionsModal} />`}
         ${!isLocked && html`<${ConflictModal} />`}
@@ -1355,6 +1364,21 @@ if (captureOnly && initialCaptureIntent) {
     window.addEventListener('pageshow', consumeQuickCaptureUrl);
     window.addEventListener('popstate', consumeQuickCaptureUrl);
   }
+}
+
+// Skip link: move focus to the main landmark without changing the URL hash. The
+// app uses `location.hash` for zoom routing, so navigating to `#main-content`
+// would be read as a node id, re-render the outline, and drop the focus.
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    if (!target?.closest?.('.skip-link')) return;
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    event.preventDefault();
+    main.focus();
+    main.scrollIntoView({ block: 'start' });
+  });
 }
 
 // Register the service worker from the bundle so index.html needs no inline script

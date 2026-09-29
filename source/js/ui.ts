@@ -602,7 +602,7 @@ export function StatusToolbar() {
     const hasFocusedNode = focusId.value !== null
 
     return html`
-    <div class="status-toolbar">
+    <div class="status-toolbar" role="contentinfo">
         <div class="toolbar-actions">
             ${isMobile && html`<button class="toolbar-btn toolbar-btn-search" aria-label="Search" onClick=${() => enterSearchMode(focus)}>Search</button>`}
             <button class="toolbar-btn" onClick=${() => optionsOpen.value = true}>Options</button>
@@ -616,6 +616,7 @@ export function StatusToolbar() {
                 </svg>
             </button>
             ${!isMemory && html`<span class="sync-dot" style="background-color: ${color};" title="Sync: ${syncState}"></span>`}
+            <span class="visually-hidden" role="status">Sync status: ${syncState}</span>
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
             : html`<span class="status-mode" title="Current storage mode">${modeLabel}</span>`}
@@ -643,7 +644,7 @@ export function MainToolbar() {
                 resetSearchNavigation()
             }}
                         onKeyDown=${(e: any) => handleSearchKeyDown(e, focus)} />
-                    ${counterText ? html`<span class="search-counter">${counterText}</span>` : null}
+                    ${counterText ? html`<span class="search-counter" role="status" aria-live="polite">${counterText}</span>` : null}
                     <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)} aria-label="Close search" title="Close search">×</button>
                 </div>
             </div>

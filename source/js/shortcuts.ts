@@ -355,6 +355,14 @@ function handleKeyDown(e: any, focus: EditorFocus) {
         return false
     }
 
+    // Enter/Space on interactive chrome (the skip link, links, toolbar and modal
+    // buttons) must activate that control, not create or edit an outline node.
+    // Other keys still fall through so global shortcuts (Escape, theme) work.
+    if ((e.key === 'Enter' || e.key === ' ') && e.target && typeof e.target.closest === 'function' &&
+        e.target.closest('.skip-link, a[href], button, [role="button"], summary')) {
+        return false
+    }
+
     const k =
         e.ctrlKey && e.altKey ? `Ctrl+Alt+${e.key}` :
             e.ctrlKey && e.shiftKey ? `Ctrl+Shift+${e.key}` :

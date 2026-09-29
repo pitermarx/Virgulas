@@ -67,13 +67,20 @@ Do not create files outside these locations without explicit instruction:
 /
 ├── .github/workflows/      — ci.yml (test, db publish, release, deploy), daily.yml
 ├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png
-├── scripts/                — build, cache-bump, hooks, release, serve, CSP helpers
+├── scripts/                — build, cache-bump, hooks, release, serve, CSP + edge-header helpers
 ├── source/
 │   ├── index.html          — HTML entry point (loads js/app.js + js/app.css)
 │   ├── intro.vmd           — in-app tour loaded in Memory mode
 │   ├── site.webmanifest    — PWA manifest (Quick capture shortcut, share target)
 │   ├── version.json        — version/sha/GitHub timestamp; stamped by the build
 │   ├── sw.js               — service worker
+│   ├── privacy.html        — privacy policy page
+│   ├── 404.html            — branded not-found page (served with a real 404 status)
+│   ├── robots.txt          — crawl policy, Content-Signal, sitemap reference
+│   ├── sitemap.xml         — canonical URL list
+│   ├── llms.txt            — curated index for AI agents
+│   ├── favicon.ico/.svg    — root favicon fallbacks
+│   ├── .well-known/        — security.txt, gpc.json
 │   ├── css/                — modular stylesheets bundled into app.css
 │   ├── js/                 — TypeScript application modules (entry: app.ts)
 │   ├── fonts/              — self-hosted Inter webfonts
@@ -560,7 +567,7 @@ Workflows live in `.github/workflows/`.
 | `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
-| `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, purges Cloudflare |
+| `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, best-effort), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
 - The deploy build passes `--no-sourcemap` and refuses to deploy if `dist/js/app.js.map` appears.
@@ -578,7 +585,9 @@ production builds compile that seam out.
 
 - `SUPABASE_PROJECT` (repository **variable**: project ref; used to pin the production CSP origin and by `publish-db`)
 - `SUPABASE_ACCESS_TOKEN` (secret: CI migration publish)
-- `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN` (optional secrets: cache purge after deploy)
+- `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN` (optional secrets: cache purge after deploy, and
+  `bun run cf:headers` — the token needs **Zone → Config → Edit** to apply the response-header
+  ruleset and Always Use HTTPS)
 
 ## Releases and versioning
 

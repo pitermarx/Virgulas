@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f5f0">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1714">
+  <title>Privacy — Virgulas</title>
+  <meta name="description" content="What data Virgulas stores, where it is stored, and what never leaves your device.">
+  <link rel="canonical" href="https://virgulas.com/privacy.html">
+  <link rel="icon" type="image/svg+xml" href="media/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="media/apple-touch-icon.png">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --surface: #fdfbf7;
+      --text: #1a1814;
+      --muted: #6b6760;
+      --accent: #2a5caa;
+      --border: #ddd9d0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1714;
+        --surface: #242220;
+        --text: #ede9e3;
+        --muted: #9b9790;
+        --accent: #5c8ed6;
+        --border: #3a3733;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: clamp(16px, 4vw, 48px);
+    }
+
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      margin: 0 0 4px;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      margin: 2rem 0 8px;
+    }
+
+    p,
+    li {
+      color: var(--text);
+    }
+
+    .lede {
+      color: var(--muted);
+      margin-top: 0;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 1.5rem 0;
+    }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Privacy</h1>
+    <p class="lede">Last updated 29 September 2026.</p>
+
+    <p>
+      Virgulas is local-first. In Memory, Local, and File modes nothing you write is ever
+      sent to a Virgulas server. Remote mode stores a single encrypted document so you can
+      sync between devices; the server never receives the key.
+    </p>
+
+    <h2>What is stored, and where</h2>
+    <ul>
+      <li><strong>Your outline</strong> — in Memory mode it lives only in the tab; in Local mode
+        it is encrypted with your passphrase and kept in this browser's <code>localStorage</code>;
+        in File mode it is written to a <code>.vmd</code> file you choose. In Remote mode the
+        same ciphertext is also stored in our Supabase-hosted database, keyed to your account.</li>
+      <li><strong>Account email and password</strong> — only if you use Remote mode. Authentication
+        is handled by Supabase; the password is never stored by the app.</li>
+      <li><strong>Non-secret device settings</strong> — storage mode, theme, last username, sync
+        timestamps, the Supabase endpoint, and the quick-capture queue are stored unencrypted in
+        this browser. They never contain your document text.</li>
+      <li><strong>Analytics</strong> — we self-host an Umami instance at
+        <code>um.vps.pitermarx.com</code>. It is cookieless, collects aggregate page views, and
+        does not build a profile or track you across sites.</li>
+    </ul>
+
+    <h2>What we cannot see</h2>
+    <p>
+      The document is encrypted on your device with AES-GCM-256 using a key derived from your
+      passphrase (PBKDF2-HMAC-SHA256). The server stores only ciphertext and cannot read it.
+      If you forget your passphrase, the data cannot be recovered — not even by us.
+    </p>
+
+    <h2>Legal basis, retention, and your rights</h2>
+    <p>
+      Where the GDPR applies, we process your account email to perform the contract (Remote
+      mode) and aggregate analytics on the basis of legitimate interest. You can delete your
+      stored document and sign out at any time from <em>Options → Delete account</em>; the
+      encrypted row is removed immediately. To have the account record itself erased, or to
+      exercise access, rectification, portability, or objection rights, contact us through the
+      repository link below. We keep data only while your account exists.
+    </p>
+
+    <div class="card">
+      <strong>Global Privacy Control.</strong> We do not sell or share personal data, so a GPC
+      signal requires no change in behaviour. We advertise this at
+      <a href="/.well-known/gpc.json">/.well-known/gpc.json</a>.
+    </div>
+
+    <footer>
+      <p>
+        <a href="/">← Back to Virgulas</a> ·
+        <a href="https://github.com/pitermarx/Virgulas">Source on GitHub</a> ·
+        Following <a href="https://specification.website" rel="noopener">The Website Specification</a>
+      </p>
+    </footer>
+  </main>
+</body>
+
+</html>

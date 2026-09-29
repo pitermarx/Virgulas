@@ -333,6 +333,17 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
+      # GitHub Pages cannot set response headers; the required-tier headers
+      # (HSTS, nosniff, frame-ancestors, Referrer-Policy, Permissions-Policy) are
+      # applied at the Cloudflare edge. Continue-on-error until the token is
+      # confirmed to carry Zone → Config → Edit.
+      - name: Apply Cloudflare edge headers
+        continue-on-error: true
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bun run cf:headers
+
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}

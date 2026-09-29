@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f5f0">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1714">
+  <title>Page not found — Virgulas</title>
+  <link rel="icon" type="image/svg+xml" href="/media/favicon.svg">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --text: #1a1814;
+      --muted: #6b6760;
+      --accent: #2a5caa;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1714;
+        --text: #ede9e3;
+        --muted: #9b9790;
+        --accent: #5c8ed6;
+      }
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: clamp(1.8rem, 6vw, 2.6rem);
+      margin: 0 0 8px;
+    }
+
+    p {
+      color: var(--muted);
+      max-width: 34rem;
+    }
+
+    a.back {
+      display: inline-block;
+      margin-top: 20px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>404 — page not found</h1>
+    <p>
+      That address does not exist on Virgulas. The link may be old, or the page may have
+      moved. Your outline is unaffected.
+    </p>
+    <a class="back" href="/">← Open Virgulas</a>
+  </main>
+</body>
+
+</html>

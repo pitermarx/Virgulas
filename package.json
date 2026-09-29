@@ -14,6 +14,7 @@
         "sw:bump": "bun scripts/bump-sw-caches.mjs",
         "sw:hooks": "bun scripts/install-hooks.mjs",
         "commit:check": "bun scripts/check-conventional-commits.mjs",
+        "cf:headers": "bun scripts/cloudflare-headers.mjs",
         "db:start": "supabase start --ignore-health-check",
         "db:stop": "supabase stop --no-backup --yes",
         "postinstall": "bun scripts/bump-sw-caches.mjs"

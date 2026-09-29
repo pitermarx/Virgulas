@@ -37,9 +37,46 @@
   <link rel="shortcut icon" href="media/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="media/apple-touch-icon.png" />
   <link rel="manifest" href="site.webmanifest" />
+
+  <!-- Referrer and colour-scheme hints. HSTS/nosniff/frame-ancestors are response
+       headers and are applied at the Cloudflare edge (scripts/cloudflare-headers.mjs). -->
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f5f0" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1714" />
+
+  <link rel="canonical" href="https://virgulas.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Virgulas" />
+  <meta property="og:title" content="Virgulas" />
+  <meta property="og:description" content="Local-first browser outliner" />
+  <meta property="og:url" content="https://virgulas.com/" />
+  <meta property="og:image" content="https://virgulas.com/media/web-app-manifest-512x512.png" />
+  <meta name="twitter:card" content="summary" />
+
+  <!-- Critical face for the app shell; the rest load with font-display: swap. -->
+  <link rel="preload" as="font" type="font/woff2" href="fonts/inter/inter-latin.woff2" crossorigin />
+  <link rel="preconnect" href="https://um.vps.pitermarx.com" crossorigin />
+
+  <!-- Structured data: the same facts search engines and agents read. -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Virgulas",
+      "applicationCategory": "ProductivityApplication",
+      "operatingSystem": "Any (web browser)",
+      "url": "https://virgulas.com/",
+      "description": "Local-first browser outliner with encrypted sync.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+      "sameAs": "https://github.com/pitermarx/Virgulas"
+    }
+  </script>
 </head>
 
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <h1 class="visually-hidden">Virgulas — local-first browser outliner</h1>
   <div id="app">
     <div id="splash">
       <div class="logo">Virgulas</div>

@@ -401,6 +401,23 @@
       production) the concrete Supabase origin; there is no inline script
     - Production builds are compiled without source maps and without the Supabase client test seam
     - No document content is ever sent to the analytics host; page views only
+  + SITE AND DISCOVERABILITY
+    - The site follows The Website Specification (https://specification.website); the link is
+      published in the README, in Options, and on the privacy page
+    - Response headers GitHub Pages cannot set are applied at the Cloudflare edge by
+      `scripts/cloudflare-headers.mjs` during the deploy job: HSTS, `X-Content-Type-Options:
+      nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options`,
+      `Referrer-Policy`, `Permissions-Policy`, COOP, CORP, and a `Link` discovery header
+      Plain HTTP is redirected to HTTPS at the same edge (Always Use HTTPS)
+    - `/robots.txt` allows crawling and declares `Content-Signal: search=yes, ai-input=yes, ai-train=no`
+    - `/sitemap.xml` lists the canonical URLs; `/llms.txt` gives agents a curated index
+    - `/.well-known/security.txt` and `/.well-known/gpc.json` are published
+    - `/privacy.html` describes what is stored, where, and why; `/404.html` is the branded
+      not-found page that returns a real 404 status
+    - Accessibility baseline: one `<h1>`, a `<main>` landmark, a `contentinfo` status bar, a skip
+      link, announced form errors (`role="alert"` plus `aria-invalid` and `aria-describedby`),
+      `prefers-reduced-motion` and `forced-colors` support, and AA body-text contrast
+    - While a modal owns the screen, the content behind it is `inert`
   + Design considerations
     - A splash screen is seen on load, and it is removed after the app is completely ready
     - The text of root nodes has a font-size of 1rem, the second level 0.9rem, and remaining nodes 0.85rem
