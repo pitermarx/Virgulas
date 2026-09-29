@@ -41,7 +41,6 @@ test.describe('Website Specification — crawl and discovery files', () => {
         expect(privacy.status()).toBe(200);
         const body = await privacy.text();
         expect(body).toMatch(/<h1[^>]*>[\s\S]*Privacy[\s\S]*<\/h1>/);
-        expect(body).toContain('https://specification.website');
     });
 
     test('the custom 404 page is available and self-contained', async ({ request }) => {
@@ -69,13 +68,13 @@ test.describe('Website Specification — document foundations', () => {
         expect(data.name).toBe('Virgulas');
     });
 
-    test('the app footer links the followed specification', async ({ page }) => {
+    test('the Options footer links the privacy policy', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
         await page.getByRole('button', { name: 'Options' }).click();
-        const link = page.getByRole('link', { name: /Follows The Website Specification/i });
-        await expect(link).toHaveAttribute('href', 'https://specification.website');
+        const link = page.getByRole('link', { name: 'Privacy' });
+        await expect(link).toHaveAttribute('href', '/privacy.html');
     });
 });
 

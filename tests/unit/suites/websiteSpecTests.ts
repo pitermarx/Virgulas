@@ -49,11 +49,24 @@ await test('well-known security.txt and gpc.json are present and valid', () => {
 
 section('Website Specification — required pages and icons')
 
-await test('privacy policy page exists with an h1 and the specification link', () => {
+await test('privacy policy page exists with an h1, canonical and a back link', () => {
     const privacy = read('source/privacy.html')
     assert(/<h1[^>]*>[\s\S]*Privacy[\s\S]*<\/h1>/.test(privacy), 'privacy page needs an <h1>Privacy')
-    assert(privacy.includes('https://specification.website'), 'privacy page should link the specification')
     assert(privacy.includes('rel="canonical"'), 'privacy page needs a canonical URL')
+    assert(privacy.includes('href="/"'), 'privacy page needs a link back to the app')
+})
+
+await test('the specification attribution lives in the contributor docs, not the app UI', () => {
+    assert(read('README.md').includes('https://specification.website'), 'README should note the followed specification')
+    assert(read('AGENTS.md').includes('https://specification.website'), 'AGENTS.md should note the followed specification')
+    assert(
+        !read('source/js/app.ts').includes('specification.website'),
+        'the Options popup should not carry the specification attribution'
+    )
+    assert(
+        !read('source/privacy.html').includes('specification.website'),
+        'the privacy page should not carry the specification attribution'
+    )
 })
 
 await test('custom 404 page exists and is noindex', () => {
