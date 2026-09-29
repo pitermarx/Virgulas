@@ -142,7 +142,11 @@ textarea {
 }
 
 #app {
+  /* Dynamic viewport units track the mobile browser URL bar. `100vh` is the
+     fallback for engines without `dvh`; without it the bottom status toolbar
+     can sit below the visible viewport with no way to scroll to it. */
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -154,6 +158,7 @@ textarea {
   left: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background-color: var(--color-background);
   display: flex;
   flex-direction: column;

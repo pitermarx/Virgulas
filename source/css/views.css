@@ -1,7 +1,10 @@
 /* Virgulas styles — views. Split from the former monolithic style.css. Order matters: imported in app.css order. */
 /* ── Main view ── */
 .main-view {
+  /* The status toolbar is the last flex child; with `100vh` on mobile it lands
+     below the visible viewport. `100dvh` follows the URL bar instead. */
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }

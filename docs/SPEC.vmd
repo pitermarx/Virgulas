@@ -378,6 +378,8 @@
       - Touch devices get larger hit areas for status-bar buttons, close controls, and Tasks panel pills
       - The Tasks panel docks beside the document on wide screens (≥ 1160 px) and slides up as a
         bottom sheet on narrow screens
+      - The shell sizes to the dynamic viewport height (`100dvh`, with a `100vh` fallback), so the
+        status toolbar stays visible above a mobile browser's URL bar
     + ACCESSIBILITY
       - Every interactive element shows a visible keyboard focus ring: a 2 px accent outline for
         controls on a surface, and an accent border plus soft halo for text fields
