@@ -22,7 +22,7 @@ Use semantic tokens instead of hardcoded colors.
 - Border subtle (`--color-border-subtle`): `#ece9e2`
 - Text primary (`--color-text-primary`): `#1a1814`
 - Text muted (`--color-text-muted`): `#6b6760`
-- Text faint (`--color-text-faint`): `#aaa79f`
+- Text faint (`--color-text-faint`): `#6f6b63`
 - Accent primary (`--color-accent-primary`): `#2a5caa`
 - Accent soft (`--color-accent-soft`): `#e8eef8`
 - Hover surface (`--color-hover-surface`): `#f0ede6`
@@ -39,7 +39,7 @@ Use semantic tokens instead of hardcoded colors.
 - Tag chip (`--color-tag-chip-bg` / `--color-tag-chip-text`): `#e4f2d8` / `#2d6a2f`
 - Mention chip (`--color-mention-chip-bg` / `--color-mention-chip-text`): `#efe6f8` / `#6b3fa0`
 - Due chip (`--color-due-chip-bg` / `--color-due-chip-text`): `#fdf0d5` / `#8a5a00`
-- Recurrence chip (`--color-rec-chip-bg` / `--color-rec-chip-text`): `#dff2ef` / `#1f7a6c`
+- Recurrence chip (`--color-rec-chip-bg` / `--color-rec-chip-text`): `#dff2ef` / `#1b7265`
 
 ### Dark Theme
 
@@ -51,12 +51,12 @@ Applies to `[data-theme="dark"]`, and to the OS dark preference when no explicit
 - Border subtle (`--color-border-subtle`): `#2e2c2a`
 - Text primary (`--color-text-primary`): `#ede9e3`
 - Text muted (`--color-text-muted`): `#9b9790`
-- Text faint (`--color-text-faint`): `#605d58`
+- Text faint (`--color-text-faint`): `#8a867e`
 - Accent primary (`--color-accent-primary`): `#5c8ed6`
 - Accent soft (`--color-accent-soft`): `#1c2c46`
 - Hover surface (`--color-hover-surface`): `#2e2c28`
 - Selected surface (`--color-selected-surface`): `#1c2c46`
-- Danger (`--color-danger`): `#e05c4a`
+- Danger (`--color-danger`): `#e8715f`
 - Search match (`--color-search-match`): `#473a18`
 - Search current (`--color-search-current`): `#6a5318`
 - Overlay (`--color-overlay`): `rgba(0, 0, 0, 0.7)`
@@ -84,7 +84,7 @@ Applies to `[data-theme="dark"]`, and to the OS dark preference when no explicit
 
 - Primary content: regular weight, high contrast
 - Muted metadata/help text: medium-low contrast
-- Faint placeholders/hints: low contrast
+- Faint hints and secondary chrome: the lowest tier of text, still meeting WCAG AA (≥4.5:1) against the background — never use it for body copy
 - Section emphasis: 600 weight
 
 ## 4. Spacing System
@@ -230,9 +230,14 @@ Usage guidance:
   - Controls on a surface (buttons, toolbar/close icons, panel rows, pills) draw a 2px accent outline with a 2px offset (`--focus-outline`); full-bleed panel rows use a negative offset so the ring stays inside the scroll container.
   - Text fields use an accent border plus a 3px soft accent halo (`--focus-halo`), matching the search and dialog inputs.
 - Text editing surfaces (node text, descriptions, passphrase and dialog fields) show an accent-coloured caret.
-- Preserve sufficient contrast in both themes for text and controls.
+- Body text and meaningful small text meet WCAG AA contrast (≥4.5:1) in both themes; colour-only indicators clamp to their background deliberately.
 - Keep touch targets comfortable on mobile: status-bar buttons, close controls, and Tasks panel pills grow on coarse pointers.
 - Avoid relying on color alone where practical (pair with icon/shape/state).
+- Exactly one `<h1>` per page; the shell exposes a `<main id="main-content">` landmark and a `contentinfo` status bar.
+- A skip link is the first focusable element and moves focus to the main landmark without changing the URL hash.
+- Form errors are text, tied to their input (`aria-invalid` + `aria-describedby`) and announced (`role="alert"`); success confirmations use `role="status"`.
+- Background content is `inert` while a modal owns the screen.
+- Respect `prefers-reduced-motion` and `forced-colors`; keep the focus ring visible under the user's own palette.
 
 ## 10. Implementation Notes
 
