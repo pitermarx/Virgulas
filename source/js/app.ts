@@ -1000,7 +1000,6 @@ const SecureStoragePrompt = () => {
 };
 
 const REPO_URL = 'https://github.com/pitermarx/Virgulas';
-const SPEC_URL = 'https://specification.website';
 
 const OptionsModal = () => {
   if (!optionsOpen.value) return null;
@@ -1277,8 +1276,6 @@ const OptionsModal = () => {
             <a class="options-footer-link" href=${REPO_URL} target="_blank"
               rel="noopener noreferrer" title="Open the Virgulas source repository">See on GitHub ↗</a>
             <a class="options-footer-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
-            <a class="options-footer-link" href=${SPEC_URL} target="_blank" rel="noopener noreferrer"
-              title="This site follows The Website Specification">Follows The Website Specification ↗</a>
           </div>
         </div>
       </div>

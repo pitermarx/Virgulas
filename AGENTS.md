@@ -15,6 +15,10 @@ Companion documents:
 | [`docs/design.md`](./docs/design.md) | Visual and interaction design system |
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | Security register (fixed / open / accepted) |
 
+The public site follows [The Website Specification](https://specification.website). The
+compliance notes (edge security headers, crawl and discovery files, the privacy and 404 pages,
+and the accessibility baseline) live in `docs/SPEC.vmd` → SITE AND DISCOVERABILITY.
+
 ---
 
 ## Rules

@@ -402,8 +402,8 @@
     - Production builds are compiled without source maps and without the Supabase client test seam
     - No document content is ever sent to the analytics host; page views only
   + SITE AND DISCOVERABILITY
-    - The site follows The Website Specification (https://specification.website); the link is
-      published in the README, in Options, and on the privacy page
+    - The site follows The Website Specification (https://specification.website); the attribution
+      lives in the contributor docs (`README.md` and `AGENTS.md`), not in the app UI
     - Response headers GitHub Pages cannot set are applied at the Cloudflare edge by
       `scripts/cloudflare-headers.mjs` during the deploy job: HSTS, `X-Content-Type-Options:
       nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options`,
