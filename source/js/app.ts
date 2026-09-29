@@ -1023,24 +1023,6 @@ const OptionsModal = () => {
     await loadLockedBackgroundIntro();
   }
 
-  async function handleSignOut() {
-    optionsOpen.value = false;
-    isBusy.value = true;
-    try {
-      await persistence.signOut();
-      authUser.value = null;
-      remotePasswordStage.value = false;
-      await persistence.unlock('', { mode: 'memory' });
-      persistence.setPreferredMode('memory');
-      stagedMemoryDocJson = null;
-      document.body.setAttribute('data-main-view', 'rendered');
-    } catch (err) {
-      unlockError.value = String((err as { message?: string } | null)?.message || 'Failed to sign out.');
-    } finally {
-      isBusy.value = false;
-    }
-  }
-
   async function handleChangeFile() {
     optionsOpen.value = false;
     await persistence.pickNewFile();
@@ -1091,6 +1073,21 @@ const OptionsModal = () => {
         outline.addChild('root', { text: '' });
       }
       return;
+    }
+
+    if (currentMode === 'remote') {
+      // End the remote session first — this stops polling, drops the derived key,
+      // and revokes the device-local biometric seal — then clear this device.
+      isBusy.value = true;
+      try {
+        await persistence.signOut();
+      } catch (err) {
+        unlockError.value = String((err as { message?: string } | null)?.message || 'Failed to sign out.');
+      } finally {
+        isBusy.value = false;
+      }
+      remotePasswordStage.value = false;
+      stagedMemoryDocJson = null;
     }
 
     persistence.reset();
@@ -1234,11 +1231,6 @@ const OptionsModal = () => {
             <button class="btn btn-secondary" onClick=${handleThemeToggle}>Toggle theme</button>
           </div>
 
-          ${isRemote && html`
-            <div class="options-row">
-              <button class="btn btn-secondary" onClick=${handleSignOut} disabled=${isBusy.value}>Sign out</button>
-            </div>
-          `}
           ${currentMode === 'local' && html`
             <div class="options-row">
               <button class="btn btn-secondary" onClick=${handleLock}>Lock</button>
@@ -1251,8 +1243,8 @@ const OptionsModal = () => {
           `}
           ${currentMode !== 'memory' && html`
             <div class="options-row options-row-danger">
-              <button class="btn btn-danger" onClick=${handlePurge}>
-                ${currentMode === 'remote' ? 'Sign out & clear session' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
+              <button class="btn btn-danger" onClick=${handlePurge} disabled=${isBusy.value}>
+                ${currentMode === 'remote' ? 'Sign out' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
               </button>
             </div>
           `}

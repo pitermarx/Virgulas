@@ -319,7 +319,7 @@ test.describe('Admin / Options modal', () => {
     expect(calls).toContainEqual({ password: 'brand-new-password' });
   });
 
-  test('handleSignOut revokes the device biometric seal', async ({ page }) => {
+  test('signing out revokes the device biometric seal', async ({ page }) => {
     await stubWebAuthn(page);
 
     await page.goto('/');
@@ -341,6 +341,7 @@ test.describe('Admin / Options modal', () => {
     await expect(page.getByText('Biometric unlock enabled on this device.')).toBeVisible();
     expect(await readBiometricSeal(page)).toBe(true);
 
+    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
 
     // Sign-out lands in the in-memory demo; the seal must be gone. 

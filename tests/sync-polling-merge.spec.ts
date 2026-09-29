@@ -174,6 +174,7 @@ test.describe('Sync polling', () => {
         ).toBeGreaterThan(0);
 
         await page.getByRole('button', { name: 'Options' }).click();
+        page.once('dialog', (dialog) => dialog.accept());
         await page.getByRole('button', { name: 'Sign out', exact: true }).click();
         await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
 
