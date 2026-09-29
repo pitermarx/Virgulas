@@ -78,6 +78,9 @@ replay('mobile viewport', viewport.sections)
 const websiteSpec = await import('./suites/websiteSpecTests.js')
 replay('website specification', websiteSpec.sections)
 
+const workflowHardening = await import('./suites/workflowHardeningTests.js')
+replay('workflow hardening', workflowHardening.sections)
+
 // Runs last: installs fake IndexedDB / WebAuthn globals.
 const biometrics = await import('./suites/biometricsTests.js')
 replay('biometrics', biometrics.sections)
