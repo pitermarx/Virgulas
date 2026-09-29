@@ -145,3 +145,17 @@ await test('the Cloudflare helper sets every required response header', () => {
     assert(script.includes('always_use_https'), 'plain HTTP must redirect to HTTPS')
     assert(script.includes('Link'), 'the Link discovery header should be advertised')
 })
+
+section('Website Specification — Pages deploy parity')
+
+await test('the Pages artifact keeps dotfiles so /.well-known is served', () => {
+    // upload-pages-artifact v4+ tars with `--exclude=.[^/]*`, which silently
+    // drops /.well-known/security.txt and gpc.json from the deployed site even
+    // though they are in dist/. The local static server does not mirror that, so
+    // only this source-level check catches the regression before production.
+    const ci = read('.github/workflows/ci.yml')
+    assert(
+        /uses:\s*actions\/upload-pages-artifact@v\d+[\s\S]*?include-hidden-files:\s*true/.test(ci),
+        'upload-pages-artifact must set include-hidden-files: true or /.well-known/* 404s'
+    )
+})
