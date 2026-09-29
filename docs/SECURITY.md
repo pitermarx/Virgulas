@@ -68,30 +68,26 @@ nodes as changed.
 
 ### Supabase schema, grants, and RLS gaps
 
-**Evidence:** `supabase/schemas/outlines.sql` and
-`supabase/migrations/*_initial-schema.sql`. The generated grants give `anon` and
-`authenticated` `TRUNCATE`, `TRIGGER`, and `REFERENCES` (plus select/insert/update/
-delete). RLS scopes DML with `(select auth.uid()) = user_id`.
+**Evidence:** `supabase/schemas/outlines.sql`. RLS scopes DML with
+`(select auth.uid()) = user_id`.
 
-**Impact:**
-- `TRUNCATE` is **not subject to RLS**. It is not reachable through PostgREST today, so
-  this is defense-in-depth, but an over-broad grant is a foot-gun if a SQL path ever
-  appears.
-- `updated_at` is entirely client-controlled (no server trigger), and there is no size
-  cap on `data`/`salt`, so a buggy or hostile client can set arbitrary timestamps or
-  bloat the row.
+**Impact:** `updated_at` is entirely client-controlled (no server trigger), so a buggy
+or hostile client can set arbitrary timestamps.
 
-**Remediation:**
-1. `revoke truncate, trigger, references on public.outlines from anon, authenticated;`
-2. Add a server-side `updated_at` trigger and stop trusting the client value.
-3. Add `check (octet_length(data) < N)` to bound row size.
+**Remediation (remaining):** add a server-side `updated_at` trigger and stop trusting
+the client value. This must land together with the client change that stores the
+server-returned `updated_at` as `vmd_sync_ts`: today `lastSyncedAt` and
+`lastCompletedRemotePush.updatedAt` are client clock, so switching only the server to
+`now()` would make a client read its own push as a remote update under clock skew.
+Tracked as part of *Sync is clock-trusting with no anti-rollback*.
 
-Update the schema file and generate a migration in the same change (AGENTS Rule 4).
-
-**Resolved:** self-service erasure (previously remediation #2) now ships: a scoped
-`Users can delete their own outline` DELETE policy plus the Options → **Delete account**
-path. The browser cannot remove the `auth.users` record itself, so an erasure request
-that must remove the account identity still needs the service role.
+**Resolved:** self-service erasure ships (a scoped `Users can delete their own outline`
+DELETE policy plus the Options → **Delete account** path; the browser cannot remove the
+`auth.users` record itself, so removing the account identity still needs the service
+role). `anon` and `authenticated` no longer hold `TRUNCATE`, `TRIGGER`, or `REFERENCES`,
+and `data`/`salt` are bounded by `outlines_data_size_check` (< 16 MiB) and
+`outlines_salt_size_check` (< 1 KiB) — schema updated and migration
+`20260929123251_harden-outlines-grants-and-size` generated.
 
 ---
 
@@ -114,13 +110,6 @@ enable secure password change (re-authentication).
 
 ### CI and process hardening
 
-- **GitHub Actions are pinned to tags, not commit SHAs** (`actions/checkout@v7`,
-  `oven-sh/setup-bun@v2`, …). A moved or compromised tag would execute in the release
-  job (`contents: write`) and the Pages deploy job (`id-token: write`). Pin to SHAs;
-  Dependabot is already configured for the `github-actions` ecosystem.
-- **No unlock throttling.** Nothing limits passphrase attempts client-side; PBKDF2 cost
-  is the only brake. Low risk (offline attacks dominate), but a small delay/backoff is
-  cheap.
 - **`changePassphrase` does not require the current passphrase** — it only requires an
   unlocked session. Reasonable, but an unattended unlocked tab can rotate it. Consider
   re-entry.
@@ -145,6 +134,12 @@ enable secure password change (re-authentication).
   compromised `app.js` persists until revalidation. Cache versioning is automated.
 - **`img-src … http:`** in the CSP is mostly moot: on an https origin the browser
   blocks mixed content anyway.
+- **No unlock throttling.** The document passphrase is verified only on-device
+  (PBKDF2 → AES-GCM); the server never sees it and could not rate-limit it without
+  becoming a guess oracle, and Local/File/Memory modes have no server at all. Any
+  client-side delay is trivially bypassed (reload, or copy the ciphertext and
+  brute-force offline), so the real brakes are PBKDF2 cost and passphrase entropy.
+  Accepted rather than implemented.
 - **Node ids come from `Math.random()`.** `randomId` in `crypto2.ts` seeds outline,
   inbox, and zoom identifiers. They are internal handles: they never guard access, they
   are not trusted by the sync server (the payload is ciphertext, and the id lives inside
