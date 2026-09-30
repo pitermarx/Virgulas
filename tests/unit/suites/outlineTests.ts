@@ -1352,8 +1352,19 @@ await test("setRootVMD derives node IDs from tree position", () => {
   const childId = outline.get(firstId)!.children.peek()[0]
   const secondId = outline.getRoot()!.children.peek()[1]
   assertEqual(firstId, 'v_root_0', "first root child id")
-  assertEqual(childId, `v_${firstId}_0`, "nested child id")
+  assertEqual(childId, 'v_root_0_0', "nested child id extends the parent path")
   assertEqual(secondId, 'v_root_1', "second root child id")
+})
+
+await test("setRootVMD keeps deep positional IDs free of repeated prefixes", () => {
+  outline.setRootVMD('- A\n  - A1\n    - A1a\n- B\n')
+  const a = outline.getRoot()!.children.peek()[0]
+  const a1 = outline.get(a)!.children.peek()[0]
+  const a1a = outline.get(a1)!.children.peek()[0]
+  assertEqual(a, 'v_root_0', "A id")
+  assertEqual(a1, 'v_root_0_0', "A1 id")
+  assertEqual(a1a, 'v_root_0_0_0', "A1a id")
+  assert(!a1a.includes('v_v_'), 'the parent path is not re-prefixed')
 })
 
 await test("setRootVMD produces the same IDs for the same VMD across parses", () => {

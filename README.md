@@ -31,7 +31,7 @@ can shape, zoom into, and turn into tasks — with optional end-to-end encrypted
 - Images never exceed the width of the note; long lines wrap instead of scrolling sideways
 - Inline `#tags` and `@mentions` render as pills; clicking one opens Search prefilled
 - Optional description per node, previewed while browsing and auto-growing while editing
-- Collapse and expand (`Ctrl+Space`, or the ▶/▼ control that appears on hover or on the selected node)
+- Collapse and expand (`Ctrl+Space` or the ▶/▼ control)
 - Indent and outdent (`Tab` / `Shift+Tab`, or swipe right/left on touch)
 - Move nodes among siblings (`Alt+↑` / `Alt+↓`)
 - Multi-select siblings (`Shift+↑/↓`), then move, indent, collapse, or delete the group

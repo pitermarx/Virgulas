@@ -312,7 +312,7 @@ kbd {
   height: 1.5rem;
 }
 
-/* ── Collapse toggle: hidden until the node is hovered or active ── */
+/* ── Collapse toggle: revealed on hover on pointer devices ── */
 .collapse-toggle {
   opacity: 0;
   color: var(--color-text-muted);
@@ -324,11 +324,21 @@ kbd {
   margin: auto;
 }
 
-.node-content:hover .collapse-toggle,
-.node-content.node-focused .collapse-toggle,
-.node-content.node-selected .collapse-toggle {
+.node-content:hover .collapse-toggle {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Touch-only devices have no hover-capable pointer, so keep the control always
+   visible. `any-hover` (not `pointer: coarse`) is what distinguishes a tablet
+   from a hybrid PC: a Surface with a mouse or trackpad reports a hover-capable
+   input and keeps the desktop hover behaviour. The second clause is a fallback
+   for engines without `any-hover`. */
+@media (any-hover: none), (hover: none) and (pointer: coarse) {
+  .collapse-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* ── Breadcrumbs ── */

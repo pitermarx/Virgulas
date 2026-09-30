@@ -38,26 +38,19 @@ test.describe('Collapse/Expand', () => {
     await expect(childNode).toBeVisible();
   });
 
-  test('▶/▼ control is visible only on hover or when the node is active', async ({ page }) => {
+  test('▶/▼ control is revealed on hover on a pointer device', async ({ page }) => {
     const parentNode = page.locator('.node-content').nth(0);
     const toggle = parentNode.locator('.collapse-toggle');
 
-    // Hidden while the node is neither hovered nor focused.
+    // A hover-capable device keeps the control hidden until the row is hovered.
     await expect(toggle).toHaveCSS('opacity', '0');
 
-    // Revealed on hover.
     await parentNode.hover();
     await expect(toggle).toHaveCSS('opacity', '1');
 
     // Hidden again once the pointer leaves.
     await page.mouse.move(0, 0);
     await expect(toggle).toHaveCSS('opacity', '0');
-
-    // Revealed by focusing the node, even without hover.
-    await parentNode.click();
-    await expect(parentNode.locator('input')).toBeFocused();
-    await page.mouse.move(0, 0);
-    await expect(toggle).toHaveCSS('opacity', '1');
   });
 
   test('Bullet click zooms into node', async ({ page }) => {
@@ -137,5 +130,28 @@ test.describe('Collapse/Expand', () => {
     await parentNode.hover();
     await parentNode.locator('.collapse-toggle').click();
     await expect(page.locator('.node-content')).toHaveCount(3);
+  });
+});
+
+test.describe('Collapse/Expand — touch-only device', () => {
+  test.use({ hasTouch: true });
+
+  test.beforeEach(async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        {
+          id: '1', text: 'Parent', children: [
+            { id: '1.1', text: 'Child', children: [] }
+          ]
+        }
+      ]
+    });
+  });
+
+  test('▶/▼ control is always visible without hover', async ({ page }) => {
+    const parentNode = page.locator('.node-content').nth(0);
+    await expect(parentNode.locator('.collapse-toggle')).toHaveCSS('opacity', '1');
   });
 });
