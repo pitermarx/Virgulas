@@ -626,32 +626,34 @@ export function StatusToolbar() {
     </div>`
 }
 
-export function MainToolbar() {
+// `banner` is an optional slot (e.g. the Enable Secure Storage prompt) rendered
+// above the breadcrumbs, alongside the search bar.
+export function MainToolbar({ banner }: any = {}) {
+    let searchBar = null
     if (focusType.value === 'search') {
         const matches = searchResults.value.ids
         const idx = Math.min(searchResultIndex.value, Math.max(matches.length - 1, 0))
         const counterText = matches.length > 0 ? `${idx + 1}/${matches.length}` : ''
         currentSearchMatchId.value = matches[idx] || null
 
-        return html`<div class="main-toolbar">
-            <${Breadcrumbs} />
-            <div class="search-bar">
-                <div class="search-bar-inner">
-                    <input placeholder="Search..." ...${focusMe} class="search-input"
-                        value=${searchQuery}
-                        onInput=${(e: any) => {
-                searchQuery.value = e.currentTarget.value
-                resetSearchNavigation()
-            }}
-                        onKeyDown=${(e: any) => handleSearchKeyDown(e, focus)} />
-                    ${counterText ? html`<span class="search-counter" role="status" aria-live="polite">${counterText}</span>` : null}
-                    <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)} aria-label="Close search" title="Close search">×</button>
-                </div>
+        searchBar = html`<div class="search-bar">
+            <div class="search-bar-inner">
+                <input placeholder="Search..." ...${focusMe} class="search-input"
+                    value=${searchQuery}
+                    onInput=${(e: any) => {
+            searchQuery.value = e.currentTarget.value
+            resetSearchNavigation()
+        }}
+                    onKeyDown=${(e: any) => handleSearchKeyDown(e, focus)} />
+                ${counterText ? html`<span class="search-counter" role="status" aria-live="polite">${counterText}</span>` : null}
+                <button class="toolbar-btn" style="font-size: 1.1rem;" onClick=${() => toggleSearchMode(focus)} aria-label="Close search" title="Close search">×</button>
             </div>
         </div>`
     }
 
     return html`<div class="main-toolbar">
+        ${searchBar}
+        ${banner || null}
         <${Breadcrumbs} />
     </div>`
 }

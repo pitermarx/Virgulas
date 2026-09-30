@@ -64,6 +64,21 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.getByText('Unlock Virgulas')).toBeVisible({ timeout: 3000 });
     });
 
+    test('Enable Secure Storage banner sits above the breadcrumb', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+        // Zoom into a node so the breadcrumb strip renders.
+        await page.locator('.node-content').first().locator('.bullet').click();
+        await expect(page.locator('.breadcrumbs')).toBeVisible();
+
+        const banner = page.getByRole('button', { name: /Enable Secure Storage/ });
+        await expect(banner).toBeVisible();
+        const bannerBox = (await banner.boundingBox())!;
+        const crumbBox = (await page.locator('.breadcrumbs').boundingBox())!;
+        expect(bannerBox.y).toBeLessThan(crumbBox.y);
+    });
+
     test('document is not persisted between visits in memory mode', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');

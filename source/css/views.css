@@ -31,6 +31,12 @@
   gap: var(--space-2);
 }
 
+/* The Enable Secure Storage prompt can live inside the toolbar (above the
+   breadcrumbs); the toolbar gap already separates it, so drop its own margins. */
+.main-toolbar .app-node {
+  margin: 0;
+}
+
 /* ── Search bar ── */
 .search-bar {
   display: flex;

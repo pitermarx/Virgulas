@@ -140,7 +140,7 @@
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
         If the fetch fails, the app starts with a single empty node
       - The status toolbar shows "In memory — not saved" instead of the mode label and sync dot
-      - An inline "Enable Secure Storage" prompt appears above the outline and opens the setup flow
+      - An inline "Enable Secure Storage" prompt appears above the Breadcrumb and the outline, and opens the setup flow
       - The Options panel hides "Upgrade storage…" and the purge/danger action in Memory mode:
         Memory has no data to delete, and the persistent upgrade is offered by the banner instead
       - Choosing Memory mode is remembered: the lock screen has a "Skip — continue in memory" link
@@ -257,6 +257,7 @@
     - Search can be done with simple substring matches
     - Search is activated with `Escape` when no node is focused on desktop and with the `Search` button in the status bar on mobile
       The search controls are hidden by default
+      The search bar sits above the Breadcrumb
     - Search can be dismissed with `Escape` again on desktop or with an `X` clear button
     - When searching, the document becomes read-only
     - When searching, there is a live highlight of all matched words

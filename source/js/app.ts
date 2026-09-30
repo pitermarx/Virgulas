@@ -1335,8 +1335,7 @@ const Splash = () => {
       <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
         <main class="main-content" id="main-content" tabindex="-1"
           inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
-          <${MainToolbar} />
-          <${SecureStoragePrompt} />
+          <${MainToolbar} banner=${html`<${SecureStoragePrompt} />`} />
           <${Outline} />
         </main>
         <${StatusToolbar} />
