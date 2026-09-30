@@ -50,6 +50,20 @@ test.describe('Search', () => {
     await expect(nodes.nth(0).locator('input')).toBeVisible();
   });
 
+  test('the search bar sits above the breadcrumb', async ({ page }) => {
+    // Zoom into a node so the breadcrumb strip renders.
+    await page.locator('[data-node-id="1"] .bullet').click();
+    await expect(page.locator('.breadcrumbs')).toBeVisible();
+
+    // Escape with nothing focused opens search.
+    await page.keyboard.press('Escape');
+    await expect(page.getByPlaceholder('Search...')).toBeVisible();
+
+    const searchBox = (await page.locator('.search-bar').boundingBox())!;
+    const crumbBox = (await page.locator('.breadcrumbs').boundingBox())!;
+    expect(searchBox.y).toBeLessThan(crumbBox.y);
+  });
+
   test('Smart case: lowercase is case-insensitive, uppercase is case-sensitive', async ({ page }) => {
     // Open search with Escape (from no-focus state)
     await page.keyboard.press('Escape');
