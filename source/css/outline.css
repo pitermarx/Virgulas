@@ -341,6 +341,20 @@ kbd {
   }
 }
 
+/* A real mouse was seen at runtime (app.ts adds the class on the first
+   `pointermove` with `pointerType === 'mouse'`). Trust that over the media
+   queries: hybrid devices that misreport as touch-only keep the desktop
+   hover-only behaviour. */
+body.detected-pointer-mouse .collapse-toggle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.detected-pointer-mouse .node-content:hover .collapse-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* ── Breadcrumbs ── */
 .breadcrumbs {
   display: flex;
