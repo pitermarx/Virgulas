@@ -26,7 +26,20 @@
     Tab indents, Alt+↑/↓ moves a note, Ctrl+Space folds its children.
 
 + Write with light markdown
-  Bold, italic, code, links, and images render while you browse.
+  Descriptions render as markdown when you zoom in.
+  Titles stay single lines; descriptions can be full documents.
+  ## Headings, lists, quotes
+  Body text supports **bold**, __italic__, `code`, and [links](https://virgulas.com).
+  1. Ordered lists keep their numbers
+  2. Rules separate ideas
+  > Quotes set a passage apart.
+  \---
+  ```
+  const idea = 'fenced code and tables too'
+  ```
+  | Markdown | Renders |
+  | --- | --- |
+  | Tables | Yes |
   + Tags and mentions become pills
     Type #project or @name, then select the pill to search that token.
   + Paste an outline as an outline

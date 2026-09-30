@@ -1,4 +1,5 @@
 import {
+    renderBlockMarkdown,
     renderInlineMarkdown,
     SANITIZE_OPTIONS
 } from '../../../source/js/markdown.js'
@@ -128,6 +129,46 @@ await test("hash tags and mentions become search tokens", () => {
 await test("inline code is not decorated as a search token", () => {
     const html = renderInlineMarkdown("Use `#notatag` literally")
     assert(!html.includes('search-token-tag'), "code span not decorated")
+})
+
+// happy-dom's DOMPurify mangles block-level tags (it drops <h1>/<h2>/<ol>/<table>
+// and leaves <input> in place), so the rendered block structure and the security
+// guarantees of the allow-list are asserted in Chromium instead — see
+// tests/description-markdown.spec.ts. The unit tests below only cover the parts
+// happy-dom handles faithfully.
+section("renderBlockMarkdown — block document rendering")
+
+await test("fenced code content survives without a language class", () => {
+    const html = renderBlockMarkdown("```js\nconst x = 1\n```\n")
+    assert(html.includes('const x = 1'), "code content survives")
+    assert(!html.includes('language-'), "language class dropped")
+    assert(!html.includes('class='), "no class attribute")
+})
+
+await test("inline formatting still works inside block markdown", () => {
+    const html = renderBlockMarkdown("Body **bold** and `code` and [link](https://example.com).")
+    assert(html.includes('<strong>bold</strong>'), "bold")
+    assert(html.includes('href="https://example.com"'), "link")
+})
+
+await test("search tokens are decorated inside block markdown", () => {
+    const html = renderBlockMarkdown("## Notes\n\nSee #project and @alice.")
+    assert(html.includes('search-token-tag'), "hashtag decorated")
+    assert(html.includes('search-token-mention'), "mention decorated")
+})
+
+await test("search tokens inside fenced code are left alone", () => {
+    const html = renderBlockMarkdown("```\n#notatag @notamention\n```\n")
+    assert(!html.includes('search-token-tag'), "code fence not decorated")
+    assert(html.includes('#notatag'), "raw token text preserved")
+})
+
+await test("block markdown images are hardened like inline images", () => {
+    const html = renderBlockMarkdown("![alt](https://example.com/pic.png)")
+    assert(html.includes('<img'), "image renders")
+    assert(html.includes('referrerpolicy="no-referrer"'), "no referrer")
+    assert(html.includes('loading="lazy"'), "lazy loading")
+    assert(!html.includes('javascript:'), "no javascript scheme")
 })
 
 section("renderInlineMarkdown — sanitizer hardening")

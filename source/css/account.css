@@ -192,10 +192,11 @@
 
 /* ── Node description: read mode (markdown) ── */
 .node-desc-md {
-  font-size: 0.85rem;
+  font-size: var(--text-size-description);
   color: var(--color-text-muted);
   cursor: text;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -214,7 +215,7 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-size-description);
   outline: none;
   padding: 0;
   margin: 6px 0 0;
@@ -222,6 +223,9 @@
   resize: none;
   display: block;
   line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
   overflow-y: hidden;
   box-sizing: border-box;
 }
