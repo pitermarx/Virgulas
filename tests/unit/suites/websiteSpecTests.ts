@@ -100,6 +100,15 @@ await test('structured data and a skip link are present', () => {
     assert(html.includes('visually-hidden">Virgulas'), 'the page needs one <h1>')
 })
 
+await test('a no-JavaScript fallback is present instead of a stuck splash', () => {
+    const html = read('source/index.html')
+    assert(html.includes('<noscript>'), 'index.html needs a <noscript> fallback')
+    assert(html.includes('noscript-fallback'), 'the fallback needs its styled container')
+    assert(html.includes('#splash { display: none; }'), 'the fallback must hide the static splash')
+    const base = read('source/css/base.css')
+    assert(/\.noscript-fallback\s*\{/.test(base), 'the fallback container needs styling')
+})
+
 section('Website Specification — accessibility contract')
 
 await test('form errors are announced and associated with their input', () => {

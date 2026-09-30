@@ -189,6 +189,31 @@ textarea {
   letter-spacing: 0.01em;
 }
 
+/* ── No-JavaScript fallback ──
+   #splash is static markup that app.js dismisses. When scripting is disabled it
+   would otherwise stay on screen forever, so the <noscript> block hides it and
+   shows this panel instead. These rules are inert while scripting is enabled. */
+.noscript-fallback {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.noscript-fallback h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.noscript-fallback p {
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
 /* ── Reduced motion ──
    One switch for the whole design system: every token-driven transition
    collapses to zero, and the bespoke splash fade is dropped. The locked-canvas

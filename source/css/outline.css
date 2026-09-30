@@ -312,7 +312,7 @@ kbd {
   height: 1.5rem;
 }
 
-/* ── Collapse toggle: hidden by default, revealed on node hover (desktop) ── */
+/* ── Collapse toggle: hidden until the node is hovered or active ── */
 .collapse-toggle {
   opacity: 0;
   color: var(--color-text-muted);
@@ -324,17 +324,11 @@ kbd {
   margin: auto;
 }
 
-.node-content:hover .collapse-toggle {
+.node-content:hover .collapse-toggle,
+.node-content.node-focused .collapse-toggle,
+.node-content.node-selected .collapse-toggle {
   opacity: 1;
   pointer-events: auto;
-}
-
-/* Always visible on touch/mobile */
-@media (pointer: coarse) {
-  .collapse-toggle {
-    opacity: 1;
-    pointer-events: auto;
-  }
 }
 
 /* ── Breadcrumbs ── */

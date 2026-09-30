@@ -114,23 +114,19 @@ test.describe('Memory mode (first-ever visit)', () => {
 
 
     test('first-load URL hash deep-link zooms into the correct node', async ({ page }) => {
-        // Load in memory mode (no localStorage)
+        // Load in memory mode (no localStorage) and remember a node ID.
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-
-        // Get the ID of the first real child node from the DOM
         const nodeId = await page.locator('.node-content').first().getAttribute('data-node-id');
         expect(nodeId).toBeTruthy();
 
-        // Simulate "first-load with this hash in the URL":
-        // Set the hash to the node ID, then call applyHashZoomIfPresent (the same
-        // function called during unlockMemory when the URL has a hash on first load).
-        await page.evaluate((id) => {
-            window.location.hash = id!;
-            (window as any).__applyHashZoomIfPresent?.();
-        }, nodeId);
+        // A genuine first load: the document is re-parsed from INTRO.VMD, so the
+        // node ID only survives if VMD parsing derives stable IDs.
+        await page.goto('about:blank');
+        await page.goto(`/#${nodeId}`);
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
-        // Breadcrumbs should be visible because we are now zoomed into that node
+        // Breadcrumbs should be visible because we are now zoomed into that node.
         await expect(page.locator('.breadcrumbs')).toBeVisible({ timeout: 3000 });
     });
 });

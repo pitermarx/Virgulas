@@ -156,6 +156,7 @@ Usage guidance:
   - Selected (multi-select): selected-surface background (`--color-selected-surface`).
 - Nested hierarchy uses visual indentation and a subtle guide line.
 - Collapsed parent state uses a stronger marker treatment.
+- The collapse ▶/▼ control is hidden until the row is hovered; it stays visible while the row is focused or multi-selected, so touch users reveal it by focusing the row.
 
 ### Text Editing Surface
 

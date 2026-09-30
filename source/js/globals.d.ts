@@ -27,8 +27,6 @@ declare global {
         supabase?: { createClient: typeof createClient }
         /** Test hook: overrides the retry backoff base (ms). */
         __retryBaseMs?: number
-        /** Set by the app to apply a URL-hash zoom target. */
-        __applyHashZoomIfPresent?: (id?: string | null) => void
         /** Test hook exposing the unlock call counter. */
         __unlockCallCount?: number
         /** Test hook: overrides the sync poll interval (ms). */
