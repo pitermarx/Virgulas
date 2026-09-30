@@ -97,7 +97,7 @@
 .markdown-body pre {
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background-color: var(--color-background);
   overflow-x: auto;
@@ -119,15 +119,18 @@
   font-size: 0.95em;
 }
 
+/* Use the stronger border token and an accent-tinted header: the zoomed
+   description paints a `--color-hover-surface` wash on hover, so a header or
+   grid drawn with the hover/subtle tokens would blend into it and vanish. */
 .markdown-body th,
 .markdown-body td {
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border);
   text-align: left;
 }
 
 .markdown-body th {
-  background-color: var(--color-hover-surface);
+  background-color: var(--color-accent-soft);
   font-weight: 600;
 }
 

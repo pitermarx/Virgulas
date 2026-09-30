@@ -74,6 +74,29 @@ test.describe('Description markdown', () => {
     expect(await code.getAttribute('class')).toBeNull();
   });
 
+  test('table chrome stays visible over the zoomed hover wash', async ({ page }) => {
+    await setupDoc(page, docWithDescription(RICH_DESCRIPTION));
+    await zoomIntoParent(page);
+
+    const display = page.locator('.zoom-desc-display');
+    await display.hover();
+
+    const { displayBackground, headerBackground, borderColour } = await page.evaluate(() => {
+      const el = document.querySelector('.zoom-desc-display') as HTMLElement;
+      const th = el.querySelector('th') as HTMLElement;
+      const td = el.querySelector('td') as HTMLElement;
+      return {
+        displayBackground: getComputedStyle(el).backgroundColor,
+        headerBackground: getComputedStyle(th).backgroundColor,
+        borderColour: getComputedStyle(td).borderTopColor
+      };
+    });
+
+    // The hover wash must not erase the header fill or the grid lines.
+    expect(headerBackground).not.toBe(displayBackground);
+    expect(borderColour).not.toBe(displayBackground);
+  });
+
   test('the non-zoomed description stays a two-line inline preview', async ({ page }) => {
     await setupDoc(page, docWithDescription(RICH_DESCRIPTION));
 
