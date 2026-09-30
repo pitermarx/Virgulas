@@ -62,8 +62,8 @@
       - When collapsed, the "Node" has a visual indicator on the bullet point that it contains children, but they are not visible
         Collapsed and has children: ○ (hollow circle, rendered as SVG)
         Otherwise: ● (filled circle, rendered as SVG)
-      - To toggle expand and collapse there is a ▶ or ▼ control at the end of each line
-        Shown on hover and on the focused or multi-selected node, on both desktop and touch (focusing a node reveals it)
+      - To toggle expand and collapse there will be a visible ▶ or ▼ button at the end of each line
+        Always visible on mobile, visible on hover for desktop
       - (DESKTOP ONLY) To toggle expand and collapse we can use `Ctrl+Space`
       - (DESKTOP ONLY, MULTI-SELECT) When multi-selected, and we use the `Ctrl+Space` shortcut
         - If all "Nodes" are collapsed, then they all expand

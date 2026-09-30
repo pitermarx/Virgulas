@@ -629,10 +629,14 @@ function outlineFactory() {
     // text on every load. Deriving an ID from the node's position in the tree
     // keeps it stable across reloads, so a URL hash that references a node still
     // resolves after a reload. `randomId()` is base36 and never contains an
-    // underscore, so the `v_` prefix cannot collide with a generated ID, and the
-    // parent ID plus child index makes each positional ID unique in the tree.
+    // underscore, so the `v_` prefix cannot collide with a generated ID.
+    //
+    // A positional ID already encodes the whole path, so a child extends its
+    // parent's ID instead of re-prefixing it (`v_root_0_0`, not
+    // `v_v_root_0_0`). A parent with a random ID (`abc123`) starts a new path
+    // (`v_abc123_0`). Either way the full path stays unique in the tree.
     function vmdNodeId(parentId: string, siblingIndex: number): string {
-        return `v_${parentId}_${siblingIndex}`
+        return parentId.startsWith('v_') ? `${parentId}_${siblingIndex}` : `v_${parentId}_${siblingIndex}`
     }
 
     /** Append a VMD-parsed child, preferring the stable positional ID. */
