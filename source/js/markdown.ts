@@ -23,6 +23,13 @@ function escapeAttribute(value: unknown) {
         .replace(/>/g, '&gt;')
 }
 
+function escapeHtml(value: unknown) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+}
+
 function normalizeMarkdownAliases(text: string) {
     // SPEC accepts __Italic__ as emphasis.
     return String(text || '').replace(/__(.+?)__/g, '_$1_')
@@ -31,7 +38,7 @@ function normalizeMarkdownAliases(text: string) {
 function shouldSkipTokenDecoration(node: Node) {
     const parent = node?.parentElement
     if (!parent) return false
-    return !!parent.closest('a, code, button, textarea, input')
+    return !!parent.closest('a, code, pre, button, textarea, input')
 }
 
 function enforceExternalLinks(template: HTMLTemplateElement) {
@@ -224,6 +231,12 @@ markdown.use({
             const src = escapeAttribute(token.href)
             const title = token.title ? ` title="${escapeAttribute(token.title)}"` : ''
             return `<img src="${src}" alt="${alt}"${title}>`
+        },
+        code(token) {
+            // Drop marked's `class="language-…"` decoration: the sanitizer does
+            // not allow class attributes, and the app styles every code block
+            // uniformly anyway.
+            return `<pre><code>${escapeHtml(token.text)}</code></pre>`
         }
     }
 })
@@ -233,14 +246,39 @@ markdown.use({
 // the whole HTML profile (form, input, style, class, id, ...). Keep the explicit
 // allow-list as the single source of truth. Exported so a regression test can
 // assert the profile is never reintroduced.
+// Block tags are allowed so a zoomed "Description" can read as a full markdown
+// document (headings, lists, quotes, fenced code, tables). This is still safe:
+// the sanitizer strips `class`, `id`, `style` and event handlers, and the list is
+// never widened by a DOMPurify profile (see the regression test). No form controls
+// (`input`, `form`, `button`, ...) are allowed, so GFM task-list checkboxes are
+// dropped while the item text survives.
 export const SANITIZE_OPTIONS: any = {
-    ALLOWED_TAGS: ['strong', 'em', 'a', 'img', 'code', 'br'],
+    ALLOWED_TAGS: [
+        'strong', 'em', 'a', 'img', 'code', 'br', 'del',
+        'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'ul', 'ol', 'li', 'blockquote', 'pre', 'hr',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td'
+    ],
     ALLOWED_ATTR: ['href', 'src', 'alt', 'title']
 }
-export function renderInlineMarkdown(text: string, { decorateMeta = false }: { decorateMeta?: boolean } = {}) {
-    if (!text) return ''
-    const rawHtml = markdown.parseInline(normalizeMarkdownAliases(text))
-    const safeHtml = DOMPurify.sanitize(rawHtml as string, SANITIZE_OPTIONS) as unknown as string
+
+function finalizeMarkdown(rawHtml: string, decorateMeta: boolean) {
+    const safeHtml = DOMPurify.sanitize(rawHtml, SANITIZE_OPTIONS) as unknown as string
     const decorated = decorateSearchTokens(safeHtml)
     return decorateMeta ? decorateMetaChips(decorated) : decorated
+}
+
+// Inline renderer: used for single-line node text and the two-line description
+// preview. Block markers are intentionally not interpreted here.
+export function renderInlineMarkdown(text: string, { decorateMeta = false }: { decorateMeta?: boolean } = {}) {
+    if (!text) return ''
+    return finalizeMarkdown(markdown.parseInline(normalizeMarkdownAliases(text)) as string, decorateMeta)
+}
+
+// Block renderer: used when a description is shown in full (the zoomed node).
+// Paragraphs, headings, lists, blockquotes, fenced code, rules and tables all
+// render as a normal markdown document.
+export function renderBlockMarkdown(text: string, { decorateMeta = false }: { decorateMeta?: boolean } = {}) {
+    if (!text) return ''
+    return finalizeMarkdown(markdown.parse(normalizeMarkdownAliases(text)) as string, decorateMeta)
 }

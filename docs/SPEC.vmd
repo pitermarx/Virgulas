@@ -10,12 +10,17 @@
         Only the first 2 lines of the "Description" are visible when not editing, showing "..." otherwise
       - Can have "Children", which in turn are other "Nodes"
       - Each "Node" text and its "Description" can have rendered markdown when not editing.
-        Markdown elements are limited to
+        A "Node" text is a single line and renders inline markdown:
         **Bold**, __Italic__, [links](http://example.com), ![](https://images.png), `monospace code`
+        A "Description" renders inline markdown in its two-line preview, and a full markdown
+        document when zoomed in: headings, paragraphs, ordered and unordered lists, blockquotes,
+        fenced code blocks, thematic breaks, and tables, plus the inline elements above
         Rendered links always open in a new tab/window
         Raw HTML is sanitised against an explicit allow-list; unsupported tags are dropped
+        `class`, `id`, `style`, and event handlers are never allowed; form controls are dropped
         Rendered images drop non-http(s) sources and load with `referrerpolicy="no-referrer"`,
         `loading="lazy"` and `decoding="async"`
+        Rendered images never exceed the width of their container
     - Inline `#tags` and `@mentions` in rendered markdown appear as rounded pills
       Clicking/tapping a pill immediately opens Search with that token pre-filled
       A `#`/`@` token must start the line or follow whitespace, and ends at whitespace or end of line
@@ -68,7 +73,8 @@
       - Each segment of the "Breadcrumb" is clickable and will zoom into that "Node"
       - When zoomed, the text of the "Node" is not editable
       - The description is also visible and editable
-        The zoomed description is shown in full, not clamped to the two-line preview
+        The zoomed description is shown in full, not clamped to the two-line preview,
+        and renders as a full markdown document
       - The "Children" of the zoomed "Node" will behave the exact same way as if they were root "Nodes"
       - Clicking the bullet point of a node zooms into it
       - (DESKTOP ONLY) `Alt+→` zooms into a node, `Alt+←` zooms back out

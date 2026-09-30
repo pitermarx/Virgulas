@@ -2,7 +2,7 @@ import { html } from 'htm/preact';
 import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence from './persistence.js';
-import { renderInlineMarkdown } from './markdown.js';
+import { renderInlineMarkdown, renderBlockMarkdown } from './markdown.js';
 import { log, isMobile, store, appVersion } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen } from './shortcuts.js';
 import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
@@ -252,7 +252,7 @@ function NodeDesc({ node }: any) {
     }
 
     return html`<div class="node-description" onClick=${focusDesc}>
-        <div class="node-desc-md" style=${style} dangerouslySetInnerHTML=${{ __html: style ? text : renderInlineMarkdown(text) }}></div></div>`
+        <div class="node-desc-md markdown-body" style=${style} dangerouslySetInnerHTML=${{ __html: style ? text : renderInlineMarkdown(text) }}></div></div>`
 }
 
 function NodeText({ node }: any) {
@@ -714,9 +714,9 @@ function Breadcrumbs() {
                     e.stopPropagation()
                 }}></textarea>`
             : html`<div
-                class=${'zoom-desc-display' + (!descText ? ' zoom-desc-placeholder' : '')}
+                class=${'zoom-desc-display markdown-body' + (!descText ? ' zoom-desc-placeholder' : '')}
                 onClick=${startEditing}
-                dangerouslySetInnerHTML=${{ __html: descText ? renderInlineMarkdown(descText) : 'Add a description...' }}
+                dangerouslySetInnerHTML=${{ __html: descText ? renderBlockMarkdown(descText) : 'Add a description...' }}
                 ></div>`
         }
     </div>`

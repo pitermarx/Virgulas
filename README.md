@@ -26,6 +26,9 @@ can shape, zoom into, and turn into tasks — with optional end-to-end encrypted
 
 - Infinite list of editable nodes with recursive children
 - Markdown rendering — bold, italic, links, images, inline code; links always open in a new tab
+- A description is a full markdown document: zoom into its node for headings, lists,
+  blockquotes, fenced code, rules, and tables; while browsing it stays a two-line preview
+- Images never exceed the width of the note; long lines wrap instead of scrolling sideways
 - Inline `#tags` and `@mentions` render as pills; clicking one opens Search prefilled
 - Optional description per node, previewed while browsing and auto-growing while editing
 - Collapse and expand (`Ctrl+Space` or the ▶/▼ control)
@@ -102,7 +105,8 @@ biometric unlock (fingerprint/face/device PIN) for this device.
 - Documents are gzip-compressed and encrypted with AES-GCM-256 under a PBKDF2-HMAC-SHA256 key
   (600,000 iterations, per-document salt, fresh IV per write). Only salt + ciphertext leave the
   device. There is no recovery path for a forgotten passphrase.
-- Rendered markdown is sanitised with an explicit allow-list, and remote images load with
+- Rendered markdown is sanitised with an explicit allow-list (`class`, `id`, `style`, event
+  handlers, and form controls are never allowed), and remote images load with
   `referrerpolicy="no-referrer"` and no event handlers.
 - The only third-party script is an SRI-pinned analytics tracker; everything else is bundled. A
   strict Content-Security-Policy allow-lists exactly what the app can load.

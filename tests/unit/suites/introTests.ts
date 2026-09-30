@@ -10,6 +10,10 @@ import { assert, createAsyncSectionHarness } from '../testing.js'
 //   - a node is a single line: ~45 characters comfortably on mobile, ~70 on desktop
 //   - a description previews two lines: ~50 characters per line on mobile (~100),
 //     up to ~80 on desktop — anything longer is ellipsised until you zoom in
+//
+// The "Write with light markdown" node is the one deliberate exception: it carries
+// a block-markdown description that is meant to be read by zooming in, so its
+// budget is enforced per line (each still fits a line) rather than as a whole.
 
 const harness = createAsyncSectionHarness({})
 export const sections = harness.sections
@@ -66,4 +70,13 @@ await test('the tour opens with the welcome node', () => {
 await test('the tour teaches zooming near the top', () => {
     const opening = items.slice(0, 6).map((i) => i.text).join(' | ')
     assert(/zoom/i.test(opening), `the first few nodes should invite zooming, found: ${opening}`)
+})
+
+section('Intro tour — markdown demo')
+
+await test('includes a full block-markdown description for the zoomed view', () => {
+    assert(intro.includes('## Headings, lists, quotes'), 'demo should show a heading')
+    assert(intro.includes('> Quotes set a passage apart.'), 'demo should show a blockquote')
+    assert(intro.includes('```'), 'demo should show a fenced code block')
+    assert(intro.includes('| Markdown | Renders |'), 'demo should show a table')
 })
