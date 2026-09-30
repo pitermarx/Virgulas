@@ -1362,6 +1362,19 @@ if (captureOnly && initialCaptureIntent) {
   }
 }
 
+// Runtime mouse detection. CSS `any-hover` is unreliable on hybrid devices — a
+// Surface can report no hover-capable pointer even with a mouse attached — so
+// the first real mouse move marks the shell as a pointer/mouse environment and
+// the collapse arrows switch to their hover-only behaviour (see outline.css).
+if (typeof window !== 'undefined') {
+  const onPointerMove = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse') return;
+    document.body?.classList.add('detected-pointer-mouse');
+    window.removeEventListener('pointermove', onPointerMove);
+  };
+  window.addEventListener('pointermove', onPointerMove);
+}
+
 // Skip link: move focus to the main landmark without changing the URL hash. The
 // app uses `location.hash` for zoom routing, so navigating to `#main-content`
 // would be read as a node id, re-render the outline, and drop the focus.

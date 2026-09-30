@@ -133,7 +133,7 @@ test.describe('Collapse/Expand', () => {
   });
 });
 
-test.describe('Collapse/Expand — touch-only device', () => {
+test.describe('Collapse/Expand — pointer detection', () => {
   test.use({ hasTouch: true });
 
   test.beforeEach(async ({ page }) => {
@@ -150,7 +150,28 @@ test.describe('Collapse/Expand — touch-only device', () => {
     });
   });
 
-  test('▶/▼ control is always visible without hover', async ({ page }) => {
+  test('a real mouse move marks the shell and keeps the arrow hover-only', async ({ page }) => {
+    // A hybrid device can report as touch-only (`any-hover: none`), so the
+    // runtime pointer detection is what restores the desktop behaviour.
+    await page.mouse.move(10, 10);
+    await expect(page.locator('body')).toHaveClass(/detected-pointer-mouse/);
+
+    const parentNode = page.locator('.node-content').nth(0);
+    const toggle = parentNode.locator('.collapse-toggle');
+    await expect(toggle).toHaveCSS('opacity', '0');
+    await parentNode.hover();
+    await expect(toggle).toHaveCSS('opacity', '1');
+  });
+
+  test('a touch-only device with no mouse keeps the arrow always visible', async ({ page }) => {
+    // The setup click synthesises a mouse move; drop the class to model a
+    // session that never sees one, then prove a `touch` pointer does not add it.
+    await page.evaluate(() => document.body.classList.remove('detected-pointer-mouse'));
+    await page.evaluate(() => {
+      window.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'touch', bubbles: true }));
+    });
+    await expect(page.locator('body')).not.toHaveClass(/detected-pointer-mouse/);
+
     const parentNode = page.locator('.node-content').nth(0);
     await expect(parentNode.locator('.collapse-toggle')).toHaveCSS('opacity', '1');
   });
