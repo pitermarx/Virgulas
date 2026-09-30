@@ -1331,3 +1331,51 @@ await test("setRootVMD plain node after task node clears old task metadata (stal
   const id2 = outline.getRoot()!.children.peek()[0]
   assertEqual(outline.get(id2)!.done.peek(), null, 'stale done cleared')
 })
+
+section("VMD stable IDs")
+
+function vmdAllIds(): string[] {
+  const ids: string[] = []
+  function visit(id: string) {
+    const node = outline.get(id)
+    if (!node) return
+    if (id !== 'root') ids.push(id)
+    for (const child of node.children.peek()) visit(child)
+  }
+  visit('root')
+  return ids
+}
+
+await test("setRootVMD derives node IDs from tree position", () => {
+  outline.setRootVMD('- Parent\n  - Child\n- Sibling\n')
+  const firstId = outline.getRoot()!.children.peek()[0]
+  const childId = outline.get(firstId)!.children.peek()[0]
+  const secondId = outline.getRoot()!.children.peek()[1]
+  assertEqual(firstId, 'v_root_0', "first root child id")
+  assertEqual(childId, `v_${firstId}_0`, "nested child id")
+  assertEqual(secondId, 'v_root_1', "second root child id")
+})
+
+await test("setRootVMD produces the same IDs for the same VMD across parses", () => {
+  const vmd = '- A\n  - A1\n- B\n  - B1\n    - B1a\n'
+  outline.setRootVMD(vmd)
+  const first = vmdAllIds()
+  outline.setRootVMD(vmd)
+  const second = vmdAllIds()
+  assert(first.length > 0, "should collect IDs")
+  assertEqual(JSON.stringify(first), JSON.stringify(second), "IDs stable across reloads")
+})
+
+await test("setVMD derives stable IDs under the pasted parent", () => {
+  addChild('root', { id: 'P' })
+  outline.setVMD('- X\n  - X1\n- Y\n', 'P')
+  // The first bullet replaces P's text; later top-level bullets become siblings
+  // of P under root.
+  const x1Id = outline.get('P')!.children.peek()[0]
+  const yId = outline.getRoot()!.children.peek()[1]
+  assertEqual(outline.get('P')!.text.peek(), 'X', "P text updated by first bullet")
+  assertEqual(x1Id, 'v_P_0', "nested pasted child id")
+  assertEqual(outline.get(x1Id)!.text.peek(), 'X1', "nested pasted child text")
+  assertEqual(yId, 'v_root_1', "pasted sibling id under root")
+  assertEqual(outline.get(yId)!.text.peek(), 'Y', "pasted sibling text")
+})

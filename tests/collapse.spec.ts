@@ -38,6 +38,28 @@ test.describe('Collapse/Expand', () => {
     await expect(childNode).toBeVisible();
   });
 
+  test('▶/▼ control is visible only on hover or when the node is active', async ({ page }) => {
+    const parentNode = page.locator('.node-content').nth(0);
+    const toggle = parentNode.locator('.collapse-toggle');
+
+    // Hidden while the node is neither hovered nor focused.
+    await expect(toggle).toHaveCSS('opacity', '0');
+
+    // Revealed on hover.
+    await parentNode.hover();
+    await expect(toggle).toHaveCSS('opacity', '1');
+
+    // Hidden again once the pointer leaves.
+    await page.mouse.move(0, 0);
+    await expect(toggle).toHaveCSS('opacity', '0');
+
+    // Revealed by focusing the node, even without hover.
+    await parentNode.click();
+    await expect(parentNode.locator('input')).toBeFocused();
+    await page.mouse.move(0, 0);
+    await expect(toggle).toHaveCSS('opacity', '1');
+  });
+
   test('Bullet click zooms into node', async ({ page }) => {
     const parentNode = page.locator('.node-content').nth(0);
     const childNode = page.locator('.node-content').nth(1);

@@ -625,6 +625,26 @@ function outlineFactory() {
         return { text: nodeText, done: taskDone }
     }
 
+    // VMD carries no node IDs, and Memory/File documents are re-parsed from VMD
+    // text on every load. Deriving an ID from the node's position in the tree
+    // keeps it stable across reloads, so a URL hash that references a node still
+    // resolves after a reload. `randomId()` is base36 and never contains an
+    // underscore, so the `v_` prefix cannot collide with a generated ID, and the
+    // parent ID plus child index makes each positional ID unique in the tree.
+    function vmdNodeId(parentId: string, siblingIndex: number): string {
+        return `v_${parentId}_${siblingIndex}`
+    }
+
+    /** Append a VMD-parsed child, preferring the stable positional ID. */
+    function addVmdChild(parentId: string, nodeData: NodeInput, siblingIndex: number, previousSiblingId: string | false): Node | undefined {
+        const stable = addChild(parentId, { ...nodeData, id: vmdNodeId(parentId, siblingIndex) }, previousSiblingId)
+        if (stable) return stable
+        // The positional ID can only be taken if the same VMD was parsed into a
+        // subtree that still holds it. Fall back to a fresh ID so the rest of the
+        // document still parses instead of aborting.
+        return addChild(parentId, nodeData, previousSiblingId)
+    }
+
     function setVMD(text: string, nodeId: string) {
         if (nodeId === rootNodeId) {
             log('Cannot set VMD on root node, skipping')
@@ -670,7 +690,7 @@ function outlineFactory() {
                     } else {
                         const c = lastOnStack.node.children.peek()
                         const prevSiblingId = c[c.length - 1]
-                        let lastNode = addChild(lastOnStack.node.id, nodeData, prevSiblingId)
+                        const lastNode = addVmdChild(lastOnStack.node.id, nodeData, c.length, prevSiblingId)
                         stack.push({ node: lastNode!, indentLevel: indentStr.length });
                     }
                 } else {
@@ -833,8 +853,9 @@ function outlineFactory() {
                     }
 
                     const parentNode = stack[stack.length - 1].node
-                    const prevSiblingId = parentNode.children.peek().slice(-1)[0]
-                    const newNode = addChild(parentNode.id, nodeData, prevSiblingId)
+                    const siblings = parentNode.children.peek()
+                    const prevSiblingId = siblings.slice(-1)[0]
+                    const newNode = addVmdChild(parentNode.id, nodeData, siblings.length, prevSiblingId)
                     stack.push({ node: newNode!, indentLen })
                     continue
                 }

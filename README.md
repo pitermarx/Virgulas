@@ -31,12 +31,12 @@ can shape, zoom into, and turn into tasks — with optional end-to-end encrypted
 - Images never exceed the width of the note; long lines wrap instead of scrolling sideways
 - Inline `#tags` and `@mentions` render as pills; clicking one opens Search prefilled
 - Optional description per node, previewed while browsing and auto-growing while editing
-- Collapse and expand (`Ctrl+Space` or the ▶/▼ control)
+- Collapse and expand (`Ctrl+Space`, or the ▶/▼ control that appears on hover or on the selected node)
 - Indent and outdent (`Tab` / `Shift+Tab`, or swipe right/left on touch)
 - Move nodes among siblings (`Alt+↑` / `Alt+↓`)
 - Multi-select siblings (`Shift+↑/↓`), then move, indent, collapse, or delete the group
 - Zoom into any node (`Alt+→`) with clickable breadcrumbs; the URL carries the node ID so a zoom
-  can be linked or reloaded
+  can be linked or reloaded, in every storage mode (Memory, Local, Remote, and File)
 - Delete a node (`Ctrl+Backspace`, or `Backspace` on an empty node); deleting a subtree asks first
 - `Enter` adds a sibling, or the first child when the node has visible children
 - Paste plain text, or paste a multi-line/bulleted VMD fragment to create nodes
@@ -99,6 +99,7 @@ biometric unlock (fingerprint/face/device PIN) for this device.
 - `Escape` closes an open dialog (Options or shortcuts) instead of toggling search
 - Mobile: larger touch targets, swipe to indent, keyboard-aware status bar
 - Respects `prefers-reduced-motion` and shows visible keyboard focus rings everywhere
+- With JavaScript disabled, shows an actionable message instead of leaving the splash on screen
 
 ## Privacy and security
 

@@ -83,6 +83,21 @@
       <div class="tagline">Local-first browser outliner</div>
     </div>
   </div>
+  <!--
+    No-JavaScript fallback. #splash is static markup that app.js dismisses, so
+    without scripting it would stay on screen forever. The <noscript> block
+    hides it and shows an actionable message instead. Its <style> is allowed by
+    the stylesheet CSP and is never parsed while scripting is enabled.
+  -->
+  <noscript>
+    <style>#splash { display: none; }</style>
+    <section class="noscript-fallback" aria-labelledby="noscript-title">
+      <h2 id="noscript-title">Virgulas needs JavaScript</h2>
+      <p>Virgulas is a local-first outliner that runs entirely in your browser. Opening, editing, and
+        saving your outline all require JavaScript.</p>
+      <p>Enable JavaScript in your browser settings, then reload this page.</p>
+    </section>
+  </noscript>
   <script type="module" src="js/app.js"></script>
   <div id="keyboard-shortcuts" class="modal-overlay" style="display: none;">
     <div class="modal-dialog">
