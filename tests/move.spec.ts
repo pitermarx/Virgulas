@@ -1,5 +1,4 @@
-import { test, expect } from './test';
-import { setupDoc } from './test';
+import { test, expect, setupDoc, unlockApp } from './test';
 
 test.describe('Move Nodes', () => {
   test.beforeEach(async ({ page }) => {
@@ -59,5 +58,25 @@ test.describe('Move Nodes', () => {
     // Node 2 (Input - focused)
     await expect(page.locator('.node-content input').nth(0)).toHaveValue('Node 2');
     await expect(page.locator('.node-content input').nth(0)).toBeFocused();
+  });
+
+  test('top-level order survives reload after moving a node', async ({ page }) => {
+    const originalCiphertext = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+    const node2 = page.locator('.node-content').nth(1);
+    await node2.click();
+    const input = node2.locator('input');
+    await input.focus();
+    await input.press('Alt+ArrowUp');
+
+    await expect.poll(
+      () => page.evaluate(() => localStorage.getItem('vmd_data_enc')),
+      { timeout: 8000 }
+    ).not.toBe(originalCiphertext);
+
+    await page.reload();
+    await unlockApp(page);
+    await expect(page.locator('.node-content').nth(0)).toContainText('Node 2');
+    await expect(page.locator('.node-content').nth(1)).toContainText('Node 1');
+    await expect(page.locator('.node-content').nth(2)).toContainText('Node 3');
   });
 });

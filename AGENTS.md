@@ -13,7 +13,9 @@ Companion documents:
 | [`docs/SPEC.vmd`](./docs/SPEC.vmd) | Normative product behaviour (source of truth) |
 | [`docs/VMD.md`](./docs/VMD.md) | The VMD plain-text outline format |
 | [`docs/design.md`](./docs/design.md) | Visual and interaction design system |
-| [`docs/SECURITY.md`](./docs/SECURITY.md) | Security register (fixed / open / accepted) |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | Open security work |
+| [`source/.well-known/security.txt`](./source/.well-known/security.txt) | Deployed security policy: how to report, and accepted risks |
+| [`docs/review/README.md`](./docs/review/README.md) | Review findings and the ordered roadmap (not tickets yet) |
 
 The public site follows [The Website Specification](https://specification.website). The
 compliance notes (edge security headers, crawl and discovery files, the privacy and 404 pages,
@@ -70,7 +72,7 @@ Do not create files outside these locations without explicit instruction:
 ```
 /
 ├── .github/workflows/      — ci.yml (test, db publish, release, deploy), daily.yml
-├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png
+├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png, review/ (findings and roadmap)
 ├── scripts/                — build, cache-bump, hooks, release, serve, CSP + edge-header helpers
 ├── source/
 │   ├── index.html          — HTML entry point (loads js/app.js + js/app.css)
@@ -175,7 +177,6 @@ If a task spans multiple items on the list below, split it.
 - Node delete
 - Multi-select
 - Zoom and breadcrumb
-- Undo/redo stack
 - Markdown rendering
 - Search
 - Keyboard shortcuts modal
@@ -222,10 +223,9 @@ Enforcement:
 ### Known drift (documented)
 
 These are known gaps between the spec and the current implementation. Do not assume the
-feature exists; update this list when a gap is closed.
+feature exists; update this list when a gap is found or closed.
 
-- **Undo/Redo** is listed in `docs/SPEC.vmd` under ROADMAP (`Ctrl+Z` / `Ctrl+Shift+Z`) but is not
-  implemented. Do not document or reference it as a working feature.
+- None at the moment.
 
 ---
 
@@ -394,6 +394,29 @@ All Supabase access goes through `sync.ts` (`remoteSync`) — Rule 7.
   same-field conflicts open a blocking modal.
 - `@supabase/supabase-js` is imported dynamically and emitted as a separate chunk so Local, Memory
   and File users never download it. Do not turn that into a static import.
+
+### Analytics tracker and SRI
+
+The Umami tracker (`https://um.vps.pitermarx.com/script.js`) is the only remote script. It is
+pinned in `source/index.html` with a `sha384` `integrity` attribute and `crossorigin="anonymous"`,
+and the CSP `script-src` allow-lists only `'self'` and that host. The digest is committed on
+purpose, so a changed tracker build cannot ship silently: the browser refuses to run bytes that do
+not match it.
+
+When the tracker is upgraded:
+
+1. Recompute the digest of the new script:
+   ```bash
+   bun -e "const b = await (await fetch('https://um.vps.pitermarx.com/script.js')).arrayBuffer(); console.log('sha384-' + new Bun.CryptoHasher('sha384').update(b).digest('base64'))"
+   ```
+2. Update the `integrity` attribute of the `<script>` tag in `source/index.html` with that value.
+3. If the host changes, update the `script-src` and `connect-src` entries of the CSP in the same
+   file (and `scripts/csp.ts` if its tests reference the host), plus the `preconnect` link.
+4. Run `bun run test:unit` and the Playwright suite. The suite blocks the tracker, so also load the
+   built site once in a browser and confirm the console shows no integrity or CSP errors.
+
+SRI covers the script bytes only. The `data-*` attributes on the tag (website id and any tracker
+options) are not protected by the hash and are changed with a normal review.
 
 ---
 

@@ -438,6 +438,19 @@ await test("Deserialize skips node with invalid parentId", () => {
   assert(outline.get('orphan')! === undefined, "Orphan node should be skipped")
 })
 
+await test("Deserialize falls back to valid root children when the root is invalid", () => {
+  const data = JSON.stringify({
+    modelVersion: 'v1',
+    dataVersion: 0,
+    nodes: [
+      { id: 'root', parentId: 'missing', text: '', description: '' },
+      { id: 'A', parentId: 'root', text: 'A', description: '', children: [] }
+    ]
+  })
+  outline.deserialize(data)
+  assertChildren('root', ['A'])
+})
+
 await test("Deserialize skips child whose parentId does not match", () => {
   // B claims to have child C, but C's parentId is 'root', not 'B'
   const data = JSON.stringify({
@@ -491,6 +504,25 @@ await test("Full serialize → deserialize round-trip", () => {
   assertEqual(outline.get('B')!.open.peek(), false, "B open after round-trip")
   assertChildren('root', ['A', 'B', 'C'])
   assertChildren('B', ['D', 'E'])
+})
+
+await test("Serialize-deserialize preserves reordered root children", () => {
+  buildTree()
+  outline.moveUp('C')
+  const json = outline.serialize()
+  outline.reset()
+  outline.deserialize(json)
+  assertChildren('root', ['A', 'C', 'B'])
+})
+
+await test("Deserialize appends root children missing from the stored order", () => {
+  buildTree()
+  const document = JSON.parse(outline.serialize())
+  const root = document.nodes.find((node: any) => node.id === 'root')
+  root.children = ['C', 'A']
+  outline.reset()
+  outline.deserialize(JSON.stringify(document))
+  assertChildren('root', ['C', 'A', 'B'])
 })
 
 

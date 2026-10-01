@@ -115,7 +115,8 @@ biometric unlock (fingerprint/face/device PIN) for this device.
   the device; the document payload is the only ciphertext. The exact list lives in
   [`docs/SPEC.vmd`](docs/SPEC.vmd) → ENCRYPTION.
 
-The full register of known and accepted security work is in [`docs/SECURITY.md`](docs/SECURITY.md).
+Open security work is tracked in [`docs/SECURITY.md`](docs/SECURITY.md). How to report a
+vulnerability, and the accepted risks, are in `/.well-known/security.txt`.
 
 ## Run it locally
 
@@ -144,7 +145,7 @@ worker, database workflow, CI/CD, and the contribution rules — lives in [`AGEN
 | [`docs/SPEC.vmd`](docs/SPEC.vmd) | Normative feature and design-decision register |
 | [`docs/VMD.md`](docs/VMD.md) | VMD plain-text format definition |
 | [`docs/design.md`](docs/design.md) | Visual and interaction design system |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | Security register: fixed, open, and accepted risks |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Open security work |
 | [`AGENTS.md`](AGENTS.md) | Contributor handbook: rules, setup, architecture, tests, CI |
 
 ## Standards
