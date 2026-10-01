@@ -47,10 +47,10 @@ export function detectBrowserCapabilities(apis: BrowserApiProbe = globalThis as 
     let indexedDBAvailable = false
     try {
         localStorageAvailable = Boolean(apis.localStorage)
-    } catch {}
+    } catch { }
     try {
         indexedDBAvailable = Boolean(apis.indexedDB)
-    } catch {}
+    } catch { }
 
     return {
         cryptoSubtle: Boolean(apis.crypto?.subtle),
@@ -62,6 +62,33 @@ export function detectBrowserCapabilities(apis: BrowserApiProbe = globalThis as 
 
 export function supportsEncryptedStorage(capabilities: BrowserCapabilities): boolean {
     return capabilities.cryptoSubtle && capabilities.compressionStreams && capabilities.localStorage
+}
+
+export interface StoragePersistenceApi {
+    persist?: () => Promise<boolean>
+    persisted?: () => Promise<boolean>
+}
+
+function getStoragePersistenceApi(): StoragePersistenceApi | null {
+    return typeof navigator === 'undefined' ? null : navigator.storage
+}
+
+export async function isStoragePersistent(storage = getStoragePersistenceApi()): Promise<boolean> {
+    try {
+        return storage?.persisted ? await storage.persisted() : false
+    } catch {
+        return false
+    }
+}
+
+export async function requestPersistentStorage(storage = getStoragePersistenceApi()): Promise<boolean> {
+    try {
+        if (!storage) return false
+        if (storage.persisted && await storage.persisted()) return true
+        return storage.persist ? await storage.persist() : false
+    } catch {
+        return false
+    }
 }
 
 function readStorage(key: string, fallback: string | null = null): string | null {
@@ -121,5 +148,6 @@ export const store = {
     syncTs: slot('vmd_sync_ts'),
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
-    inboxQueue: slot('vmd_inbox_queue')
+    inboxQueue: slot('vmd_inbox_queue'),
+    storageNoticeDismissed: slot('vmd_storage_notice_dismissed')
 }

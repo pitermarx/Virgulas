@@ -50,21 +50,21 @@ class FakeDB {
 
 function installFakeIndexedDB() {
     const databases = new Map<string, FakeDB>()
-    ;(globalThis as any).indexedDB = {
-        open(name: string) {
-            let db = databases.get(name)
-            if (!db) {
-                db = new FakeDB()
-                databases.set(name, db)
+        ; (globalThis as any).indexedDB = {
+            open(name: string) {
+                let db = databases.get(name)
+                if (!db) {
+                    db = new FakeDB()
+                    databases.set(name, db)
+                }
+                const req = new FakeRequest(db)
+                queueMicrotask(() => {
+                    req.onupgradeneeded?.()
+                    req.onsuccess?.()
+                })
+                return req
             }
-            const req = new FakeRequest(db)
-            queueMicrotask(() => {
-                req.onupgradeneeded?.()
-                req.onsuccess?.()
-            })
-            return req
         }
-    }
 }
 
 // ─── WebAuthn / crypto stubs ─────────────────────────────────────────────────
@@ -105,10 +105,10 @@ await test('isSupported follows WebAuthn availability', () => {
 
 await test('isSupported is false without IndexedDB', () => {
     const indexedDB = (globalThis as any).indexedDB
-    ;(globalThis as any).indexedDB = undefined
+        ; (globalThis as any).indexedDB = undefined
     enableWebAuthn()
     assertEqual(biometrics.isSupported(), false, 'unsupported without IndexedDB')
-    ;(globalThis as any).indexedDB = indexedDB
+        ; (globalThis as any).indexedDB = indexedDB
 })
 
 await test('enroll rejects when WebAuthn is unsupported', async () => {
@@ -171,7 +171,7 @@ await test('unlock returns null when no credential is stored', async () => {
 })
 
 await test('hasEnrolled is false when IndexedDB is unavailable', async () => {
-    ;(globalThis as any).indexedDB = undefined
+    ; (globalThis as any).indexedDB = undefined
     assertEqual(await biometrics.hasEnrolled(), false, 'graceful on missing IndexedDB')
     installFakeIndexedDB()
 })

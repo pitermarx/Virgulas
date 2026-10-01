@@ -1,4 +1,4 @@
-import { test, expect, type Page, seedEncryptedDoc } from './test';
+import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp } from './test';
 
 const installMockSupabase = async (page: Page, options?: {
   userEmail?: string;
@@ -161,6 +161,82 @@ test.describe('Authentication', () => {
     await expect.poll(async () => {
       return await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
     }).toContain('|');
+  });
+
+  test('requests persistent storage once after a Local save and remembers the dismissed reminder', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as any).__persistRequestCount = 0;
+      Object.defineProperty(navigator, 'storage', {
+        configurable: true,
+        value: {
+          persisted: async () => false,
+          persist: async () => {
+            (window as any).__persistRequestCount++;
+            return false;
+          }
+        }
+      });
+    });
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{ id: 'local-node', text: 'Before save', children: [] }]
+    });
+
+    expect(await page.evaluate(() => (window as any).__persistRequestCount)).toBe(0);
+
+    const node = page.locator('.node-content').first();
+    await node.click();
+    const input = node.locator('input');
+    await input.fill('First Local save');
+    await expect.poll(() => page.evaluate(() => (window as any).__persistRequestCount), { timeout: 10000 }).toBe(1);
+    const firstCiphertext = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+
+    await input.fill('Second Local save');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('vmd_data_enc')), { timeout: 10000 })
+      .not.toBe(firstCiphertext);
+    await expect.poll(() => page.evaluate(() => (window as any).__persistRequestCount)).toBe(1);
+    await expect(page.locator('.storage-persistence-notice')).toContainText('best-effort');
+
+    await page.getByRole('button', { name: 'Dismiss storage reminder' }).click();
+    await expect(page.locator('.storage-persistence-notice')).toBeHidden();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('vmd_storage_notice_dismissed'))).toBe('1');
+    await page.getByRole('button', { name: 'Options' }).click();
+    await expect(page.getByTestId('local-storage-durability')).toHaveText('Best-effort');
+
+    await page.reload();
+    await unlockApp(page);
+    await expect(page.locator('.storage-persistence-notice')).toHaveCount(0);
+  });
+
+  test('reports Apple browser-tab storage as best-effort but trusts standalone persistence', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'vendor', { configurable: true, value: 'Apple Computer, Inc.' });
+      Object.defineProperty(navigator, 'standalone', {
+        configurable: true,
+        get: () => sessionStorage.getItem('durability-standalone') === '1'
+      });
+      Object.defineProperty(navigator, 'storage', {
+        configurable: true,
+        value: { persisted: async () => true, persist: async () => true }
+      });
+    });
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [{ id: 'local-node', text: 'Saved document', children: [] }]
+    });
+
+    await expect(page.locator('.storage-persistence-notice')).toBeVisible();
+    await page.getByRole('button', { name: 'Options' }).click();
+    await expect(page.getByTestId('local-storage-durability')).toHaveText('Best-effort');
+
+    await page.evaluate(() => sessionStorage.setItem('durability-standalone', '1'));
+    await page.reload();
+    await unlockApp(page);
+    await expect(page.locator('.storage-persistence-notice')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Options' }).click();
+    await expect(page.getByTestId('local-storage-durability')).toHaveText('Persistent');
   });
 
   test('rejects a too-short new passphrase when creating local storage', async ({ page }) => {
