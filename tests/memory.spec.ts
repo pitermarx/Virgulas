@@ -23,6 +23,24 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.locator('.status-memory-badge')).toContainText('In memory');
     });
 
+    test('falls back to Memory without changing encrypted data when compression APIs are missing', async ({ page }) => {
+        await page.addInitScript(() => {
+            localStorage.setItem('vmd_last_mode', 'local');
+            localStorage.setItem('vmd_data_enc', 'test-salt|test-ciphertext');
+            Object.defineProperty(window, 'CompressionStream', { configurable: true, value: undefined });
+            Object.defineProperty(window, 'DecompressionStream', { configurable: true, value: undefined });
+        });
+        await page.goto('/');
+
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+        await expect(page.locator('.status-memory-badge')).toContainText('In memory');
+        await expect(page.getByRole('alert')).toContainText('Encrypted Local and Remote storage are unavailable');
+        await expect(page.getByRole('button', { name: /Enable Secure Storage/ })).not.toBeVisible();
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('vmd_last_mode'))).toBe('local');
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('vmd_data_enc')))
+            .toBe('test-salt|test-ciphertext');
+    });
+
     test('hides Raw button in memory mode', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');

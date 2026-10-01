@@ -98,8 +98,17 @@ section('biometrics support detection')
 await test('isSupported follows WebAuthn availability', () => {
     disableWebAuthn()
     assertEqual(biometrics.isSupported(), false, 'unsupported without PublicKeyCredential')
+    installFakeIndexedDB()
     enableWebAuthn()
     assertEqual(biometrics.isSupported(), true, 'supported with create/get helpers')
+})
+
+await test('isSupported is false without IndexedDB', () => {
+    const indexedDB = (globalThis as any).indexedDB
+    ;(globalThis as any).indexedDB = undefined
+    enableWebAuthn()
+    assertEqual(biometrics.isSupported(), false, 'unsupported without IndexedDB')
+    ;(globalThis as any).indexedDB = indexedDB
 })
 
 await test('enroll rejects when WebAuthn is unsupported', async () => {
@@ -121,6 +130,7 @@ await test('unlock returns null when WebAuthn is unsupported', async () => {
 section('biometric enroll / unlock')
 
 await test('rejects an empty passphrase', async () => {
+    installFakeIndexedDB()
     enableWebAuthn()
     let message = ''
     try {

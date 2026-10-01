@@ -27,6 +27,8 @@ const authScenario = signal('empty-local');
 const authHasLocalData = signal(false);
 const authHasSupabase = signal(false);
 const authHasFilesystem = signal(false);
+const authHasEncryptedStorage = signal(true);
+const browserSupportWarning = signal('');
 const username = signal('');
 const password = signal('');
 const passphrase = signal('');
@@ -383,6 +385,8 @@ async function initAuthState() {
   authHasLocalData.value = bootstrap.hasLocalData;
   authHasSupabase.value = bootstrap.hasSupabase;
   authHasFilesystem.value = bootstrap.hasFilesystem || false;
+  authHasEncryptedStorage.value = bootstrap.encryptedStorageAvailable;
+  browserSupportWarning.value = bootstrap.browserSupportWarning;
   username.value = bootstrap.lastUsername || '';
   authUser.value = bootstrap.user || null;
 
@@ -452,6 +456,10 @@ async function requestChangeMode() {
 }
 
 function pickMode(nextMode: PersistenceMode) {
+  if ((nextMode === 'local' || nextMode === 'remote') && !authHasEncryptedStorage.value) {
+    unlockError.value = browserSupportWarning.value || 'Encrypted Local and Remote storage are unavailable in this browser.';
+    return;
+  }
   if (nextMode === 'filesystem' && !persistence.hasFilesystem()) {
     unlockError.value = 'File System Access API is not supported in this browser.';
     return;
@@ -782,14 +790,15 @@ const LockScreen = () => {
     <div class="bottom-sheet" data-auth-mode=${mode} role="dialog" aria-modal="true" aria-labelledby="auth-title">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-content">
+        ${browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
 
         ${step === 'choose-mode' && html`
           <h2 class="auth-title" id="auth-title">Choose Storage</h2>
           <div class="auth-mode-switch" role="group" aria-label="Storage mode">
             <button type="button" class=${'auth-mode-btn' + (isLocal ? ' is-active' : '')}
-              onClick=${() => pickMode('local')}>Local</button>
+              onClick=${() => pickMode('local')} disabled=${!authHasEncryptedStorage.value}>Local</button>
             <button type="button" class=${'auth-mode-btn' + (isRemote ? ' is-active' : '')}
-              onClick=${() => pickMode('remote')}>Remote</button>
+              onClick=${() => pickMode('remote')} disabled=${!authHasEncryptedStorage.value}>Remote</button>
             <button type="button" class=${'auth-mode-btn' + (isFilesystem ? ' is-active' : '')}
               onClick=${() => pickMode('filesystem')}>File</button>
           </div>
@@ -981,7 +990,7 @@ const QuickCaptureToast = () => quickCaptureNotice.value
   : null;
 
 const SecureStoragePrompt = () => {
-  if (persistence.isLocked() || !persistence.isMemory()) return null;
+  if (persistence.isLocked() || !persistence.isMemory() || !authHasEncryptedStorage.value) return null;
 
   return html`
     <button type="button" class="app-node" onClick=${openSecureStorageSetup}>
@@ -1335,7 +1344,10 @@ const Splash = () => {
       <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
         <main class="main-content" id="main-content" tabindex="-1"
           inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
-          <${MainToolbar} banner=${html`<${SecureStoragePrompt} />`} />
+          <${MainToolbar} banner=${html`
+            ${!isLocked && browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
+            <${SecureStoragePrompt} />
+          `} />
           <${Outline} />
         </main>
         <${StatusToolbar} />

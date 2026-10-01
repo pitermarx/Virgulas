@@ -4,3 +4,6 @@ playwright-report/
 dist/
 .env
 source/index.html.bak
+
+# temporary docs/review while i review
+docs/review/

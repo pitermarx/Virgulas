@@ -498,9 +498,14 @@ a:hover {
   transition: var(--transition-base);
 }
 
-.auth-mode-btn:hover {
+.auth-mode-btn:hover:not(:disabled) {
   border-color: var(--color-accent-primary);
   color: var(--color-text-primary);
+}
+
+.auth-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .auth-mode-btn.is-active {

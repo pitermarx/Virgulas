@@ -27,6 +27,43 @@ export function log(...args: unknown[]) {
 
 export const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
+export interface BrowserCapabilities {
+    cryptoSubtle: boolean
+    compressionStreams: boolean
+    localStorage: boolean
+    indexedDB: boolean
+}
+
+type BrowserApiProbe = {
+    crypto?: { subtle?: unknown } | null
+    CompressionStream?: unknown
+    DecompressionStream?: unknown
+    localStorage?: unknown
+    indexedDB?: unknown
+}
+
+export function detectBrowserCapabilities(apis: BrowserApiProbe = globalThis as BrowserApiProbe): BrowserCapabilities {
+    let localStorageAvailable = false
+    let indexedDBAvailable = false
+    try {
+        localStorageAvailable = Boolean(apis.localStorage)
+    } catch {}
+    try {
+        indexedDBAvailable = Boolean(apis.indexedDB)
+    } catch {}
+
+    return {
+        cryptoSubtle: Boolean(apis.crypto?.subtle),
+        compressionStreams: typeof apis.CompressionStream === 'function' && typeof apis.DecompressionStream === 'function',
+        localStorage: localStorageAvailable,
+        indexedDB: indexedDBAvailable
+    }
+}
+
+export function supportsEncryptedStorage(capabilities: BrowserCapabilities): boolean {
+    return capabilities.cryptoSubtle && capabilities.compressionStreams && capabilities.localStorage
+}
+
 function readStorage(key: string, fallback: string | null = null): string | null {
     try {
         const value = localStorage.getItem(key)

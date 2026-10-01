@@ -1,3 +1,5 @@
+import { detectBrowserCapabilities } from './utils.js'
+
 // Biometric (WebAuthn) unlock for Virgulas.
 //
 // Stores the encryption passphrase encrypted at rest on this device:
@@ -99,11 +101,15 @@ async function unwrapPassphrase(wrapped: string, key: CryptoKey) {
 }
 
 export const biometrics = {
-  isSupported: () =>
-    typeof window !== 'undefined' &&
-    !!window.PublicKeyCredential &&
-    typeof navigator.credentials?.create === 'function' &&
-    typeof navigator.credentials?.get === 'function',
+  isSupported: () => {
+    if (typeof window === 'undefined') return false
+    const capabilities = detectBrowserCapabilities()
+    return capabilities.cryptoSubtle &&
+      capabilities.indexedDB &&
+      !!window.PublicKeyCredential &&
+      typeof navigator.credentials?.create === 'function' &&
+      typeof navigator.credentials?.get === 'function'
+  },
 
   async hasEnrolled() {
     try {
