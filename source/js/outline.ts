@@ -445,7 +445,12 @@ function outlineFactory() {
 
         const validNodes = Object.values(nodes).filter(validateNode)
         reset()
-        map.get(rootNodeId)!.children.value = validNodes.filter(n => n.parentId === rootNodeId).map(n => n.id)
+        const rootChildren = validNodes.find(n => n.id === rootNodeId)?.children ?? []
+        const rootChildIds = new Set(rootChildren)
+        map.get(rootNodeId)!.children.value = [
+            ...rootChildren,
+            ...validNodes.filter(n => n.parentId === rootNodeId && !rootChildIds.has(n.id)).map(n => n.id),
+        ]
 
         for (const nodeData of validNodes) {
             if (nodeData.id === rootNodeId) continue // root node is already created with its children, so we can skip it in the loop

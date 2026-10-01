@@ -1,5 +1,34 @@
+# Virgulas security policy (RFC 9116)
+#
+# Report vulnerabilities privately through GitHub's private advisory form below.
+# Please do not open a public issue or pull request for an unpatched vulnerability.
+# Include reproduction steps, the affected URL or version, and the impact you observed.
+
 Contact: https://github.com/pitermarx/Virgulas/security/advisories/new
 Expires: 2027-12-31T00:00:00.000Z
 Preferred-Languages: en
 Canonical: https://virgulas.com/.well-known/security.txt
-Policy: https://github.com/pitermarx/Virgulas/blob/main/docs/SECURITY.md
+
+# Accepted risks
+#
+# These are known and deliberate; reports that only restate them are out of scope.
+#
+# - Analytics: the Umami tracker is the only remote script. It is pinned with a SHA-384
+#   Subresource Integrity hash, which fixes which code runs but not what a legitimate
+#   build can read. It runs same-origin with DOM access, and the CSP allow-lists its host.
+# - Plaintext device-local metadata: the quick-capture queue, last username or email,
+#   theme, storage mode, scheduled-window setting, inbox node name, Supabase endpoint
+#   and sync timestamps are stored unencrypted in this browser. Only the document
+#   payload is ciphertext at rest.
+# - Service worker: the app bundle is served stale-while-revalidate, so a stale or
+#   compromised bundle persists until the next revalidation.
+# - CSP image sources: img-src allows http:, which browsers block as mixed content on
+#   an https origin.
+# - No unlock throttling: the passphrase is verified only on the device, and any
+#   client-side delay can be bypassed by brute-forcing a copy of the ciphertext offline.
+#   The defences are the PBKDF2 cost (600,000 iterations) and passphrase strength.
+# - Biometric unlock: the passphrase is sealed with a non-extractable key in IndexedDB
+#   and released after a WebAuthn check. This is an application-level gate, not a
+#   cryptographic binding; a same-origin script could unseal it directly.
+# - Node ids come from Math.random(). They are internal handles that never guard access
+#   and live inside the encrypted payload.
