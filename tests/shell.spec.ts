@@ -36,8 +36,40 @@ test('app shell and splash screen mount correctly', async ({ page }) => {
 
 test('splash fades out on the same node, then is removed', async ({ page }) => {
   await trackSplashTransitions(page);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-  await page.goto('/');
+  // Hold the memory-mode bootstrap until the browser has computed the visible
+  // splash style. Otherwise a fast boot can apply `hidden` before the first
+  // style recalc; CSS then sees only opacity:0 and correctly emits no transition
+  // events. This test specifically checks the fade path, so make its starting
+  // state deterministic instead of racing the network/first paint.
+  let releaseIntro!: () => void;
+  let markIntroRequested!: () => void;
+  const introGate = new Promise<void>(resolve => { releaseIntro = resolve; });
+  const introRequested = new Promise<void>(resolve => { markIntroRequested = resolve; });
+  await page.route('**/intro.vmd', async route => {
+    markIntroRequested();
+    await introGate;
+    await route.continue();
+  });
+
+  await page.goto('/', { waitUntil: 'commit' });
+  await introRequested;
+  await page.waitForFunction(() => {
+    const splash = document.getElementById('splash');
+    if (!splash) return false;
+    const style = getComputedStyle(splash);
+    return style.opacity === '1' && parseFloat(style.transitionDuration) > 0;
+  });
+  // Reading computed styles is not enough: headless Chromium may defer its first
+  // paint while workers are busy. A screenshot forces the visible starting state
+  // to be painted before releasing bootstrap and triggering the transition.
+  try {
+    await page.locator('#splash').screenshot();
+  } finally {
+    releaseIntro();
+  }
+
   await expect(page.locator('#splash')).toHaveCount(0);
 
   const transitions = await page.evaluate(() => (window as any).__splashTransitions as string[]);
