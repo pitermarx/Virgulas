@@ -926,10 +926,10 @@ const CaptureSurface = () => {
         <div class="capture-only-card">
           <div class="capture-only-logo">Virgulas</div>
           ${captureSaved.value
-            ? html`
+        ? html`
               <p class="capture-only-title" role="status">Saved to the ${inboxNodeName.value} queue</p>
               <p class="capture-only-hint">It will be filed into your document the next time you unlock secure storage.</p>`
-            : html`
+        : html`
               <p class="capture-only-title" role="status">Quick capture could not be saved on this device</p>
               <p class="capture-only-hint">Check that this browser allows local storage, then try again.</p>`}
           <a class="btn btn-secondary" href=${appHref}>Open Virgulas</a>
@@ -960,21 +960,21 @@ const QuickCapturePrompt = () => {
             value=${quickCaptureText.value}
             onInput=${(e: any) => quickCaptureText.value = e.currentTarget.value}
             onKeyDown=${(e: any) => {
-              if (e.key === 'Escape') {
-                closeQuickCapture();
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }}
+      if (e.key === 'Escape') {
+        closeQuickCapture();
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }}
             ref=${(el: any) => {
-              if (el && document.activeElement !== el) el.focus();
-            }}
+      if (el && document.activeElement !== el) el.focus();
+    }}
             placeholder="What do you want to remember?"
           ></textarea>
           <p class="admin-hint">
             ${locked
-              ? `This stays on this device and will be filed after you unlock secure storage.`
-              : `This will be added to your ${inboxNodeName.value} node.`}
+      ? `This stays on this device and will be filed after you unlock secure storage.`
+      : `This will be added to your ${inboxNodeName.value} node.`}
           </p>
           <div class="options-row quick-capture-actions">
             <button type="button" class="btn btn-secondary" onClick=${closeQuickCapture}>Cancel</button>
@@ -1126,19 +1126,24 @@ const OptionsModal = () => {
             <dt>Mode</dt>
             <dd>${currentMode}${hasPassphrase ? ' · encrypted' : currentMode === 'filesystem' ? ' · not encrypted' : ' · in-memory only'}</dd>
 
+            ${currentMode === 'local' && html`
+              <dt>Browser storage</dt>
+              <dd data-testid="local-storage-durability">${persistence.localStorageDurability.value === 'persistent' ? 'Persistent' : 'Best-effort'}</dd>
+            `}
+
             <dt>Email</dt>
             <dd>
               ${!isRemote
-                ? html`${info.email || '—'}`
-                : editingOption.value === 'email'
-                  ? html`<form class="admin-inline-form" onSubmit=${submitChangeEmail}>
+      ? html`${info.email || '—'}`
+      : editingOption.value === 'email'
+        ? html`<form class="admin-inline-form" onSubmit=${submitChangeEmail}>
                       <input id="admin-email" type="email" value=${newEmail.value}
                         onInput=${(e: any) => newEmail.value = e.target.value}
                         class="input-field" placeholder="New email" autocomplete="email" />
                       <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
-                  : html`<div class="admin-inline-row">
+        : html`<div class="admin-inline-row">
                       <span class="admin-inline-value">${info.email || '—'}</span>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'email'} aria-label="Change email">Change</button>
                     </div>`}
@@ -1148,14 +1153,14 @@ const OptionsModal = () => {
               <dt>Password</dt>
               <dd>
                 ${editingOption.value === 'password'
-                  ? html`<form class="admin-inline-form" onSubmit=${submitChangePassword}>
+        ? html`<form class="admin-inline-form" onSubmit=${submitChangePassword}>
                       <input id="admin-password" type="password" value=${newPassword.value}
                         onInput=${(e: any) => newPassword.value = e.target.value}
                         class="input-field" placeholder="New password" autocomplete="new-password" />
                       <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
-                  : html`<div class="admin-inline-row">
+        : html`<div class="admin-inline-row">
                       <span class="admin-inline-value">••••••••</span>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'password'} aria-label="Change password">Change</button>
                     </div>`}
@@ -1166,14 +1171,14 @@ const OptionsModal = () => {
               <dt>Passphrase</dt>
               <dd>
                 ${editingOption.value === 'passphrase'
-                  ? html`<form class="admin-inline-form" onSubmit=${submitChangePassphrase}>
+        ? html`<form class="admin-inline-form" onSubmit=${submitChangePassphrase}>
                       <input id="admin-passphrase" type="password" value=${newPassphrase.value}
                         onInput=${(e: any) => newPassphrase.value = e.target.value}
                         class="input-field" placeholder="New passphrase" autocomplete="new-password" />
                       <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
-                  : html`<div class="admin-inline-row">
+        : html`<div class="admin-inline-row">
                       <span class="admin-inline-value">••••••••</span>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = 'passphrase'} aria-label="Change passphrase">Change</button>
                     </div>`}
@@ -1332,8 +1337,8 @@ const Splash = () => {
         id="splash"
         class=${ready ? 'hidden' : ''}
         onTransitionEnd=${(event: TransitionEvent) => {
-          if (event.propertyName === 'opacity' && event.target === event.currentTarget) dismissSplash();
-        }}
+        if (event.propertyName === 'opacity' && event.target === event.currentTarget) dismissSplash();
+      }}
       >
         <div class="logo">Virgulas</div>
         <div class="tagline">Local-first browser outliner</div>
@@ -1346,6 +1351,13 @@ const Splash = () => {
           inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
           <${MainToolbar} banner=${html`
             ${!isLocked && browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
+            ${!isLocked && persistence.getMode() === 'local' && persistence.localStoragePersistenceNotice.value && html`
+              <div class="storage-persistence-notice" role="status">
+                <p>Browser storage is best-effort and may be cleared automatically. Export a backup periodically, or use File or Remote storage.</p>
+                <button type="button" class="toolbar-btn" aria-label="Dismiss storage reminder" title="Dismiss storage reminder"
+                  onClick=${persistence.dismissLocalStoragePersistenceNotice}>×</button>
+              </div>
+            `}
             <${SecureStoragePrompt} />
           `} />
           <${Outline} />

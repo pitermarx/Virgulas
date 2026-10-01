@@ -161,6 +161,10 @@
       - The first unlock creates the passphrase; later visits only ask for it
       - The Options panel offers "Lock", which returns to the unlock screen and drops the key
       - Locking flushes any pending write before the key is dropped, so the most recent edit is not lost
+      - After the first successful Local save, request persistent browser storage with `navigator.storage.persist()`
+      - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
+      - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
+      - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
     + REMOTE MODE
       - The lock screen has separate Sign in / Create account tabs
       - Sign in requires the account email and password; the encryption passphrase is asked afterwards
@@ -204,7 +208,7 @@
       Only the document payload (`vmd_data_enc`) is ciphertext. The following are stored in plaintext
       because they are non-secret operational metadata:
       `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_scheduled_window`,
-      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_debug`, and `supabaseconfig`
+      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`, and `supabaseconfig`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC
     Creating an account enables cloud sync via Supabase. The encryption model is unchanged.

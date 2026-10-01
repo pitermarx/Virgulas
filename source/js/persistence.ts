@@ -1,7 +1,14 @@
 import { signal, effect, batch } from '@preact/signals'
 import { encrypt, decrypt, generateSalt, MIN_PASSPHRASE_LENGTH } from "./crypto2.js"
 import outline from "./outline.js"
-import { detectBrowserCapabilities, log, store, supportsEncryptedStorage } from './utils.js'
+import {
+  detectBrowserCapabilities,
+  isStoragePersistent,
+  log,
+  requestPersistentStorage,
+  store,
+  supportsEncryptedStorage
+} from './utils.js'
 import { biometrics } from './biometrics.js'
 import inbox from './inbox.js'
 import {
@@ -230,6 +237,44 @@ const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
+const localStorageDurability = signal<'persistent' | 'best-effort'>('best-effort')
+const localStoragePersistenceNotice = signal(false)
+let localStoragePersistenceRequest: Promise<boolean> | null = null
+
+function isAppleBrowserTab() {
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { standalone?: boolean }
+  const standalone = nav.standalone === true
+    || (typeof window !== 'undefined' && !!window.matchMedia?.('(display-mode: standalone)').matches)
+  return navigator.vendor === 'Apple Computer, Inc.' && !standalone
+}
+
+function updateLocalStorageDurability(persistent: boolean, showNotice: boolean) {
+  const isPersistent = persistent && !isAppleBrowserTab()
+  localStorageDurability.value = isPersistent ? 'persistent' : 'best-effort'
+  if (showNotice && !isPersistent && store.storageNoticeDismissed.get() !== '1') {
+    localStoragePersistenceNotice.value = true
+  }
+}
+
+async function refreshLocalStorageDurability(showNotice: boolean) {
+  updateLocalStorageDurability(await isStoragePersistent(), showNotice)
+}
+
+function requestLocalStorageDurability(): Promise<boolean> {
+  if (!localStoragePersistenceRequest) {
+    localStoragePersistenceRequest = requestPersistentStorage().then(persistent => {
+      updateLocalStorageDurability(persistent, true)
+      return persistent
+    })
+  }
+  return localStoragePersistenceRequest
+}
+
+function dismissLocalStoragePersistenceNotice() {
+  localStoragePersistenceNotice.value = false
+  store.storageNoticeDismissed.set('1')
+}
 
 // Set when a sign-up succeeded but produced no session because the project
 // requires email confirmation. Consumed by the lock screen so the user gets an
@@ -504,6 +549,7 @@ effect(() => {
       const encrypted = await encrypt(json, pass, salt)
       localEncryptedData.set(encrypted, salt)
       lastSavedVersion = version
+      if (mode === 'local') void requestLocalStorageDurability()
       // A save that was already in flight when the session ended must not push:
       // signing out / deleting the account clears `passphrase`, so a mismatch
       // means this payload belongs to a session that no longer exists.
@@ -636,6 +682,7 @@ async function unlockLocal(code: string) {
     authMode.value = 'local'
     passphrase.value = code
     rememberMode('local')
+    void refreshLocalStorageDurability(false)
     return true
   }
 
@@ -650,6 +697,7 @@ async function unlockLocal(code: string) {
     })
 
     rememberMode('local')
+    void refreshLocalStorageDurability(true)
 
     return true
   }
@@ -832,6 +880,9 @@ export default {
     rememberMode(mode)
   },
   hasSupabase: () => hasSupabaseClient(),
+  localStorageDurability,
+  localStoragePersistenceNotice,
+  dismissLocalStoragePersistenceNotice,
   getMode: () => authMode.value,
   getUser: async () => {
     try {

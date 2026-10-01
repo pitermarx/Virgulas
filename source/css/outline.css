@@ -334,7 +334,8 @@ kbd {
    from a hybrid PC: a Surface with a mouse or trackpad reports a hover-capable
    input and keeps the desktop hover behaviour. The second clause is a fallback
    for engines without `any-hover`. */
-@media (any-hover: none), (hover: none) and (pointer: coarse) {
+@media (any-hover: none),
+(hover: none) and (pointer: coarse) {
   .collapse-toggle {
     opacity: 1;
     pointer-events: auto;
@@ -694,4 +695,3 @@ a:hover {
   outline: none;
   box-shadow: var(--focus-halo);
 }
-

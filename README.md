@@ -83,7 +83,9 @@ Choose per device; your choice is remembered:
 
 - **Memory** — first-visit mode. The document lives in JS memory, the built-in tour shows you
   around, and an **Enable Secure Storage** prompt appears when you are ready to keep your work.
-- **Local** — encrypted in this browser with a passphrase. No account.
+- **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
+  shows whether the browser granted persistent storage; if not, the app recommends regular exports
+  or using File/Remote mode.
 - **Remote** — encrypted and synced through Supabase. An account email/password controls access;
   a separate passphrase controls encryption, so the server never sees plaintext.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
@@ -115,8 +117,8 @@ biometric unlock (fingerprint/face/device PIN) for this device.
   `referrerpolicy="no-referrer"` and no event handlers.
 - The only third-party script is an SRI-pinned analytics tracker; everything else is bundled. A
   strict Content-Security-Policy allow-lists exactly what the app can load.
-- The quick-capture queue, theme, mode, timestamps, and username/email are stored unencrypted on
-  the device; the document payload is the only ciphertext. The exact list lives in
+- The quick-capture queue, theme, mode, timestamps, notice preferences, and username/email are
+  stored unencrypted on the device; the document payload is the only ciphertext. The exact list lives in
   [`docs/SPEC.vmd`](docs/SPEC.vmd) → ENCRYPTION.
 
 Open security work is tracked in [`docs/SECURITY.md`](docs/SECURITY.md). How to report a

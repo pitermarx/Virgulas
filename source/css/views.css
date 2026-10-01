@@ -37,6 +37,23 @@
   margin: 0;
 }
 
+.storage-persistence-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.storage-persistence-notice p {
+  flex: 1;
+  margin: 0;
+  font-size: var(--text-size-description);
+}
+
+.storage-persistence-notice .toolbar-btn {
+  flex: 0 0 auto;
+}
+
 /* ── Search bar ── */
 .search-bar {
   display: flex;

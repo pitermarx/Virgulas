@@ -1,4 +1,11 @@
-import { detectBrowserCapabilities, isMobile, store, supportsEncryptedStorage } from '../../../source/js/utils.js'
+import {
+    detectBrowserCapabilities,
+    isMobile,
+    isStoragePersistent,
+    requestPersistentStorage,
+    store,
+    supportsEncryptedStorage
+} from '../../../source/js/utils.js'
 import { assert, assertEqual, createAsyncSectionHarness } from '../testing.js'
 
 const harness = createAsyncSectionHarness({})
@@ -32,6 +39,7 @@ await test('every documented slot round-trips', () => {
     store.scheduledWindow.set('7')
     store.inboxNodeName.set('Inbox')
     store.inboxQueue.set('[]')
+    store.storageNoticeDismissed.set('1')
 
     assertEqual(store.mode.get(), 'remote', 'mode')
     assertEqual(store.user.get(), 'user@example.com', 'user')
@@ -39,6 +47,7 @@ await test('every documented slot round-trips', () => {
     assertEqual(store.scheduledWindow.get(), '7', 'scheduledWindow')
     assertEqual(store.inboxNodeName.get(), 'Inbox', 'inboxNodeName')
     assertEqual(store.inboxQueue.get(), '[]', 'inboxQueue')
+    assertEqual(store.storageNoticeDismissed.get(), '1', 'storageNoticeDismissed')
 })
 
 await test('isMobile is a boolean derived from the user agent', () => {
@@ -87,4 +96,42 @@ await test('detects a localStorage getter that throws', () => {
     const capabilities = detectBrowserCapabilities(apis)
     assert(!capabilities.localStorage, 'Unavailable localStorage should be detected')
     assert(!supportsEncryptedStorage(capabilities), 'Encrypted storage should be unavailable')
+})
+
+section('persistent storage')
+
+await test('recognizes existing persistent storage without requesting it again', async () => {
+    let requests = 0
+    const storage = {
+        persisted: async () => true,
+        persist: async () => { requests++; return false }
+    }
+    assert(await isStoragePersistent(storage), 'Existing persistent storage should be recognized')
+    assert(await requestPersistentStorage(storage), 'Existing persistence should be retained')
+    assertEqual(requests, 0, 'Already-persistent storage should not be requested again')
+})
+
+await test('requests persistent storage when not already granted', async () => {
+    let requests = 0
+    const storage = {
+        persisted: async () => false,
+        persist: async () => { requests++; return true }
+    }
+    assert(await requestPersistentStorage(storage), 'Granted request should report persistent storage')
+    assertEqual(requests, 1, 'Persistence should be requested once')
+})
+
+await test('reports best-effort storage when persistence is denied or unavailable', async () => {
+    const denied = { persisted: async () => false, persist: async () => false }
+    assert(!await requestPersistentStorage(denied), 'Denied request should report best-effort storage')
+    assert(!await requestPersistentStorage(null), 'Unavailable Storage API should report best-effort storage')
+})
+
+await test('reports best-effort storage when the browser API throws', async () => {
+    const storage = {
+        persisted: async () => { throw new Error('storage unavailable') },
+        persist: async () => true
+    }
+    assert(!await isStoragePersistent(storage), 'Failed status check should be best-effort')
+    assert(!await requestPersistentStorage(storage), 'Failed request should be best-effort')
 })
