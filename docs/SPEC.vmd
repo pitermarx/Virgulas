@@ -110,6 +110,15 @@
     + (DESKTOP ONLY) COPY
       - `Ctrl+C` with a node text focused and no text selected copies that node and all its descendants as VMD to the clipboard
       - With text selected, `Ctrl+C` uses the browser's native copy
+  + BROWSER SUPPORT
+    Supported floors are Chromium-based browsers (including Chrome and Edge) 111+, Firefox 113+, and Safari/iOS Safari 16.4+.
+    - These floors include `color-mix()` and the Compression Streams API required by the current interface and encrypted storage modes
+    - Detect required APIs at startup; do not gate support by user-agent string
+    - Local and Remote modes require `crypto.subtle`, `CompressionStream`, `DecompressionStream`, and `localStorage`
+      If any are unavailable, those modes are disabled. If a remembered or inferred mode would use Local or Remote,
+      start in Memory mode and show a clear warning without changing the remembered mode or stored encrypted data
+    - Memory mode remains usable without those APIs; File mode remains available when File System Access is supported
+    - If `indexedDB` is unavailable, File mode cannot remember the last opened handle and biometric unlock is unavailable
   + STORAGE MODES
     Four storage modes are available. The most appropriate one is selected automatically on each visit.
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.

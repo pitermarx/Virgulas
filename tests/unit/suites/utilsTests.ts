@@ -1,4 +1,4 @@
-import { store, isMobile } from '../../../source/js/utils.js'
+import { detectBrowserCapabilities, isMobile, store, supportsEncryptedStorage } from '../../../source/js/utils.js'
 import { assert, assertEqual, createAsyncSectionHarness } from '../testing.js'
 
 const harness = createAsyncSectionHarness({})
@@ -43,4 +43,48 @@ await test('every documented slot round-trips', () => {
 
 await test('isMobile is a boolean derived from the user agent', () => {
     assertEqual(typeof isMobile, 'boolean', 'isMobile boolean')
+})
+
+section('browser capabilities')
+
+const completeBrowserApis = {
+    crypto: { subtle: {} },
+    CompressionStream: () => null,
+    DecompressionStream: () => null,
+    localStorage: {},
+    indexedDB: {}
+}
+
+await test('detects APIs needed by encrypted storage', () => {
+    const capabilities = detectBrowserCapabilities(completeBrowserApis)
+    assert(capabilities.cryptoSubtle, 'Web Crypto should be available')
+    assert(capabilities.compressionStreams, 'Both compression stream APIs should be available')
+    assert(capabilities.localStorage, 'localStorage should be available')
+    assert(supportsEncryptedStorage(capabilities), 'Encrypted storage should be available')
+})
+
+await test('requires both compression directions for encrypted storage', () => {
+    const capabilities = detectBrowserCapabilities({ ...completeBrowserApis, DecompressionStream: undefined })
+    assert(!capabilities.compressionStreams, 'A missing decompression API should be detected')
+    assert(!supportsEncryptedStorage(capabilities), 'Encrypted storage should be unavailable')
+})
+
+await test('requires Web Crypto for encrypted storage', () => {
+    const capabilities = detectBrowserCapabilities({ ...completeBrowserApis, crypto: { subtle: undefined } })
+    assert(!capabilities.cryptoSubtle, 'A missing crypto.subtle API should be detected')
+    assert(!supportsEncryptedStorage(capabilities), 'Encrypted storage should be unavailable')
+})
+
+await test('IndexedDB is independent from encrypted storage requirements', () => {
+    const capabilities = detectBrowserCapabilities({ ...completeBrowserApis, indexedDB: undefined })
+    assert(!capabilities.indexedDB, 'A missing IndexedDB API should be detected')
+    assert(supportsEncryptedStorage(capabilities), 'Encrypted storage should not require IndexedDB')
+})
+
+await test('detects a localStorage getter that throws', () => {
+    const apis = { ...completeBrowserApis }
+    Object.defineProperty(apis, 'localStorage', { get: () => { throw new Error('blocked') } })
+    const capabilities = detectBrowserCapabilities(apis)
+    assert(!capabilities.localStorage, 'Unavailable localStorage should be detected')
+    assert(!supportsEncryptedStorage(capabilities), 'Encrypted storage should be unavailable')
 })

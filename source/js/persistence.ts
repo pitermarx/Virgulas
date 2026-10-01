@@ -1,7 +1,7 @@
 import { signal, effect, batch } from '@preact/signals'
 import { encrypt, decrypt, generateSalt, MIN_PASSPHRASE_LENGTH } from "./crypto2.js"
 import outline from "./outline.js"
-import { log, store } from './utils.js'
+import { detectBrowserCapabilities, log, store, supportsEncryptedStorage } from './utils.js'
 import { biometrics } from './biometrics.js'
 import inbox from './inbox.js'
 import {
@@ -39,6 +39,21 @@ export interface UnlockOptions {
 
 function normalizeMode(mode: unknown): PersistenceMode | null {
   return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
+}
+
+function describeBrowserSupport(capabilities: ReturnType<typeof detectBrowserCapabilities>, encryptedStorageAvailable: boolean) {
+  const warnings: string[] = []
+  if (!encryptedStorageAvailable) {
+    const missing = []
+    if (!capabilities.cryptoSubtle) missing.push('Web Crypto')
+    if (!capabilities.compressionStreams) missing.push('Compression Streams')
+    if (!capabilities.localStorage) missing.push('localStorage')
+    warnings.push(`Encrypted Local and Remote storage are unavailable because this browser lacks ${missing.join(', ')}. If either mode was selected, the app will continue in Memory without changing the saved mode or encrypted document.`)
+  }
+  if (!capabilities.indexedDB) {
+    warnings.push('IndexedDB is unavailable, so file handles will not be remembered between visits and biometric unlock is unavailable.')
+  }
+  return warnings.join(' ')
 }
 
 // Applies to newly chosen passphrases only; existing (possibly shorter) passphrases
@@ -826,6 +841,9 @@ export default {
     }
   },
   getAuthBootstrap: async () => {
+    const browserCapabilities = detectBrowserCapabilities()
+    const encryptedStorageAvailable = supportsEncryptedStorage(browserCapabilities)
+    const browserSupportWarning = describeBrowserSupport(browserCapabilities, encryptedStorageAvailable)
     const hasLocalData = !!localEncryptedData.get().data
     const hasSupabase = hasSupabaseClient()
     const hasFilesystem = filesystemStorage.isSupported()
@@ -838,11 +856,11 @@ export default {
     // off the startup path for everyone else: the IndexedDB handle lookup only
     // runs for File mode, and the Supabase chunk (plus its session round trip)
     // is only fetched for Remote mode.
-    const hasSavedFileHandle = hasFilesystem && preferredMode === 'filesystem'
+    const hasSavedFileHandle = hasFilesystem && browserCapabilities.indexedDB && preferredMode === 'filesystem'
       ? await filesystemStorage.hasSavedHandle()
       : false
 
-    if (hasSupabase && preferredMode === 'remote') {
+    if (encryptedStorageAvailable && hasSupabase && preferredMode === 'remote') {
       try {
         user = await remoteSync.getUser()
         if (user) {
@@ -860,7 +878,16 @@ export default {
       hasFilesystem,
       hasSavedFileHandle,
       lastUsername,
-      preferredMode
+      preferredMode,
+      encryptedStorageAvailable,
+      browserSupportWarning
+    }
+
+    const encryptedModeWouldBeSelected = preferredMode === 'local' || preferredMode === 'remote'
+      || (!preferredMode && (hasLocalData || !!lastUsername))
+      || (preferredMode === 'filesystem' && !hasFilesystem)
+    if (!encryptedStorageAvailable && encryptedModeWouldBeSelected) {
+      return { mode: 'memory', scenario: 'memory-unsupported', user: null, ...bootstrapBase }
     }
 
     // No remembered mode → check for data signals; if none exist, start in memory mode

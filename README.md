@@ -3,6 +3,10 @@
 [Virgulas](https://virgulas.com) is a local-first browser outliner: an infinite tree of notes you
 can shape, zoom into, and turn into tasks — with optional end-to-end encrypted sync.
 
+Supported browsers: Chromium-based browsers (including Chrome and Edge) 111+, Firefox 113+, and
+Safari/iOS Safari 16.4+. If required APIs are missing, Virgulas remains usable in Memory mode and
+explains which storage modes are unavailable.
+
 ![Virgulas](docs/demo.png)
 
 ## Why Virgulas
