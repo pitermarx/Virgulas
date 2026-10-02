@@ -1,6 +1,13 @@
 import { signal, effect, batch } from '@preact/signals'
-import { encrypt, decrypt, generateSalt, MIN_PASSPHRASE_LENGTH } from "./crypto2.js"
-import outline from "./outline.js"
+import {
+  CorruptEnvelopeError,
+  WrongPassphraseError,
+  encrypt,
+  decrypt,
+  generateSalt,
+  MIN_PASSPHRASE_LENGTH
+} from "./crypto2.js"
+import outline, { CorruptDocumentError } from "./outline.js"
 import {
   detectBrowserCapabilities,
   isStoragePersistent,
@@ -657,10 +664,18 @@ effect(() => {
   }
 })
 
+export class RemoteDataDecryptError extends Error {
+  constructor() {
+    super('Authenticated, but data could not be decrypted with this passphrase. You can reset remote data with a new passphrase.')
+    this.name = 'RemoteDataDecryptError'
+  }
+}
+
 function parseRemoteDecryptError(error: unknown) {
-  const message = String((error as { message?: string } | null)?.message || '')
-  if (message.includes('Invalid password') || message.includes('corrupted')) {
-    return new Error('Authenticated, but data could not be decrypted with this passphrase. You can reset remote data with a new passphrase.')
+  if (error instanceof WrongPassphraseError) return error
+  if (error instanceof CorruptEnvelopeError
+    || error instanceof CorruptDocumentError) {
+    return new RemoteDataDecryptError()
   }
   return error
 }
@@ -671,7 +686,7 @@ async function unlockLocal(code: string) {
   if (data) {
     if (!salt) {
       log('Invalid encrypted data format, missing salt')
-      return false
+      throw new CorruptEnvelopeError('Local encrypted data is missing its salt.')
     }
   }
   else {
@@ -688,11 +703,11 @@ async function unlockLocal(code: string) {
 
   try {
     const json = await decrypt(data, code, salt)
+    outline.deserialize(json)
 
     batch(() => {
       authMode.value = 'local'
       passphrase.value = code
-      outline.deserialize(json)
       applyHashZoomIfPresent()
     })
 
@@ -703,7 +718,7 @@ async function unlockLocal(code: string) {
   }
   catch (error) {
     console.error('Error unlocking doc:', error)
-    return false
+    throw error
   }
 }
 
@@ -756,15 +771,15 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   const remoteSalt = remoteData.salt || localEncryptedData.get().salt
   if (!remoteSalt) {
-    throw new Error('Missing remote salt. Please sign in again.')
+    throw new RemoteDataDecryptError()
   }
 
   try {
     const json = await decrypt(remoteData.data, code, remoteSalt)
+    outline.deserialize(json)
     batch(() => {
       authMode.value = 'remote'
       passphrase.value = code
-      outline.deserialize(json)
       applyHashZoomIfPresent()
     })
     localEncryptedData.set(remoteData.data, remoteSalt)

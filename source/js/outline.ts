@@ -1,5 +1,5 @@
 import { signal, effect, createModel, type Signal } from "@preact/signals"
-import { randomId } from "./crypto2.js"
+import { randomId, UnsupportedVersionError } from "./crypto2.js"
 import { log } from './utils.js';
 import { parseMeta, advanceDueDate } from './meta.js';
 
@@ -12,6 +12,13 @@ import { parseMeta, advanceDueDate } from './meta.js';
 // done: null = plain node (not a task), false = unchecked task, true = completed task
 
 export type DoneState = boolean | null
+
+export class CorruptDocumentError extends Error {
+    constructor(message = 'The decrypted document is corrupted or invalid.') {
+        super(message)
+        this.name = 'CorruptDocumentError'
+    }
+}
 
 export interface NodeInput {
     id?: string
@@ -385,22 +392,38 @@ function outlineFactory() {
     function deserialize(json: string) {
         log('Deserializing outline, version:', dataVersion.value)
         const previousZoomId = zoomId.peek()
-        const obj = JSON.parse(json)
-        if (obj.modelVersion !== modelVersion) {
-            throw new Error(`Unsupported model version: ${obj.modelVersion}`)
+        let obj: any
+        try {
+            obj = JSON.parse(json)
+        } catch {
+            throw new CorruptDocumentError('The decrypted document is not valid JSON.')
         }
-        if (!obj.nodes || typeof obj.nodes !== 'object') {
-            throw new Error('Invalid data format: missing nodes')
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+            throw new CorruptDocumentError()
+        }
+        if (typeof obj.modelVersion !== 'string') {
+            throw new CorruptDocumentError('The decrypted document has no model version.')
+        }
+        if (obj.modelVersion !== modelVersion) {
+            throw new UnsupportedVersionError(`This document uses unsupported model version ${obj.modelVersion}. Reload the app to get the latest version.`)
+        }
+        if (!Array.isArray(obj.nodes)) {
+            throw new CorruptDocumentError('The decrypted document has an invalid node list.')
         }
 
         // Null-prototype map so an id/parentId of `constructor`, `toString`, or
         // `__proto__` cannot resolve an inherited Object property and pass validation.
         const nodes: Record<string, any> = Object.create(null)
         for (const nodeData of obj.nodes) {
+            if (!nodeData || typeof nodeData !== 'object' || Array.isArray(nodeData)
+                || typeof nodeData.id !== 'string' || !nodeData.id
+                || (nodeData.children !== undefined && !Array.isArray(nodeData.children))) {
+                throw new CorruptDocumentError('The decrypted document contains an invalid node.')
+            }
             nodes[nodeData.id] = nodeData
         }
         if (nodes[rootNodeId] === undefined) {
-            throw new Error('Invalid data format: missing root node')
+            throw new CorruptDocumentError('The decrypted document is missing its root node.')
         }
 
         const visitedChildren = new Set()
@@ -444,17 +467,9 @@ function outlineFactory() {
         }
 
         const validNodes = Object.values(nodes).filter(validateNode)
-        reset()
-        const rootChildren = validNodes.find(n => n.id === rootNodeId)?.children ?? []
-        const rootChildIds = new Set(rootChildren)
-        map.get(rootNodeId)!.children.value = [
-            ...rootChildren,
-            ...validNodes.filter(n => n.parentId === rootNodeId && !rootChildIds.has(n.id)).map(n => n.id),
-        ]
-
-        for (const nodeData of validNodes) {
-            if (nodeData.id === rootNodeId) continue // root node is already created with its children, so we can skip it in the loop
-            map.set(nodeData.id, new NodeModel({
+        const restoredNodes = validNodes
+            .filter(nodeData => nodeData.id !== rootNodeId)
+            .map(nodeData => [nodeData.id, new NodeModel({
                 id: nodeData.id,
                 parentId: nodeData.parentId,
                 text: nodeData.text,
@@ -463,8 +478,17 @@ function outlineFactory() {
                 open: nodeData.open,
                 lastModified: nodeData.lastModified || 0,
                 done: nodeData.done !== undefined ? nodeData.done : null,
-            }))
-        }
+            })] as const)
+
+        reset()
+        const rootChildren = validNodes.find(n => n.id === rootNodeId)?.children ?? []
+        const rootChildIds = new Set(rootChildren)
+        map.get(rootNodeId)!.children.value = [
+            ...rootChildren,
+            ...validNodes.filter(n => n.parentId === rootNodeId && !rootChildIds.has(n.id)).map(n => n.id),
+        ]
+
+        for (const [id, node] of restoredNodes) map.set(id, node)
         if (previousZoomId !== rootNodeId && map.has(previousZoomId)) {
             zoomId.value = previousZoomId
         } else {

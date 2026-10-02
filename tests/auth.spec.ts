@@ -124,6 +124,15 @@ const seedEncryptedLocalDoc = async (
   }, { passphrase, doc });
 };
 
+const corruptLocalEncryptedDoc = async (page: Page) => {
+  await page.evaluate(() => {
+    const stored = localStorage.getItem('vmd_data_enc');
+    const separatorIndex = stored?.indexOf('|') ?? -1;
+    if (!stored || separatorIndex < 0) throw new Error('No encrypted local document to corrupt');
+    localStorage.setItem('vmd_data_enc', `${stored.slice(0, separatorIndex)}|v2:not-a-number:abc`);
+  });
+};
+
 const openAdvancedStorageOptions = async (page: Page) => {
   const modeSwitchGroup = page.locator('.auth-mode-switch');
   if (await modeSwitchGroup.isVisible().catch(() => false)) {
@@ -677,7 +686,7 @@ test.describe('Authentication', () => {
     await page.getByLabel('Encryption passphrase').fill('new-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
-    await expect(page.getByText('Authenticated, but data could not be decrypted with this passphrase. You can reset remote data with a new passphrase.')).toBeVisible();
+    await expect(page.getByText('Invalid passphrase.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reset Remote Data With New Passphrase' })).toBeVisible();
 
     page.once('dialog', (dialog) => dialog.accept());
@@ -741,7 +750,7 @@ test.describe('Authentication', () => {
     await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
   });
 
-  test('local decrypt failure offers reset with new passphrase', async ({ page }) => {
+  test('local wrong passphrase does not offer reset', async ({ page }) => {
     await page.goto('/');
     await seedEncryptedLocalDoc(page, 'old-passphrase', {
       id: 'root',
@@ -755,6 +764,27 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(page.getByText(/Invalid passphrase/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toHaveCount(0);
+
+    await page.getByLabel('Encryption passphrase').fill('old-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+  });
+
+  test('corrupt local envelope offers reset with a new passphrase', async ({ page }) => {
+    await page.goto('/');
+    await seedEncryptedLocalDoc(page, 'old-passphrase', {
+      id: 'root',
+      text: 'Old Local Doc',
+      children: []
+    });
+    await corruptLocalEncryptedDoc(page);
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('old-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText(/Encrypted data is corrupted or incomplete/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeVisible();
 
     // Enter a new passphrase and confirm the reset
@@ -770,6 +800,53 @@ test.describe('Authentication', () => {
     }, { timeout: 5000 }).toContain('|');
   });
 
+  test('corrupted decrypted document offers reset without unlocking', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(async () => {
+      localStorage.clear();
+      const { encrypt } = await import('/js/app.js' as string);
+      const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+      const salt = btoa(String.fromCharCode(...saltBytes));
+      const encrypted = await encrypt('{', 'old-passphrase', salt);
+      localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('old-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText('The decrypted document is not valid JSON.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeVisible();
+    await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
+  });
+
+  test('unsupported local model version asks for an update without offering reset', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(async () => {
+      localStorage.clear();
+      const { encrypt } = await import('/js/app.js' as string);
+      const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+      const salt = btoa(String.fromCharCode(...saltBytes));
+      const document = JSON.stringify({
+        modelVersion: 'v99',
+        dataVersion: 0,
+        nodes: [{ id: 'root', parentId: null, text: '', children: [] }]
+      });
+      const encrypted = await encrypt(document, 'old-passphrase', salt);
+      localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('old-passphrase');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.getByText(/unsupported model version v99.*reload the app/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toHaveCount(0);
+    await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
+  });
+
   test('local reset button is disabled when passphrase field is empty', async ({ page }) => {
     await page.goto('/');
     await seedEncryptedLocalDoc(page, 'old-passphrase', {
@@ -777,6 +854,7 @@ test.describe('Authentication', () => {
       text: 'Old Local Doc',
       children: []
     });
+    await corruptLocalEncryptedDoc(page);
     await page.reload();
 
     await page.getByLabel('Encryption passphrase').fill('wrong-passphrase');
