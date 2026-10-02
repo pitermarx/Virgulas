@@ -3,12 +3,12 @@ import { useEffect } from 'preact/hooks';
 import { signal, effect } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen } from './shortcuts.js';
-import persistence, { type PersistenceMode } from './persistence.js';
+import persistence, { RemoteDataDecryptError, type PersistenceMode } from './persistence.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync } from './sync.js';
-import outline from './outline.js';
+import outline, { CorruptDocumentError } from './outline.js';
 import { appVersion, store } from './utils.js';
-import { DEFAULT_ITERATIONS } from './crypto2.js';
+import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
 import inbox, { type CaptureIntent } from './inbox.js';
 
 // Splash lifecycle. `appReady` flips once the initial auth state and the
@@ -521,13 +521,14 @@ async function submitUnlock(e: any) {
       stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
-      unlockError.value = 'Invalid passphrase.';
-      canResetLocalData.value = authMode.value === 'local' && authHasLocalData.value;
+      unlockError.value = 'Unable to unlock this storage mode.';
     }
   } catch (error) {
     const message = String((error as { message?: string } | null)?.message || 'Failed to unlock.');
     unlockError.value = message;
-    canResetRemoteData.value = authMode.value === 'remote' && message.includes('Authenticated, but data could not be decrypted');
+    canResetLocalData.value = authMode.value === 'local'
+      && (error instanceof CorruptEnvelopeError || error instanceof CorruptDocumentError);
+    canResetRemoteData.value = error instanceof RemoteDataDecryptError || error instanceof WrongPassphraseError;
   } finally {
     isBusy.value = false;
   }

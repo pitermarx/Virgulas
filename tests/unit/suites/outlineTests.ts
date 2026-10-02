@@ -1,4 +1,6 @@
 import outline from "../../../source/js/outline.js"
+import { CorruptDocumentError } from "../../../source/js/outline.js"
+import { UnsupportedVersionError } from "../../../source/js/crypto2.js"
 import {
   assert,
   assertEqual,
@@ -406,23 +408,36 @@ await test("Deserialize restores dataVersion", async () => {
 })
 
 await test("Deserialize throws on wrong modelVersion", () => {
-  let threw = false
+  let error: unknown
   try {
     outline.deserialize(JSON.stringify({ modelVersion: 'v99', nodes: { root: {} } }))
-  } catch (e) {
-    threw = true
+  } catch (caught) {
+    error = caught
   }
-  assert(threw, "Should throw on unknown modelVersion")
+  assert(error instanceof UnsupportedVersionError, "Unknown modelVersion should have a typed unsupported-version error")
 })
 
 await test("Deserialize throws on missing root node", () => {
-  let threw = false
+  let error: unknown
   try {
     outline.deserialize(JSON.stringify({ modelVersion: 'v1', nodes: { X: {} } }))
-  } catch (e) {
-    threw = true
+  } catch (caught) {
+    error = caught
   }
-  assert(threw, "Should throw when root node is absent")
+  assert(error instanceof CorruptDocumentError, "A missing root should have a typed corruption error")
+})
+
+await test("Deserialize classifies invalid JSON without replacing the existing outline", () => {
+  outline.reset()
+  outline.addChild('root', { id: 'preserved', text: 'Preserved' })
+  let error: unknown
+  try {
+    outline.deserialize('{')
+  } catch (caught) {
+    error = caught
+  }
+  assert(error instanceof CorruptDocumentError, "Invalid JSON should have a typed corruption error")
+  assertEqual(outline.get('preserved')?.text.peek(), 'Preserved', "Invalid JSON should not reset the existing outline")
 })
 
 await test("Deserialize skips node with invalid parentId", () => {

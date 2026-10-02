@@ -35,6 +35,34 @@ function kdfScale(): number {
 
 const ENVELOPE_PREFIX = 'v2'
 
+export class WrongPassphraseError extends Error {
+    constructor() {
+        super('Invalid passphrase.')
+        this.name = 'WrongPassphraseError'
+    }
+}
+
+export class CorruptEnvelopeError extends Error {
+    constructor(message = 'Encrypted data is corrupted or incomplete.') {
+        super(message)
+        this.name = 'CorruptEnvelopeError'
+    }
+}
+
+export class UnsupportedVersionError extends Error {
+    constructor(message = 'This document uses an unsupported version. Reload the app to get the latest version.') {
+        super(message)
+        this.name = 'UnsupportedVersionError'
+    }
+}
+
+export class UnsupportedBrowserError extends Error {
+    constructor() {
+        super('This browser cannot decrypt the document. Update your browser and reload.')
+        this.name = 'UnsupportedBrowserError'
+    }
+}
+
 async function compress(string: string): Promise<ArrayBuffer> {
     const compressionStream = new CompressionStream('gzip')
     const writer = compressionStream.writable.getWriter()
@@ -44,13 +72,24 @@ async function compress(string: string): Promise<ArrayBuffer> {
 }
 
 async function decompress(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-    const decompressionStream = new DecompressionStream('gzip')
-    const writer = decompressionStream.writable.getWriter()
-    const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-    writer.write(input as unknown as BufferSource)
-    writer.close()
-    const decompressed = await new Response(decompressionStream.readable).arrayBuffer()
-    return new TextDecoder().decode(decompressed)
+    let decompressionStream: DecompressionStream
+    try {
+        decompressionStream = new DecompressionStream('gzip')
+    } catch {
+        throw new UnsupportedBrowserError()
+    }
+
+    try {
+        const writer = decompressionStream.writable.getWriter()
+        const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+        const decompressedPromise = new Response(decompressionStream.readable).arrayBuffer()
+        await writer.write(input as unknown as BufferSource)
+        await writer.close()
+        const decompressed = await decompressedPromise
+        return new TextDecoder().decode(decompressed)
+    } catch {
+        throw new CorruptEnvelopeError('The decrypted data is not a valid compressed document.')
+    }
 }
 
 async function deriveKey(passphrase: string, saltBase64: string, iterations: number, scale: number): Promise<CryptoKey> {
@@ -136,18 +175,33 @@ function encodeEnvelope(combined: Uint8Array, iterations: number): string {
     return `${ENVELOPE_PREFIX}:${iterations}:${toBase64(combined)}`
 }
 
+function parsePayload(payload: string): Uint8Array {
+    try {
+        const combined = fromBase64(payload)
+        if (combined.length < 28) throw new CorruptEnvelopeError()
+        return combined
+    } catch (error) {
+        if (error instanceof CorruptEnvelopeError) throw error
+        throw new CorruptEnvelopeError()
+    }
+}
+
 function parseEnvelope(envelope: string): ParsedEnvelope {
     const value = String(envelope ?? '')
-    if (value.startsWith(`${ENVELOPE_PREFIX}:`)) {
-        const [prefix, iterationsRaw, payload] = value.split(':')
-        const iterations = Number(iterationsRaw)
-        if (prefix !== ENVELOPE_PREFIX || !Number.isInteger(iterations) || iterations <= 0 || !payload) {
-            throw new Error('Invalid encrypted envelope')
+    const version = /^v(\d+):/.exec(value)
+    if (version) {
+        if (version[1] !== ENVELOPE_PREFIX.slice(1)) {
+            throw new UnsupportedVersionError(`Encrypted data uses unsupported envelope version ${version[1]}. Reload the app to get the latest version.`)
         }
-        return { iterations, combined: fromBase64(payload) }
+        const [prefix, iterationsRaw, payload, ...extra] = value.split(':')
+        const iterations = Number(iterationsRaw)
+        if (prefix !== ENVELOPE_PREFIX || extra.length > 0 || !Number.isInteger(iterations) || iterations <= 0 || !payload) {
+            throw new CorruptEnvelopeError()
+        }
+        return { iterations, combined: parsePayload(payload) }
     }
     // Legacy payload: raw base64 written before KDF params were recorded.
-    return { iterations: LEGACY_ITERATIONS, combined: fromBase64(value) }
+    return { iterations: LEGACY_ITERATIONS, combined: parsePayload(value) }
 }
 
 /** Iteration count recorded in a stored envelope (legacy payloads report LEGACY_ITERATIONS). */
@@ -188,25 +242,52 @@ async function encrypt(text: string, passphrase: string, salt: string, iteration
 
 // Decrypts a stored envelope (v2 or legacy) with AES-GCM-256. Returns decrypted text.
 async function decrypt(envelope: string, passphrase: string, salt: string): Promise<string> {
+    const subtle = typeof window === 'undefined' ? undefined : window.crypto?.subtle
+    if (!subtle
+        || typeof subtle.importKey !== 'function'
+        || typeof subtle.deriveKey !== 'function'
+        || typeof subtle.decrypt !== 'function'
+        || typeof CompressionStream !== 'function'
+        || typeof DecompressionStream !== 'function') {
+        throw new UnsupportedBrowserError()
+    }
+
+    const { iterations, combined } = parseEnvelope(envelope)
     try {
-        const { iterations, combined } = parseEnvelope(envelope)
+        if (fromBase64(String(salt ?? '')).length !== 16) throw new CorruptEnvelopeError('Encrypted data has an invalid salt.')
+    } catch (error) {
+        if (error instanceof CorruptEnvelopeError) throw error
+        throw new CorruptEnvelopeError('Encrypted data has an invalid salt.')
+    }
 
-        // Extract IV (first 12 bytes) and Ciphertext
-        const iv = combined.slice(0, 12)
-        const ciphertext = combined.slice(12)
+    // Extract IV (first 12 bytes) and Ciphertext. parsePayload validates that
+    // the ciphertext also contains the minimum AES-GCM authentication tag.
+    const iv = combined.slice(0, 12)
+    const ciphertext = combined.slice(12)
 
-        const key = await getDerivedKey(passphrase, salt, iterations, kdfScale())
+    let key: CryptoKey
+    try {
+        key = await getDerivedKey(passphrase, salt, iterations, kdfScale())
+    } catch (error) {
+        if ((error as { name?: string } | null)?.name === 'NotSupportedError') {
+            throw new UnsupportedBrowserError()
+        }
+        throw error
+    }
+
+    try {
         const decrypted = await window.crypto.subtle.decrypt(
             { name: "AES-GCM", iv: iv },
             key,
             ciphertext
         )
-
-        const result = await decompress(decrypted)
-        return result
-    } catch (e) {
-        console.error("Decryption failed:", e)
-        throw new Error("Invalid password or corrupted data")
+        return await decompress(decrypted)
+    } catch (error) {
+        if (error instanceof CorruptEnvelopeError || error instanceof UnsupportedBrowserError) throw error
+        if ((error as { name?: string } | null)?.name === 'NotSupportedError') {
+            throw new UnsupportedBrowserError()
+        }
+        throw new WrongPassphraseError()
     }
 }
 

@@ -59,7 +59,7 @@ test.describe('Encryption and Storage', () => {
     });
 
     expect(result.failed).toBe(true);
-    expect(result.errorMessage).toContain('Invalid password or corrupted data');
+    expect(result.errorMessage).toContain('Invalid passphrase');
   });
 
   test('storage stores encrypted data', async ({ page }) => {

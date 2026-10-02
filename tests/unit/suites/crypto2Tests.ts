@@ -7,7 +7,11 @@ import {
     needsKdfUpgrade,
     DEFAULT_ITERATIONS,
     LEGACY_ITERATIONS,
-    MIN_PASSPHRASE_LENGTH
+    MIN_PASSPHRASE_LENGTH,
+    CorruptEnvelopeError,
+    WrongPassphraseError,
+    UnsupportedVersionError,
+    UnsupportedBrowserError
 } from '../../../source/js/crypto2.js'
 import {
     assert,
@@ -145,16 +149,40 @@ export async function runCrypto2Tests(onProgress: any) {
         assertEqual(await decrypt(old, passphrase, salt), text, 'decrypts at the recorded iterations')
     })
 
-    await test('Malformed envelopes fail with the normalized error', async () => {
+    await test('Malformed envelopes fail with a typed corruption error', async () => {
         const salt = generateSalt()
         let threw = false
         try {
             await decrypt('v2:not-a-number:abc', 'pass-1234567', salt)
         } catch (e) {
             threw = true
-            assertEqual((e as Error).message, 'Invalid password or corrupted data', 'normalized error')
+            assert(e instanceof CorruptEnvelopeError, 'malformed envelope should be classified as corruption')
         }
         assert(threw, 'malformed envelope should be rejected')
+    })
+
+    await test('Unsupported envelope versions fail with a typed version error', async () => {
+        let error: unknown
+        try {
+            await decrypt('v3:600000:YWJj', 'pass-1234567', generateSalt())
+        } catch (caught) {
+            error = caught
+        }
+        assert(error instanceof UnsupportedVersionError, 'unknown envelope versions should be classified separately')
+    })
+
+    await test('Missing decompression support fails with a typed browser error', async () => {
+        const original = globalThis.DecompressionStream
+        Object.defineProperty(globalThis, 'DecompressionStream', { configurable: true, value: undefined })
+        let error: unknown
+        try {
+            await decrypt('invalid', 'pass-1234567', generateSalt())
+        } catch (caught) {
+            error = caught
+        } finally {
+            Object.defineProperty(globalThis, 'DecompressionStream', { configurable: true, value: original })
+        }
+        assert(error instanceof UnsupportedBrowserError, 'missing decompression support should be classified separately')
     })
 
     await test('Payloads larger than the base64 chunk size round-trip', async () => {
@@ -174,7 +202,7 @@ export async function runCrypto2Tests(onProgress: any) {
 
     section('Failure behavior')
 
-    await test('Decrypt fails with wrong passphrase', async () => {
+    await test('Decrypt classifies an AES-GCM authentication failure as a wrong passphrase', async () => {
         const text = 'top secret'
         const salt = generateSalt()
         const encrypted = await encrypt(text, 'correct-pass', salt)
@@ -184,13 +212,13 @@ export async function runCrypto2Tests(onProgress: any) {
             await decrypt(encrypted, 'wrong-pass', salt)
         } catch (e) {
             threw = true
-            assertEqual((e as Error).message, 'Invalid password or corrupted data', 'Wrong passphrase should return normalized error')
+            assert(e instanceof WrongPassphraseError, 'wrong passphrase should be a typed authentication failure')
         }
 
         assert(threw, 'Decrypt should fail with wrong passphrase')
     })
 
-    await test('Decrypt fails with wrong salt', async () => {
+    await test('Decrypt classifies a mismatched salt as an authentication failure', async () => {
         const text = 'salt mismatch test'
         const encrypted = await encrypt(text, 'same-pass', generateSalt())
 
@@ -199,13 +227,13 @@ export async function runCrypto2Tests(onProgress: any) {
             await decrypt(encrypted, 'same-pass', generateSalt())
         } catch (e) {
             threw = true
-            assertEqual((e as Error).message, 'Invalid password or corrupted data', 'Wrong salt should return normalized error')
+            assert(e instanceof WrongPassphraseError, 'a mismatched salt cannot be distinguished from a wrong passphrase')
         }
 
         assert(threw, 'Decrypt should fail with wrong salt')
     })
 
-    await test('Decrypt fails when ciphertext is tampered', async () => {
+    await test('Decrypt classifies a tampered authentication tag as an authentication failure', async () => {
         const text = 'integrity check'
         const passphrase = 'tamper-check-pass'
         const salt = generateSalt()
@@ -221,7 +249,7 @@ export async function runCrypto2Tests(onProgress: any) {
             await decrypt(tampered, passphrase, salt)
         } catch (e) {
             threw = true
-            assertEqual((e as Error).message, 'Invalid password or corrupted data', 'Tampered payload should return normalized error')
+            assert(e instanceof WrongPassphraseError, 'tampered ciphertext cannot be distinguished from a wrong passphrase')
         }
 
         assert(threw, 'Decrypt should fail when ciphertext integrity is broken')
