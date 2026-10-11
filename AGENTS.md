@@ -34,6 +34,12 @@ and the accessibility baseline) live in `docs/SPEC.vmd` → SITE AND DISCOVERABI
 - If the SPEC is ambiguous or contradictory, **stop and ask** — do not assume
 - If a task requires a SPEC change to implement correctly, **stop and ask**
 
+**SPEC changes are pre-approved on a branch with a pull request.** A change that redefines
+behaviour must land on a branch and go through review like any other code change — never as an
+unexplained edit, and never pushed straight to `main`. State in the PR description which SPEC lines
+moved and why. `docs/SPEC.vmd` stays the source of truth either way: update it in the same commit as
+the code it describes, so the shipped app never disagrees with it.
+
 ### Rule 2 — Keep README.md in sync
 
 `README.md` is the user-facing description of the app (what it does and why it is useful).
