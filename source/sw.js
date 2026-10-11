@@ -77,18 +77,26 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(staleWhileRevalidate(request))
 })
 
+// Navigations are cached under this one canonical key, never under the
+// requested URL. A quick-capture visit (`/?quick-add=…`, share-target params)
+// or a `#<nodeId>` zoom link would otherwise write the captured text or the
+// node id into Cache Storage in plaintext, and give every distinct URL its own
+// entry. The app shell is identical for all of them, so one key is enough.
+const SHELL_CACHE_KEY = './index.html'
+
 async function networkFirstNavigation(request) {
   try {
     const response = await fetch(request)
-    const cache = await caches.open(APP_CACHE)
-    cache.put(request, response.clone())
+    // Only cache successful navigations: a 404 or a 5xx must not be pinned as
+    // the offline shell.
+    if (response.ok) {
+      const cache = await caches.open(APP_CACHE)
+      await cache.put(SHELL_CACHE_KEY, response.clone())
+    }
     return response
   } catch {
-    const cachedPage = await caches.match(request)
+    const cachedPage = await caches.match(SHELL_CACHE_KEY)
     if (cachedPage) return cachedPage
-
-    const appShell = await caches.match('./index.html')
-    if (appShell) return appShell
 
     return new Response('Offline', {
       status: 503,

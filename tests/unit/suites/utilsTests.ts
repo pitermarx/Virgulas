@@ -1,4 +1,5 @@
 import {
+    clearAppCaches,
     detectBrowserCapabilities,
     isMobile,
     isStoragePersistent,
@@ -134,4 +135,54 @@ await test('reports best-effort storage when the browser API throws', async () =
     }
     assert(!await isStoragePersistent(storage), 'Failed status check should be best-effort')
     assert(!await requestPersistentStorage(storage), 'Failed request should be best-effort')
+})
+
+section('clearAppCaches')
+
+function fakeCacheStorage(names: string[]) {
+    const deleted: string[] = []
+    const storage = {
+        async keys() { return names.slice() },
+        async delete(name: string) { deleted.push(name); return true }
+    }
+    return { storage, deleted }
+}
+
+await test('deletes every virgulas-* cache', async () => {
+    const { storage, deleted } = fakeCacheStorage([
+        'virgulas-app-v111',
+        'virgulas-fonts-v6',
+        'virgulas-app-v99' // a stale version left by an older build
+    ])
+    await clearAppCaches(storage as unknown as CacheStorage)
+    assertEqual(deleted.length, 3, 'all virgulas caches deleted')
+    assert(deleted.includes('virgulas-app-v111'), 'current app cache deleted')
+    assert(deleted.includes('virgulas-fonts-v6'), 'fonts cache deleted')
+    assert(deleted.includes('virgulas-app-v99'), 'stale versioned cache deleted too')
+})
+
+await test('leaves caches this app does not own untouched', async () => {
+    const { storage, deleted } = fakeCacheStorage([
+        'virgulas-app-v111',
+        'other-origin-cache',
+        'workbox-precache'
+    ])
+    await clearAppCaches(storage as unknown as CacheStorage)
+    assertEqual(deleted.length, 1, 'only the virgulas cache is deleted')
+    assertEqual(deleted[0], 'virgulas-app-v111', 'foreign caches are preserved')
+})
+
+await test('no-ops when the Cache Storage API is unavailable', async () => {
+    await clearAppCaches(undefined)
+    // Resolves without throwing; nothing to assert beyond reaching here.
+    assert(true, 'unavailable Cache Storage resolves cleanly')
+})
+
+await test('never throws when the API rejects', async () => {
+    const hostile = {
+        async keys() { throw new Error('cache storage blocked') },
+        async delete() { return true }
+    }
+    await clearAppCaches(hostile as unknown as CacheStorage)
+    assert(true, 'a throwing Cache Storage API does not reject the purge')
 })
