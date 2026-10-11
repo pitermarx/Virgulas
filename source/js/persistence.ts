@@ -10,6 +10,7 @@ import {
 import outline, { CorruptDocumentError } from "./outline.js"
 import {
   detectBrowserCapabilities,
+  clearAppCaches,
   isStoragePersistent,
   log,
   requestPersistentStorage,
@@ -1016,6 +1017,10 @@ export default {
   },
   clearLocalData() {
     localEncryptedData.set(null, null)
+    // The offline shell and any URL-keyed entry written by an older build live in
+    // Cache Storage, outside localStorage; drop them so a purge leaves no device
+    // residue. Best-effort, so the synchronous purge need not await it.
+    void clearAppCaches()
   },
   async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
@@ -1126,6 +1131,9 @@ export default {
     store.user.del()
     store.mode.del()
     store.syncTs.del()
+    // Clear the offline shell caches too: on a shared device the cached app shell
+    // (and any URL-keyed entry from an older build) must not outlive the account.
+    await clearAppCaches()
 
     await remoteSync.signOut()
     authMode.value = 'remote'
@@ -1159,6 +1167,9 @@ export default {
     // Purging local data must also drop the device-local biometric seal, otherwise
     // the wrapped passphrase would outlive the data it protects.
     void biometrics.forget().catch(() => { })
+    // And drop the offline shell caches, which live in Cache Storage rather than
+    // localStorage, so a full purge leaves no cached app residue on the device.
+    void clearAppCaches()
   },
   async changePassphrase(newPassphrase: string) {
     if (!newPassphrase) {

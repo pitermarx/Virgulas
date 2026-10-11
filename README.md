@@ -122,6 +122,9 @@ biometric unlock (fingerprint/face/device PIN) for this device.
 - The quick-capture queue, theme, mode, timestamps, notice preferences, and username/email are
   stored unencrypted on the device; the document payload is the only ciphertext. The exact list lives in
   [`docs/SPEC.vmd`](docs/SPEC.vmd) → ENCRYPTION.
+- "Delete local data", a full reset, and "Delete account" also clear the offline service-worker
+  cache, so no cached app shell — and nothing a navigation URL might have carried — survives on
+  the device.
 
 Open security work is tracked in [`docs/SECURITY.md`](docs/SECURITY.md). How to report a
 vulnerability, and the accepted risks, are in `/.well-known/security.txt`.

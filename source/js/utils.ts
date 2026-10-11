@@ -91,6 +91,32 @@ export async function requestPersistentStorage(storage = getStoragePersistenceAp
     }
 }
 
+/**
+ * Deletes every Cache Storage entry this app owns. The service worker caches the
+ * app shell and static assets under versioned `virgulas-*` cache names; the
+ * navigations handler now normalises every navigation to the single `./index.html`
+ * key, but any cache written by an older build (or by a URL still holding capture
+ * text in its query string) would otherwise survive a purge on a shared device.
+ * Matching the `virgulas-` prefix means a future `sw:bump` version change cannot
+ * strand an old cache either.
+ *
+ * Best-effort: no-ops where the Cache Storage API is unavailable (insecure
+ * contexts, some privacy modes) and never throws into a purge flow.
+ */
+export async function clearAppCaches(cacheStorage: CacheStorage | undefined = typeof caches === 'undefined' ? undefined : caches): Promise<void> {
+    if (!cacheStorage) return
+    try {
+        const names = await cacheStorage.keys()
+        await Promise.all(
+            names
+                .filter((name) => name.startsWith('virgulas-'))
+                .map((name) => cacheStorage.delete(name))
+        )
+    } catch (error) {
+        log('[Cache] Failed to clear app caches:', error)
+    }
+}
+
 function readStorage(key: string, fallback: string | null = null): string | null {
     try {
         const value = localStorage.getItem(key)
