@@ -335,8 +335,8 @@
     Captures are collected into a device-local queue in `localStorage.vmd_inbox_queue`.
     The queue is intentionally unencrypted, device-local, and never synced.
     - Entry points
-      - `?quick-add=<url-encoded text>` enqueues the text directly, with no interaction
-      - `?quick-capture=1` opens the capture prompt
+      - `?quick-add=<url-encoded text>` opens the capture prompt pre-filled with that text
+      - `?quick-capture=1` opens the capture prompt empty
       - The web app manifest exposes a "Quick capture" shortcut, with its own inbox/download icon
         (`media/quick-capture-96x96.png` and `media/quick-capture-192x192.png`), and a GET share
         target (`title`, `text`, `url`); the page becomes the markdown link `[title](url)` in the
@@ -346,13 +346,24 @@
       - A payload with no title or URL falls back to using the text (or the title) as the node text
       - Captured values are trimmed; a shared value identical to the URL or the title is not repeated
         as a description
-    - A capture visit MUST NOT unlock anything
+    - A URL is untrusted input, so nothing is queued without a confirmation
+      - Every capture entry point — including `?quick-add=` and a GET share — only pre-fills the
+        capture prompt. The payload is held and never written to the queue by itself, so no other
+        website can write into the user's Inbox
+      - The user may edit the pre-filled text before confirming, or cancel and write nothing
+      - Only "Add" writes the entry to the queue
+    - A capture visit MUST NOT unlock anything before the confirmation
       - No passphrase or biometric prompt, no PBKDF2, no decryption, no network
       - The app is not booted: no lock screen, no document is decrypted or reconciled
-      - The only work performed is the queue write
-      - The capture parameters are consumed and removed from the URL
-      - The capture window closes itself when the browser allows it (a script-opened popup);
-        otherwise a minimal confirmation is shown
+      - The only work performed is rendering the confirmation prompt
+      - The capture parameters are consumed and removed from the URL as soon as the prompt opens,
+        so a reload or a re-share does not queue twice
+    - Confirming hands over to the normal boot
+      - The queue entry is written, then the capture surface is replaced by the app's normal boot,
+        which always lands on the unlock screen, even when Memory is the remembered mode. The queue
+        entry is only filed when a persistent mode is unlocked, so landing in Memory would strand it
+      - From there the user may unlock and file the capture, or simply navigate away
+      - The capture window is not closed by the app
     - Reconciling
       - On the next unlock of Local, Remote, or File storage, queued entries are moved in
         creation order into a configurable root-level Inbox node (default name `Inbox`),

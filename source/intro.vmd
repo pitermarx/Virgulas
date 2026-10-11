@@ -67,8 +67,8 @@
     Long-press the app icon for Quick capture, or share from another app.
   + Capture from any page
     Options → Quick capture has a bookmarklet you can click anywhere.
-  + A capture stays locked
-    No passphrase, no decryption, no network; it queues on this device.
+  + A capture asks first
+    The page's text fills the prompt; confirm before it is queued.
 
 + Choose where notes live
   This tour is in memory and vanishes when the tab closes. Keep it when ready.

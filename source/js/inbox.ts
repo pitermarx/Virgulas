@@ -19,8 +19,13 @@ export const MAX_NODE_NAME_LENGTH = 100
 export const SHARE_TARGET_KEYS = ['title', 'text', 'url'] as const
 
 export interface CaptureIntent {
-    /** `direct` queues immediately; `prompt` asks the user for text first. */
-    kind: 'direct' | 'prompt'
+    /**
+     * `prefill` carries text from the URL and opens the prompt pre-filled, for
+     * the user to confirm. `prompt` carries nothing and just asks for text.
+     * Nothing is ever queued without a click: a URL is untrusted input
+     * (sec-01), so `prefill` is a suggestion, never an automatic write.
+     */
+    kind: 'prefill' | 'prompt'
     text: string
     description: string
 }
@@ -51,7 +56,7 @@ export function parseCaptureUrl(url: URL): CaptureIntent | null {
     if (url.searchParams.has('quick-add')) {
         const text = (url.searchParams.get('quick-add') || '').trim()
         return text
-            ? { kind: 'direct', text, description: '' }
+            ? { kind: 'prefill', text, description: '' }
             : { kind: 'prompt', text: '', description: '' }
     }
 
@@ -66,7 +71,7 @@ export function parseCaptureUrl(url: URL): CaptureIntent | null {
             (url.searchParams.get('text') || '').trim()
         )
         return capture
-            ? { kind: 'direct', text: capture.text, description: capture.description }
+            ? { kind: 'prefill', text: capture.text, description: capture.description }
             : { kind: 'prompt', text: '', description: '' }
     }
 

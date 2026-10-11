@@ -63,16 +63,18 @@ explains which storage modes are unavailable.
 
 ### Quick capture
 
-Capture text without opening the app:
+Send text to your Inbox without typing it in Virgulas:
 
 - **Installed PWA:** long-press the icon → **Quick capture** (with its own inbox icon), or share
   text from another app through the Android share sheet
 - **Automation:** open `/?quick-add=buy%20milk` from a tool like Tasker
 - **Bookmarklet:** copy **Save to** from Options and click it on any page
 
-A capture visit stays locked — no passphrase, no decryption, no network. Captures wait in a
-device-local queue and are filed into your Inbox node on the next unlock. A shared page becomes a
-`[title](url)` link with the highlighted text as its description.
+Every entry point opens a confirmation prompt with the text already filled in, so you can check or
+edit it before it is saved — nothing is written on the page's say-so, because any site can send
+that URL. Confirm and the app opens normally, where you can unlock to file it into your Inbox or
+simply move on. A shared page becomes a `[title](url)` link with the highlighted text as its
+description.
 
 Each entry point is listed inside the app under **Options → Quick capture**, where the Inbox node
 name can also be changed.

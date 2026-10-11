@@ -367,8 +367,10 @@ before any document work happens.
   session probe on `remote`. Do not make either unconditional — both cost time-to-reveal.
 - **Memory mode** is the first-visit default and loads `source/intro.vmd` (served as
   `/intro.vmd`). If the fetch fails the app falls back to a single empty node.
-- A **quick-capture visit never boots the app**: no lock screen, no KDF, no decryption, no network.
-  It only appends to `vmd_inbox_queue`. Keep it that way.
+- A **quick-capture visit never boots the app until the user confirms**: no lock screen, no KDF, no
+  decryption, no network, and nothing written to `vmd_inbox_queue`. A capture URL is untrusted input
+  (sec-01), so it only pre-fills the confirmation prompt; the queue write and the normal boot both
+  happen on the "Add" click. Keep it that way.
 
 ### Encryption
 
