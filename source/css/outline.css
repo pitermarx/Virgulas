@@ -98,8 +98,8 @@
   font-size: 0.85rem;
 }
 
-/* Capture-only surface: shown when a capture URL is opened directly (for
-   example by the bookmarklet) instead of booting the whole app. */
+/* Capture-only surface: a capture URL opens the confirmation prompt without
+   booting the whole app (sec-01), so the prompt floats over a bare backdrop. */
 .capture-only {
   position: fixed;
   inset: 0;
@@ -110,41 +110,6 @@
   padding: var(--space-4);
   background-color: var(--color-background);
   color: var(--color-text-primary);
-}
-
-.capture-only-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  width: min(24rem, 100%);
-  padding: var(--space-5);
-  text-align: center;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-}
-
-.capture-only-logo {
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.capture-only-title {
-  margin: 0;
-  font-weight: 600;
-}
-
-.capture-only-hint {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.capture-only-card .btn {
-  margin-top: var(--space-2);
 }
 
 .modal-header {

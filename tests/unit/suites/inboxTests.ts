@@ -123,9 +123,9 @@ await test('a plain visit is not a capture', () => {
     assertEqual(parse('?zoom=n1'), null, 'unrelated parameters are not captures')
 })
 
-await test('quick-add is a direct capture with trimmed text', () => {
+await test('quick-add pre-fills the prompt but never queues on its own', () => {
     const intent = parse('?quick-add=%20%20buy%20milk%20%20')
-    assertEqual(intent?.kind, 'direct', 'quick-add should capture directly')
+    assertEqual(intent?.kind, 'prefill', 'quick-add is a suggestion awaiting confirmation (sec-01)')
     assertEqual(intent?.text, 'buy milk', 'captured text should be trimmed')
 })
 
@@ -142,7 +142,7 @@ await test('quick-capture opens the prompt', () => {
 
 await test('a page becomes a markdown link with the selection as its description', () => {
     const intent = parse('?title=Buy%20milk&text=Remember%20to%20buy%20milk&url=https%3A%2F%2Fexample.com')
-    assertEqual(intent?.kind, 'direct', 'share-target payloads capture directly')
+    assertEqual(intent?.kind, 'prefill', 'share-target payloads only pre-fill the prompt (sec-01)')
     assertEqual(intent?.text, '[Buy milk](https://example.com)', 'the page becomes a markdown link')
     assertEqual(intent?.description, 'Remember to buy milk', 'the selection becomes the description')
 })

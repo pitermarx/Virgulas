@@ -57,8 +57,12 @@ const inboxNodeName = signal(inbox.getNodeName());
 const quickCaptureOpen = signal(false);
 const quickCaptureText = signal('');
 const quickCaptureNotice = signal('');
-// null while the capture prompt is open; true/false once a capture was attempted.
-const captureSaved = signal<boolean | null>(null);
+/**
+ * The capture request awaiting confirmation. A URL is untrusted input, so the
+ * payload is held here and only ever written to the queue when the user clicks
+ * "Add" in the prompt (sec-01). Carries the description for share targets.
+ */
+const pendingCaptureIntent = signal<CaptureIntent | null>(null);
 const bookmarkletCopied = signal(false);
 let quickCaptureNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 let bookmarkletCopiedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,6 +107,7 @@ function enqueueIncomingCapture(text: string, description = '') {
 function closeQuickCapture() {
   quickCaptureOpen.value = false;
   quickCaptureText.value = '';
+  pendingCaptureIntent.value = null;
 }
 
 function submitQuickCapture(e: any) {
@@ -112,16 +117,19 @@ function submitQuickCapture(e: any) {
     return;
   }
 
-  if (captureOnly) {
-    // Capture-only visit: write the queue and leave. The document is never
-    // loaded, so there is nothing to reconcile into here.
-    if (!inbox.enqueue(quickCaptureText.value)) {
+  if (captureOnly.value) {
+    // Confirmed: this is the only place a URL-borne capture is written to the
+    // queue. A capture visit never booted the app, so hand over to the normal
+    // boot here, which lands on the unlock screen.
+    if (!inbox.enqueue(
+      quickCaptureText.value,
+      pendingCaptureIntent.value?.description ?? ''
+    )) {
       announceQuickCapture('Quick capture could not be saved on this device.');
       return;
     }
-    captureSaved.value = true;
     closeQuickCapture();
-    closeCaptureWindow();
+    handOverToUnlockScreen();
     return;
   }
 
@@ -131,11 +139,12 @@ function submitQuickCapture(e: any) {
 }
 
 /** Remove the capture parameters so a reload or re-share does not queue twice. */
-function stripCaptureParams() {
+function stripCaptureParams(): string {
   const url = new URL(window.location.href);
   ['quick-add', 'quick-capture', ...inbox.SHARE_TARGET_KEYS].forEach(key => url.searchParams.delete(key));
   const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`;
   window.history.replaceState(null, '', cleanUrl || '/');
+  return cleanUrl || '/';
 }
 
 /**
@@ -149,43 +158,64 @@ function consumeQuickCaptureUrl() {
   const intent = inbox.parseCaptureUrl(new URL(window.location.href));
   if (!intent) return;
 
-  if (intent.kind === 'direct') enqueueIncomingCapture(intent.text, intent.description);
-  else quickCaptureOpen.value = true;
+  // sec-01: even a share arriving while the app runs is untrusted input, so it
+  // only pre-fills the prompt. The queue write happens when the user confirms.
+  pendingCaptureIntent.value = intent;
+  if (intent.kind === 'prefill') quickCaptureText.value = intent.text;
+  quickCaptureOpen.value = true;
 
   stripCaptureParams();
 }
 
-// Decide the capture fast-path before anything boots. Only a script-opened
-// window (the bookmarklet popup) may close itself; elsewhere `window.close()`
-// is ignored and the confirmation card stays on screen.
+// Decide the capture fast-path before anything boots. A capture URL is
+// untrusted input (sec-01), so it never writes to the queue by itself: the
+// visit only renders the confirmation prompt, and the queue write happens when
+// the user clicks "Add". Until then auth bootstrap, key derivation, decryption
+// and biometric unlock are all deliberately skipped.
 const initialCaptureIntent = typeof window === 'undefined'
   ? null
   : inbox.parseCaptureUrl(new URL(window.location.href));
-const captureOnly = initialCaptureIntent !== null;
+const captureOnly = signal(initialCaptureIntent !== null);
 
-function closeCaptureWindow() {
-  try {
-    window.close();
-  } catch {
-    /* Closing the window is best-effort. */
-  }
+/**
+ * Boot the real app from a confirmed capture visit. The capture surface is
+ * replaced by the splash, auth bootstrap runs, and the user lands on the
+ * unlock screen — from where they can reconcile the queue, or navigate away.
+ */
+function handOverToUnlockScreen() {
+  captureOnly.value = false;
+  render(html`<${Splash} />`, document.getElementById('app')!);
+  startAuthBootstrap({ forceLockScreen: true });
 }
 
 /**
- * Capture-only boot: queue the text (or ask for it) and render a minimal
- * surface. Deliberately skips auth bootstrap, decryption and biometric unlock.
+ * Auth bootstrap for a normal visit or the post-confirmation handover. Kept
+ * separate from rendering because the cold-boot call site runs before `Splash`
+ * is initialised, and it must not prompt for WebAuthn during a capture visit.
+ */
+function startAuthBootstrap(options: { forceLockScreen?: boolean } = {}) {
+  void (async () => {
+    try {
+      await initAuthState(options);
+    } catch (error) {
+      console.error('Failed to initialise app state', error);
+    } finally {
+      appReady.value = true;
+    }
+  })();
+}
+
+/**
+ * Capture-only boot: ask for confirmation, then write nothing yet. The pending
+ * intent is held so the share-target description survives into the queue entry.
  */
 function startCaptureOnly(intent: CaptureIntent) {
-  if (intent.kind === 'direct') {
-    captureSaved.value = inbox.enqueue(intent.text, intent.description);
-  } else {
-    quickCaptureOpen.value = true;
-  }
+  pendingCaptureIntent.value = intent;
+  if (intent.kind === 'prefill') quickCaptureText.value = intent.text;
+  quickCaptureOpen.value = true;
 
   stripCaptureParams();
   render(html`<${CaptureSurface} />`, document.getElementById('app')!);
-
-  if (intent.kind === 'direct' && captureSaved.value) closeCaptureWindow();
 }
 
 function captureAppUrl() {
@@ -378,8 +408,8 @@ async function loadLockedBackgroundIntro() {
   }
 }
 
-async function initAuthState() {
-  const bootstrap = await persistence.getAuthBootstrap();
+async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
+  const bootstrap = await persistence.getAuthBootstrap(options);
   authMode.value = bootstrap.mode as PersistenceMode;
   authScenario.value = bootstrap.scenario;
   authHasLocalData.value = bootstrap.hasLocalData;
@@ -416,22 +446,19 @@ function dismissSplash() {
 }
 
 // A capture visit must not boot the app: no auth bootstrap, no key derivation,
-// no decryption, no biometric prompt. `startCaptureOnly` performs the queue
-// write instead, at the tail of this module.
+// no decryption, no biometric prompt. It renders the confirmation prompt only,
+// and `handOverToUnlockScreen` runs the boot once the user confirms (sec-01).
 //
 // The splash is a readiness gate for the *app*, not for the webfont: awaiting
 // `document.fonts.ready` cost ~23ms of time-to-reveal, so the reveal no longer
 // blocks on it and the webfont swaps in underneath the splash fade instead.
-if (!captureOnly) {
-  void (async () => {
-    try {
-      await initAuthState();
-    } catch (error) {
-      console.error('Failed to initialise app state', error);
-    } finally {
-      appReady.value = true;
-    }
-  })();
+if (!captureOnly.value) {
+  startAuthBootstrap();
+  consumeQuickCaptureUrl();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pageshow', consumeQuickCaptureUrl);
+    window.addEventListener('popstate', consumeQuickCaptureUrl);
+  }
 }
 
 async function requestChangeMode() {
@@ -740,7 +767,7 @@ async function unlockWithBiometrics() {
 
 effect(() => {
   // Capture-only visits stay locked on purpose and must not prompt for WebAuthn.
-  if (captureOnly) return;
+  if (captureOnly.value) return;
 
   const isLocked = persistence.isLocked();
   if (!isLocked) {
@@ -916,29 +943,11 @@ const LockScreen = () => {
   `;
 };
 
-const CaptureSurface = () => {
-  const appHref = typeof window === 'undefined'
-    ? '/'
-    : `${window.location.pathname}${window.location.search}${window.location.hash}`;
-
-  return html`
-    <div class="capture-only">
-      ${captureSaved.value === null ? null : html`
-        <div class="capture-only-card">
-          <div class="capture-only-logo">Virgulas</div>
-          ${captureSaved.value
-        ? html`
-              <p class="capture-only-title" role="status">Saved to the ${inboxNodeName.value} queue</p>
-              <p class="capture-only-hint">It will be filed into your document the next time you unlock secure storage.</p>`
-        : html`
-              <p class="capture-only-title" role="status">Quick capture could not be saved on this device</p>
-              <p class="capture-only-hint">Check that this browser allows local storage, then try again.</p>`}
-          <a class="btn btn-secondary" href=${appHref}>Open Virgulas</a>
-        </div>`}
-      ${quickCaptureOpen.value && html`<${QuickCapturePrompt} />`}
-      <${QuickCaptureToast} />
-    </div>`;
-};
+const CaptureSurface = () => html`
+  <div class="capture-only">
+    ${quickCaptureOpen.value && html`<${QuickCapturePrompt} />`}
+    <${QuickCaptureToast} />
+  </div>`;
 
 const QuickCapturePrompt = () => {
   if (!quickCaptureOpen.value) return null;
@@ -1376,7 +1385,7 @@ const Splash = () => {
   `;
 };
 
-if (captureOnly && initialCaptureIntent) {
+if (captureOnly.value && initialCaptureIntent) {
   startCaptureOnly(initialCaptureIntent);
 } else {
   render(html`<${Splash} />`, document.getElementById('app')!);

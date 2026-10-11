@@ -906,7 +906,7 @@ export default {
       return null
     }
   },
-  getAuthBootstrap: async () => {
+  getAuthBootstrap: async (options: { forceLockScreen?: boolean } = {}) => {
     const browserCapabilities = detectBrowserCapabilities()
     const encryptedStorageAvailable = supportsEncryptedStorage(browserCapabilities)
     const browserSupportWarning = describeBrowserSupport(browserCapabilities, encryptedStorageAvailable)
@@ -949,27 +949,45 @@ export default {
       browserSupportWarning
     }
 
+    // A confirmed quick-capture visit hands over here, and it must land on the
+    // unlock screen rather than in Memory mode: the queue write the user just
+    // confirmed is only filed when a persistent mode is unlocked (sec-01).
+    // `forceLockScreen` therefore turns every memory outcome into the Local
+    // lock screen. Memory stays reachable from there ("Skip — continue in
+    // memory"), and the user can navigate away instead.
+    const lock = (mode: string, scenario: string, user: any = null) => {
+      if (options.forceLockScreen && mode === 'memory') {
+        return {
+          mode: 'local',
+          scenario: hasLocalData ? 'local-present-no-session' : 'empty-local',
+          user: null,
+          ...bootstrapBase
+        }
+      }
+      return { mode, scenario, user, ...bootstrapBase }
+    }
+
     const encryptedModeWouldBeSelected = preferredMode === 'local' || preferredMode === 'remote'
       || (!preferredMode && (hasLocalData || !!lastUsername))
       || (preferredMode === 'filesystem' && !hasFilesystem)
     if (!encryptedStorageAvailable && encryptedModeWouldBeSelected) {
-      return { mode: 'memory', scenario: 'memory-unsupported', user: null, ...bootstrapBase }
+      return lock('memory', 'memory-unsupported')
     }
 
     // No remembered mode → check for data signals; if none exist, start in memory mode
     if (!preferredMode) {
       // Respect existing committed SPEC fallbacks for returning users who have data
-      if (user && hasRemoteData) return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
-      if (hasSavedFileHandle && hasFilesystem) return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
-      if (hasLocalData) return { mode: 'local', scenario: 'local-present-no-session', user: null, ...bootstrapBase }
-      if (lastUsername) return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
+      if (user && hasRemoteData) return lock('remote', 'remote-session-valid', user)
+      if (hasSavedFileHandle && hasFilesystem) return lock('filesystem', 'filesystem-ready')
+      if (hasLocalData) return lock('local', 'local-present-no-session')
+      if (lastUsername) return lock('remote', 'remote-session-expired')
       // True first-ever visitor: no mode remembered and no data signals → memory mode
-      return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
+      return lock('memory', 'memory-fresh')
     }
 
     // User explicitly chose in-memory mode — remember it and stay in memory
     if (preferredMode === 'memory') {
-      return { mode: 'memory', scenario: 'memory-remembered', user: null, ...bootstrapBase }
+      return lock('memory', 'memory-remembered')
     }
 
     if (preferredMode === 'filesystem' && hasFilesystem) {
