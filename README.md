@@ -18,7 +18,8 @@ explains which storage modes are unavailable.
 - **Keyboard-fast.** Every structural action — add, indent, move, collapse, zoom, search, toggle
   tasks — has a shortcut. The mouse is optional.
 - **Works offline.** A service worker caches the app shell, so after the first load Virgulas opens
-  without a network connection.
+  without a network connection. It stores only the files offline actually needs — every other
+  request passes straight through instead of piling up in Cache Storage.
 - **One document, any device.** File mode for something you own forever, Remote mode when you want
   it on every device, with a merge flow that never silently loses an edit.
 - **No lock-in.** Documents are plain VMD text. Export a `.vmd` backup at any time; import it

@@ -1,5 +1,4 @@
-import { test, expect } from './test';
-import { setupDoc } from './test';
+import { test, expect, setupDoc, type Page } from './test';
 
 test.describe('Service worker offline shell', () => {
     test.skip(({ browserName }) => browserName !== 'chromium', 'Service worker assertions are run in Chromium only to keep CI deterministic.');
@@ -131,5 +130,98 @@ test.describe('Service worker offline shell', () => {
 
         // clearAppCaches runs best-effort; poll until every virgulas cache is gone.
         await expect.poll(virgulasCacheCount, { timeout: 10000 }).toBe(0);
+    });
+
+    // Registers the service worker and waits until it controls the page, so the
+    // fetch handler is guaranteed to intercept the navigations below.
+    async function startServiceWorker(page: Page) {
+        await page.evaluate(async () => {
+            await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.ready;
+        });
+        await expect.poll(
+            async () => page.evaluate(async () => !!navigator.serviceWorker.controller),
+            { timeout: 10000 }
+        ).toBe(true);
+    }
+
+    // Returns the text currently cached under the canonical shell key.
+    function readCachedShell(page: Page) {
+        return page.evaluate(async () => {
+            const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
+            if (!appCacheName) return null;
+            const cache = await caches.open(appCacheName);
+            const response = await cache.match('./index.html');
+            return response ? await response.text() : null;
+        });
+    }
+
+    test('a non-shell navigation (privacy page) does not overwrite the cached shell', async ({ page }) => {
+        await setupDoc(page, { id: 'root', text: 'Root', children: [] });
+        await startServiceWorker(page);
+
+        // Establish the shell under the canonical key.
+        await page.goto('/');
+        await expect.poll(async () => readCachedShell(page), { timeout: 10000 }).not.toBeNull();
+
+        // The Options → Privacy link is target="_blank" to /privacy.html, a real
+        // same-origin navigation. It must be served but never cached under the
+        // shell key, or offline the app would boot into the privacy page.
+        await page.goto('/privacy.html');
+        await expect.poll(
+            async () => page.evaluate(() => document.title),
+            { timeout: 10000 }
+        ).toContain('Privacy');
+
+        const shell = await readCachedShell(page);
+        expect(shell).toContain('<title>Virgulas</title>');
+        expect(shell).not.toContain('<title>Privacy');
+    });
+
+    test('a 404 navigation does not become the offline shell', async ({ page }) => {
+        await setupDoc(page, { id: 'root', text: 'Root', children: [] });
+        await startServiceWorker(page);
+
+        await page.goto('/');
+        await expect.poll(async () => readCachedShell(page), { timeout: 10000 }).not.toBeNull();
+
+        // serve-bun answers unknown paths with a real 404 ("Not found"). The
+        // navigation handler must not pin it as ./index.html.
+        await page.goto('/definitely-not-a-real-page');
+        await expect.poll(
+            async () => page.evaluate(() => document.body.innerText),
+            { timeout: 10000 }
+        ).toContain('Not found');
+
+        const shell = await readCachedShell(page);
+        expect(shell).toContain('<title>Virgulas</title>');
+        expect(shell).not.toContain('Not found');
+    });
+
+    test('same-origin requests outside the allowlist pass through uncached', async ({ page }) => {
+        await setupDoc(page, { id: 'root', text: 'Root', children: [] });
+        await startServiceWorker(page);
+
+        await page.goto('/');
+        await expect.poll(async () => readCachedShell(page), { timeout: 10000 }).not.toBeNull();
+
+        // llms.txt is a same-origin GET but not part of the app shell, fonts,
+        // chunk, or tour. It must pass straight through (never enter Cache
+        // Storage), replacing the old stale-while-revalidate catch-all.
+        await page.evaluate(async () => {
+            const response = await fetch('/llms.txt');
+            if (!response.ok) throw new Error(`expected llms.txt, got ${response.status}`);
+        });
+
+        const cached = await page.evaluate(async () => {
+            const names = await caches.keys();
+            for (const name of names) {
+                const cache = await caches.open(name);
+                const requests = await cache.keys();
+                if (requests.some((req) => req.url.includes('llms.txt'))) return true;
+            }
+            return false;
+        });
+        expect(cached).toBe(false);
     });
 });

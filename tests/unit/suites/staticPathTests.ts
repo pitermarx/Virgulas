@@ -65,12 +65,70 @@ await test('caches navigations under the shell key, never the requested URL', ()
     assert(!/cache\.put\(request/.test(navHandler), 'navigations must not be cached under the requested URL')
 })
 
-await test('caches only successful navigation responses', () => {
-    // A 404 or 5xx must not become the pinned offline shell.
-    assert(/if \(response\.ok\) \{[\s\S]*?cache\.put\(SHELL_CACHE_KEY/.test(navHandler), 'navigation cache.put must be gated on response.ok')
+await test('caches only successful shell navigations', () => {
+    // A 404/5xx must not become the pinned offline shell, and only the app
+    // shell navigations (/ , /index.html) are cached — /privacy.html must not
+    // overwrite the shell. The gate is `response.ok && isShellNavigation(...)`.
+    assert(/if \(response\.ok && isShellNavigation\(pathname\)\)/.test(navHandler), 'navigation cache.put must be gated on response.ok AND isShellNavigation')
+    assert(/cache\.put\(SHELL_CACHE_KEY/.test(navHandler), 'shell navigations are cached under SHELL_CACHE_KEY')
 })
 
 await test('offers no URL-keyed navigation fallback', () => {
     assert(!/caches\.match\(request\)/.test(navHandler), 'the offline navigation fallback must match the shell key, not the request')
     assert(/caches\.match\(SHELL_CACHE_KEY\)/.test(navHandler), 'the offline navigation fallback must read SHELL_CACHE_KEY')
+})
+
+section('service worker cache hygiene (perf-06)')
+
+const fetchHandler = swSource.slice(
+    swSource.indexOf("self.addEventListener('fetch'"),
+    swSource.indexOf('// Navigations are cached under this one canonical key')
+)
+const swrStart = swSource.indexOf('async function staleWhileRevalidate')
+const swrBody = swSource.slice(swrStart)
+
+await test('passes the background revalidation to event.waitUntil before any await', () => {
+    // perf-06: a bare background fetch could be cut short when the browser stops
+    // the worker. The revalidation must be held by event.waitUntil(), called
+    // synchronously (before the first `await`) while the fetch event dispatches.
+    // Strip comment lines first so the prose (which mentions both tokens) cannot
+    // satisfy the index checks.
+    const swrCode = swrBody
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//'))
+        .join('\n')
+    const waitUntilIdx = swrCode.indexOf('event.waitUntil(')
+    const firstAwaitIdx = swrCode.indexOf('await ')
+    assert(waitUntilIdx !== -1, 'staleWhileRevalidate must call event.waitUntil')
+    assert(firstAwaitIdx !== -1, 'staleWhileRevalidate still awaits the cache')
+    assert(waitUntilIdx < firstAwaitIdx, 'event.waitUntil must be called before the first await (synchronous dispatch)')
+})
+
+await test('does not use a stale-while-revalidate catch-all (passthrough default)', () => {
+    // Everything the app does not explicitly allowlist must pass through rather
+    // than be cached under its URL by a catch-all SWR.
+    assert(!/event\.respondWith\(staleWhileRevalidate\(request\)\)/.test(swSource), 'there must be no unguarded staleWhileRevalidate catch-all')
+    assert(/Everything else passes straight through/.test(fetchHandler), 'the fetch handler must fall through to a passthrough for unknown paths')
+})
+
+await test('caches version.json and intro.vmd network-first', () => {
+    // perf-06: these were stale-while-revalidate like the bundle, so a version
+    // display could lag a visit.
+    assert(/path\.endsWith\('\/version\.json'\) \|\| path\.endsWith\('\/intro\.vmd'\)/.test(fetchHandler), 'version.json and intro.vmd must be routed')
+    assert(/event\.respondWith\(networkFirst\(request, APP_CACHE\)\)/.test(fetchHandler), 'version.json and intro.vmd must use network-first')
+})
+
+await test('prunes non-allowlisted entries on activate', () => {
+    // perf-06: old hashed chunks / stray cached responses must not linger until
+    // the next version bump.
+    assert(/async function pruneStaleEntries\(\)/.test(swSource), 'an activate-time prune must exist')
+    assert(/\.then\(\(\) => pruneStaleEntries\(\)\)/.test(swSource), 'activate must invoke pruneStaleEntries')
+    assert(/isCacheablePath/.test(swSource), 'the prune must consult the cacheable-path allowlist')
+})
+
+await test('routes the Supabase chunk cache-first for offline Remote mode', () => {
+    // The content-hashed chunk cannot be precached (its name changes per build)
+    // but Remote mode needs it offline, so it must still be cached on first use.
+    assert(/isChunkPath\(path\)/.test(fetchHandler), 'chunk paths must be matched')
+    assert(/event\.respondWith\(cacheFirst\(request, APP_CACHE\)\)/.test(fetchHandler), 'chunks must be cache-first into APP_CACHE')
 })
