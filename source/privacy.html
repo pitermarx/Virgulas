@@ -123,7 +123,9 @@
         this browser. They never contain your document text.</li>
       <li><strong>Analytics</strong> — we self-host an Umami instance at
         <code>um.vps.pitermarx.com</code>. It is cookieless, collects aggregate page views, and
-        does not build a profile or track you across sites.</li>
+        does not build a profile or track you across sites. The tracker never receives URL query
+        strings or fragments (so quick-capture links and shared node links are not sent), and it
+        is disabled when you enable the Do Not Track signal in your browser.</li>
     </ul>
 
     <h2>What we cannot see</h2>

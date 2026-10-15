@@ -1084,7 +1084,7 @@ const OptionsModal = () => {
       ? 'Clear browser session and sign out? Your remote data on the server is unaffected.'
       : currentMode === 'filesystem'
         ? 'Clear the remembered file handle and local session? Your .vmd file on disk is unaffected.'
-        : 'Delete locally encrypted data? This cannot be undone.';
+        : 'Delete local data? This removes the encrypted outline, the quick-capture queue, and all remembered session data. This cannot be undone.';
     if (!confirm(purgeLabel)) return;
     optionsOpen.value = false;
 

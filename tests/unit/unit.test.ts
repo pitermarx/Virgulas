@@ -72,6 +72,9 @@ replay('dev server path safety', staticPath.sections)
 const account = await import('./suites/accountTests.js')
 replay('account deletion & options', account.sections)
 
+const deviceWipe = await import('./suites/persistenceWipeTests.js')
+replay('device wipe (priv-01)', deviceWipe.sections)
+
 const viewport = await import('./suites/viewportTests.js')
 replay('mobile viewport', viewport.sections)
 

@@ -226,6 +226,31 @@ const localEncryptedData = {
   }
 }
 
+/**
+ * Wipes every device-local storage slot that holds user data (priv-01).
+ *
+ * Clearing only the ciphertext left plaintext residue behind: the quick-capture
+ * queue (captured page text), sync timestamps, the scheduled-tasks window, the
+ * Inbox node name and the notice-dismissal preference all outlived "Delete
+ * local data" and "Delete account". Theme and the (non-secret) Supabase
+ * config are the only slots kept — they are device preferences, not content.
+ * The biometric seal and the offline shell caches live outside localStorage
+ * and are dropped best-effort, as in sign-out.
+ */
+function wipeDeviceData() {
+  inbox.clear()
+  localEncryptedData.set(null, null)
+  store.user.del()
+  store.mode.del()
+  store.syncTs.del()
+  store.scheduledWindow.del()
+  store.inboxNodeName.del()
+  store.storageNoticeDismissed.del()
+  filesystemStorage.clear()
+  void biometrics.forget().catch(() => { })
+  void clearAppCaches()
+}
+
 function rememberMode(mode: unknown) {
   const normalized = normalizeMode(mode)
   if (!normalized) return
@@ -882,6 +907,7 @@ async function unlock(code: string, options: UnlockOptions = {}) {
 }
 
 export default {
+  wipeDeviceData,
   hasData: () => !!localEncryptedData.get().data,
   isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
@@ -1124,16 +1150,11 @@ export default {
 
     await remoteSync.deleteOutline()
 
-    // Local cleanup: queue, biometric seal, remembered mode, and ciphertext.
-    await biometrics.forget().catch(() => { })
-    inbox.clear()
-    localEncryptedData.set(null, null)
-    store.user.del()
-    store.mode.del()
-    store.syncTs.del()
-    // Clear the offline shell caches too: on a shared device the cached app shell
-    // (and any URL-keyed entry from an older build) must not outlive the account.
-    await clearAppCaches()
+    // Local cleanup: wipe every device-local slot so nothing survives on a
+    // shared device (priv-01) — the capture queue, sync metadata, remembered
+    // mode and username, the ciphertext, the biometric seal, and the offline
+    // shell caches.
+    wipeDeviceData()
 
     await remoteSync.signOut()
     authMode.value = 'remote'
@@ -1156,20 +1177,11 @@ export default {
     clearDeferredPush()
     clearPendingSave()
     outline.reset()
-    localEncryptedData.set(null, null)
     authMode.value = 'local'
     passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
-    store.mode.del()
-    store.user.del()
-    filesystemStorage.clear()
-    // Purging local data must also drop the device-local biometric seal, otherwise
-    // the wrapped passphrase would outlive the data it protects.
-    void biometrics.forget().catch(() => { })
-    // And drop the offline shell caches, which live in Cache Storage rather than
-    // localStorage, so a full purge leaves no cached app residue on the device.
-    void clearAppCaches()
+    wipeDeviceData()
   },
   async changePassphrase(newPassphrase: string) {
     if (!newPassphrase) {
