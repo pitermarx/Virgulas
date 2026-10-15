@@ -912,8 +912,19 @@ export default {
   isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
-  getPassphrase: () => passphrase.value,
   getLastUsername: () => store.user.get('') || '',
+  /**
+   * sec-05: the passphrase string never leaves this module. The only consumer
+   * that legitimately needed it was the biometric straight-flow, which now
+   * calls this instead of reading `getPassphrase()`.
+   */
+  async enrollBiometrics(userLabel: string | null = null) {
+      const current = passphrase.value
+      if (!current) {
+          throw new Error('Unlock with a passphrase before enabling biometric unlock.')
+      }
+      return biometrics.enroll(current, userLabel ?? 'Virgulas user')
+  },
   getPreferredMode: () => normalizeMode(store.mode.get(null)),
   /** True when the last sign-up still needs the email confirmed before a session exists. */
   needsEmailConfirmation: () => pendingEmailConfirmation,

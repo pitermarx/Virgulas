@@ -584,14 +584,18 @@ bun run typecheck                # tsc app config + test config
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
 - CI shards the suite across three jobs with `--shard=<i>/3`.
 - Specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module
-  instances as the running app.
+  instances as the running app. The singletons are published through a single gated `e2e` binding
+  (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
+  no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e-seam.spec.ts`
+  asserts both builds behave.
 - `tests/browserTestsInNode.js` is a legacy Node runner; the supported entry points are the bun
   unit suite and Playwright.
 
 ### Test seams
 
-- `__TEST_HOOKS__` (build define) gates the `window.supabase` seam used by admin/auth/sync specs.
-  It is `false` in production, so shipped code never reads that global.
+- `__TEST_HOOKS__` (build define) gates the `window.supabase` seam used by admin/auth/sync specs,
+  and the `/js/app.js` `e2e` introspection binding used by every spec. It is `false` in production,
+  so shipped code never reads that global and never publishes the singletons.
 - `__TEST_KDF_SCALE__` divides the PBKDF2 work factor in test builds so deriving keys hundreds of
   times does not dominate the suite. The envelope still records the nominal iteration count, so
   `getEnvelopeIterations` / `needsKdfUpgrade` and the on-screen `PBKDF2 600k` value are unchanged.

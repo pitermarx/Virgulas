@@ -364,7 +364,7 @@ test.describe('Zoom', () => {
     await expect(activeBreadcrumb).toHaveText('Parent');
 
     await page.evaluate(async () => {
-      const outline = (await import('/js/app.js' as string)).outline;
+      const outline = (await import('/js/app.js' as string)).e2e.outline;
       outline.update('1', { text: 'Parent Renamed' });
     });
 

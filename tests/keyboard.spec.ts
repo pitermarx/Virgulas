@@ -225,7 +225,7 @@ test.describe('Keyboard', () => {
 
     const structure = await page.evaluate(async () => {
       const outlineModulePath: string = '/js/app.js';
-      const outline = (await import(outlineModulePath)).outline;
+      const outline = (await import(outlineModulePath)).e2e.outline;
       return {
         rootChildren: outline.get('root')?.children.peek() || [],
         aChildren: outline.get('A')?.children.peek() || [],
