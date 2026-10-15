@@ -15,6 +15,19 @@ export const DEFAULT_ITERATIONS = 600000
 export const MIN_PASSPHRASE_LENGTH = 10
 
 /**
+ * The recognised iteration range for versioned envelopes (sec-04).
+ *
+ * PBKDF2 work is attacker-controlled through the envelope: a compromised or
+ * malicious backend (or a corrupted row) can return `v2:4294967295:…` and make
+ * unlock run an effectively unbounded derivation, hanging the tab. Legitimate
+ * documents use LEGACY_ITERATIONS (310k) or DEFAULT_ITERATIONS (600k). The GCM
+ * tag still fails for hostile values, so this is a denial-of-service guard, not
+ * a confidentiality one.
+ */
+export const MIN_ENVELOPE_ITERATIONS = 100000
+export const MAX_ENVELOPE_ITERATIONS = 5000000
+
+/**
  * PBKDF2 work divisor for the Playwright build. Dividing the work keeps E2E
  * setup and unlock from dominating the suite while the stored envelope still
  * records the nominal iteration count, so the key format and the KDF-upgrade
@@ -198,6 +211,11 @@ function parseEnvelope(envelope: string): ParsedEnvelope {
         if (prefix !== ENVELOPE_PREFIX || extra.length > 0 || !Number.isInteger(iterations) || iterations <= 0 || !payload) {
             throw new CorruptEnvelopeError()
         }
+        // sec-04: reject implausible iteration counts before any derivation work
+        // starts, so a hostile stored value cannot burn the main thread.
+        if (iterations < MIN_ENVELOPE_ITERATIONS || iterations > MAX_ENVELOPE_ITERATIONS) {
+            throw new CorruptEnvelopeError('The stored iteration count is outside the supported range.')
+        }
         return { iterations, combined: parsePayload(payload) }
     }
     // Legacy payload: raw base64 written before KDF params were recorded.
@@ -221,6 +239,11 @@ export function needsKdfUpgrade(envelope: string): boolean {
 // Encrypts text with AES-GCM-256.
 // Returns a versioned envelope: v2:<iterations>:<base64(iv || ciphertext)>
 async function encrypt(text: string, passphrase: string, salt: string, iterations: number = DEFAULT_ITERATIONS, scale: number = kdfScale()): Promise<string> {
+    // The writer guard mirrors the reader guard in parseEnvelope: an envelope we
+    // could not decrypt later must never be written in the first place.
+    if (iterations < MIN_ENVELOPE_ITERATIONS || iterations > MAX_ENVELOPE_ITERATIONS) {
+        throw new RangeError(`Iteration count ${iterations} is outside the supported range ${MIN_ENVELOPE_ITERATIONS}-${MAX_ENVELOPE_ITERATIONS}.`)
+    }
     const encodedText = await compress(text)
 
     const iv = window.crypto.getRandomValues(new Uint8Array(12))
