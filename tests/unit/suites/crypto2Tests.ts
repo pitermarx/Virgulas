@@ -7,6 +7,8 @@ import {
     needsKdfUpgrade,
     DEFAULT_ITERATIONS,
     LEGACY_ITERATIONS,
+    MIN_ENVELOPE_ITERATIONS,
+    MAX_ENVELOPE_ITERATIONS,
     MIN_PASSPHRASE_LENGTH,
     CorruptEnvelopeError,
     WrongPassphraseError,
@@ -159,6 +161,62 @@ export async function runCrypto2Tests(onProgress: any) {
             assert(e instanceof CorruptEnvelopeError, 'malformed envelope should be classified as corruption')
         }
         assert(threw, 'malformed envelope should be rejected')
+    })
+
+    await test('Out-of-range iteration counts fail without deriving (sec-04)', async () => {
+        // PBKDF2 work is attacker-controlled through the stored envelope. The
+        // wrap below counts any KDF attempt: an out-of-range envelope must be
+        // rejected before the derivation even starts.
+        const subtle = (window.crypto as unknown as Crypto).subtle
+        let derivationAttempted = false
+        const originalImportKey = subtle.importKey.bind(subtle) as (...args: unknown[]) => Promise<CryptoKey>
+        Object.defineProperty(subtle, 'importKey', {
+            configurable: true,
+            value: (alg: unknown, key: unknown, out: unknown, ext: unknown, usages: unknown) => {
+                derivationAttempted = true
+                return originalImportKey(alg, key, out, ext, usages)
+            }
+        })
+        try {
+            const hostile = (iterations: string) => `v2:${iterations}:${generateSalt()}`
+            const envelopes = [
+                hostile(String(MIN_ENVELOPE_ITERATIONS - 1)),
+                hostile(String(MAX_ENVELOPE_ITERATIONS + 1)),
+                hostile('4294967295')
+            ]
+            for (const envelope of envelopes) {
+                let error: unknown
+                try {
+                    await decrypt(envelope, 'pass-1234567', generateSalt())
+                } catch (caught) {
+                    error = caught
+                }
+                assert(error instanceof CorruptEnvelopeError, 'out-of-range iteration counts should be classified as corruption')
+                assert((error as Error | undefined)?.message === 'The stored iteration count is outside the supported range.',
+                    'the rejection should name the unsupported range')
+            }
+            assertEqual(derivationAttempted, false, 'the KDF must not run for out-of-range envelopes')
+        } finally {
+            // Deleting the own property restores the prototype method.
+            delete (subtle as unknown as { importKey?: unknown }).importKey
+        }
+    })
+
+    await test('encrypt refuses to write an out-of-range envelope (sec-04)', async () => {
+        let low: unknown
+        let high: unknown
+        try {
+            await encrypt('text', 'pass-1234567', generateSalt(), MIN_ENVELOPE_ITERATIONS - 1)
+        } catch (caught) {
+            low = caught
+        }
+        try {
+            await encrypt('text', 'pass-1234567', generateSalt(), MAX_ENVELOPE_ITERATIONS + 1)
+        } catch (caught) {
+            high = caught
+        }
+        assert(low instanceof RangeError, 'below-range iteration counts must be rejected at write time')
+        assert(high instanceof RangeError, 'above-range iteration counts must be rejected at write time')
     })
 
     await test('Unsupported envelope versions fail with a typed version error', async () => {
