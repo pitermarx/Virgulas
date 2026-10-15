@@ -191,7 +191,7 @@ test.describe('Service worker offline shell', () => {
         await expect.poll(
             async () => page.evaluate(() => document.body.innerText),
             { timeout: 10000 }
-        ).toContain('Not found');
+        ).toMatch(/not found/i);
 
         const shell = await readCachedShell(page);
         expect(shell).toContain('<title>Virgulas</title>');

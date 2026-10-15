@@ -507,7 +507,7 @@ Notes:
   and file users never download or parse it. Do not turn that import back into a static one — a
   top-level `import` puts it back on the critical path for everyone. The chunk name is
   content-hashed, so it is intentionally **not** listed in the service worker `APP_SHELL`; the
-  SW's stale-while-revalidate handler caches it on first use.
+  SW caches it cache-first on first use (see the service worker section below).
 - **Source maps:** `bun run dev` emits a linked `dist/js/app.js.map` (with `sourcesContent`, so the
   pruned `.ts` files still resolve in DevTools). `bun run build` passes `--no-sourcemap`, and CI
   fails the deploy if `dist/js/app.js.map` exists. Bun's bundler emits JS maps only — there is no
@@ -515,12 +515,25 @@ Notes:
 
 ## Service worker caches (`source/sw.js`)
 
-The service worker uses two versioned caches. Each cache has a dedicated strategy.
+The service worker uses two versioned caches and caches **only what the app needs to boot
+offline**. A same-origin request it does not recognise passes straight through — never
+intercepted, never cached — and `activate` prunes any non-allowlisted entry an earlier build
+left behind.
 
-| Cache constant  | Cache name pattern       | Covers                                           | Strategy               |
-| --------------- | ------------------------ | ------------------------------------------------ | ---------------------- |
-| `FONTS_CACHE`   | `virgulas-fonts-v<N>`    | `source/fonts/` and `source/media/` assets       | Cache-first            |
-| `APP_CACHE`     | `virgulas-app-v<N>`      | built `js/app.js`, `js/app.css`, `index.html`    | Stale-while-revalidate |
+| Cache constant  | Cache name pattern       | Covers                                                        | Strategy |
+| --------------- | ------------------------ | ------------------------------------------------------------- | -------- |
+| `FONTS_CACHE`   | `virgulas-fonts-v<N>`    | `source/fonts/`, `source/media/` assets, root `/favicon.ico`   | Cache-first |
+| `APP_CACHE`     | `virgulas-app-v<N>`      | app shell, `version.json`, `intro.vmd`, Supabase `js/chunk-*.js` | Per request type (below) |
+
+`APP_CACHE` routing, by request type:
+
+- **Shell navigations** (`/`, `/index.html`) → network-first, stored under the single canonical
+  `./index.html` key — never the requested URL, so a capture URL or `#nodeId` cannot reach Cache
+  Storage. Non-shell navigations (e.g. `/privacy.html`) are served but not cached.
+- **Shell assets** (`js/app.js`, `js/app.css`, `site.webmanifest`) → stale-while-revalidate.
+- **`version.json` and `intro.vmd`** → network-first (fresh when online, cache fallback offline).
+- **Supabase `js/chunk-*.js`** → cache-first (content-hashed, so not precached; Remote mode gets it offline).
+- **Any other same-origin request** → passthrough (not intercepted, not cached).
 
 **Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed).
 
