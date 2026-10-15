@@ -23,11 +23,21 @@
     Umami analytics. Pinned with SRI: the browser refuses to execute bytes that
     do not match this hash, so the host cannot silently change the code. Update
     the hash together with any Umami upgrade (see AGENTS.md, "Analytics tracker and SRI").
+
+    Privacy attributes (data-* are NOT covered by the SRI hash — changed with normal
+    review): exclude-search and exclude-hash stop page URLs from carrying capture
+    payloads (?quick-add=…) or zoomed node ids (#nodeId) to the tracker;
+    do-not-track makes it respect the browser's Do Not Track signal; domains
+    restricts collection to the real origin, so local dev and test runs report nothing.
   -->
   <script defer src="https://um.vps.pitermarx.com/script.js"
     integrity="sha384-ZMxgpYfO/phGz4GiYTIZhcauuGKTb2onmOB5gsiigjmBR38DGAmIna5J1Y/dM/13"
     crossorigin="anonymous"
-    data-website-id="79e552fd-deee-4cf9-a2e9-58c30f421f08"></script>
+    data-website-id="79e552fd-deee-4cf9-a2e9-58c30f421f08"
+    data-exclude-search="true"
+    data-exclude-hash="true"
+    data-do-not-track="true"
+    data-domains="virgulas.com"></script>
 
   <link rel="stylesheet" href="fonts/inter/inter-google.css">
   <link rel="stylesheet" href="js/app.css">

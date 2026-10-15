@@ -119,13 +119,16 @@ biometric unlock (fingerprint/face/device PIN) for this device.
   handlers, and form controls are never allowed), and remote images load with
   `referrerpolicy="no-referrer"` and no event handlers.
 - The only third-party script is an SRI-pinned analytics tracker; everything else is bundled. A
-  strict Content-Security-Policy allow-lists exactly what the app can load.
+  strict Content-Security-Policy allow-lists exactly what the app can load. The tracker never
+  receives URL query strings or fragments — so quick-capture links and shared node links are not
+  sent — respects your browser's Do Not Track signal, and only collects on virgulas.com.
 - The quick-capture queue, theme, mode, timestamps, notice preferences, and username/email are
   stored unencrypted on the device; the document payload is the only ciphertext. The exact list lives in
   [`docs/SPEC.vmd`](docs/SPEC.vmd) → ENCRYPTION.
-- "Delete local data", a full reset, and "Delete account" also clear the offline service-worker
-  cache, so no cached app shell — and nothing a navigation URL might have carried — survives on
-  the device.
+- "Delete local data", a full reset, and "Delete account" wipe every device-local slot that
+  holds user data — the quick-capture queue, sync timestamps, session preferences, the biometric
+  seal — and clear the offline service-worker cache, so no cached app shell, and nothing a
+  navigation URL might have carried, survives on a shared device.
 
 Open security work is tracked in [`docs/SECURITY.md`](docs/SECURITY.md). How to report a
 vulnerability, and the accepted risks, are in `/.well-known/security.txt`.

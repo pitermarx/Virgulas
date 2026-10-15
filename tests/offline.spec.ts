@@ -132,6 +132,36 @@ test.describe('Service worker offline shell', () => {
         await expect.poll(virgulasCacheCount, { timeout: 10000 }).toBe(0);
     });
 
+    test('a full purge leaves no user data in localStorage (priv-01)', async ({ page }) => {
+        await setupDoc(page, { id: 'root', text: 'Root', children: [] });
+
+        // Seed the plaintext residue slots that a purge must not leave behind:
+        // the quick-capture queue holds captured page text, the rest is sync and
+        // session metadata. Theme is a device preference and must survive.
+        await page.evaluate(() => {
+            localStorage.setItem('vmd_sync_ts', '12345');
+            localStorage.setItem('vmd_inbox_node_name', 'Capture');
+            localStorage.setItem('vmd_scheduled_window', '7');
+            localStorage.setItem('vmd_inbox_queue', JSON.stringify([{ id: 'a', text: 'captured secret' }]));
+            localStorage.setItem('vmd_theme', 'dark');
+        });
+
+        // Purge through the running app singleton, exactly as the Options →
+        // "Delete local data" path does.
+        await page.evaluate(async () => {
+            const mod = await import('/js/app.js' as string) as { persistence: { reset(): void } };
+            mod.persistence.reset();
+        });
+
+        const state = await page.evaluate(() => ({
+            residual: ['vmd_sync_ts', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue']
+                .filter((key) => localStorage.getItem(key) !== null),
+            theme: localStorage.getItem('vmd_theme'),
+        }));
+        expect(state.residual).toEqual([]);
+        expect(state.theme).toBe('dark');
+    });
+
     // Registers the service worker and waits until it controls the page, so the
     // fetch handler is guaranteed to intercept the navigations below.
     async function startServiceWorker(page: Page) {

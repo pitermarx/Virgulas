@@ -100,6 +100,21 @@ await test('structured data and a skip link are present', () => {
     assert(html.includes('visually-hidden">Virgulas'), 'the page needs one <h1>')
 })
 
+await test('the analytics tracker is configured to exclude capture URLs, fragments and Do-Not-Track sessions', () => {
+    // sec-02: before the bundle strips capture parameters, the tracker would see
+    // `?quick-add=…` and `?title=…&text=…&url=…` plus the `#nodeId` hash. The
+    // script tag must carry the exclusion attributes; the SRI hash covers only
+    // the script bytes, so these attributes are pinned here instead.
+    const html = read('source/index.html')
+    const tag = html.match(/<script[^>]*data-website-id[^>]*>/)
+    assert(tag, 'the Umami script tag must be present')
+    const attrs = tag ? tag[0] : ''
+    for (const name of ['data-exclude-search', 'data-exclude-hash', 'data-do-not-track', 'data-domains']) {
+        assert(attrs.includes(`${name}=`), `the Umami tag must carry ${name}`)
+    }
+    assert(attrs.includes('data-domains="virgulas.com"'), 'collection must be limited to the production origin')
+})
+
 await test('a no-JavaScript fallback is present instead of a stuck splash', () => {
     const html = read('source/index.html')
     assert(html.includes('<noscript>'), 'index.html needs a <noscript> fallback')
