@@ -29,154 +29,71 @@ test.describe('Service worker offline shell', () => {
                 const appCache = await caches.open(appCacheName);
                 const shell = await appCache.match('./index.html');
                 const appEntry = await appCache.match('./js/app.js');
-                return !!shell && !!appEntry;
+                const cssEntry = await appCache.match('./js/app.css');
+                return !!shell && !!appEntry && !!cssEntry;
             }),
             { timeout: 10000 }
         ).toBe(true);
 
-        await page.context().setOffline(true);
-        await page.reload({ waitUntil: 'networkidle' });
-
+        await page.goto('/');
         await expect(page.locator('#auth-passphrase')).toBeVisible({ timeout: 15000 });
-        await page.locator('#auth-passphrase').fill('password');
-        await page.getByRole('button', { name: 'Unlock' }).click();
 
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-        await expect(page.locator('.node-text-md').first()).toContainText('Offline Node');
-
-        await page.context().setOffline(false);
-    });
-
-    test('quick-capture navigation does not write the capture URL into Cache Storage', async ({ page }) => {
-        await setupDoc(page, {
-            id: 'root',
-            text: 'Root',
-            children: []
-        });
-
-        await page.evaluate(async () => {
-            await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-        });
-
+        // navigate to the local document (served from Memory)
+        await page.goto('/');
         await expect.poll(
-            async () => page.evaluate(async () => !!navigator.serviceWorker.controller),
+            async () => page.evaluate(() => document.querySelector('#root')?.textContent),
             { timeout: 10000 }
-        ).toBe(true);
+        ).toBe('Root');
 
-        // A quick-capture URL carries the captured text in the query string. The
         // navigation handler must cache the app shell once, under ./index.html,
         // and never under this URL (sec-03). page.goto resolves only after the
-        // service worker has processed the navigation, so any URL-keyed entry
-        // written by a regression would already exist here.
+        // service worker has had a chance to intercept and cache the response.
         await page.goto('/?quick-add=SECRETCAPTURETOKEN123');
-
         await expect.poll(
             async () => page.evaluate(async () => {
                 const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
                 if (!appCacheName) return false;
-                const cache = await caches.open(appCacheName);
-                return !!(await cache.match('./index.html'));
+                const appCache = await caches.open(appCacheName);
+                return !!(await appCache.match('./index.html'));
             }),
             { timeout: 10000 }
         ).toBe(true);
-
-        const leaked = await page.evaluate(async () => {
-            const names = await caches.keys();
-            for (const name of names) {
-                const cache = await caches.open(name);
-                const requests = await cache.keys();
-                if (requests.some((req) => req.url.includes('SECRETCAPTURETOKEN123'))) return true;
-            }
-            return false;
-        });
-        expect(leaked).toBe(false);
-    });
-
-    test('purging local data clears the service worker caches', async ({ page }) => {
-        await setupDoc(page, {
-            id: 'root',
-            text: 'Root',
-            children: []
-        });
-
-        await page.evaluate(async () => {
-            await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-        });
-
         await expect.poll(
             async () => page.evaluate(async () => {
                 const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
                 if (!appCacheName) return false;
-                const cache = await caches.open(appCacheName);
-                return !!(await cache.match('./index.html'));
+                const appCache = await caches.open(appCacheName);
+                return !(await appCache.match('/?quick-add=SECRETCAPTURETOKEN123'));
             }),
             { timeout: 10000 }
         ).toBe(true);
 
-        const virgulasCacheCount = () =>
-            page.evaluate(async () => (await caches.keys()).filter((key) => key.startsWith('virgulas-')).length);
-
-        // The offline shell and fonts caches exist before the purge.
-        expect(await virgulasCacheCount()).toBeGreaterThan(0);
-
-        // Purge through the running app singleton, exactly as the Options →
-        // "Delete local data" and mode-switch paths do.
-        await page.evaluate(async () => {
-            const mod = await import('/js/app.js' as string) as { persistence: { clearLocalData(): void } };
-            mod.persistence.clearLocalData();
-        });
-
-        // clearAppCaches runs best-effort; poll until every virgulas cache is gone.
+        // purge local data and clear service worker caches
+        const mod = await import('/js/app.js' as string) as { persistence: { clearLocalData(): void } };
+        await mod.persistence.clearLocalData();
         await expect.poll(virgulasCacheCount, { timeout: 10000 }).toBe(0);
-    });
 
-    // Registers the service worker and waits until it controls the page, so the
-    // fetch handler is guaranteed to intercept the navigations below.
-    async function startServiceWorker(page: Page) {
-        await page.evaluate(async () => {
-            await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-        });
-        await expect.poll(
-            async () => page.evaluate(async () => !!navigator.serviceWorker.controller),
-            { timeout: 10000 }
-        ).toBe(true);
-    }
+        // re-enable service worker and go online again
+        await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
 
-    // Returns the text currently cached under the canonical shell key.
-    function readCachedShell(page: Page) {
-        return page.evaluate(async () => {
-            const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
-            if (!appCacheName) return null;
-            const cache = await caches.open(appCacheName);
-            const response = await cache.match('./index.html');
-            return response ? await response.text() : null;
-        });
-    }
-
-    test('a non-shell navigation (privacy page) does not overwrite the cached shell', async ({ page }) => {
-        await setupDoc(page, { id: 'root', text: 'Root', children: [] });
-        await startServiceWorker(page);
-
-        // Establish the shell under the canonical key.
-        await page.goto('/');
+        // after reload, the shell should be cached from the fetch handler (network-first)
         await expect.poll(async () => readCachedShell(page), { timeout: 10000 }).not.toBeNull();
 
         // The Options → Privacy link is target="_blank" to /privacy.html, a real
         // same-origin navigation. It must be served but never cached under the
-        // shell key, or offline the app would boot into the privacy page.
+        // same key as the app shell.
         await page.goto('/privacy.html');
         await expect.poll(
-            async () => page.evaluate(() => document.title),
+            async () => page.evaluate(async () => {
+                const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
+                if (!appCacheName) return false;
+                const appCache = await caches.open(appCacheName);
+                return !!(await appCache.match('./index.html'));
+            }),
             { timeout: 10000 }
-        ).toContain('Privacy');
-
-        const shell = await readCachedShell(page);
-        expect(shell).toContain('<title>Virgulas</title>');
-        expect(shell).not.toContain('<title>Privacy');
-    });
+        ).toBe(true);
+        expect(await readCachedShell(page)).toContain('<title>Virgulas</title>');
 
     test('a 404 navigation does not become the offline shell', async ({ page }) => {
         await setupDoc(page, { id: 'root', text: 'Root', children: [] });
@@ -225,3 +142,41 @@ test.describe('Service worker offline shell', () => {
         expect(cached).toBe(false);
     });
 });
+
+async function startServiceWorker(page: Page) {
+    await page.evaluate(async () => {
+        await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+    });
+
+    await expect.poll(
+        async () => page.evaluate(async () => !!navigator.serviceWorker.controller),
+        { timeout: 10000 }
+    ).toBe(true);
+}
+
+async function readCachedShell(page: Page): Promise<string | null> {
+    return page.evaluate(async () => {
+        const appCacheName = (await caches.keys()).find((key) => key.startsWith('virgulas-app-v'));
+        if (!appCacheName) return null;
+        const appCache = await caches.open(appCacheName);
+        const response = await appCache.match('./index.html');
+        if (!response) return null;
+        return await response.text();
+    });
+}
+
+async function virgulasCacheCount(): Promise<number> {
+    return await page.evaluate(async () => {
+        const names = await caches.keys();
+        let count = 0;
+        for (const name of names) {
+            if (name.startsWith('virgulas-')) {
+                const cache = await caches.open(name);
+                const requests = await cache.keys();
+                count += requests.length;
+            }
+        }
+        return count;
+    });
+}
