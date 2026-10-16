@@ -124,7 +124,7 @@ test.describe('Service worker offline shell', () => {
         // Purge through the running app singleton, exactly as the Options →
         // "Delete local data" and mode-switch paths do.
         await page.evaluate(async () => {
-            const mod = await import('/js/app.js' as string) as { persistence: { clearLocalData(): void } };
+            const mod = (await import('/js/app.js' as string)).e2e as { persistence: { clearLocalData(): void } };
             mod.persistence.clearLocalData();
         });
 
@@ -149,7 +149,7 @@ test.describe('Service worker offline shell', () => {
         // Purge through the running app singleton, exactly as the Options →
         // "Delete local data" path does.
         await page.evaluate(async () => {
-            const mod = await import('/js/app.js' as string) as { persistence: { reset(): void } };
+            const mod = (await import('/js/app.js' as string)).e2e as { persistence: { reset(): void } };
             mod.persistence.reset();
         });
 

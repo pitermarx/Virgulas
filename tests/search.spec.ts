@@ -194,7 +194,7 @@ test.describe('Search', () => {
     await page.keyboard.press('Tab');
 
     const selectedBeforeChange = await page.evaluate(async () => {
-      const { currentSearchMatchId } = await import('/js/app.js' as string);
+      const { currentSearchMatchId } = (await import('/js/app.js' as string)).e2e;
       return currentSearchMatchId.value;
     });
     expect(selectedBeforeChange).toBe('2');
@@ -202,7 +202,7 @@ test.describe('Search', () => {
     await searchInput.fill('Child Match');
 
     const currentMatchId = await page.evaluate(async () => {
-      const { currentSearchMatchId } = await import('/js/app.js' as string);
+      const { currentSearchMatchId } = (await import('/js/app.js' as string)).e2e;
       return currentSearchMatchId.value;
     });
     expect(currentMatchId).toBe('1.1');
@@ -210,7 +210,7 @@ test.describe('Search', () => {
 
   test('getFirstClosedParent is null-safe for deleted or missing nodes', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      const { getFirstClosedParent } = await import('/js/app.js' as string);
+      const { getFirstClosedParent } = (await import('/js/app.js' as string)).e2e;
       return getFirstClosedParent('missing-node-id');
     });
     expect(result).toBeNull();

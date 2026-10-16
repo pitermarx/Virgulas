@@ -10,6 +10,9 @@ import outline, { CorruptDocumentError } from './outline.js';
 import { appVersion, store } from './utils.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
 import inbox, { type CaptureIntent } from './inbox.js';
+import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
+import { pendingConflicts, mergeDocuments } from './sync.js';
+import { currentSearchMatchId, getFirstClosedParent } from './search.js';
 
 // Splash lifecycle. `appReady` flips once the initial auth state and the
 // webfont are ready; `splashDismissed` removes the node once its fade-out ends.
@@ -327,9 +330,9 @@ function submitChangePassphrase(e: any) {
 
 function enrollBiometric() {
   void runAdminAction(async () => {
-    const pass = persistence.getPassphrase();
-    if (!pass) throw new Error('Unlock with a passphrase before enabling biometric unlock.');
-    await biometrics.enroll(pass, accountInfo.value.email || 'Virgulas user');
+    // sec-05: the passphrase string never leaves persistence — the enroll flow
+    // reads it internally instead of handing it back to the app surface.
+    await persistence.enrollBiometrics(accountInfo.value.email);
     bioEnrolled.value = true;
   }, 'Biometric unlock enabled on this device.');
 }
@@ -1438,12 +1441,49 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.i
 // ── Introspection surface for e2e specs ──────────────────────────────────────
 // The app ships as a single bundle; specs import these from the bundle so they
 // observe the exact same module singletons the running app uses.
-export { default as outline } from './outline.js'
-export { default as persistence } from './persistence.js'
-export { default as inbox } from './inbox.js'
-export { encrypt, decrypt, randomId, generateSalt } from './crypto2.js'
-export { pendingConflicts, mergeDocuments } from './sync.js'
-export { currentSearchMatchId, getFirstClosedParent } from './search.js'
+// ── E2E introspection seam (sec-05) ──────────────────────────────────────────
+//
+// The E2E specs import app singletons from the built bundle so they observe
+// the same module instances as the running app. That used to be done with plain
+// static re-exports, which meant any same-origin module — the SRI-pinned
+// analytics tracker included — could `import('/js/app.js')` and reach
+// `persistence.getPassphrase()` and the raw singletons.
+//
+// The singletons are now published only through this `e2e` binding, which is
+// populated exclusively in the Playwright bundle. In production `__TEST_HOOKS__`
+// is a compile-time `false`, so the object is empty and every binding stays
+// `undefined` — nothing reachable, nothing to read passphrase strings from.
+export interface E2EExports {
+  outline: typeof outline
+  persistence: typeof persistence
+  inbox: typeof inbox
+  encrypt: typeof encrypt
+  decrypt: typeof decrypt
+  randomId: typeof randomId
+  generateSalt: typeof generateSalt
+  pendingConflicts: typeof pendingConflicts
+  mergeDocuments: typeof mergeDocuments
+  currentSearchMatchId: typeof currentSearchMatchId
+  getFirstClosedParent: typeof getFirstClosedParent
+}
+
+const e2eExports: E2EExports = typeof __TEST_HOOKS__ !== 'undefined' && __TEST_HOOKS__
+  ? {
+    outline,
+    persistence,
+    inbox,
+    encrypt,
+    decrypt,
+    randomId,
+    generateSalt,
+    pendingConflicts,
+    mergeDocuments,
+    currentSearchMatchId,
+    getFirstClosedParent,
+  }
+  : {} as E2EExports;
+
+export { e2eExports as e2e };
 
 // Styles are bundled by Bun. Modules may import their own CSS alongside this
 // entry; all imports are concatenated (in order) into dist/js/app.css.

@@ -80,8 +80,8 @@ const createEncryptedPayload = async (
   doc: Record<string, unknown>
 ) => {
   return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = (await import('/js/app.js' as string)).e2e;
+    const outline = (await import('/js/app.js' as string)).e2e.outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -105,8 +105,8 @@ const seedEncryptedLocalDoc = async (
 ) => {
   await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
     localStorage.clear();
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = (await import('/js/app.js' as string)).e2e;
+    const outline = (await import('/js/app.js' as string)).e2e.outline;
     outline.reset();
     function loadChildren(children: any[], parentId: string) {
       for (const child of children || []) {
@@ -267,7 +267,7 @@ test.describe('Authentication', () => {
 
     // Seed a pre-v2 payload: raw base64 at the legacy 310k iterations.
     await page.evaluate(async () => {
-      const app = await import('/js/app.js' as string);
+      const app = (await import('/js/app.js' as string)).e2e;
       app.outline.reset();
       app.outline.addChild('root', { text: 'Legacy doc' });
       const json = app.outline.serialize();
@@ -608,7 +608,7 @@ test.describe('Authentication', () => {
 
     // Verify unlocked outline contains the expected first node text.
     const firstNodeText = await page.evaluate(async () => {
-      const outline = (await import('/js/app.js' as string)).outline;
+      const outline = (await import('/js/app.js' as string)).e2e.outline;
       const root = outline.get('root');
       const firstChildId = root?.children.peek()?.[0];
       if (!firstChildId) return null;
@@ -804,7 +804,7 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.evaluate(async () => {
       localStorage.clear();
-      const { encrypt } = await import('/js/app.js' as string);
+      const { encrypt } = (await import('/js/app.js' as string)).e2e;
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const encrypted = await encrypt('{', 'old-passphrase', salt);
@@ -825,7 +825,7 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.evaluate(async () => {
       localStorage.clear();
-      const { encrypt } = await import('/js/app.js' as string);
+      const { encrypt } = (await import('/js/app.js' as string)).e2e;
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
       const document = JSON.stringify({
@@ -894,7 +894,7 @@ test.describe('Authentication', () => {
     await page.getByLabel('Create a passphrase').fill('double-submit-pass');
 
     await page.evaluate(async () => {
-      const persistence = (await import('/js/app.js' as string)).persistence as any;
+      const persistence = (await import('/js/app.js' as string)).e2e.persistence as any;
       const originalUnlock = persistence.unlock.bind(persistence);
       let unlockCalls = 0;
 
@@ -944,8 +944,8 @@ test.describe('Authentication', () => {
     await page.goto('/#remote-parent');
 
     const unlockResult = await page.evaluate(async () => {
-      const persistence = (await import('/js/app.js' as string)).persistence as any;
-      const outline = (await import('/js/app.js' as string)).outline;
+      const persistence = (await import('/js/app.js' as string)).e2e.persistence as any;
+      const outline = (await import('/js/app.js' as string)).e2e.outline;
       const success = await persistence.unlock('remote-passphrase', { mode: 'remote', trustSession: true });
       return {
         success,

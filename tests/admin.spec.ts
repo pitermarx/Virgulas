@@ -93,8 +93,8 @@ const installMockSupabase = async (
 
 const createEncryptedPayload = async (page: Page, passphrase: string, doc: Record<string, unknown>) => {
   return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = await import('/js/app.js' as string);
-    const outline = (await import('/js/app.js' as string)).outline;
+    const { encrypt } = (await import('/js/app.js' as string)).e2e;
+    const outline = (await import('/js/app.js' as string)).e2e.outline;
     outline.reset();
     const load = (children: any[], parentId: string) => {
       for (const child of children || []) {
@@ -493,7 +493,7 @@ test.describe('Admin / Options modal', () => {
 
     const pushed = await page.evaluate(async ({ data, salt, pass }: any) => {
       const modulePath: string = '/js/app.js';
-      const { decrypt } = await import(modulePath);
+      const { decrypt } = (await import(modulePath)).e2e;
       return await decrypt(data, pass, salt);
     }, { data: state.serverRecord.data, salt: state.serverRecord.salt, pass: 'remote-pass' });
     const edited = JSON.parse(pushed).nodes.find((n: any) => n.id === 'r1');

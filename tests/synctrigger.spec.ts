@@ -64,7 +64,7 @@ const unlockRemote = async (page: Page, pass: string) => {
 
 const seedRemoteDoc = async (page: Page, pass: string) => {
   await page.evaluate(async ({ pass }: { pass: string }) => {
-    const app: any = await import('/js/app.js' as string);
+    const app: any = (await import('/js/app.js' as string)).e2e;
     app.outline.reset();
     app.outline.addChild('root', { text: 'Start' });
     const salt = btoa(String.fromCharCode(...window.crypto.getRandomValues(new Uint8Array(16))));

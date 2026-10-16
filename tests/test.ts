@@ -78,7 +78,7 @@ export async function seedEncryptedDoc(
     await page.evaluate(async ({ json, passphrase }) => {
         localStorage.clear();
         const cryptoModulePath: string = '/js/app.js';
-        const { encrypt } = await import(cryptoModulePath);
+        const { encrypt } = (await import(cryptoModulePath)).e2e;
         const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
         const salt = btoa(String.fromCharCode(...saltBytes));
         const encrypted = await encrypt(json, passphrase, salt);
