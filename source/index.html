@@ -3,7 +3,10 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- web-06 (owner decision): maximum-scale=1 stops iOS Safari auto-zooming into
+       inputs below 16 px. iOS ignores the tag for user pinch-zoom, so zooming
+       stays available on iPhones; Android honours it and limits pinch to 100%. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Virgulas</title>
   <meta name="description" content="Local-first browser outliner">
   <meta name="app-version" content="1.0.0">
