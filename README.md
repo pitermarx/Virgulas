@@ -106,7 +106,8 @@ biometric unlock (fingerprint/face/device PIN) for this device.
 - Wide mode (`Ctrl+Alt+W`) for large screens
 - Status toolbar: storage mode, sync state, tasks, search, `?` shortcut reference, and Options
 - `Escape` closes an open dialog (Options or shortcuts) instead of toggling search
-- Mobile: larger touch targets, swipe to indent, keyboard-aware status bar
+- Mobile: larger touch targets, swipe to indent, keyboard-aware status bar, and inputs that
+  stay at least 16 px on touch devices so iOS Safari does not zoom the page on focus
 - Respects `prefers-reduced-motion` and shows visible keyboard focus rings everywhere
 - With JavaScript disabled, shows an actionable message instead of leaving the splash on screen
 

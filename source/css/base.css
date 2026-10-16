@@ -41,7 +41,6 @@
   --text-size-code: 0.875em;
   --text-size-root: 1rem;
   --text-size-level-2: 0.9rem;
-  --text-size-level-3: 0.85rem;
 
   /* Spacing */
   --space-1: 4px;
@@ -140,6 +139,22 @@ body {
 input,
 textarea {
   caret-color: var(--color-accent-primary);
+}
+
+/* web-06: iOS Safari zooms the page to the focused control when its computed
+   font size is below 16 px, and the layout stays zoomed until the user pinches
+   back. Nested nodes, the description textarea and the search field all
+   compute below 16 px by design (`--text-size-level-2`, `--text-size-description`).
+   On coarse-pointer devices lift every form control to at least 16 px instead
+   of disabling zoom with `maximum-scale`, which would hurt accessibility.
+   `#app` keeps the specificity above class-level rules like `.node-text-input`,
+   and `max()` preserves any larger user-configured size. */
+@media (pointer: coarse) {
+  #app input,
+  #app textarea,
+  #app select {
+    font-size: max(16px, 1em);
+  }
 }
 
 #app {
