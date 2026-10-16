@@ -83,6 +83,16 @@ await test('a root favicon is shipped for browsers that guess /favicon.ico', () 
 
 section('Website Specification — document head foundations')
 
+await test('the viewport meta pins maximum-scale to stop iOS input auto-zoom (web-06)', () => {
+    // Owner decision (web-06): the meta tag is the chosen fix for iOS Safari
+    // auto-zooming into inputs below 16 px. iOS ignores the tag for pinch-zoom,
+    // so iPhone zooming still works; the cost is Android pinch zoom, accepted.
+    const html = read('source/index.html')
+    const meta = html.match(/<meta name="viewport" content="([^"]*)"/)
+    assert(meta, 'the viewport meta tag must exist')
+    assert(meta ? meta[1].includes('maximum-scale=1') : false, 'the viewport meta must pin maximum-scale=1')
+})
+
 await test('the head carries canonical, Open Graph, colour-scheme and theme-colour', () => {
     const html = read('source/index.html')
     assert(html.includes('rel="canonical"'), 'canonical link is required')
