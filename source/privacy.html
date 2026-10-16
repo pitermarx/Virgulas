@@ -84,6 +84,29 @@
       margin: 1.5rem 0;
     }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface);
+    }
+
+    td code {
+      word-break: break-all;
+    }
+
     footer {
       margin-top: 3rem;
       padding-top: 1rem;
@@ -102,7 +125,7 @@
 <body>
   <main>
     <h1>Privacy</h1>
-    <p class="lede">Last updated 29 September 2026.</p>
+    <p class="lede">Last updated 16 October 2026.</p>
 
     <p>
       Virgulas is local-first. In Memory, Local, and File modes nothing you write is ever
@@ -110,39 +133,125 @@
       sync between devices; the server never receives the key.
     </p>
 
-    <h2>What is stored, and where</h2>
+    <h2>What is stored on this device</h2>
+    <p>
+      Everything below lives in your browser and never leaves it except as noted in the next
+      section. Only the encrypted document is secret; the rest is non-secret operational data,
+      and every item can be removed from your device at any time.
+    </p>
+    <table>
+      <thead>
+        <tr><th>What</th><th>Where</th><th>Encrypted?</th><th>Removed by</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Your outline (Local and Remote modes)</td>
+          <td><code>localStorage</code> key <code>vmd_data_enc</code></td>
+          <td>Yes — AES-GCM-256, key derived from your passphrase</td>
+          <td>Options → <em>Delete local data</em></td>
+        </tr>
+        <tr>
+          <td>Quick-capture queue — recently captured page titles, URLs and selected text
+            awaiting filing</td>
+          <td><code>localStorage</code> key <code>vmd_inbox_queue</code></td>
+          <td><strong>No — captures are stored as plain text</strong></td>
+          <td>Filing them into your outline, or Options → <em>Delete local data</em>;
+            also removed by <em>Delete account</em></td>
+        </tr>
+        <tr>
+          <td>Your account email (remembered so you do not retype it)</td>
+          <td><code>localStorage</code> key <code>vmd_last_username</code></td>
+          <td>No</td>
+          <td>Options → <em>Delete local data</em> or <em>Delete account</em></td>
+        </tr>
+        <tr>
+          <td>Sign-in session (Remote mode) — lets you stay signed in across visits</td>
+          <td>Supabase session and refresh tokens in <code>localStorage</code></td>
+          <td>Tokens are opaque; the document key is never in them</td>
+          <td>Options → <em>Sign out</em>, <em>Delete local data</em>, or <em>Delete account</em></td>
+        </tr>
+        <tr>
+          <td>Preferences and status: theme, storage mode, sync timestamp, tasks window,
+            Inbox node name, notice dismissals, Supabase endpoint</td>
+          <td><code>localStorage</code> keys <code>vmd_theme</code>, <code>vmd_last_mode</code>,
+            <code>vmd_sync_ts</code>, <code>vmd_scheduled_window</code>,
+            <code>vmd_inbox_node_name</code>, <code>vmd_storage_notice_dismissed</code>,
+            <code>supabaseconfig</code></td>
+          <td>No — none of these contain document text</td>
+          <td>Mostly kept; <em>Delete local data</em> removes the session-related ones</td>
+        </tr>
+        <tr>
+          <td>Biometric unlock seal — an encrypted copy of your passphrase that only your
+            device's biometric unlock can open (if you enabled it)</td>
+          <td>IndexedDB database <code>virgulas-biometric</code></td>
+          <td>Yes — wrapped by your device's WebAuthn credential</td>
+          <td>Options → <em>Forget biometric unlock</em>; also removed by sign-out,
+            <em>Delete local data</em> and <em>Delete account</em></td>
+        </tr>
+        <tr>
+          <td>File mode — a reference (handle) to the <code>.vmd</code> file you chose;
+            never the file's contents</td>
+          <td>IndexedDB database <code>virgulas-fs</code></td>
+          <td>n/a — a handle only</td>
+          <td>Options → <em>Clear file session</em>, or <em>Delete local data</em></td>
+        </tr>
+        <tr>
+          <td>Offline app cache — the app shell, fonts and the first-visit tour, so the app
+            opens without a network. Page URLs you visit are never cached</td>
+          <td>Cache Storage (<code>virgulas-app-*</code>, <code>virgulas-fonts-*</code>)</td>
+          <td>n/a — static app files only</td>
+          <td>Automatically pruned on updates; cleared by <em>Delete local data</em> and
+            <em>Delete account</em></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>What reaches our servers</h2>
     <ul>
-      <li><strong>Your outline</strong> — in Memory mode it lives only in the tab; in Local mode
-        it is encrypted with your passphrase and kept in this browser's <code>localStorage</code>;
-        in File mode it is written to a <code>.vmd</code> file you choose. In Remote mode the
-        same ciphertext is also stored in our Supabase-hosted database, keyed to your account.</li>
-      <li><strong>Account email and password</strong> — only if you use Remote mode. Authentication
-        is handled by Supabase; the password is never stored by the app.</li>
-      <li><strong>Non-secret device settings</strong> — storage mode, theme, last username, sync
-        timestamps, the Supabase endpoint, and the quick-capture queue are stored unencrypted in
-        this browser. They never contain your document text.</li>
+      <li><strong>Remote mode only</strong> — your account email and password go to Supabase
+        Auth, and the encrypted document plus its random salt are stored in our Supabase-hosted
+        database, keyed to your account. Your encryption passphrase is never sent to any server.
+        <!-- OWNER: add the Supabase project region here if you want to name it -->
+      </li>
+      <li><strong>Delivery and security</strong> — the site is served through Cloudflare's
+        network, and the database is hosted by Supabase (<em>Supabase Inc.</em>). Their
+        infrastructure processes IP addresses, as any web server does, for delivery, security
+        and abuse prevention.
+      </li>
       <li><strong>Analytics</strong> — we self-host an Umami instance at
-        <code>um.vps.pitermarx.com</code>. It is cookieless, collects aggregate page views, and
-        does not build a profile or track you across sites. The tracker never receives URL query
-        strings or fragments (so quick-capture links and shared node links are not sent), and it
-        is disabled when you enable the Do Not Track signal in your browser.</li>
+        <code>um.vps.pitermarx.com</code> on our own server. It is cookieless, collects page
+        views (path, referrer, browser/OS, screen size), and derives an approximate country
+        from your IP address. It never receives URL query strings or fragments (so
+        quick-capture links and shared node links are not sent), does not build a profile or
+        track you across sites, and is disabled when you enable the Do Not Track signal in
+        your browser.
+      </li>
     </ul>
 
     <h2>What we cannot see</h2>
     <p>
       The document is encrypted on your device with AES-GCM-256 using a key derived from your
-      passphrase (PBKDF2-HMAC-SHA256). The server stores only ciphertext and cannot read it.
-      If you forget your passphrase, the data cannot be recovered — not even by us.
+      passphrase (PBKDF2-HMAC-SHA256). The server stores only ciphertext and cannot read it —
+      in any storage mode. If you forget your passphrase, the data cannot be recovered — not
+      even by us.
     </p>
 
-    <h2>Legal basis, retention, and your rights</h2>
+    <h2>Deleting your data</h2>
+    <p>
+      On the device, <em>Options → Delete local data</em> removes the encrypted outline, the
+      quick-capture queue, the remembered email and session, the biometric seal, and the
+      offline caches. In Remote mode, <em>Options → Delete account</em> removes the encrypted
+      row from our database immediately and signs you out. To have the account record itself
+      erased as well, or to exercise access, rectification, portability, or objection rights,
+      contact us through the repository link below.
+    </p>
+
+    <h2>Legal basis, and retention</h2>
     <p>
       Where the GDPR applies, we process your account email to perform the contract (Remote
-      mode) and aggregate analytics on the basis of legitimate interest. You can delete your
-      stored document and sign out at any time from <em>Options → Delete account</em>; the
-      encrypted row is removed immediately. To have the account record itself erased, or to
-      exercise access, rectification, portability, or objection rights, contact us through the
-      repository link below. We keep data only while your account exists.
+      mode) and aggregate analytics on the basis of legitimate interest. Your account email and
+      the encrypted document are kept only while your account exists; Supabase Auth keeps
+      short-lived authentication logs for security. We do not sell or share personal data.
     </p>
 
     <div class="card">
