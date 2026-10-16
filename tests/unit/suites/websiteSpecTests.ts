@@ -56,6 +56,27 @@ await test('privacy policy page exists with an h1, canonical and a back link', (
     assert(privacy.includes('href="/"'), 'privacy page needs a link back to the app')
 })
 
+await test('the privacy page inventories every device-storage key (priv-02)', () => {
+    // priv-02: the page must match what the app stores. The key list is read
+    // from the store slots so a new slot fails this test until the page
+    // documents it.
+    const utils = read('source/js/utils.ts')
+    const privacy = read('source/privacy.html')
+    const keys = Array.from(utils.matchAll(/slot\('([^']+)'\)/g), (m) => m[1])
+    assert(keys.length >= 10, 'expected to discover the full store slot list')
+    for (const key of keys) {
+        assert(privacy.includes(key), `privacy.html must document the ${key} storage key`)
+    }
+    // Device storage beyond localStorage must be named too.
+    for (const token of ['virgulas-biometric', 'virgulas-fs', 'virgulas-app-', 'virgulas-fonts-']) {
+        assert(privacy.includes(token), `privacy.html must mention ${token}`)
+    }
+    // The two claims priv-02 corrected must stay corrected.
+    assert(!privacy.includes('They never contain your document text'), 'the stale blanket queue claim must stay removed')
+    assert(privacy.includes('stored as plain text'), 'the capture queue must be flagged as plaintext')
+    assert(privacy.includes('Supabase session'), 'the on-device Supabase session tokens must be disclosed')
+})
+
 await test('the specification attribution lives in the contributor docs, not the app UI', () => {
     assert(read('README.md').includes('https://specification.website'), 'README should note the followed specification')
     assert(read('AGENTS.md').includes('https://specification.website'), 'AGENTS.md should note the followed specification')
