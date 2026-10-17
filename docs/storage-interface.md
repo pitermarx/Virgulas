@@ -942,3 +942,35 @@ roadmap item is picked up.
    unlock against a cache written under the *old* passphrase, then
    `remote-rekeyed` on the first online pull re-locks and prompts (composes
    cleanly with the sync-01 fix). Deferred to its own PR.
+
+---
+
+## 14. Implementation deviations (recorded during rollout)
+
+Decisions taken while implementing the PRs, where this document's draft was
+ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
+
+1. **`RawStore` carries `capabilities`** (§4.2 shows it without): §4.3 requires
+   `encrypted()` to inherit durable/available/authenticated/changeDetection from
+   the inner raw store, so the adapter contract exposes the descriptor directly.
+   Raw-level descriptors always report `encrypted: false`; the decorator sets it.
+2. **`KeySession` is the secret-retention point, not a key cache** (§4.3): Rule 7
+   requires all crypto through `crypto2.ts`, whose `encrypt`/`decrypt` take
+   `(text, passphrase, salt)` — so the multi-entry (salt, iterations) key cache
+   lives inside crypto2 (bounded LRU, 4 entries; same sync-10 outcome).
+   `keyFor()` is dropped; `activate(passphrase, salt)` / `rotate(newPassphrase)`
+   (sync, lazy derivation) / `lock()` remain, plus `activeCredentials()` for
+   crypto2 calls.
+3. **A locked store's `read()`/`write()` throw `StoreError('unauthenticated')`**
+   — the taxonomy (§4.4) has no dedicated 'locked' code; an un-unlocked session
+   is modelled as unauthenticated.
+4. **`docCodec.parse` throws `StoreError`** (`invalid-document` /
+   `unsupported-runtime`) with the typed error preserved as `cause`, per §4.6.
+   PR 1 shipped the codecs throwing the raw typed errors because `storage.ts`
+   did not exist yet; PR 2a introduced the wrap.
+5. **`encrypted()` returns an `EncryptedStore`** (a `StringStore` with required
+   `unlock`/`lock`) so consumers don't fight optional-method typing.
+6. **First-time setup is `unlock()` on an empty store** (adoption with a fresh
+   salt, persisted by the first write) rather than a separate setup primitive —
+   this is §6.2's "setup wraps the first write" realised with the existing
+   lock-screen entry point.

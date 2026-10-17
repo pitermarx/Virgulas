@@ -387,7 +387,7 @@ before any document work happens.
 - The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; legacy payloads are raw base64 and
   decrypt at 310,000 iterations. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
   AES-GCM-256, and a normal save re-encrypts an older envelope at the current parameters.
-- The derived key is cached for the unlocked session, so autosave does not re-run the KDF.
+- The derived key is cached for the unlocked session, so autosave does not re-run the KDF. The cache is multi-entry (bounded LRU) keyed by (passphrase, salt, iterations) so alternating salts cost one derivation each.
 - `biometrics.ts` may wrap the passphrase behind WebAuthn for device unlock. That wrapping key
   never encrypts the document (Rule 7).
 
@@ -447,6 +447,12 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format) — pure codecs over `outline.ts` semantics.
 - `merge.ts`:
   Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
+- `storage.ts`:
+  Storage seam contracts (see `docs/storage-interface.md`): `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, `StoreCapabilities`, and the two-channel `StoreError` taxonomy. Contracts only — adapters import this module, never the reverse.
+- `encryptedStore.ts`:
+  The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
+- `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
+  Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
 - `persistence.ts`:
   Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
 - `sync.ts`:

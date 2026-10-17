@@ -136,17 +136,32 @@ async function deriveKey(passphrase: string, saltBase64: string, iterations: num
 }
 
 // Deriving a 600k-iteration key is deliberately slow, and autosave encrypts on
-// every pause. Cache the last derived key for the unlocked session so the cost is
-// paid once per (passphrase, salt, iterations) instead of on every write.
-let cachedKey: { passphrase: string; salt: string; iterations: number; scale: number; key: CryptoKey } | null = null
+// every pause. Derived keys are cached so the cost is paid once per
+// (passphrase, salt, iterations) instead of on every write.
+//
+// The cache is multi-entry (bounded, LRU) rather than single-entry: the
+// storage seam's cached() composition shares one session between the local
+// slot and the remote row, and a passphrase rotated on another device puts a
+// foreign salt in the remote record — alternating salts must cost one
+// derivation each, not one per operation (sync-10, docs §4.3).
+const KEY_CACHE_MAX = 4
+const keyCache = new Map<string, { key: CryptoKey }>()
 
 async function getDerivedKey(passphrase: string, salt: string, iterations: number, scale: number): Promise<CryptoKey> {
-    const cached = cachedKey
-    if (cached && cached.passphrase === passphrase && cached.salt === salt && cached.iterations === iterations && cached.scale === scale) {
+    const cacheId = `${iterations}|${scale}|${salt}|${passphrase}`
+    const cached = keyCache.get(cacheId)
+    if (cached) {
+        // Refresh LRU order
+        keyCache.delete(cacheId)
+        keyCache.set(cacheId, cached)
         return cached.key
     }
     const key = await deriveKey(passphrase, salt, iterations, scale)
-    cachedKey = { passphrase, salt, iterations, scale, key }
+    keyCache.set(cacheId, { key })
+    if (keyCache.size > KEY_CACHE_MAX) {
+        const oldest = keyCache.keys().next().value
+        if (oldest !== undefined) keyCache.delete(oldest)
+    }
     return key
 }
 
