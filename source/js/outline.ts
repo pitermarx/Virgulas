@@ -13,6 +13,12 @@ import { parseMeta, advanceDueDate } from './meta.js';
 
 export type DoneState = boolean | null
 
+/**
+ * Document model version — the single source of truth shared by
+ * outline.serialize()/deserialize() and the codecs in docCodec.ts.
+ */
+export const MODEL_VERSION = 'v1'
+
 export class CorruptDocumentError extends Error {
     constructor(message = 'The decrypted document is corrupted or invalid.') {
         super(message)
@@ -244,7 +250,7 @@ const NodeModel = createModel(nodeFactory as unknown as (...args: any[]) => any)
 
 function outlineFactory() {
     const rootNodeId = 'root'
-    const modelVersion = 'v1' // for future compatibility, in case we need to change the structure
+    const modelVersion = MODEL_VERSION // for future compatibility, in case we need to change the structure
     const dataVersion = signal(0) // incremented on every change, but debounced to avoid excessive updates during rapid changes
     // Always-incrementing counter for structural rebuilds (reset/deserialize).
     // dataVersion alone is not enough: unlock paths batch deserialize, and when the
