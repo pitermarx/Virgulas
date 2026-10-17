@@ -11,6 +11,12 @@ export function isFileStoreAvailable(apis: { showSaveFilePicker?: unknown } = gl
     return typeof apis.showSaveFilePicker === 'function'
 }
 
+/** The file's modification stamp, or null when the platform exposes none. */
+function stampOf(file: File): string | null {
+    const stamp = (file as any).lastModified
+    return typeof stamp === 'number' ? String(stamp) : null
+}
+
 export function fileStore(handle: FileSystemFileHandle): StringStore {
     async function currentFile(): Promise<File> {
         try {
@@ -33,7 +39,7 @@ export function fileStore(handle: FileSystemFileHandle): StringStore {
             const writable = await handle.createWritable()
             await writable.write(text)
             await writable.close()
-            return String((await currentFile()).lastModified)
+            return stampOf(await currentFile())
         },
         async clear() {
             const writable = await handle.createWritable()
@@ -42,14 +48,17 @@ export function fileStore(handle: FileSystemFileHandle): StringStore {
         },
         async exists() {
             try {
-                return (await currentFile()).size > 0
+                const file = await currentFile()
+                if (typeof (file as any).size === 'number') return (file as any).size > 0
+                // No size metadata (test doubles) — fall back to reading.
+                return (await file.text()).length > 0
             } catch {
                 return false
             }
         },
         async head() {
             try {
-                return String((await currentFile()).lastModified)
+                return stampOf(await currentFile())
             } catch {
                 return null
             }

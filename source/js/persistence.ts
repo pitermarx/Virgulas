@@ -7,7 +7,14 @@ import {
   generateSalt,
   MIN_PASSPHRASE_LENGTH
 } from "./crypto2.js"
-import outline, { CorruptDocumentError } from "./outline.js"
+import outline, { CorruptDocumentError, MODEL_VERSION } from "./outline.js"
+import { codecStore, jsonCodec, vmdCodec } from './docCodec.js'
+import type { OutlineDoc } from './docCodec.js'
+import { createKeySession, encrypted } from './encryptedStore.js'
+import { slotRaw } from './localStore.js'
+import { fileStore } from './fileStore.js'
+import { memoryStore } from './memoryStore.js'
+import { StoreError, type DocStore } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
@@ -188,6 +195,7 @@ const filesystemStorage = (function () {
     },
 
     hasHandle: () => !!_handle,
+    currentHandle: () => _handle,
 
     async clear() {
       _handle = null
@@ -224,6 +232,37 @@ const localEncryptedData = {
       store.data.del()
     }
   }
+}
+
+// -- Storage seam (docs/storage-interface.md, rollout PR 2c) ------------------
+//
+// Memory/File/Local now route their data paths through the seam:
+//   Local   = encrypted(slotRaw(store.data), keySession)  -- StringStore level,
+//             so read() returns the decrypted at-rest text for deserialize
+//   File    = codecStore(vmdCodec, fileStore(handle))
+//   Memory  = codecStore(jsonCodec, memoryStore())        -- validation for free
+// Remote keeps its legacy path (including the 'passphrase' signal and
+// 'localEncryptedData' for the local cache) until PR 2d cuts it over.
+const keySession = createKeySession()
+const localDataStore = encrypted(slotRaw(store.data), keySession)
+
+/** data-06: a failed local/file save surfaces here instead of being swallowed. */
+export const localSaveFailed = signal(false)
+
+// File mode's document store, rebuilt whenever a handle is (re)acquired.
+let fileDataStore: DocStore | null = null
+
+function setFileHandle(handle: FileSystemFileHandle | null) {
+  fileDataStore = handle ? codecStore(vmdCodec, fileStore(handle)) : null
+}
+
+/**
+ * Loads a codec-parsed document into the live outline. VMD-sourced documents
+ * carry no model version, so the wrapper supplies one (deserialize validates
+ * it); document-level fields already on the doc win over the defaults.
+ */
+function loadDocIntoOutline(doc: OutlineDoc) {
+  outline.deserialize(JSON.stringify({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }))
 }
 
 /**
@@ -523,11 +562,13 @@ effect(() => {
   if (mode === 'filesystem' && fsReady) {
     const doWrite = async () => {
       try {
-        const vmd = outline.getVMD('root')
-        await filesystemStorage.write(vmd)
+        // Through the seam: live outline -> document -> VMD text -> file.
+        await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+        localSaveFailed.value = false
         log('[Persistence] Saved filesystem doc v' + version)
       } catch (error) {
         console.error('[Persistence] Filesystem write failed:', error)
+        localSaveFailed.value = true
       }
     }
     const flushWrite = async () => {
@@ -547,6 +588,52 @@ effect(() => {
     // Bound the debounce so continuous typing cannot postpone the write.
     if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
     let timeoutId = lastTimeoutId = setTimeout(() => { void flushWrite() }, 1000)
+    return () => clearTimeout(timeoutId)
+  }
+
+  // Local mode: the encrypted slot store owns the data path (storage seam).
+  // The KeySession holds the secret; this branch never handles ciphertext.
+  if (mode === 'local') {
+    if (!passphraseValue) {
+      activeSave = null
+      clearMaxWaitSave()
+      log('No passphrase, skipping encryption')
+      return
+    }
+
+    async function doLocalSave(): Promise<boolean> {
+      clearMaxWaitSave()
+      saveArmed = false
+      const json = outline.serialize() // get latest doc state
+      try {
+        await localDataStore.write(json)
+        lastSavedVersion = version
+        localSaveFailed.value = false
+        // The persist() prompt hangs off the capability, nowhere else.
+        if (localDataStore.capabilities.durable === 'prompt') {
+          void requestLocalStorageDurability()
+        }
+        log('[Persistence] Saved encrypted doc v' + version)
+        return true
+      } catch (error) {
+        // data-06: a quota failure surfaces as an error state instead of
+        // silently dropping the save.
+        console.error('[Persistence] Error saving doc v' + version + ':', error)
+        if (error instanceof StoreError && error.code === 'too-large') {
+          localSaveFailed.value = true
+        }
+        return false
+      }
+    }
+
+    activeSave = doLocalSave
+    saveArmed = true
+    pendingSave = () => {
+      if (lastTimeoutId) clearTimeout(lastTimeoutId)
+      void doLocalSave()
+    }
+    if (outline.dirtyWrites.peek() > 0) armMaxWaitSave()
+    let timeoutId = lastTimeoutId = setTimeout(() => { void doLocalSave() }, 1000)
     return () => clearTimeout(timeoutId)
   }
 
@@ -707,17 +794,14 @@ function parseRemoteDecryptError(error: unknown) {
 }
 
 async function unlockLocal(code: string) {
-  const { salt, data } = localEncryptedData.get()
+  const hasData = await localDataStore.exists()
 
-  if (data) {
-    if (!salt) {
-      log('Invalid encrypted data format, missing salt')
-      throw new CorruptEnvelopeError('Local encrypted data is missing its salt.')
-    }
-  }
-  else {
+  if (!hasData) {
     log('No encrypted data found in localStorage, starting with empty doc')
     assertNewPassphrase(code)
+    // Adoption: on an empty store, unlock() retains the passphrase with a
+    // fresh salt and the first write persists it (docs §6.2).
+    await localDataStore.unlock(code)
     outline.reset()
     outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
     authMode.value = 'local'
@@ -728,7 +812,11 @@ async function unlockLocal(code: string) {
   }
 
   try {
-    const json = await decrypt(data, code, salt)
+    // unlock() performs the one-and-only passphrase verification (decryption
+    // is the verifier); read() then returns the decrypted at-rest text.
+    await localDataStore.unlock(code)
+    const json = await localDataStore.read()
+    if (json === null) throw new CorruptEnvelopeError('Local encrypted data is missing.')
     outline.deserialize(json)
 
     batch(() => {
@@ -744,7 +832,9 @@ async function unlockLocal(code: string) {
   }
   catch (error) {
     console.error('Error unlocking doc:', error)
-    throw error
+    // Two-channel errors: re-throw the original typed error so the lock
+    // screen's existing instanceof branches keep working.
+    throw error instanceof StoreError ? (error.cause ?? error) : error
   }
 }
 
@@ -840,7 +930,12 @@ async function unlockMemory() {
 
   outline.reset()
   if (introText && introText.trim()) {
-    outline.setRootVMD(introText)
+    // Memory mode round-trips through jsonCodec: uniform code path,
+    // validation for free (docs §4.6). VMD parsing lives in the codec.
+    const memoryDataStore = codecStore(jsonCodec, memoryStore())
+    // The jsonCodec-backed store requires a model version on the document.
+    await memoryDataStore.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...vmdCodec.parse(introText) })
+    loadDocIntoOutline((await memoryDataStore.read())!)
   } else {
     outline.addChild('root', { text: '' }) // fallback: intro fetch failed, initialize with one empty node
   }
@@ -867,16 +962,18 @@ async function unlockFilesystem() {
     }
   }
 
+  setFileHandle(filesystemStorage.currentHandle())
+
   if (json && json.trim()) {
     outline.reset()
-    outline.setRootVMD(json)
+    loadDocIntoOutline(vmdCodec.parse(json))
     applyHashZoomIfPresent()
   } else {
     outline.reset()
     outline.addChild('root', { text: '' })
     applyHashZoomIfPresent()
     // Write initial doc with one empty node to file
-    await filesystemStorage.write(outline.getVMD('root'))
+    await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
   }
 
   batch(() => {
@@ -1053,7 +1150,7 @@ export default {
     return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
   },
   clearLocalData() {
-    localEncryptedData.set(null, null)
+    void localDataStore.clear()
     // The offline shell and any URL-keyed entry written by an older build live in
     // Cache Storage, outside localStorage; drop them so a purge leaves no device
     // residue. Best-effort, so the synchronous purge need not await it.
@@ -1112,6 +1209,7 @@ export default {
     clearDeferredPush()
     clearPendingSave()
     clearCredentials()
+    keySession.lock()
     passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
@@ -1124,6 +1222,7 @@ export default {
     clearDeferredPush()
     clearPendingSave()
     clearCredentials()
+    keySession.lock()
     // Drop the passphrase before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
     passphrase.value = ''
@@ -1174,19 +1273,22 @@ export default {
   },
   async pickNewFile() {
     const text = await filesystemStorage.pickNewFile()
+    setFileHandle(filesystemStorage.currentHandle())
     if (text && text.trim()) {
       outline.reset()
-      outline.setRootVMD(text)
+      loadDocIntoOutline(vmdCodec.parse(text))
       applyHashZoomIfPresent()
     } else {
       outline.reset()
-      await filesystemStorage.write(outline.getVMD('root'))
+      await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
     }
     rememberMode('filesystem')
   },
   reset() {
     clearDeferredPush()
     clearPendingSave()
+    keySession.lock()
+    localSaveFailed.value = false
     outline.reset()
     authMode.value = 'local'
     passphrase.value = ''
@@ -1204,6 +1306,16 @@ export default {
       throw new Error('This mode has no encryption passphrase.')
     }
     const json = outline.serialize()
+
+    if (mode === 'local') {
+      // Storage seam: rotation is the session's job -- a fresh salt and the
+      // new passphrase become active and the write re-encrypts (docs §6.7).
+      keySession.rotate(newPassphrase)
+      await localDataStore.write(json)
+      passphrase.value = newPassphrase
+      return true
+    }
+
     const salt = generateSalt()
     const encrypted = await encrypt(json, newPassphrase, salt)
 

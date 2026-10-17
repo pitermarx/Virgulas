@@ -162,6 +162,9 @@
       - The Options panel offers "Lock", which returns to the unlock screen and drops the key
       - Locking flushes any pending write before the key is dropped, so the most recent edit is not lost
       - After the first successful Local save, request persistent browser storage with `navigator.storage.persist()`
+      - If a Local save fails (for example the document no longer fits the browser's storage quota),
+        the status toolbar reports a save-failed state instead of silently dropping the save;
+        the state clears on the next successful save
       - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
       - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
       - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
@@ -176,6 +179,7 @@
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
       - The last opened file handle is remembered in IndexedDB; on next visit the app tries to reopen it silently
       - Every write is debounced: changes are flushed to disk ~1 second after the last edit
+      - A failed disk write is reported as the same save-failed toolbar state instead of being silently dropped
       - If the API is not supported in the current browser, the File mode button shows an error
   + ENCRYPTION
     Applies to Local and Remote modes. File mode is unencrypted (plain VMD on disk).
