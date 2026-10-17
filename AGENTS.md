@@ -453,6 +453,10 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
 - `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
   Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+- `supabaseBackend.ts`:
+  Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping, and the auth contract (deleteUser absent by design).
+- `cachedStore.ts`:
+  The offline-cache decorator (§4.7): Remote = `cached(encrypted(supabaseRaw), encrypted(slotRaw))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
   Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
 - `sync.ts`:
