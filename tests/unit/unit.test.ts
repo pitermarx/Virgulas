@@ -54,6 +54,12 @@ replay('store contract', storeContract.sections)
 const encryptedStore = await import('./suites/encryptedStoreTests.js')
 replay('encrypted store', encryptedStore.sections)
 
+const supabaseBackend = await import('./suites/supabaseBackendTests.js')
+replay('supabase backend', supabaseBackend.sections)
+
+const cachedStore = await import('./suites/cachedStoreTests.js')
+replay('cached store', cachedStore.sections)
+
 const meta = await import('./suites/metaTests.js')
 replay('meta', meta.sections)
 
