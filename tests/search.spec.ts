@@ -193,19 +193,17 @@ test.describe('Search', () => {
 
     await page.keyboard.press('Tab');
 
-    const selectedBeforeChange = await page.evaluate(async () => {
-      const { currentSearchMatchId } = (await import('/js/app.js' as string)).e2e;
-      return currentSearchMatchId.value;
-    });
-    expect(selectedBeforeChange).toBe('2');
+    // The current match is the search result highlighted with the
+    // search-current colour; read it from what rendered instead of the
+    // model's current-search-match signal through the e2e seam.
+    const highlightedId = () => page.evaluate(() =>
+      document.querySelector('.node-content[style*="--color-search-current"]')?.getAttribute('data-node-id') ?? null
+    );
+    expect(await highlightedId()).toBe('2');
 
     await searchInput.fill('Child Match');
 
-    const currentMatchId = await page.evaluate(async () => {
-      const { currentSearchMatchId } = (await import('/js/app.js' as string)).e2e;
-      return currentSearchMatchId.value;
-    });
-    expect(currentMatchId).toBe('1.1');
+    expect(await highlightedId()).toBe('1.1');
   });
 
   test('Escape toggles search closed', async ({ page }) => {

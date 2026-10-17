@@ -355,7 +355,7 @@ test.describe('Zoom', () => {
     await expect(newInput).toBeFocused();
   });
 
-  test('breadcrumb text reacts when zoomed node text changes', async ({ page }) => {
+  test('breadcrumb text reflects a renamed parent when zoomed back in', async ({ page }) => {
     const parent = page.locator('.node-content').nth(0);
     await parent.click();
     await page.keyboard.press('Alt+ArrowRight');
@@ -363,12 +363,21 @@ test.describe('Zoom', () => {
     const activeBreadcrumb = page.locator('.breadcrumbs span').nth(1);
     await expect(activeBreadcrumb).toHaveText('Parent');
 
-    await page.evaluate(async () => {
-      const outline = (await import('/js/app.js' as string)).e2e.outline;
-      outline.update('1', { text: 'Parent Renamed' });
-    });
+    // Zoomed nodes are not directly editable (see the neighbouring test), so
+    // rename through the UI: zoom out to the root via the breadcrumb, focus the
+    // parent, type the new text, then zoom back in and confirm the breadcrumb
+    // picked up the rename.
+    await page.locator('.breadcrumbs span').nth(0).click();
 
-    await expect(activeBreadcrumb).toHaveText('Parent Renamed');
+    await page.locator('[data-node-id="1"]').click();
+    const parentInput = page.locator('[data-node-id="1"] input');
+    await expect(parentInput).toBeVisible();
+    await parentInput.fill('Parent Renamed');
+    await parentInput.blur();
+
+    await page.locator('[data-node-id="1"]').click();
+    await page.keyboard.press('Alt+ArrowRight');
+    await expect(page.locator('.breadcrumbs span').nth(1)).toHaveText('Parent Renamed');
   });
 
   test('zoomed node text is not directly editable', async ({ page }) => {

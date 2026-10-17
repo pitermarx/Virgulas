@@ -121,12 +121,8 @@ test.describe('Service worker offline shell', () => {
         // The offline shell and fonts caches exist before the purge.
         expect(await virgulasCacheCount()).toBeGreaterThan(0);
 
-        // Purge through the running app singleton, exactly as the Options →
-        // "Delete local data" and mode-switch paths do.
-        await page.evaluate(async () => {
-            const mod = (await import('/js/app.js' as string)).e2e as { persistence: { clearLocalData(): void } };
-            mod.persistence.clearLocalData();
-        });
+        // Purge through the actual Options → "Delete local data" UI path.
+        await purgeViaOptions(page);
 
         // clearAppCaches runs best-effort; poll until every virgulas cache is gone.
         await expect.poll(virgulasCacheCount, { timeout: 10000 }).toBe(0);
@@ -146,12 +142,8 @@ test.describe('Service worker offline shell', () => {
             localStorage.setItem('vmd_theme', 'dark');
         });
 
-        // Purge through the running app singleton, exactly as the Options →
-        // "Delete local data" path does.
-        await page.evaluate(async () => {
-            const mod = (await import('/js/app.js' as string)).e2e as { persistence: { reset(): void } };
-            mod.persistence.reset();
-        });
+        // Purge through the actual Options → "Delete local data" UI path.
+        await purgeViaOptions(page);
 
         const state = await page.evaluate(() => ({
             residual: ['vmd_sync_ts', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue']
@@ -161,6 +153,17 @@ test.describe('Service worker offline shell', () => {
         expect(state.residual).toEqual([]);
         expect(state.theme).toBe('dark');
     });
+
+    // Runs the purging UI path: Options → "Delete local data", accepting the
+    // confirm dialog. This drives the same code the user triggers instead of
+    // reaching into the persistence module through the e2e seam.
+    async function purgeViaOptions(page: Page) {
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.getByRole('button', { name: 'Options' }).click();
+        await page.getByRole('button', { name: 'Delete local data' }).click();
+        // The purge finishes by booting memory mode.
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    }
 
     // Registers the service worker and waits until it controls the page, so the
     // fetch handler is guaranteed to intercept the navigations below.

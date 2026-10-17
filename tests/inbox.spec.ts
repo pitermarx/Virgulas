@@ -8,20 +8,6 @@ async function visibleNodeTexts(page: import('@playwright/test').Page) {
   }));
 }
 
-/** Children of the Inbox node as stored in the model (raw markdown, not rendered). */
-async function inboxNodeEntries(page: import('@playwright/test').Page) {
-  return page.evaluate(async () => {
-    const { outline } = (await import('/js/app.js' as string)).e2e;
-    const root = outline.get('root')!;
-    const inboxId = root.children.peek().find((id: string) => outline.get(id)!.text.peek() === 'Inbox');
-    if (!inboxId) return [];
-    return outline.get(inboxId)!.children.peek().map((id: string) => ({
-      text: outline.get(id)!.text.peek(),
-      description: outline.get(id)!.description.peek()
-    }));
-  });
-}
-
 async function setupEmptyLocalDoc(page: import('@playwright/test').Page) {
   await setupDoc(page, {
     id: 'root',
@@ -105,9 +91,14 @@ test.describe('Quick capture inbox', () => {
     await page.goto('/');
     await unlockApp(page);
 
-    await expect.poll(() => inboxNodeEntries(page)).toEqual([
-      { text: '[Buy milk](https://example.com)', description: 'Remember to buy milk' }
-    ]);
+    // Assert through what rendered: the captured title shows as a markdown
+    // link and the selection text as the node's rendered description.
+    const link = page.locator('.node-text-md a[href="https://example.com"]');
+    await expect.poll(async () => link.count()).toBe(1);
+    await expect(link).toHaveText('Buy milk');
+
+    const entryNode = link.locator('xpath=ancestor::div[contains(@class,"node-content")]');
+    await expect(entryNode.locator('.node-desc-md')).toHaveText('Remember to buy milk');
   });
 
   test('quick capture shortcut opens a prompt that can be used while locked', async ({ page }) => {

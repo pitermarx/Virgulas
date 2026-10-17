@@ -1,4 +1,4 @@
-import { test, expect } from './test';
+import { test, expect, parentViaDom } from './test';
 import { setupDoc } from './test';
 
 test.describe('Keyboard', () => {
@@ -223,23 +223,24 @@ test.describe('Keyboard', () => {
     await page.locator('[data-node-id="B"]').click();
     await page.keyboard.press('Tab'); // INDENT B
 
-    const structure = await page.evaluate(async () => {
-      const outlineModulePath: string = '/js/app.js';
-      const outline = (await import(outlineModulePath)).e2e.outline;
-      return {
-        rootChildren: outline.get('root')?.children.peek() || [],
-        aChildren: outline.get('A')?.children.peek() || [],
-        bChildren: outline.get('B')?.children.peek() || [],
-        cParent: outline.get('C')?.parentId || null,
-        bParent: outline.get('B')?.parentId || null
-      };
-    });
+    // Hierarchy is asserted through the rendered DOM (children nesting plus a
+    // parent walk), so this follows what actually rendered instead of reading
+    // model internals through the test-only seam. The zoom root is not
+    // rendered as a row, so top-level children live directly under .outliner.
+    const childrenOf = (id: string) => page.evaluate((nodeId) => {
+      const content = document.querySelector(`[data-node-id="${nodeId}"]`);
+      return [...(content?.closest('.node')?.querySelectorAll(':scope > .children > .node > .node-content') ?? [])]
+        .map((el) => el.getAttribute('data-node-id'));
+    }, id);
+    const topLevelIds = () => page.evaluate(() =>
+      [...document.querySelectorAll('.outliner > .node > .node-content')].map((el) => el.getAttribute('data-node-id'))
+    );
 
-    expect(structure.rootChildren).toEqual(['A']);
-    expect(structure.aChildren).toEqual(['B']);
-    expect(structure.bChildren).toEqual(['C']);
-    expect(structure.bParent).toBe('A');
-    expect(structure.cParent).toBe('B');
+    expect(await topLevelIds()).toEqual(['A']);
+    expect(await childrenOf('A')).toEqual(['B']);
+    expect(await childrenOf('B')).toEqual(['C']);
+    expect(await parentViaDom(page, 'C')).toBe('B');
+    expect(await parentViaDom(page, 'A')).toBeNull();
   });
 
   test('Ctrl+Space toggles collapse on focused node', async ({ page }) => {

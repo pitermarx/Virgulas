@@ -143,6 +143,22 @@ async function encryptForSeed(text: string, passphrase: string, salt: string): P
 }
 
 /**
+ * Read a node's parent from the rendered DOM. The parent is the closest
+ * ``node`` wrapper that encloses the node's own wrapper, so this follows what
+ * actually rendered rather than reading model internals through the e2e seam.
+ */
+export async function parentViaDom(
+    page: import('@playwright/test').Page,
+    id: string
+): Promise<string | null> {
+    return page.evaluate((nodeId) => {
+        const content = document.querySelector(`[data-node-id="${nodeId}"]`);
+        const parentContent = content?.closest('.node')?.parentElement?.closest('.node')?.querySelector(':scope > .node-content');
+        return parentContent?.getAttribute('data-node-id') ?? null;
+    }, id);
+}
+
+/**
  * Shared test helper: encrypts a document in the runner, seeds it into storage
  * before the app boots, and unlocks via the UI.
  *
