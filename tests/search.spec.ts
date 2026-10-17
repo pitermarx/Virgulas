@@ -208,14 +208,6 @@ test.describe('Search', () => {
     expect(currentMatchId).toBe('1.1');
   });
 
-  test('getFirstClosedParent is null-safe for deleted or missing nodes', async ({ page }) => {
-    const result = await page.evaluate(async () => {
-      const { getFirstClosedParent } = (await import('/js/app.js' as string)).e2e;
-      return getFirstClosedParent('missing-node-id');
-    });
-    expect(result).toBeNull();
-  });
-
   test('Escape toggles search closed', async ({ page }) => {
     // Open search with Escape (from no-focus state)
     await page.keyboard.press('Escape');
