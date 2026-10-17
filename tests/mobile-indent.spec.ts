@@ -24,18 +24,30 @@ test.describe('Mobile swipe indentation', () => {
         });
     });
 
+    // The mobile layout renders the document flat (the DOM does not nest child
+    // nodes), so indentation is asserted through the visual x-offset: an
+    // indented node renders 16px further right than its unindented origin.
+    async function nodeX(page: Page, nodeId: string): Promise<number | null> {
+        return (await page.locator(`[data-node-id="${nodeId}"]`).boundingBox())?.x ?? null;
+    }
+
     test('swipe right indents and swipe left outdents', async ({ page }) => {
+        const flatX = await nodeX(page, 'B');
         await swipeNode(page, 'B', 120);
-        await expect.poll(() => getParentId(page, 'B')).toBe('A');
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1)
+            .toBeGreaterThan((flatX ?? 0) + 8);
 
         await swipeNode(page, 'B', -120);
-        await expect.poll(() => getParentId(page, 'B')).toBe('root');
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1).toBe(flatX);
     });
 
     test('swipe does not focus the swiped node', async ({ page }) => {
+        const flatX = await nodeX(page, 'B');
+
         // Swipe node B to indent it
         await swipeNode(page, 'B', 120);
-        await expect.poll(() => getParentId(page, 'B')).toBe('A');
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1)
+            .toBeGreaterThan((flatX ?? 0) + 8);
 
         // Node B should not be focused (no input visible inside node B)
         const nodeBInput = page.locator('[data-node-id="B"] input');
@@ -109,13 +121,6 @@ test.describe('Mobile swipe indentation', () => {
     });
 });
 
-async function getParentId(page: Page, nodeId: string): Promise<string | null> {
-    return page.evaluate(async ({ id }) => {
-        const outline = (await import('/js/app.js' as string)).e2e.outline;
-        const node = outline.get(id);
-        return node ? node.parentId : null;
-    }, { id: nodeId });
-}
 
 async function activeNodeId(page: Page): Promise<string | null> {
     return page.evaluate(() => {

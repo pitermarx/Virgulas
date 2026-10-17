@@ -1,4 +1,4 @@
-import { seedEncryptedDoc, setupDoc, submitUnlock, test, expect } from './test';
+import { setupDoc, submitUnlock, test, expect } from './test';
 
 // Follows https://specification.website. Covers the served behaviour of the
 // artifacts added for the crawl/discovery/security/a11y required tier.
@@ -99,12 +99,32 @@ test.describe('Website Specification — accessibility contract', () => {
     });
 
     test('a failed unlock announces the error and marks the input invalid', async ({ page }) => {
-        const doc = JSON.stringify({ modelVersion: 'v1', dataVersion: 0, nodes: [{ id: 'a', text: 'A' }] });
+        // Create the local document through the UI instead of seeding ciphertext
+        // via the e2e seam, which ships empty in production — this keeps the test
+        // runnable in daily.yml against virgulas.com.
+        // One-shot via sessionStorage: on this test's reload the script must not
+        // run again, or it would wipe the document created below and put the
+        // sheet back on the create-passphrase step (where the “wrong” passphrase
+        // would simply create a new document and unlock successfully).
+        await page.addInitScript(() => {
+            if (sessionStorage.getItem('vmd-spec-seed')) return;
+            sessionStorage.setItem('vmd-spec-seed', '1');
+            localStorage.clear();
+            localStorage.setItem('vmd_last_mode', 'local');
+        });
         await page.goto('/');
-        await seedEncryptedDoc(page, doc, 'right-passphrase');
-        await page.reload();
 
-        await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
+        await page.getByLabel('Create a passphrase').fill('right-passphrase');
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+        // Autosave is debounced: wait for the encrypted payload to persist
+        // before reloading, or the lock screen would re-open the create step.
+        await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_data_enc')))
+          .not.toBeNull();
+
+        // Reload back to the lock screen and submit a wrong passphrase.
+        await page.reload();
         await submitUnlock(page, 'wrong-passphrase');
 
         const error = page.locator('#auth-unlock-error');
