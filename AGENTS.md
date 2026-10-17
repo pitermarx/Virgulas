@@ -458,7 +458,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `cached(encrypted(supabaseRaw), encrypted(slotRaw))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Memory/File/Local data paths run through the storage seam (`encrypted(slotRaw(store.data), keySession)`, `codecStore(vmdCodec, fileStore(handle))`, `codecStore(jsonCodec, memoryStore())`); Remote keeps its legacy path until the remote cutover, and `localSaveFailed` surfaces failed local/file saves (data-06).
 - `sync.ts`:
   Remote sync protocol logic (timestamp checks, conflict-state signals, background upload scheduling) and the Supabase client. The merge algorithm itself lives in `merge.ts`; `mergeDocuments` is re-exported here for the e2e seam.
 - `crypto2.ts`:
