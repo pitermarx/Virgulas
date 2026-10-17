@@ -7,6 +7,7 @@ import { jsonCodec, vmdCodec } from '../../../source/js/docCodec.js'
 import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
 import { CorruptDocumentError } from '../../../source/js/outline.js'
 import { UnsupportedVersionError } from '../../../source/js/crypto2.js'
+import { StoreError } from '../../../source/js/storage.js'
 import {
     assert,
     assertEqual,
@@ -17,6 +18,14 @@ const harness = createAsyncSectionHarness({ beforeEach: () => outline.reset() })
 export const sections = harness.sections
 const section = harness.section
 const test = harness.test
+
+async function expectCodecError(fn: () => unknown, code: string, label: string, causeType?: Function) {
+    let threw: any = null
+    try { await fn() } catch (e) { threw = e }
+    assert(threw instanceof StoreError, `${label}: threw StoreError (got ${threw?.constructor?.name})`)
+    assertEqual(threw.code, code, `${label}: code`)
+    if (causeType) assert(threw.cause instanceof causeType, `${label}: cause preserved (two-channel)`)
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,55 +78,41 @@ await test('a doc produced by outline.serialize() parses and re-serializes ident
 
 section('jsonCodec — validation')
 
-await test('invalid JSON throws CorruptDocumentError', () => {
-    let threw: any = null
-    try { jsonCodec.parse('{ not json') } catch (e) { threw = e }
-    assert(threw instanceof CorruptDocumentError, 'CorruptDocumentError thrown')
+await test('invalid JSON throws invalid-document', () => {
+    expectCodecError(() => jsonCodec.parse('{ not json'), 'invalid-document', 'bad JSON', CorruptDocumentError)
 })
 
-await test('non-object top level throws CorruptDocumentError', () => {
+await test('non-object top level throws invalid-document', () => {
     for (const bad of ['[]', '"str"', 'null', '42']) {
-        let threw: any = null
-        try { jsonCodec.parse(bad) } catch (e) { threw = e }
-        assert(threw instanceof CorruptDocumentError, `CorruptDocumentError for ${bad}`)
+        expectCodecError(() => jsonCodec.parse(bad), 'invalid-document', `top level ${bad}`, CorruptDocumentError)
     }
 })
 
-await test('missing model version throws CorruptDocumentError', () => {
-    let threw: any = null
-    try { jsonCodec.parse('{"nodes":[]}') } catch (e) { threw = e }
-    assert(threw instanceof CorruptDocumentError, 'CorruptDocumentError thrown')
+await test('missing model version throws invalid-document', () => {
+    expectCodecError(() => jsonCodec.parse('{"nodes":[]}'), 'invalid-document', 'no model version', CorruptDocumentError)
 })
 
-await test('a future model version throws UnsupportedVersionError', () => {
-    let threw: any = null
-    try { jsonCodec.parse('{"modelVersion":"v2","nodes":[]}') } catch (e) { threw = e }
-    assert(threw instanceof UnsupportedVersionError, 'UnsupportedVersionError thrown')
+await test('a future model version throws unsupported-runtime', () => {
+    expectCodecError(() => jsonCodec.parse('{"modelVersion":"v2","nodes":[]}'), 'unsupported-runtime', 'future version', UnsupportedVersionError)
 })
 
-await test('a missing node list throws CorruptDocumentError', () => {
-    let threw: any = null
-    try { jsonCodec.parse('{"modelVersion":"v1"}') } catch (e) { threw = e }
-    assert(threw instanceof CorruptDocumentError, 'CorruptDocumentError thrown')
+await test('a missing node list throws invalid-document', () => {
+    expectCodecError(() => jsonCodec.parse('{"modelVersion":"v1"}'), 'invalid-document', 'no nodes', CorruptDocumentError)
 })
 
-await test('invalid node entries throw CorruptDocumentError', () => {
+await test('invalid node entries throw invalid-document', () => {
     for (const bad of [
         '{"modelVersion":"v1","nodes":[{}]}',
         '{"modelVersion":"v1","nodes":[{"id":1}]}',
         '{"modelVersion":"v1","nodes":["not an object"]]}',
         '{"modelVersion":"v1","nodes":[{"id":"a","children":"nope"}]}'
     ]) {
-        let threw: any = null
-        try { jsonCodec.parse(bad) } catch (e) { threw = e }
-        assert(threw instanceof CorruptDocumentError, `CorruptDocumentError for ${bad}`)
+        expectCodecError(() => jsonCodec.parse(bad), 'invalid-document', 'node entry', CorruptDocumentError)
     }
 })
 
-await test('a missing root node throws CorruptDocumentError', () => {
-    let threw: any = null
-    try { jsonCodec.parse('{"modelVersion":"v1","nodes":[{"id":"a","parentId":"root"}]}') } catch (e) { threw = e }
-    assert(threw instanceof CorruptDocumentError, 'CorruptDocumentError thrown')
+await test('a missing root node throws invalid-document', () => {
+    expectCodecError(() => jsonCodec.parse('{"modelVersion":"v1","nodes":[{"id":"a","parentId":"root"}]}'), 'invalid-document', 'no root', CorruptDocumentError)
 })
 
 // ─── vmdCodec — writer ───────────────────────────────────────────────────────
@@ -208,10 +203,8 @@ await test('description escape prefixes are stripped', () => {
     assertEqual(a.description, '- looks like a bullet\n+ also\n\\ double backslash', 'escapes stripped, lines joined')
 })
 
-await test('a description line before any node bullet throws', () => {
-    let threw: any = null
-    try { vmdCodec.parse('just a description') } catch (e) { threw = e }
-    assert(threw instanceof CorruptDocumentError, 'CorruptDocumentError thrown')
+await test('a description line before any node bullet throws invalid-document', () => {
+    expectCodecError(() => vmdCodec.parse('just a description'), 'invalid-document', 'stray description', CorruptDocumentError)
 })
 
 await test('round-trip: parse(serialize(doc)) reproduces the tree', () => {

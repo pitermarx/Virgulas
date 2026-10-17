@@ -14,15 +14,12 @@
 // else. Everything above this seam (stores, orchestration, UI) handles only
 // the OutlineDoc model — serialized text never crosses it.
 //
-// Note (review finding 4 of the storage-interface rollout): the design doc
-// specifies that parse failures throw StoreError('invalid-document'), but the
-// StoreError taxonomy arrives with the contracts module (PR 2a). Until then
-// these codecs throw the same typed errors the app already surfaces —
-// CorruptDocumentError and UnsupportedVersionError — so the mapping in PR 2a
-// is a pure re-wrap with the original error preserved as `cause`.
+// codecStore() lifts a StringStore into a DocStore: read → parse,
+// write → serialize, token passthrough.
 
 import { CorruptDocumentError, MODEL_VERSION } from './outline.js'
 import { UnsupportedVersionError } from './crypto2.js'
+import { StoreError, type DocStore, type StringStore } from './storage.js'
 
 /** A serialized document node — the shape outline.serialize() emits. */
 export interface OutlineNode {
@@ -48,7 +45,8 @@ export interface OutlineDoc {
 
 export interface DocCodec {
     serialize(doc: OutlineDoc): string
-    /** Validates; throws CorruptDocumentError / UnsupportedVersionError. */
+    /** Validates; throws StoreError('invalid-document' | 'unsupported-runtime'),
+     * with the underlying typed error preserved as `cause`. */
     parse(text: string): OutlineDoc
 }
 
@@ -63,33 +61,37 @@ export interface DocCodec {
  * stays there; the codec validates shape only.
  */
 function parseJsonDoc(text: string): OutlineDoc {
-    let obj: any
     try {
-        obj = JSON.parse(text)
-    } catch {
-        throw new CorruptDocumentError('The document is not valid JSON.')
+        return validateJsonDoc(JSON.parse(text))
+    } catch (error) {
+        if (error instanceof StoreError) throw error
+        throw new StoreError('invalid-document', 'The document is not valid JSON.', new CorruptDocumentError('The document is not valid JSON.'))
     }
+}
+
+function validateJsonDoc(obj: any): OutlineDoc {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-        throw new CorruptDocumentError()
+        throw new StoreError('invalid-document', 'The document is not a valid document object.', new CorruptDocumentError())
     }
     if (typeof obj.modelVersion !== 'string') {
-        throw new CorruptDocumentError('The document has no model version.')
+        throw new StoreError('invalid-document', 'The document has no model version.', new CorruptDocumentError('The document has no model version.'))
     }
     if (obj.modelVersion !== MODEL_VERSION) {
-        throw new UnsupportedVersionError(`This document uses unsupported model version ${obj.modelVersion}. Reload the app to get the latest version.`)
+        throw new StoreError('unsupported-runtime', `This document uses unsupported model version ${obj.modelVersion}. Reload the app to get the latest version.`,
+            new UnsupportedVersionError(`This document uses unsupported model version ${obj.modelVersion}. Reload the app to get the latest version.`))
     }
     if (!Array.isArray(obj.nodes)) {
-        throw new CorruptDocumentError('The document has an invalid node list.')
+        throw new StoreError('invalid-document', 'The document has an invalid node list.', new CorruptDocumentError('The document has an invalid node list.'))
     }
     for (const nodeData of obj.nodes) {
         if (!nodeData || typeof nodeData !== 'object' || Array.isArray(nodeData)
             || typeof nodeData.id !== 'string' || !nodeData.id
             || (nodeData.children !== undefined && !Array.isArray(nodeData.children))) {
-            throw new CorruptDocumentError('The document contains an invalid node.')
+            throw new StoreError('invalid-document', 'The document contains an invalid node.', new CorruptDocumentError('The document contains an invalid node.'))
         }
     }
     if (!obj.nodes.some((node: OutlineNode) => node.id === 'root')) {
-        throw new CorruptDocumentError('The document is missing its root node.')
+        throw new StoreError('invalid-document', 'The document is missing its root node.', new CorruptDocumentError('The document is missing its root node.'))
     }
     return obj
 }
@@ -198,7 +200,8 @@ function parseVmdDoc(text: string): OutlineDoc {
 
         // Description lines must belong to a previously parsed node.
         if (stack.length === 1) {
-            throw new CorruptDocumentError('Invalid VMD: each description line must belong to a node.')
+            throw new StoreError('invalid-document', 'Invalid VMD: each description line must belong to a node.',
+                new CorruptDocumentError('Invalid VMD: each description line must belong to a node.'))
         }
 
         const lastNode = stack[stack.length - 1].node
@@ -219,7 +222,8 @@ export const vmdCodec: DocCodec = {
     serialize(doc) {
         const byId = new Map(doc.nodes.map(node => [node.id, node]))
         const root = byId.get('root')
-        if (!root) throw new CorruptDocumentError('The document is missing its root node.')
+        if (!root) throw new StoreError('invalid-document', 'The document is missing its root node.',
+            new CorruptDocumentError('The document is missing its root node.'))
         let result = ''
         for (const childId of root.children || []) {
             const child = byId.get(childId)
@@ -228,4 +232,36 @@ export const vmdCodec: DocCodec = {
         return result
     },
     parse: parseVmdDoc
+}
+
+// ── codecStore — lift a StringStore into a DocStore (§4.6) ─────────────────
+
+/** Lifts a StringStore into a DocStore: read → parse, write → serialize,
+ * clear/exists/head and the lock lifecycle pass through untouched. */
+export function codecStore(codec: DocCodec, inner: StringStore): DocStore {
+    return {
+        async read() {
+            const text = await inner.read()
+            return text === null ? null : codec.parse(text)
+        },
+        write(doc) {
+            return inner.write(codec.serialize(doc))
+        },
+        clear() {
+            return inner.clear()
+        },
+        exists() {
+            return inner.exists()
+        },
+        async head() {
+            return inner.head?.() ?? null
+        },
+        async unlock(passphrase) {
+            await inner.unlock?.(passphrase)
+        },
+        async lock() {
+            await inner.lock?.()
+        },
+        capabilities: inner.capabilities
+    }
 }
