@@ -2,31 +2,18 @@ import { signal } from '@preact/signals'
 import { encrypt, decrypt } from './crypto2.js'
 import outline from './outline.js'
 import { log, store } from './utils.js'
+import { merge } from './merge.js'
+import type { NodeConflict } from './merge.js'
+import type { OutlineDoc, OutlineNode } from './docCodec.js'
 
-export interface SyncNode {
-    id: string
-    parentId?: string | null
-    text?: string
-    description?: string
-    children?: string[]
-    open?: boolean
-    done?: boolean | null
-    lastModified?: number
-    [key: string]: any
-}
+// Re-exported for the app/e2e seam and the unit suite: the merge algorithm
+// itself now lives in merge.ts (storage seam PR 1).
+export { mergeDocuments } from './merge.js'
 
-export interface SyncConflict {
-    nodeId: string
-    nodeText: string
-    field: string
-    localValue: any
-    remoteValue: any
-}
-
-export interface MergedDoc {
-    nodes: SyncNode[]
-    [key: string]: any
-}
+// Type aliases kept for the existing import surface (app.ts, ui.ts, specs).
+export type SyncNode = OutlineNode
+export type SyncConflict = NodeConflict
+export type MergedDoc = OutlineDoc
 
 export interface RemoteSyncAttempt {
     epoch: number
@@ -248,124 +235,6 @@ function isSupersededOwnRemoteUpdate(remoteTs: number) {
         && lastCompletedRemotePush.epoch < localWriteEpoch.peek()
 }
 
-// ── Merge algorithm ──────────────────────────────────────────────────────────
-
-/**
- * Merges two node arrays (local + remote) using per-node lastModified timestamps.
- *
- * @param {object[]} localNodes  - nodes from outline.serialize()
- * @param {object[]} remoteNodes - nodes decrypted from remote
- * @param {number}   lastSyncedAt - epoch ms of last successful sync (0 = never)
- * @returns {{ merged: object[], conflicts: object[] }}
- */
-export function mergeDocuments(localNodes: SyncNode[], remoteNodes: SyncNode[], lastSyncedAt: number): { merged: SyncNode[]; conflicts: SyncConflict[] } {
-    const localMap = new Map<string, SyncNode>(localNodes.map(n => [n.id, n]))
-    const remoteMap = new Map<string, SyncNode>(remoteNodes.map(n => [n.id, n]))
-
-    const merged: SyncNode[] = []
-    const conflicts: SyncConflict[] = []
-
-    const allIds = new Set([...localMap.keys(), ...remoteMap.keys()])
-
-    for (const id of allIds) {
-        const local = localMap.get(id)
-        const remote = remoteMap.get(id)
-
-        const localMod = local?.lastModified || 0
-        const remoteMod = remote?.lastModified || 0
-        const localChanged = localMod > lastSyncedAt
-        const remoteChanged = remoteMod > lastSyncedAt
-
-        // Root node is never deleted regardless of timestamps
-        if (id === 'root') {
-            const rootNode = local || remote
-            if (rootNode) merged.push(rootNode)
-            continue
-        }
-
-        if (local && !remote) {
-            // Only in local
-            if (localChanged) merged.push(local)      // added locally → keep
-            // else: deleted remotely → omit
-            continue
-        }
-
-        if (!local && remote) {
-            // Only in remote
-            if (remoteChanged) merged.push(remote)    // added remotely → keep
-            // else: deleted locally → omit
-            continue
-        }
-
-        // Both exist
-        if (!local || !remote) continue
-        if (localChanged && !remoteChanged) {
-            merged.push(local)
-        } else if (!localChanged && remoteChanged) {
-            merged.push(remote)
-        } else if (!localChanged && !remoteChanged) {
-            merged.push(local)
-        } else {
-            // Both modified → per-field comparison
-            const mergedNode = { ...local }
-
-            // open: last-writer-wins, never a conflict
-            mergedNode.open = localMod >= remoteMod ? local.open : remote.open
-            mergedNode.lastModified = Math.max(localMod, remoteMod)
-
-            // text
-            if ((local.text || '') !== (remote.text || '')) {
-                conflicts.push({
-                    nodeId: id,
-                    nodeText: local.text || remote.text || '',
-                    field: 'text',
-                    localValue: local.text || '',
-                    remoteValue: remote.text || ''
-                })
-            }
-
-            // description
-            if ((local.description || '') !== (remote.description || '')) {
-                conflicts.push({
-                    nodeId: id,
-                    nodeText: local.text || remote.text || '',
-                    field: 'description',
-                    localValue: local.description || '',
-                    remoteValue: remote.description || ''
-                })
-            }
-
-            // children (compare as JSON string)
-            const localChildren = JSON.stringify(local.children || [])
-            const remoteChildren = JSON.stringify(remote.children || [])
-            if (localChildren !== remoteChildren) {
-                conflicts.push({
-                    nodeId: id,
-                    nodeText: local.text || remote.text || '',
-                    field: 'children',
-                    localValue: local.children || [],
-                    remoteValue: remote.children || []
-                })
-            }
-
-            merged.push(mergedNode)
-        }
-    }
-
-    // Validate tree integrity: drop nodes whose parent is not present
-    const mergedIds = new Set(merged.map(n => n.id))
-    const valid = merged.filter(n => {
-        if (n.id === 'root') return true
-        if (!mergedIds.has(n.parentId ?? '')) {
-            log(`[Sync] Node ${n.id} has missing parent ${n.parentId}, dropping from merge`)
-            return false
-        }
-        return true
-    })
-
-    return { merged: valid, conflicts }
-}
-
 // ── lastSyncedAt helpers ─────────────────────────────────────────────────────
 
 export function getLastSyncedAt() {
@@ -424,21 +293,16 @@ export async function pullAndMerge(passphrase: string, salt: string) {
     const localObj = JSON.parse(localJson)
 
     const lastSyncedAt = getLastSyncedAt()
-    const { merged, conflicts } = mergeDocuments(
-        localObj.nodes,
-        remoteObj.nodes,
-        lastSyncedAt
-    )
+    const result = merge(localObj, remoteObj, lastSyncedAt)
 
-    if (conflicts.length > 0) {
-        pendingConflicts.value = conflicts
-        pendingMergedDoc.value = { ...localObj, nodes: merged }
+    if (result.kind === 'conflict') {
+        pendingConflicts.value = result.conflicts
+        pendingMergedDoc.value = result.partial
         pendingConflictResolutions.value = new Map()
         return { clean: false, mergedJson: null }
     }
 
-    const mergedObj = { ...localObj, nodes: merged }
-    return { clean: true, mergedJson: JSON.stringify(mergedObj) }
+    return { clean: true, mergedJson: JSON.stringify(result.doc) }
 }
 
 /**

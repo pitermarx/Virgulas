@@ -42,6 +42,12 @@ replay('sync', sync.sections)
 const syncHelpers = await import('./suites/syncHelpersTests.js')
 replay('sync helpers', syncHelpers.sections)
 
+const merge = await import('./suites/mergeTests.js')
+replay('merge', merge.sections)
+
+const docCodec = await import('./suites/docCodecTests.js')
+replay('doc codec', docCodec.sections)
+
 const meta = await import('./suites/metaTests.js')
 replay('meta', meta.sections)
 

@@ -16,6 +16,7 @@ Companion documents:
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | Open security work |
 | [`source/.well-known/security.txt`](./source/.well-known/security.txt) | Deployed security policy: how to report, and accepted risks |
 | [`docs/review/README.md`](./docs/review/README.md) | Review findings and the ordered roadmap (not tickets yet) |
+| [`docs/storage-interface.md`](./docs/storage-interface.md) | Storage seam design: DocStore/RawStore contracts, codecs, rollout plan |
 
 The public site follows [The Website Specification](https://specification.website). The
 compliance notes (edge security headers, crawl and discovery files, the privacy and 404 pages,
@@ -78,7 +79,7 @@ Do not create files outside these locations without explicit instruction:
 ```
 /
 ├── .github/workflows/      — ci.yml (test, db publish, release, deploy), daily.yml
-├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png, review/ (findings and roadmap)
+├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png, review/ (findings and roadmap), storage-interface.md (storage seam design)
 ├── scripts/                — build, cache-bump, hooks, release, serve, CSP + edge-header helpers
 ├── source/
 │   ├── index.html          — HTML entry point (loads js/app.js + js/app.css)
@@ -442,10 +443,14 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Keyboard interaction and focus/navigation behaviour (including search key handling).
 - `outline.ts`:
   Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+- `docCodec.ts`:
+  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format) — pure codecs over `outline.ts` semantics.
+- `merge.ts`:
+  Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
 - `persistence.ts`:
   Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
 - `sync.ts`:
-  Remote sync protocol logic (timestamp checks, merge/conflict resolution, background upload scheduling) and the Supabase client.
+  Remote sync protocol logic (timestamp checks, conflict-state signals, background upload scheduling) and the Supabase client. The merge algorithm itself lives in `merge.ts`; `mergeDocuments` is re-exported here for the e2e seam.
 - `crypto2.ts`:
   Cryptographic primitives and key derivation (Web Crypto only).
 - `markdown.ts`:
