@@ -1484,7 +1484,7 @@ const Splash = () => {
 
     ${ready && html`
     <div class="app-shell">
-      <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
+      <div class=${`main-view ${isLocked || wizardOverlay.value ? 'is-locked' : ''}`}>
         <main class="main-content" id="main-content" tabindex="-1"
           inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
           <${MainToolbar} banner=${html`
