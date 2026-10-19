@@ -1,7 +1,7 @@
 import { html } from 'htm/preact';
 import { signal, computed, effect } from '@preact/signals';
 import outline from "./outline.js"
-import persistence from './persistence.js';
+import persistence, { localSaveFailed } from './persistence.js';
 import { renderInlineMarkdown, renderBlockMarkdown } from './markdown.js';
 import { log, isMobile, store, appVersion } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen } from './shortcuts.js';
@@ -589,13 +589,16 @@ export function StatusToolbar() {
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     const syncState = mode === 'remote'
         ? syncStatus.value
-        : (outline.isDirty ? 'unsynced' : 'synced')
-    const dotColors = {
+        : localSaveFailed.value
+            ? 'save-failed'
+            : (outline.isDirty ? 'unsynced' : 'synced')
+    const dotColors: Record<string, string> = {
         synced: 'var(--color-synced)',
         syncing: 'var(--color-syncing)',
         error: 'var(--color-danger)',
         offline: 'var(--color-offline)',
-        unsynced: 'var(--color-danger)'
+        unsynced: 'var(--color-danger)',
+        'save-failed': 'var(--color-danger)'
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
     const pendingCount = pendingTaskCount.value

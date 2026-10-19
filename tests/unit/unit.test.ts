@@ -42,6 +42,24 @@ replay('sync', sync.sections)
 const syncHelpers = await import('./suites/syncHelpersTests.js')
 replay('sync helpers', syncHelpers.sections)
 
+const merge = await import('./suites/mergeTests.js')
+replay('merge', merge.sections)
+
+const docCodec = await import('./suites/docCodecTests.js')
+replay('doc codec', docCodec.sections)
+
+const storeContract = await import('./suites/storeContractTests.js')
+replay('store contract', storeContract.sections)
+
+const encryptedStore = await import('./suites/encryptedStoreTests.js')
+replay('encrypted store', encryptedStore.sections)
+
+const supabaseBackend = await import('./suites/supabaseBackendTests.js')
+replay('supabase backend', supabaseBackend.sections)
+
+const cachedStore = await import('./suites/cachedStoreTests.js')
+replay('cached store', cachedStore.sections)
+
 const meta = await import('./suites/metaTests.js')
 replay('meta', meta.sections)
 

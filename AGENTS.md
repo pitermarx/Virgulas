@@ -16,6 +16,7 @@ Companion documents:
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | Open security work |
 | [`source/.well-known/security.txt`](./source/.well-known/security.txt) | Deployed security policy: how to report, and accepted risks |
 | [`docs/review/README.md`](./docs/review/README.md) | Review findings and the ordered roadmap (not tickets yet) |
+| [`docs/storage-interface.md`](./docs/storage-interface.md) | Storage seam design: DocStore/RawStore contracts, codecs, rollout plan |
 
 The public site follows [The Website Specification](https://specification.website). The
 compliance notes (edge security headers, crawl and discovery files, the privacy and 404 pages,
@@ -78,7 +79,7 @@ Do not create files outside these locations without explicit instruction:
 ```
 /
 ├── .github/workflows/      — ci.yml (test, db publish, release, deploy), daily.yml
-├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png, review/ (findings and roadmap)
+├── docs/                   — SPEC.vmd, VMD.md, design.md, SECURITY.md, demo.png, review/ (findings and roadmap), storage-interface.md (storage seam design)
 ├── scripts/                — build, cache-bump, hooks, release, serve, CSP + edge-header helpers
 ├── source/
 │   ├── index.html          — HTML entry point (loads js/app.js + js/app.css)
@@ -386,7 +387,7 @@ before any document work happens.
 - The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; legacy payloads are raw base64 and
   decrypt at 310,000 iterations. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
   AES-GCM-256, and a normal save re-encrypts an older envelope at the current parameters.
-- The derived key is cached for the unlocked session, so autosave does not re-run the KDF.
+- The derived key is cached for the unlocked session, so autosave does not re-run the KDF. The cache is multi-entry (bounded LRU) keyed by (passphrase, salt, iterations) so alternating salts cost one derivation each.
 - `biometrics.ts` may wrap the passphrase behind WebAuthn for device unlock. That wrapping key
   never encrypts the document (Rule 7).
 
@@ -442,10 +443,24 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Keyboard interaction and focus/navigation behaviour (including search key handling).
 - `outline.ts`:
   Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+- `docCodec.ts`:
+  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format) — pure codecs over `outline.ts` semantics.
+- `merge.ts`:
+  Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
+- `storage.ts`:
+  Storage seam contracts (see `docs/storage-interface.md`): `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, `StoreCapabilities`, and the two-channel `StoreError` taxonomy. Contracts only — adapters import this module, never the reverse.
+- `encryptedStore.ts`:
+  The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
+- `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
+  Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+- `supabaseBackend.ts`:
+  Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping, and the auth contract (deleteUser absent by design).
+- `cachedStore.ts`:
+  The offline-cache decorator (§4.7): Remote = `cached(encrypted(supabaseRaw), encrypted(slotRaw))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Memory/File/Local data paths run through the storage seam (`encrypted(slotRaw(store.data), keySession)`, `codecStore(vmdCodec, fileStore(handle))`, `codecStore(jsonCodec, memoryStore())`); Remote keeps its legacy path until the remote cutover, and `localSaveFailed` surfaces failed local/file saves (data-06).
 - `sync.ts`:
-  Remote sync protocol logic (timestamp checks, merge/conflict resolution, background upload scheduling) and the Supabase client.
+  Remote sync protocol logic (timestamp checks, conflict-state signals, background upload scheduling) and the Supabase client. The merge algorithm itself lives in `merge.ts`; `mergeDocuments` is re-exported here for the e2e seam.
 - `crypto2.ts`:
   Cryptographic primitives and key derivation (Web Crypto only).
 - `markdown.ts`:
