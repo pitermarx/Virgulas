@@ -91,10 +91,19 @@ function mapTrailbaseError(status: number, json: any): StoreError {
 }
 
 async function parseJson(response: Response): Promise<any> {
+    let text = ''
     try {
-        return await response.json()
+        text = await response.text()
     } catch {
         return null
+    }
+    if (!text) return null
+    try {
+        return JSON.parse(text)
+    } catch {
+        // TrailBase answers some validation failures with plain text (e.g. the
+        // register password policy: "Password too short") — surface the text.
+        return { error: text }
     }
 }
 
@@ -259,6 +268,12 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
             // TrailBase's register NEVER signs the user in, and reports success
             // even when the account already exists (anti-enumeration). The
             // user always follows up with a sign-in (session: false, §4.5).
+            // TrailBase's default password policy requires 8 characters (the
+            // instance may configure more); save the round-trip for the common
+            // miss and say so in the same words the server would.
+            if (password.length < 8) {
+                throw new StoreError('invalid-document', 'Password too short — use at least 8 characters.')
+            }
             const response = await rawFetch(config, '/api/auth/v1/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

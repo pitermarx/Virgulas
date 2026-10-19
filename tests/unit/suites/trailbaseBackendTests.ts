@@ -25,10 +25,12 @@ interface FetchCall {
 
 interface FakeRoute {
     // Returns the response; when a function, receives the parsed request body.
-    respond: (body: any, call: FetchCall) => { status: number; json?: any } | { status: number; json?: any }[]
+    respond: (body: any, call: FetchCall) => { status: number; json?: any; text?: string } | { status: number; json?: any; text?: string }[]
 }
 
-function fakeFetch(routes: Array<(call: FetchCall) => { status: number; json?: any } | null> = []) {
+type FakeResponse = { status: number; json?: any; text?: string }
+
+function fakeFetch(routes: Array<(call: FetchCall) => FakeResponse | null> = []) {
     const calls: FetchCall[] = []
     const original = globalThis.fetch
     globalThis.fetch = (async (input: any, init?: any): Promise<Response> => {
@@ -42,7 +44,10 @@ function fakeFetch(routes: Array<(call: FetchCall) => { status: number; json?: a
         for (const route of routes) {
             const result = route(call)
             if (result) {
-                return new Response(result.json ? JSON.stringify(result.json) : null, { status: result.status })
+                // `text` answers with a plain-text body (TrailBase's validation
+                // failures), `json` with an application/json body.
+                const body = result.text !== undefined ? result.text : (result.json ? JSON.stringify(result.json) : null)
+                return new Response(body, { status: result.status, headers: result.text !== undefined ? { 'Content-Type': 'text/plain' } : undefined })
             }
         }
         return new Response(null, { status: 404 })
@@ -100,6 +105,33 @@ await test('login exchanges credentials for tokens, persists the session and rep
     } finally {
         fetcher.restore()
         store.backendSession.del()
+    }
+})
+
+await test('sign-up below the 8-char minimum is rejected without a round-trip', async () => {
+    const fetcher = fakeFetch([
+        (call) => call.url.endsWith('/api/auth/v1/register') ? { status: 200, json: {} } : null
+    ])
+    try {
+        const auth = trailbaseAuth(CONFIG)
+        const error = await expectStoreError(() => auth.signUp('u@example.com', 'test'), 'invalid-document', 'short password')
+        assert(error.message.includes('at least 8 characters'), `friendly message (got: ${error.message})`)
+        assertEqual(fetcher.calls.length, 0, 'no network round-trip for the common miss')
+    } finally {
+        fetcher.restore()
+    }
+})
+
+await test('a plain-text 400 (password policy) surfaces the server\'s own words', async () => {
+    const fetcher = fakeFetch([
+        (call) => call.url.endsWith('/api/auth/v1/register') ? { status: 400, text: 'Password too short' } : null
+    ])
+    try {
+        const auth = trailbaseAuth(CONFIG)
+        const error = await expectStoreError(() => auth.signUp('u@example.com', 'longenough1'), 'network', 'policy 400')
+        assert(error.message === 'Password too short', `the server's text is the message (got: ${error.message})`)
+    } finally {
+        fetcher.restore()
     }
 })
 
