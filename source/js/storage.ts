@@ -132,7 +132,9 @@ export interface StringStore {
     clear(): Promise<void>
     exists(): Promise<boolean>
     head?(): Promise<string | null>
-    unlock?(passphrase: string): Promise<void>   // throws StoreError('wrong-key')
+    /** Encrypted stores verify the passphrase by decrypting (one round-trip)
+     * and resolve with an UnlockResult; plain stores never expose unlock. */
+    unlock?(passphrase: string): Promise<UnlockResult | void>
     lock?(): Promise<void>
     capabilities: StoreCapabilities
 }
@@ -172,6 +174,17 @@ export interface RawStore {
      * polling only.
      */
     watch?(emit: (token: string) => void): () => void
+}
+
+// ── Unlock result (§4.3) ─────────────────────────────────────────────────
+
+/** What a successful encrypted unlock reports: the decrypted at-rest text
+ * (null when the store was empty — first-time setup adoption) and the
+ * downloaded record's own change token, so the orchestration can adopt exactly
+ * the state it loaded. One round-trip: no separate read. */
+export interface UnlockResult {
+    text: string | null
+    headToken: string | null
 }
 
 // ── AuthProvider — complete auth contract (§4.5) ─────────────────────────────

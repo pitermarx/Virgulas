@@ -165,13 +165,32 @@ function slot(key: string) {
     }
 }
 
+/**
+ * Backend configuration slot (storage seam, docs §8): the config moves to
+ * `backendconfig`, with a one-time read-through of the legacy
+ * `supabaseconfig` key so existing browsers keep working without migration.
+ */
+function backendSlot() {
+    const next = slot('backendconfig')
+    const legacy = slot('supabaseconfig')
+    return {
+        get(fallback: string | null = null): string | null {
+            return next.get() ?? legacy.get() ?? fallback
+        },
+        set: next.set,
+        del: next.del
+    }
+}
+
 export const store = {
     theme: slot('vmd_theme'),
     mode: slot('vmd_last_mode'),
     user: slot('vmd_last_username'),
     data: slot('vmd_data_enc'),
+    backend: backendSlot(),
     supabase: slot('supabaseconfig'),
     syncTs: slot('vmd_sync_ts'),
+    syncHead: slot('vmd_sync_head'),
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
     inboxQueue: slot('vmd_inbox_queue'),

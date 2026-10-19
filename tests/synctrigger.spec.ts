@@ -30,12 +30,13 @@ const installMock = async (page: Page) => {
         signInWithPassword: async ({ email }: any) => { session.user = { id: 'u1', email }; return { data: { user: session.user }, error: null }; },
         signUp: async ({ email }: any) => { session.user = { id: 'u1', email }; return { data: { user: session.user, session: {} }, error: null }; },
         signOut: async () => { session.user = null; return { error: null }; },
+        getSession: async () => ({ data: { session: session.user ? { user: session.user } : null }, error: null }),
         getUser: async () => ({ data: { user: session.user }, error: null }),
       },
       from: () => builder,
     };
     Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => {} });
-    localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+    localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
   });
 };
 

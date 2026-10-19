@@ -54,6 +54,7 @@ const installMockSupabase = async (page: Page, options?: {
           sessionState.user = null;
           return { error: null };
         },
+        getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
         getUser: async () => ({ data: { user: sessionState.user }, error: null })
       },
       from: () => queryBuilder
@@ -67,7 +68,7 @@ const installMockSupabase = async (page: Page, options?: {
       set: () => { }
     });
 
-    localStorage.setItem('supabaseconfig', JSON.stringify({
+    localStorage.setItem('backendconfig', JSON.stringify({
       url: 'http://127.0.0.1:54321',
       key: 'anon'
     }));

@@ -29,7 +29,7 @@ const DEFAULT_CONFIG = { url: 'https://gcpdascpdrakecpknrtt.supabase.co', key: '
 
 function readConfig() {
     try {
-        const raw = store.supabase.get()
+        const raw = store.backend.get()
         if (!raw) return DEFAULT_CONFIG
         const parsed = JSON.parse(raw)
         const url = parsed.url || parsed.supabaseUrl
@@ -83,11 +83,14 @@ function mapSupabaseError(error: any): StoreError {
     if (isRowNotFound(error)) {
         return new StoreError('not-found', 'No stored document on the server.', error)
     }
+    // The provider's own message is preserved (two-channel): the lock screen
+    // surfaces it verbatim for auth errors like invalid credentials.
+    const message = error?.message || 'The server could not be reached.'
     const status = error?.status
     if (status === 401 || status === 403) {
-        return new StoreError('unauthenticated', 'The session is not valid. Sign in again.', error)
+        return new StoreError('unauthenticated', message, error)
     }
-    return new StoreError('network', 'The server could not be reached.', error)
+    return new StoreError('network', message, error)
 }
 
 /** The locally cached session user (no network round-trip) — the uid source. */

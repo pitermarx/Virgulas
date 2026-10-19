@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { signal, effect } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen } from './shortcuts.js';
-import persistence, { RemoteDataDecryptError, type PersistenceMode } from './persistence.js';
+import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
@@ -253,6 +253,14 @@ effect(() => {
   const mode = persistence.getMode();
   if (locked || mode === 'memory') return;
   reconcileInbox();
+});
+
+// sync-01 (docs §4.4): the device locked itself because a pull met a remote
+// rotated on another device. Prompt for the new passphrase on the lock screen.
+effect(() => {
+  if (!remoteRekeyedNotice.value) return;
+  remoteRekeyedNotice.value = false;
+  unlockError.value = 'The passphrase was changed on another device. Enter the new passphrase to continue.';
 });
 
 async function refreshAccountInfo() {
@@ -558,7 +566,7 @@ async function submitUnlock(e: any) {
     unlockError.value = message;
     canResetLocalData.value = authMode.value === 'local'
       && (error instanceof CorruptEnvelopeError || error instanceof CorruptDocumentError);
-    canResetRemoteData.value = error instanceof RemoteDataDecryptError || error instanceof WrongPassphraseError;
+    canResetRemoteData.value = error instanceof WrongPassphraseError;
   } finally {
     isBusy.value = false;
   }

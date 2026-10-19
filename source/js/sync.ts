@@ -1,14 +1,17 @@
 import { signal } from '@preact/signals'
-import { encrypt, decrypt } from './crypto2.js'
 import outline from './outline.js'
 import { log, store } from './utils.js'
-import { merge } from './merge.js'
+import { merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
+import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
+import { StoreError, type DocStore } from './storage.js'
+import { ensureSupabaseClient, supabaseAuth, supabaseRaw } from './supabaseBackend.js'
+import type { AuthProvider } from './storage.js'
 
 // Re-exported for the app/e2e seam and the unit suite: the merge algorithm
-// itself now lives in merge.ts (storage seam PR 1).
-export { mergeDocuments } from './merge.js'
+// itself lives in merge.ts (storage seam PR 1).
+export { mergeDocuments }
 
 // Type aliases kept for the existing import surface (app.ts, ui.ts, specs).
 export type SyncNode = OutlineNode
@@ -26,59 +29,43 @@ export interface ConflictResolution {
     chosenSide: 'local' | 'remote'
 }
 
-// ── Supabase remote sync client ──────────────────────────────────────────────
+// ── Backend facade ───────────────────────────────────────────────────────────
+//
+// Client code lives in supabaseBackend.ts (docs/storage-interface.md §7): this
+// module keeps only scheduling, polling, backoff and status/conflict signals.
+// remoteSync is a thin auth/data facade over the backend adapters — no client
+// construction, no error-code mapping, no row payloads.
 
-const DEFAULT_CONFIG = { url: 'https://gcpdascpdrakecpknrtt.supabase.co', key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc' }
-let _client: any = null
-let _mainTable: any = null
+let _auth: AuthProvider | null = null
 
-function readConfig() {
-    try {
-        const raw = store.supabase.get()
-        if (!raw) return DEFAULT_CONFIG
-        const parsed = JSON.parse(raw)
-        const url = parsed.url || parsed.supabaseUrl
-        const key = parsed.key || parsed.supabaseAnonKey
-        if (!url || !key) return DEFAULT_CONFIG
-        return { url, key }
-    } catch {
-        return DEFAULT_CONFIG
-    }
+async function authProvider(): Promise<AuthProvider> {
+    if (!_auth) _auth = supabaseAuth(await ensureSupabaseClient())
+    return _auth
 }
 
-// Supabase is ~220KB minified and is only needed by users who actually chose
-// remote mode. It is loaded through a dynamic import so the bundler emits it as
-// a separate chunk: local/memory/file users never download or parse it, and
-// remote users fetch it off the critical startup path.
-type ClientFactory = (url: string, key: string, options?: any) => any
-
-let _clientFactory: ClientFactory | null = null
-
-async function loadClientFactory(): Promise<ClientFactory> {
-    if (_clientFactory) return _clientFactory
-
-    // Test seam. `__TEST_HOOKS__` is a build-time constant: `true` only in the
-    // Playwright bundle (`bun run dev:test`), `false` in production, where this
-    // branch is dropped entirely. Without the gate, any same-origin script could
-    // substitute the Supabase client and capture sign-in credentials or the
-    // session token.
-    if (typeof __TEST_HOOKS__ !== 'undefined' && __TEST_HOOKS__ && typeof window.supabase?.createClient === 'function') {
-        _clientFactory = window.supabase.createClient as ClientFactory
-        return _clientFactory
-    }
-
-    const { createClient } = await import('@supabase/supabase-js')
-    _clientFactory = createClient as ClientFactory
-    return _clientFactory
-}
-
-async function ensureClient() {
-    if (_client) return _client
-    const factory = await loadClientFactory()
-    const config = readConfig()
-    _client = factory(config.url, config.key, { realtime: { enabled: false } } as any)
-    _mainTable = _client.from('outlines')
-    return _client
+export const remoteSync = {
+    signIn: async (email: string, password: string) => (await authProvider()).signIn(email, password),
+    signUp: async (email: string, password: string) => (await authProvider()).signUp(email, password),
+    signOut: async () => (await authProvider()).signOut(),
+    getUser: async () => (await authProvider()).getUser(),
+    updatePassword: async (newPassword: string) => (await authProvider()).updatePassword(newPassword),
+    updateEmail: async (newEmail: string) => (await authProvider()).updateEmail(newEmail),
+    /**
+     * Deletes the signed-in user's own `outlines` row (RLS-scoped DELETE
+     * policy). This removes the encrypted document from the server. It cannot
+     * remove the `auth.users` record — that needs the service role and is out
+     * of reach of the browser client.
+     */
+    deleteOutline: async () => {
+        const raw = supabaseRaw(await ensureSupabaseClient())
+        await raw.clearRaw()
+    },
+    /**
+     * Raw row probe for boot: no decryption, no passphrase — only ever runs
+     * for a persisted Remote mode (the startup-path rule keeps it off everyone
+     * else's boot).
+     */
+    readRow: async () => supabaseRaw(await ensureSupabaseClient()).readRaw()
 }
 
 /**
@@ -88,55 +75,6 @@ async function ensureClient() {
  */
 export function hasSupabaseClient(): boolean {
     return true
-}
-
-async function withClient<T = any>(fn: (client: any) => Promise<{ data: T; error: any }>): Promise<T> {
-    const active = await ensureClient()
-    const { data, error } = await fn(active)
-    if (error && error.code !== 'PGRST116') throw error
-    return data
-}
-
-export const remoteSync = {
-    withClient,
-    signIn: (email: string, password: string) => withClient((c) => c.auth.signInWithPassword({ email, password })),
-    /**
-     * Creates an account. Supabase returns `{ user, session }`; when the project
-     * requires email confirmation, `session` is null and no session exists until
-     * the user confirms. Callers must treat that as "confirmation required"
-     * rather than "signed in".
-     */
-    signUp: (email: string, password: string) => withClient((c) => c.auth.signUp({ email, password })),
-    signOut: async () => {
-        const c = await ensureClient()
-        return c.auth.signOut()
-    },
-    getUser: () => withClient((c) => c.auth.getUser()).then(res => res?.user ?? null),
-    read: () => withClient(() => _mainTable.select('salt, data, updated_at').single()),
-    getLastUpdate: () => withClient(() => _mainTable.select('updated_at').single()),
-    upsert: async (data: string, salt: string | null, updatedAt = new Date().toISOString()) => {
-        const user = await remoteSync.getUser()
-        const payload: Record<string, any> = {
-            data,
-            updated_at: updatedAt,
-            user_id: user?.id
-        }
-        if (salt) payload.salt = salt
-        return withClient(() => _mainTable.upsert(payload, { onConflict: 'user_id' }))
-    },
-    updatePassword: (newPassword: string) => withClient((c) => c.auth.updateUser({ password: newPassword })),
-    updateEmail: (newEmail: string) => withClient((c) => c.auth.updateUser({ email: newEmail })),
-    /**
-     * Deletes the signed-in user's own `outlines` row (RLS-scoped DELETE policy).
-     * This removes the encrypted document from the server. It cannot remove the
-     * `auth.users` record — that needs the service role and is out of reach of
-     * the browser client.
-     */
-    deleteOutline: async () => {
-        const user = await remoteSync.getUser()
-        if (!user?.id) throw new Error('Not signed in. Sign in again before deleting your account.')
-        return withClient(() => _mainTable.delete().eq('user_id', user.id))
-    }
 }
 
 // ── Sync status + conflict signals ───────────────────────────────────────────
@@ -150,23 +88,45 @@ export const pendingConflictResolutions = signal<Map<string, 'local' | 'remote'>
 // sync/poll handlers so the persistence effect skips a redundant remote push.
 export const skipNextRemotePush = signal(false)
 
+// sync-01 (docs §4.4): a pull met a remote rotated on another device. The
+// session locks and prompts for the new passphrase instead of the next local
+// push silently reverting the rotation.
+export const remoteRekeyed = signal(false)
+
 const localWriteEpoch = signal(0)
 const remoteSyncNotBefore = signal(0)
 let remoteSyncQueue: Promise<any> = Promise.resolve()
-let lastCompletedRemotePush = { epoch: -1, updatedAt: 0 }
 
-// Internal stored credentials (set during remote unlock, cleared on sign-out)
-let _passphrase = ''
-let _salt = ''
+// ── Remote store injection (docs §6.4) ───────────────────────────────────────
+//
+// The orchestration (persistence.ts) constructs the cached() composition and
+// injects it here; every pull and push goes through the store, which owns the
+// codec and the crypto. Secrets never transit this module.
 
-export function setCredentials(passphrase: string, salt: string) {
-    _passphrase = passphrase
-    _salt = salt
+let _remoteStore: DocStore | null = null
+
+export function setRemoteStore(store: DocStore | null) {
+    _remoteStore = store
 }
 
-export function clearCredentials() {
-    _passphrase = ''
-    _salt = ''
+function requireRemoteStore(): DocStore {
+    if (!_remoteStore) throw new StoreError('unauthenticated', 'No remote session is active.')
+    return _remoteStore
+}
+
+// ── Head-token helpers (docs §8) ─────────────────────────────────────────────
+//
+// The opaque head() change token lives in vmd_sync_head; the numeric merge
+// baseline stays in vmd_sync_ts. Two clocks, two slots — the token is never
+// parsed as a timestamp.
+
+export function getLastSyncHead(): string | null {
+    return store.syncHead.get(null)
+}
+
+export function setSyncHead(token: string | null) {
+    if (token) store.syncHead.set(token)
+    else store.syncHead.del()
 }
 
 export function noteLocalWriteActivity(now = Date.now()) {
@@ -208,34 +168,13 @@ export function isRemoteSyncAttemptStale(attempt: RemoteSyncAttempt | null, now 
     return attempt.epoch !== localWriteEpoch.peek() || now < remoteSyncNotBefore.peek()
 }
 
-export function beginRemotePush(attempt: RemoteSyncAttempt | null, startedAt = Date.now()) {
-    if (attempt) {
-        attempt.startedAt = startedAt
-    }
-    return new Date(startedAt).toISOString()
-}
-
-export function recordCompletedRemotePush(attempt: RemoteSyncAttempt | null) {
-    if (!attempt?.startedAt) return
-    lastCompletedRemotePush = {
-        epoch: attempt.epoch,
-        updatedAt: attempt.startedAt
-    }
-}
-
 export function runExclusiveRemoteSync<T>(work: () => Promise<T>): Promise<T> {
     const run = remoteSyncQueue.then(work, work)
     remoteSyncQueue = run.catch(() => { })
     return run
 }
 
-function isSupersededOwnRemoteUpdate(remoteTs: number) {
-    return remoteTs > 0
-        && remoteTs <= lastCompletedRemotePush.updatedAt
-        && lastCompletedRemotePush.epoch < localWriteEpoch.peek()
-}
-
-// ── lastSyncedAt helpers ─────────────────────────────────────────────────────
+// ── lastSyncedAt helpers (the merge baseline clock) ──────────────────────────
 
 export function getLastSyncedAt() {
     return parseInt(store.syncTs.get('0') || '0') || 0
@@ -245,55 +184,49 @@ export function setLastSyncedAt(ts: number) {
     store.syncTs.set(String(ts))
 }
 
+// ── Typed-failure helper ─────────────────────────────────────────────────────
+
+/**
+ * Maps a failed sync step onto the status/notice surfaces. Returns true when
+ * the failure was handled here (the caller must not proceed with a push —
+ * in particular a remote-rekeyed pull is never followed by an upload).
+ */
+export function handleSyncFailure(error: unknown): boolean {
+    if (error instanceof StoreError && error.code === 'remote-rekeyed') {
+        // sync-01: never swallowed, never followed by a push.
+        remoteRekeyed.value = true
+        syncStatus.value = 'error'
+        return true
+    }
+    log('[Sync] sync step failed:', error)
+    syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+    return true
+}
+
 // ── Pull-before-push ─────────────────────────────────────────────────────────
 
 /**
- * Checks if the remote document is newer than our last sync.
- * @returns {Promise<boolean>}
- */
-export async function checkRemoteNewer(lastSyncedAt: number) {
-    try {
-        const remote = await remoteSync.getLastUpdate()
-        if (!remote?.updated_at) return false
-        const remoteTs = new Date(remote.updated_at).getTime()
-        if (isSupersededOwnRemoteUpdate(remoteTs)) return false
-        return remoteTs > lastSyncedAt
-    } catch {
-        return false
-    }
-}
-
-/**
- * Fetches remote data and merges with local doc.
- * Does NOT push and does NOT apply to the live outline.
- * Returns { clean: true, mergedJson: string | null } or { clean: false, mergedJson: null }.
- * When clean, mergedJson is the merged document JSON (or null if no merge was needed).
- * When !clean, pendingConflicts and pendingMergedDoc are set.
+ * Fetches the remote document through the store and merges it with the local
+ * doc. Does NOT push and does NOT apply to the live outline. Returns
+ * { clean: true, mergedJson: string | null } or { clean: false, mergedJson: null }.
+ * When clean, mergedJson is the merged document JSON (or null if no merge was
+ * needed). When !clean, pendingConflicts and pendingMergedDoc are set.
  *
- * @param {string} passphrase
- * @param {string} salt
+ * Decryption happens inside the store's session; a remote rotated on another
+ * device surfaces as a remote-rekeyed StoreError — deliberately NOT swallowed
+ * into a clean result (that was the sync-01 silent-overwrite bug).
  */
-export async function pullAndMerge(passphrase: string, salt: string) {
-    const remoteData = await remoteSync.read()
-    if (!remoteData?.data) {
+export async function pullAndMerge(): Promise<{ clean: boolean; mergedJson: string | null }> {
+    const remote = requireRemoteStore()
+
+    const remoteDoc = await remote.read()
+    if (!remoteDoc) {
         return { clean: true, mergedJson: null }
     }
 
-    const remoteSalt = remoteData.salt || salt
-    let remoteJson
-    try {
-        remoteJson = await decrypt(remoteData.data, passphrase, remoteSalt)
-    } catch (err) {
-        log('[Sync] Failed to decrypt remote data during pull-merge:', err)
-        return { clean: true, mergedJson: null } // can't merge, proceed with local
-    }
-
-    const remoteObj = JSON.parse(remoteJson)
-    const localJson = outline.serialize()
-    const localObj = JSON.parse(localJson)
-
+    const localDoc = jsonCodec.parse(outline.serialize())
     const lastSyncedAt = getLastSyncedAt()
-    const result = merge(localObj, remoteObj, lastSyncedAt)
+    const result = merge(localDoc, remoteDoc, lastSyncedAt)
 
     if (result.kind === 'conflict') {
         pendingConflicts.value = result.conflicts
@@ -302,7 +235,7 @@ export async function pullAndMerge(passphrase: string, salt: string) {
         return { clean: false, mergedJson: null }
     }
 
-    return { clean: true, mergedJson: JSON.stringify(result.doc) }
+    return { clean: true, mergedJson: jsonCodec.serialize(result.doc) }
 }
 
 /**
@@ -313,13 +246,7 @@ export async function resolveConflicts(resolutions: ConflictResolution[]) {
     const doc = pendingMergedDoc.peek()
     if (!doc) return
 
-    const passphrase = _passphrase
-    const salt = _salt
-
-    if (!passphrase || !salt) {
-        log('[Sync] resolveConflicts: missing credentials')
-        return
-    }
+    const remote = requireRemoteStore()
 
     // Build a map of chosen values per nodeId::field
     const choiceMap = new Map<string, 'local' | 'remote'>()
@@ -347,23 +274,22 @@ export async function resolveConflicts(resolutions: ConflictResolution[]) {
         return updated
     })
 
-    const mergedObj = { ...doc, nodes: updatedNodes }
-    const mergedJson = JSON.stringify(mergedObj)
+    const mergedObj: OutlineDoc = { ...doc, nodes: updatedNodes }
 
     try {
         syncStatus.value = 'syncing'
-        const encrypted = await encrypt(mergedJson, passphrase, salt)
-        await remoteSync.upsert(encrypted, salt)
+        const token = await remote.write(mergedObj)
+        if (token) setSyncHead(token)
         setLastSyncedAt(Date.now())
         syncStatus.value = 'synced'
     } catch (err) {
         log('[Sync] resolveConflicts push failed:', err)
-        syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+        handleSyncFailure(err)
     }
 
     // Apply merged doc locally; set flag so persistence effect skips the re-push
     skipNextRemotePush.value = true
-    outline.deserialize(mergedJson)
+    outline.deserialize(jsonCodec.serialize(mergedObj))
 
     pendingConflicts.value = []
     pendingMergedDoc.value = null
@@ -390,24 +316,24 @@ export function startPolling() {
             if (pendingConflicts.peek().length > 0) return
             if (!canStartRemoteSync() || isRemoteSyncAttemptStale(attempt)) return
 
-            const lastSyncedAt = getLastSyncedAt()
-            let isNewer = false
             try {
-                isNewer = await checkRemoteNewer(lastSyncedAt)
-            } catch {
-                return
-            }
+                const remote = requireRemoteStore()
 
-            if (!isNewer || isRemoteSyncAttemptStale(attempt)) return
+                // Change detection is the opaque head token, compared for
+                // inequality only. head() errors are treated as "no change".
+                let token: string | null = null
+                try {
+                    token = await remote.head?.() ?? null
+                } catch {
+                    return
+                }
+                if (!token || token === getLastSyncHead()) return
+                if (isRemoteSyncAttemptStale(attempt)) return
 
-            log('[Sync] Polling detected remote update, pulling...')
-            const passphrase = _passphrase
-            const salt = _salt
-            if (!passphrase || !salt) return
+                log('[Sync] Polling detected remote update, pulling...')
 
-            try {
                 syncStatus.value = 'syncing'
-                const result = await pullAndMerge(passphrase, salt)
+                const result = await pullAndMerge()
                 if (isRemoteSyncAttemptStale(attempt)) return
 
                 if (!result.clean) {
@@ -416,12 +342,13 @@ export function startPolling() {
                 }
 
                 if (result.mergedJson) {
-                    const encrypted = await encrypt(result.mergedJson, passphrase, salt)
+                    const mergedDoc = jsonCodec.parse(result.mergedJson)
+                    // Push the merged doc; write() resolves with the new head
+                    // token, which the poller adopts so it never re-pulls its
+                    // own update.
+                    const newToken = await remote.write(mergedDoc)
                     if (isRemoteSyncAttemptStale(attempt)) return
-                    const updatedAt = beginRemotePush(attempt)
-                    await remoteSync.upsert(encrypted, salt, updatedAt)
-                    recordCompletedRemotePush(attempt)
-                    if (isRemoteSyncAttemptStale(attempt)) return
+                    if (newToken) setSyncHead(newToken)
                     setLastSyncedAt(Date.now())
                     // Apply locally; flag prevents persistence effect re-push
                     skipNextRemotePush.value = true
@@ -432,7 +359,7 @@ export function startPolling() {
             } catch (err) {
                 if (isRemoteSyncAttemptStale(attempt)) return
                 log('[Sync] Poll pull failed:', err)
-                syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
+                handleSyncFailure(err)
             }
         })
     }, pollIntervalMs)

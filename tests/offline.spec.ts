@@ -146,7 +146,7 @@ test.describe('Service worker offline shell', () => {
         await purgeViaOptions(page);
 
         const state = await page.evaluate(() => ({
-            residual: ['vmd_sync_ts', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue']
+            residual: ['vmd_sync_ts', 'vmd_sync_head', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue']
                 .filter((key) => localStorage.getItem(key) !== null),
             theme: localStorage.getItem('vmd_theme'),
         }));

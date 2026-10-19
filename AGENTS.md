@@ -454,13 +454,13 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
   Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
 - `supabaseBackend.ts`:
-  Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping, and the auth contract (deleteUser absent by design).
+  Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping (provider messages preserved), and the auth contract (deleteUser absent by design).
 - `cachedStore.ts`:
-  The offline-cache decorator (§4.7): Remote = `cached(encrypted(supabaseRaw), encrypted(slotRaw))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
+  The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(supabaseRaw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Memory/File/Local data paths run through the storage seam (`encrypted(slotRaw(store.data), keySession)`, `codecStore(vmdCodec, fileStore(handle))`, `codecStore(jsonCodec, memoryStore())`); Remote keeps its legacy path until the remote cutover, and `localSaveFailed` surfaces failed local/file saves (data-06).
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. All four modes' data paths run through the storage seam — Remote is `cached(encrypted(supabaseRaw), encrypted(slotRaw))` over one shared KeySession; `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`.
 - `sync.ts`:
-  Remote sync protocol logic (timestamp checks, conflict-state signals, background upload scheduling) and the Supabase client. The merge algorithm itself lives in `merge.ts`; `mergeDocuments` is re-exported here for the e2e seam.
+  Remote sync scheduling: the background poll (head-token change detection against `vmd_sync_head`), typing-gate/epoch bookkeeping, backoff, status/conflict signals, and the thin `remoteSync` auth facade over `supabaseBackend`. No client code, no row payloads, no secrets — pulls and pushes go through the injected remote DocStore; the merge algorithm lives in `merge.ts` (`mergeDocuments` is re-exported for the e2e seam).
 - `crypto2.ts`:
   Cryptographic primitives and key derivation (Web Crypto only).
 - `markdown.ts`:

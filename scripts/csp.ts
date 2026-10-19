@@ -39,7 +39,7 @@ export function resolveSupabaseOrigin(sources: SupabaseOriginSources = {}): stri
     }
 }
 
-/** Reads the hosted default URL from the `DEFAULT_CONFIG` literal in source/js/sync.ts. */
+/** Reads the hosted default URL from the `DEFAULT_CONFIG` literal in source/js/supabaseBackend.ts. */
 export function extractDefaultSupabaseUrl(syncSource: string): string {
     const match = /DEFAULT_CONFIG\s*=\s*\{[^}]*?url:\s*['"]([^'"]+)['"]/s.exec(syncSource)
     return match ? match[1] : ''

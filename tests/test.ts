@@ -17,7 +17,7 @@ export const test = base.extend({
 
         if (configJson) {
             await page.addInitScript((value: string) => {
-                localStorage.setItem('supabaseconfig', value);
+                localStorage.setItem('backendconfig', value);
             }, configJson);
         }
 

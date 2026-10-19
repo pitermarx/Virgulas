@@ -21,7 +21,7 @@ import {
     encrypt,
     generateSalt
 } from './crypto2.js'
-import { StoreError, type RawStore, type StringStore } from './storage.js'
+import { StoreError, type RawStore, type StringStore, type UnlockResult } from './storage.js'
 
 // ── KeySession ──────────────────────────────────────────────────────────────
 
@@ -130,10 +130,12 @@ function requireCredentials(session: KeySession): { passphrase: string; salt: st
  *   and never followed by a push (fixes sync-01).
  */
 export interface EncryptedStore extends StringStore {
-    unlock(passphrase: string): Promise<void>
+    /** Verifies the passphrase by decrypting the at-rest payload (decryption is
+     * the verifier) and returns the decrypted text plus the record's change
+     * token. One round-trip: no separate read is needed. */
+    unlock(passphrase: string): Promise<UnlockResult>
     lock(): Promise<void>
 }
-
 export function encrypted(raw: RawStore, session: KeySession): EncryptedStore {
     return {
         async read() {
@@ -141,15 +143,23 @@ export function encrypted(raw: RawStore, session: KeySession): EncryptedStore {
             const record = await raw.readRaw()
             if (!record?.data) return null
             const credentials = session.activeCredentials()!
-            if (record.salt && session.activeSalt && record.salt !== session.activeSalt) {
-                throw new StoreError(
-                    'remote-rekeyed',
-                    'The stored document was re-encrypted with a different passphrase (rotated on another device). Unlock with the new passphrase to continue.'
-                )
-            }
             try {
                 return await decrypt(record.data, credentials.passphrase, record.salt || credentials.salt)
             } catch (error) {
+                // sync-01: a decryption failure on a record whose salt differs
+                // from the session's means another device rotated the
+                // passphrase — the stale key must never silently win. Same-salt
+                // failures stay wrong-key (a legitimately different salt with
+                // the same passphrase still decrypts).
+                if (error instanceof WrongPassphraseError
+                    && record.salt && session.activeSalt
+                    && record.salt !== session.activeSalt) {
+                    throw new StoreError(
+                        'remote-rekeyed',
+                        'The stored document was re-encrypted with a different passphrase (rotated on another device). Unlock with the new passphrase to continue.',
+                        error
+                    )
+                }
                 mapCryptoError(error)
             }
         },
@@ -178,7 +188,7 @@ export function encrypted(raw: RawStore, session: KeySession): EncryptedStore {
                 // First-time setup: nothing to verify. A fresh salt becomes
                 // active and the first write persists it (today's behaviour).
                 session.activate(passphrase, record?.salt || generateSalt())
-                return
+                return { text: null, headToken: null }
             }
             if (!record.salt) {
                 throw new StoreError(
@@ -188,8 +198,9 @@ export function encrypted(raw: RawStore, session: KeySession): EncryptedStore {
                 )
             }
             try {
-                await decrypt(record.data, passphrase, record.salt)
+                const text = await decrypt(record.data, passphrase, record.salt)
                 session.activate(passphrase, record.salt)
+                return { text, headToken: record.updatedAt ?? null }
             } catch (error) {
                 mapCryptoError(error)
             }
