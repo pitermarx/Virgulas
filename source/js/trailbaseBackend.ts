@@ -16,10 +16,14 @@
 // (`POST /api/auth/v1/delete`), so this AuthProvider's `deleteUser` is PRESENT
 // and the account-deletion flow can honestly remove the auth record.
 //
-// Setup (self-hosting): create a STRICT `outlines` table with columns
-// (id, user, data, salt, updated_at) and a record API named `outlines` with
-// authenticated READ/LIST/CREATE/UPDATE/DELETE and the owner ACL rules above.
-// See the README's "Bring your own backend" section.
+// Setup (self-hosting): build the app and serve it WITH TrailBase —
+// `trail run --public-dir dist` — so the API and the UI share an origin and
+// the client needs no URL: an empty config url means same-origin. The origin
+// needs a STRICT `outlines` table with columns (id, user, data, salt,
+// updated_at; the owner column a uuid BLOB referencing _user(id)) and a
+// record API named `outlines` with authenticated READ/LIST/CREATE/UPDATE/
+// DELETE and the owner ACL rules above. See scripts/trailbase/ for a working
+// local setup and the README's self-hosting section.
 
 import { StoreError, type AuthProvider, type AuthUser, type BackendConfig, type RawRecord, type RawStore, type SignUpResult } from './storage.js'
 import { store } from './utils.js'
@@ -91,6 +95,20 @@ async function parseJson(response: Response): Promise<any> {
         return await response.json()
     } catch {
         return null
+    }
+}
+
+/** Whether the app's own origin is a TrailBase instance. Probed once per
+ * remote flow: TrailBase answers `/api/auth/v1/status` with a 200 JSON body
+ * carrying an `auth_token` key; a static file server 404s it. */
+export async function sameOriginTrailbase(): Promise<boolean> {
+    try {
+        const response = await fetch('/api/auth/v1/status', { headers: { 'Accept': 'application/json' } })
+        if (!response.ok) return false
+        const body = await parseJson(response)
+        return !!body && typeof body === 'object' && 'auth_token' in body
+    } catch {
+        return false
     }
 }
 

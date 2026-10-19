@@ -1,10 +1,15 @@
 # Local TrailBase + Mailpit for Virgulas development (storage seam, PR 3).
 #
-# Start:   docker compose -p virgulas-trail -f scripts/trailbase/compose.yml up -d
-# Stop:    docker compose -p virgulas-trail -f scripts/trailbase/compose.yml down
+# TrailBase serves the built app itself (--public-dir), so the app and its
+# sync API share an origin and the client needs no server URL. Build first:
 #
-# TrailBase  http://127.0.0.1:8099   (record API + auth)
-# Mailpit UI http://127.0.0.1:8025   (captured verification emails)
+#   bun run build
+#   docker compose -p virgulas-trail -f scripts/trailbase/compose.yml up -d
+#   → open http://127.0.0.1:8099  (the app, served by TrailBase)
+#   bun scripts/trailbase/smoke.ts        (API smoke test)
+#   docker compose -p virgulas-trail -f scripts/trailbase/compose.yml down
+#
+# Mailpit UI http://127.0.0.1:8025 — captured verification emails.
 #
 # `require_email_verification` is not configurable in TrailBase v0.35.x: a new
 # account stays unverified (cannot sign in) until the verification link in the
@@ -19,10 +24,16 @@ name: virgulas-trail
 services:
   trailbase:
     image: trailbase/trailbase:latest
+    # The stock image CMD plus --public-dir: serve the built app from the same
+    # origin as the API — the deployment shape the app's server resolution
+    # expects (same-origin TrailBase, no client-side URL). --spa matches the
+    # app's client-side routing; --depot is the modern spelling of --data-dir.
+    command: ["/app/trail", "--depot", "/app/traildepot", "--public-url", "http://127.0.0.1:8099", "run", "--public-dir", "/public", "--spa", "--address", "0.0.0.0:4000"]
     ports:
       - "8099:4000"
     volumes:
       - ./traildepot:/app/traildepot
+      - ../../dist:/public:ro
     depends_on:
       - mailpit
 

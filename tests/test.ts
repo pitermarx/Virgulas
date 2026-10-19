@@ -45,9 +45,10 @@ export const pickStorageMode = async (page: Page, mode: 'local' | 'remote' | 'fi
         await page.getByRole('button', { name: /Encrypted storage/ }).click();
         return;
     }
+    // The cloud path is a single step: it goes straight to the credentials
+    // form (the server resolves itself — same-origin TrailBase or the hosted
+    // fallback).
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    // Self-hosted backends pick Supabase/TrailBase and continue separately.
-    await page.getByRole('button', { name: mode === 'remote' ? /Virgulas server/ : /Bring your own/ }).click();
 };
 
 type NestedNode = {

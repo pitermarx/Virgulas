@@ -177,6 +177,12 @@ function backendSlot() {
         get(fallback: string | null = null): string | null {
             return next.get() ?? legacy.get() ?? fallback
         },
+        /** The explicit `backendconfig` override only — no legacy read-through.
+         * Server resolution uses this to tell a pinned config apart from the
+         * legacy key and decide whether the same-origin probe may run. */
+        getOverride(): string | null {
+            return next.get()
+        },
         set: next.set,
         del: next.del
     }

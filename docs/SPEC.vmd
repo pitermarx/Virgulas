@@ -124,9 +124,9 @@
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
       Default on the very first visit (no localStorage data, no remembered mode).
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
-    - Remote — document encrypted and synced to a cloud backend: the hosted Virgulas server by
-      default, or a self-hosted Supabase/TrailBase instance chosen in the storage wizard.
-      Account email, account password, and passphrase are required.
+    - Remote — document encrypted and synced to a cloud backend: the TrailBase instance
+      serving the app (the default — self-hosted or hosted), or the hosted Supabase fallback
+      for static deployments. Account email, account password, and passphrase are required.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
     + Rules for selecting a mode
@@ -152,12 +152,15 @@
       - Step 2, on this device — "Encrypted storage" (passphrase-protected in this browser,
         recommended), "A .vmd file" (plain text, not encrypted; the user picks the file), or
         "Memory only" (nothing is saved; notes are gone when the tab closes)
-      - Step 2, in the cloud — "Virgulas server" (free hosted sync, nothing to configure) or
-        "Bring your own"
-      - Step 3, bring your own — Supabase or TrailBase, with the instance URL (and anon key for
-        Supabase); Continue requires the URL and leads to the credentials form
-      - Every step below the first has a Back link; the credentials form names the configured
-        backend and its server options can be reopened from there
+      - Step 2, in the cloud — a single "In the cloud" choice leads straight to the
+        sign-in/sign-up form; there is no backend picker and no server URL to enter
+      - Server resolution (remote flows only; never at startup): an explicit backendconfig
+        override (dev/testing), then a same-origin TrailBase probe (the app served by
+        `trail run --public-dir dist` — self-hosted or hosted), then the legacy
+        supabaseconfig read-through for existing users, then the hosted Supabase fallback.
+        The credentials form names the resolved server ("this server" for same-origin)
+      - Every step below the first has a Back link; the credentials form can reopen the wizard
+        via "Change mode"
     + MEMORY MODE
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS

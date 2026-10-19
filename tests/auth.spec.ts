@@ -325,7 +325,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
 
     // Step 1: email + account password only, no passphrase field yet
     const continueButton = page.getByRole('button', { name: 'Continue', exact: true });
@@ -371,7 +370,6 @@ test.describe('Authentication', () => {
 
     // Pick Remote → unlock step with remote mode
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
     const clearedData = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
@@ -426,7 +424,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('existing@virgulas.com');
     await page.getByLabel('Account password').fill('account-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -634,7 +631,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('mock-signup@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
     await page.getByRole('button', { name: 'Sign up' }).click();
@@ -657,7 +653,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('mock-error@virgulas.com');
     await page.getByLabel('Account password').fill('wrong-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -687,7 +682,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('recover@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -716,7 +710,6 @@ test.describe('Authentication', () => {
     await openAdvancedStorageOptions(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.reload();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 

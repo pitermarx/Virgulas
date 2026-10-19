@@ -54,7 +54,6 @@ const unlockRemote = async (page: Page, pass: string) => {
     await enableSecureStorage.click();
     await page.getByRole('button', { name: /Change mode/i }).click();
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
   }
   await email.fill('a@b.com');
   await page.getByLabel('Account password').fill('pw123456');

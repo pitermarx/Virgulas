@@ -15,7 +15,7 @@ const test = harness.test
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
-const DEV_CSP_HTML = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co https://*.trailbase.io https://um.vps.pitermarx.com http://127.0.0.1:* http://localhost:*; object-src 'none'">`
+const DEV_CSP_HTML = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co https://um.vps.pitermarx.com http://127.0.0.1:* http://localhost:*; object-src 'none'">`
 
 section('CSP build helper — resolveSupabaseOrigin')
 

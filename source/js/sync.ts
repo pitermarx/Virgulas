@@ -5,9 +5,9 @@ import { merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
-import { parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type DocStore, type RawStore } from './storage.js'
+import { HOSTED_BACKEND, parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type DocStore, type RawStore } from './storage.js'
 import { ensureSupabaseClient, supabaseAuth, supabaseRaw } from './supabaseBackend.js'
-import { trailbaseAuth, trailbaseRaw } from './trailbaseBackend.js'
+import { sameOriginTrailbase, trailbaseAuth, trailbaseRaw } from './trailbaseBackend.js'
 
 // Re-exported for the app/e2e seam and the unit suite: the merge algorithm
 // itself lives in merge.ts (storage seam PR 1).
@@ -37,19 +37,54 @@ export interface ConflictResolution {
 // construction, no error-code mapping, no row payloads.
 
 /**
- * Builds the configured backend's adapters (docs §6.1: pick a backend from
- * config → construct). The config's backend flavor chooses the adapter:
- * 'virgulas' and 'supabase' both go through the Supabase adapter (the hosted
- * Virgulas server is a Supabase instance), 'trailbase' through the TrailBase
- * adapter.
+ * Resolves and builds the backend adapters. There is no user-facing backend
+ * choice: the server is TrailBase on the origin serving the app, so the
+ * resolution is —
+ * 1. an explicit `backendconfig` override (dev/testing; no UI),
+ * 2. a same-origin TrailBase probe (the app served by `trail run
+ *    --public-dir dist` — self-hosted or hosted),
+ * 3. the legacy `supabaseconfig` read-through (existing users keep their
+ *    hosted Supabase data),
+ * 4. the hosted Supabase fallback for static deployments without a server.
+ * Resolution runs once per session and only inside the remote flows, so
+ * startup never depends on a network round trip.
  */
+let resolvedBackend: { raw: RawStore; auth: AuthProvider } | null = null
+// A signal so the UI labels re-render when the remote flow resolves the server.
+const resolvedKind = signal<'trailbase' | 'supabase'>('supabase')
+let resolvedUrl = ''
+
 export async function backend(): Promise<{ raw: RawStore; auth: AuthProvider }> {
-    const config = parseBackendConfig(store.backend.get())
-    if (config.backend === 'trailbase') {
-        return { raw: trailbaseRaw(config), auth: trailbaseAuth(config) }
+    if (!resolvedBackend) {
+        const override = store.backend.getOverride()
+        const config: BackendConfig = override
+            ? parseBackendConfig(override)
+            : await sameOriginTrailbase()
+                ? { backend: 'trailbase', url: '' }
+                : store.supabase.get()
+                    ? parseBackendConfig(store.supabase.get())
+                    : { ...HOSTED_BACKEND }
+        resolvedKind.value = config.backend === 'trailbase' ? 'trailbase' : 'supabase'
+        resolvedUrl = config.url || ''
+        if (config.backend === 'trailbase') {
+            resolvedBackend = { raw: trailbaseRaw(config), auth: trailbaseAuth(config) }
+        } else {
+            const client = await ensureSupabaseClient(config)
+            resolvedBackend = { raw: supabaseRaw(client), auth: supabaseAuth(client) }
+        }
     }
-    const client = await ensureSupabaseClient(config)
-    return { raw: supabaseRaw(client), auth: supabaseAuth(client) }
+    return resolvedBackend
+}
+
+/** The resolved backend's kind — UI branching (sign-up messaging, labels).
+ * 'supabase' until the first remote flow resolves the real backend. */
+export function backendKind(): 'trailbase' | 'supabase' {
+    return resolvedKind.value
+}
+
+/** The resolved backend's base URL: '' when same-origin (the default). */
+export function backendUrl(): string {
+    return resolvedUrl
 }
 
 export const remoteSync = {
@@ -81,7 +116,11 @@ export const remoteSync = {
      * for a persisted Remote mode (the startup-path rule keeps it off everyone
      * else's boot).
      */
-    readRow: async () => (await backend()).raw.readRaw()
+    readRow: async () => (await backend()).raw.readRaw(),
+
+    /** Eager backend resolution — the wizard's cloud path calls this so the
+     * credentials form names the resolved server as soon as it renders. */
+    resolveBackend: async () => backend()
 }
 
 /**

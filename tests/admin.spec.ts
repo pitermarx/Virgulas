@@ -386,7 +386,6 @@ test.describe('Admin / Options modal', () => {
     const wizardGroup = page.locator('.wizard-options');
     await expect(wizardGroup).toBeVisible({ timeout: 10000 });
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await page.getByRole('button', { name: /Virgulas server/ }).click();
 
     await page.getByLabel('Email').fill('new@virgulas.com');
     await page.getByLabel('Account password').fill('account-password-123');
