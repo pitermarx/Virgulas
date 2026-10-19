@@ -11,7 +11,7 @@ import { createKeySession, encrypted, type EncryptedStore } from './encryptedSto
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { memoryStore } from './memoryStore.js'
-import { StoreError, type DocStore, type StringStore, type UnlockResult } from './storage.js'
+import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type StringStore, type UnlockResult } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
@@ -44,7 +44,8 @@ import {
   remoteSyncRetryDelay,
   isRemoteSyncAttemptStale,
   runExclusiveRemoteSync,
-  hasSupabaseClient
+  hasSupabaseClient,
+  backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
 import { ensureSupabaseClient, supabaseRaw } from './supabaseBackend.js'
@@ -274,11 +275,25 @@ let remoteDataStore: DocStore | null = null
 let remotePrimaryStore: EncryptedStore | null = null   // the server side (string level)
 let remoteCacheStore: StringStore | null = null        // the local cache side
 
+/** The configured sync backend (docs: backend selection UI). */
+function getBackendConfig(): BackendConfig {
+  return parseBackendConfig(store.backend.get())
+}
+
+function setBackendConfig(config: BackendConfig) {
+  store.backend.set(JSON.stringify(config))
+}
+
+/** The configured backend's kind — UI branching (messages, labels). */
+function getBackendKind(): BackendConfig['backend'] {
+  return getBackendConfig().backend
+}
+
 async function buildRemoteStore(): Promise<DocStore> {
-  const client = await ensureSupabaseClient()
+  const { raw } = await backend()
   // Composition (docs §5): codec over cached-over-encrypted — the crypto
   // decorator stays codec-blind and the slot/row bytes are unchanged.
-  const primary = encrypted(supabaseRaw(client), keySession)
+  const primary = encrypted(raw, keySession)
   const cache = encrypted(slotRaw(store.data), keySession)
   remotePrimaryStore = primary
   remoteCacheStore = cache
@@ -328,6 +343,7 @@ function wipeDeviceData() {
   store.mode.del()
   store.syncTs.del()
   store.syncHead.del()
+  store.backendSession.del()
   store.scheduledWindow.del()
   store.inboxNodeName.del()
   store.storageNoticeDismissed.del()
@@ -1094,6 +1110,9 @@ export default {
     rememberMode(mode)
   },
   hasSupabase: () => hasSupabaseClient(),
+  getBackendConfig,
+  setBackendConfig,
+  getBackendKind,
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
@@ -1323,7 +1342,16 @@ export default {
     keySession.lock()
     passphrase.value = ''
 
-    await remoteSync.deleteOutline()
+    await remoteDataStore?.clear() ?? await remoteSync.deleteOutline()
+
+    // §4.5 step 4: remove the auth record itself when the backend supports
+    // self-service deletion (TrailBase does; Supabase does not — its auth
+    // record survives, and the UI says so).
+    try {
+      await remoteSync.deleteUser()
+    } catch (error) {
+      if (!(error instanceof StoreError) || error.code !== 'unsupported') throw error
+    }
 
     // Local cleanup: wipe every device-local slot so nothing survives on a
     // shared device (priv-01) — the capture queue, sync metadata, remembered

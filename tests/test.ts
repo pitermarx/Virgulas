@@ -16,8 +16,10 @@ export const test = base.extend({
         await page.route('https://um.vps.pitermarx.com/**', route => route.abort());
 
         if (configJson) {
+            // The legacy `supabaseconfig` key: the `backendconfig` read-through
+            // picks it up unless a test pins an explicit backend config.
             await page.addInitScript((value: string) => {
-                localStorage.setItem('backendconfig', value);
+                localStorage.setItem('supabaseconfig', value);
             }, configJson);
         }
 

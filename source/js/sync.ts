@@ -5,9 +5,9 @@ import { merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
-import { StoreError, type DocStore } from './storage.js'
+import { parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type DocStore, type RawStore } from './storage.js'
 import { ensureSupabaseClient, supabaseAuth, supabaseRaw } from './supabaseBackend.js'
-import type { AuthProvider } from './storage.js'
+import { trailbaseAuth, trailbaseRaw } from './trailbaseBackend.js'
 
 // Re-exported for the app/e2e seam and the unit suite: the merge algorithm
 // itself lives in merge.ts (storage seam PR 1).
@@ -36,36 +36,52 @@ export interface ConflictResolution {
 // remoteSync is a thin auth/data facade over the backend adapters — no client
 // construction, no error-code mapping, no row payloads.
 
-let _auth: AuthProvider | null = null
-
-async function authProvider(): Promise<AuthProvider> {
-    if (!_auth) _auth = supabaseAuth(await ensureSupabaseClient())
-    return _auth
+/**
+ * Builds the configured backend's adapters (docs §6.1: pick a backend from
+ * config → construct). The config's backend flavor chooses the adapter:
+ * 'virgulas' and 'supabase' both go through the Supabase adapter (the hosted
+ * Virgulas server is a Supabase instance), 'trailbase' through the TrailBase
+ * adapter.
+ */
+export async function backend(): Promise<{ raw: RawStore; auth: AuthProvider }> {
+    const config = parseBackendConfig(store.backend.get())
+    if (config.backend === 'trailbase') {
+        return { raw: trailbaseRaw(config), auth: trailbaseAuth(config) }
+    }
+    const client = await ensureSupabaseClient(config)
+    return { raw: supabaseRaw(client), auth: supabaseAuth(client) }
 }
 
 export const remoteSync = {
-    signIn: async (email: string, password: string) => (await authProvider()).signIn(email, password),
-    signUp: async (email: string, password: string) => (await authProvider()).signUp(email, password),
-    signOut: async () => (await authProvider()).signOut(),
-    getUser: async () => (await authProvider()).getUser(),
-    updatePassword: async (newPassword: string) => (await authProvider()).updatePassword(newPassword),
-    updateEmail: async (newEmail: string) => (await authProvider()).updateEmail(newEmail),
+    signIn: async (email: string, password: string) => (await backend()).auth.signIn(email, password),
+    signUp: async (email: string, password: string) => (await backend()).auth.signUp(email, password),
+    signOut: async () => (await backend()).auth.signOut(),
+    getUser: async () => (await backend()).auth.getUser(),
+    updatePassword: async (newPassword: string) => (await backend()).auth.updatePassword(newPassword),
+    updateEmail: async (newEmail: string) => (await backend()).auth.updateEmail(newEmail),
     /**
-     * Deletes the signed-in user's own `outlines` row (RLS-scoped DELETE
-     * policy). This removes the encrypted document from the server. It cannot
-     * remove the `auth.users` record — that needs the service role and is out
-     * of reach of the browser client.
+     * Self-service auth-account deletion — present only on backends that
+     * support it (TrailBase does; Supabase needs the service role, which the
+     * browser never holds). The account-deletion flow branches on this.
      */
+    deleteUser: async () => {
+        const auth = (await backend()).auth
+        if (!auth.deleteUser) throw new StoreError('unsupported', 'This backend cannot delete the auth account.')
+        await auth.deleteUser()
+    },
+    /** True when the configured backend can delete the auth account. */
+    hasDeleteUser: async () => !!(await backend()).auth.deleteUser,
+    /** Deletes the signed-in user's own document row (ACL/RLS-scoped). The
+     * auth account itself is only removed when deleteUser is present. */
     deleteOutline: async () => {
-        const raw = supabaseRaw(await ensureSupabaseClient())
-        await raw.clearRaw()
+        await (await backend()).raw.clearRaw()
     },
     /**
      * Raw row probe for boot: no decryption, no passphrase — only ever runs
      * for a persisted Remote mode (the startup-path rule keeps it off everyone
      * else's boot).
      */
-    readRow: async () => supabaseRaw(await ensureSupabaseClient()).readRaw()
+    readRow: async () => (await backend()).raw.readRaw()
 }
 
 /**

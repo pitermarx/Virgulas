@@ -212,17 +212,20 @@
       Only the document payload (`vmd_data_enc`) is ciphertext. The following are stored in plaintext
       because they are non-secret operational metadata:
       `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_scheduled_window`,
-      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`, and `supabaseconfig`
+      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`,
+      `backendconfig` (with a read-through of the legacy `supabaseconfig`), and `vmd_backend_session`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC
-    Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
-    The server stores only ciphertext and cannot decrypt user data.
-    - The account password is only used for Supabase Auth — it is unrelated to the encryption passphrase
-      The passphrase is set independently and never sent to any server
-    - To create an account the user provides an email and password for Supabase Auth
-      The PBKDF2 salt and encrypted payload are uploaded to the `outlines` table
+    Remote mode works against a selectable sync backend. The lock screen offers
+    Virgulas server (the hosted Supabase, configured by default), Custom Supabase,
+    and Custom TrailBase; the choice is remembered and each backend stores only
+    ciphertext. The encryption model is unchanged: the server never sees plaintext.
+    - The account password is only used for backend authentication — it is unrelated to the
+      encryption passphrase. The passphrase is set independently and never sent to any server
+    - To create an account the user provides an email and password for backend auth
+      The PBKDF2 salt and encrypted payload are uploaded to the backend's `outlines` record
       From this point, any device that knows the passphrase can re-derive the same key
-    - Signing in on a new device fetches encrypted payload + salt from the `outlines` table
+    - Signing in on a new device fetches encrypted payload + salt from the backend's `outlines` record
       The user enters their passphrase, the key is re-derived, and the document is decrypted
       If account auth succeeds but decryption fails, the lock screen offers a destructive reset to
       replace remote encrypted data using a new passphrase

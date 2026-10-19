@@ -187,6 +187,59 @@ export interface UnlockResult {
     headToken: string | null
 }
 
+// ── Backend registry (§13 OQ 3, PR 3) ───────────────────────────────────────
+
+/** The sync backends a user can choose from (docs: backend selection UI):
+ * - 'virgulas'  — the hosted Virgulas server (managed Supabase), no config
+ * - 'supabase'  — the user's own Supabase project (url + anon key)
+ * - 'trailbase' — the user's own TrailBase instance (url; auth is per-user)
+ */
+export type BackendKind = 'virgulas' | 'supabase' | 'trailbase'
+
+export interface BackendConfig {
+    backend: BackendKind
+    url?: string
+    key?: string
+}
+
+/** The hosted default, seeded into a fresh browser's config slot. */
+export const HOSTED_BACKEND: BackendConfig = {
+    backend: 'virgulas',
+    url: 'https://gcpdascpdrakecpknrtt.supabase.co',
+    key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc'
+}
+
+/**
+ * Parses the persisted backend config slot. Backwards compatible with both
+ * legacy shapes: the pre-seam `supabaseconfig` value `{ url, key }` (a custom
+ * Supabase when the url differs from the hosted default, the hosted server
+ * otherwise) and the current `{ backend, url?, key? }`.
+ */
+export function parseBackendConfig(raw: string | null | undefined): BackendConfig {
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object') {
+                if (parsed.backend === 'trailbase' || parsed.backend === 'supabase' || parsed.backend === 'virgulas') {
+                    return {
+                        backend: parsed.backend,
+                        url: typeof parsed.url === 'string' && parsed.url ? parsed.url : undefined,
+                        key: typeof parsed.key === 'string' && parsed.key ? parsed.key : undefined
+                    }
+                }
+                // Legacy `{ url, key }` shape (the old supabaseconfig):
+                const url = typeof parsed.url === 'string' ? parsed.url : undefined
+                if (url) {
+                    if (url === HOSTED_BACKEND.url) return { backend: 'virgulas', url: HOSTED_BACKEND.url, key: HOSTED_BACKEND.key }
+                    const key = typeof parsed.key === 'string' ? parsed.key : undefined
+                    return { backend: 'supabase', url, key }
+                }
+            }
+        } catch { /* fall through to the default */ }
+    }
+    return { ...HOSTED_BACKEND }
+}
+
 // ── AuthProvider — complete auth contract (§4.5) ─────────────────────────────
 
 export interface AuthUser {

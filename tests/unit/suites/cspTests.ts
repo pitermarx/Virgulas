@@ -15,7 +15,7 @@ const test = harness.test
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
-const DEV_CSP_HTML = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co https://um.vps.pitermarx.com http://127.0.0.1:* http://localhost:*; object-src 'none'">`
+const DEV_CSP_HTML = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co https://*.trailbase.io https://um.vps.pitermarx.com http://127.0.0.1:* http://localhost:*; object-src 'none'">`
 
 section('CSP build helper — resolveSupabaseOrigin')
 
@@ -46,8 +46,8 @@ await test('returns empty for missing or invalid input', () => {
 
 section('CSP build helper — extractDefaultSupabaseUrl')
 
-await test('reads the url from a DEFAULT_CONFIG literal', () => {
-    const source = "const DEFAULT_CONFIG = { url: 'https://real.supabase.co', key: 'sb_publishable_x' }"
+await test('reads the url from a HOSTED_BACKEND literal', () => {
+    const source = "const HOSTED_BACKEND: BackendConfig = { backend: 'virgulas', url: 'https://real.supabase.co', key: 'sb_publishable_x' }"
     assertEqual(extractDefaultSupabaseUrl(source), 'https://real.supabase.co', 'extracted')
 })
 
@@ -100,9 +100,9 @@ await test('refuses a local Supabase origin', () => {
 section('CSP production wiring')
 
 await test('the real shell tightens without localhost or the wildcard', () => {
-    const syncSource = readFileSync(path.join(ROOT, 'source/js/supabaseBackend.ts'), 'utf8')
+    const storageSource = readFileSync(path.join(ROOT, 'source/js/storage.ts'), 'utf8')
     const html = readFileSync(path.join(ROOT, 'source/index.html'), 'utf8')
-    const origin = resolveSupabaseOrigin({ appUrl: extractDefaultSupabaseUrl(syncSource) })
+    const origin = resolveSupabaseOrigin({ appUrl: extractDefaultSupabaseUrl(storageSource) })
 
     assert(!!origin, 'resolved a Supabase origin from the app source')
     const out = tightenConnectSrc(html, origin)

@@ -20,26 +20,10 @@
 // disappears; until then this module is dead code and sync.ts stays
 // authoritative.
 
-import { StoreError, type AuthProvider, type AuthUser, type RawRecord, type RawStore } from './storage.js'
+import { HOSTED_BACKEND, StoreError, type AuthProvider, type AuthUser, type BackendConfig, type RawRecord, type RawStore } from './storage.js'
 import { store } from './utils.js'
 
 // ── Client loading ───────────────────────────────────────────────────────────
-
-const DEFAULT_CONFIG = { url: 'https://gcpdascpdrakecpknrtt.supabase.co', key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc' }
-
-function readConfig() {
-    try {
-        const raw = store.backend.get()
-        if (!raw) return DEFAULT_CONFIG
-        const parsed = JSON.parse(raw)
-        const url = parsed.url || parsed.supabaseUrl
-        const key = parsed.key || parsed.supabaseAnonKey
-        if (!url || !key) return DEFAULT_CONFIG
-        return { url, key }
-    } catch {
-        return DEFAULT_CONFIG
-    }
-}
 
 type ClientFactory = (url: string, key: string, options?: any) => any
 
@@ -63,12 +47,17 @@ async function loadClientFactory(): Promise<ClientFactory> {
 }
 
 let _client: any = null
+let _clientConfig: { url: string; key: string } | null = null
 
-export async function ensureSupabaseClient(): Promise<any> {
-    if (_client) return _client
+/** Builds (or reuses) the client for the given backend config. A config change
+ * (the user switching instances) rebuilds the client. */
+export async function ensureSupabaseClient(config: BackendConfig = HOSTED_BACKEND): Promise<any> {
+    const url = config.url || HOSTED_BACKEND.url!
+    const key = config.key || HOSTED_BACKEND.key!
+    if (_client && _clientConfig && _clientConfig.url === url && _clientConfig.key === key) return _client
     const factory = await loadClientFactory()
-    const config = readConfig()
-    _client = factory(config.url, config.key, { realtime: { enabled: false } } as any)
+    _client = factory(url, key, { realtime: { enabled: false } } as any)
+    _clientConfig = { url, key }
     return _client
 }
 

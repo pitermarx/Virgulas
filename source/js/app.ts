@@ -4,6 +4,7 @@ import { signal, effect } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen } from './shortcuts.js';
 import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
+import type { BackendKind } from './storage.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
@@ -38,6 +39,29 @@ const passphrase = signal('');
 const unlockError = signal('');
 const unlockMessage = signal('');
 const canResetRemoteData = signal(false);
+// The sync backend choice for Remote mode (docs: backend selection UI):
+// 'virgulas' = the hosted server, 'supabase'/'trailbase' = the user's own
+// instance. Persisted via backendconfig the moment it changes.
+const backendChoice = signal<BackendKind>('virgulas');
+const customBackendUrl = signal('');
+const customBackendKey = signal('');
+
+const backendLabel = (kind: BackendKind = backendChoice.value) =>
+  kind === 'virgulas' ? 'Virgulas server' : kind === 'supabase' ? 'Custom Supabase' : 'Custom TrailBase';
+
+function applyBackendConfig() {
+  const backend = backendChoice.value;
+  persistence.setBackendConfig({
+    backend,
+    url: backend === 'virgulas' ? undefined : (customBackendUrl.value.trim() || undefined),
+    key: backend === 'supabase' ? (customBackendKey.value.trim() || undefined) : undefined,
+  });
+}
+
+function pickBackend(next: BackendKind) {
+  backendChoice.value = next;
+  applyBackendConfig();
+}
 const canResetLocalData = signal(false);
 const isBusy = signal(false);
 const authUser = signal<any>(null);
@@ -430,6 +454,12 @@ async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
   browserSupportWarning.value = bootstrap.browserSupportWarning;
   username.value = bootstrap.lastUsername || '';
   authUser.value = bootstrap.user || null;
+  {
+    const config = persistence.getBackendConfig();
+    backendChoice.value = config.backend;
+    customBackendUrl.value = config.backend !== 'virgulas' ? (config.url || '') : '';
+    customBackendKey.value = config.backend === 'supabase' ? (config.key || '') : '';
+  }
 
   // Memory mode: skip the lock screen entirely
   if (bootstrap.mode === 'memory') {
@@ -598,7 +628,12 @@ async function submitSignUp() {
       // `isRemotePasswordStep` is true when remotePasswordStage is false, so set
       // it true to render the unlock step where unlockMessage is displayed.
       remotePasswordStage.value = true;
-      unlockMessage.value = 'Account created. Check your inbox and confirm your email address, then sign in to unlock cloud sync.';
+      // TrailBase's register never signs the user in and reports success even
+      // when the account already exists (anti-enumeration) — the honest
+      // follow-up is a plain sign-in attempt, not an email round-trip.
+      unlockMessage.value = persistence.getBackendKind() === 'trailbase'
+        ? 'Sign-up submitted. Sign in with your email and password.'
+        : 'Account created. Check your inbox and confirm your email address, then sign in to unlock cloud sync.';
       return;
     }
 
@@ -853,11 +888,54 @@ const LockScreen = () => {
           <h2 class="auth-title" id="auth-title">Unlock Virgulas</h2>
           <div class="status-text">
             ${isLocal && (isLocalCreate() ? 'Secure Your Workspace' : 'Encrypted Local Storage')}
-            ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — sign in')}
+            ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — ' + backendLabel())}
             ${isFilesystem && 'File'}
           </div>
 
           ${isRemotePasswordStep && html`
+            <div class="backend-picker" role="radiogroup" aria-label="Sync backend">
+              <label class=${'backend-option' + (backendChoice.value === 'virgulas' ? ' is-active' : '')}>
+                <input type="radio" name="backend" value="virgulas" checked=${backendChoice.value === 'virgulas'} onChange=${() => pickBackend('virgulas')} />
+                <span class="backend-option-text">
+                  <span class="backend-name">Virgulas server</span>
+                  <span class="backend-desc">Free hosted sync — nothing to configure</span>
+                </span>
+              </label>
+              <label class=${'backend-option' + (backendChoice.value === 'supabase' ? ' is-active' : '')}>
+                <input type="radio" name="backend" value="supabase" checked=${backendChoice.value === 'supabase'} onChange=${() => pickBackend('supabase')} />
+                <span class="backend-option-text">
+                  <span class="backend-name">Custom Supabase</span>
+                  <span class="backend-desc">Your own Supabase project</span>
+                </span>
+              </label>
+              ${backendChoice.value === 'supabase' && html`
+                <div class="backend-config">
+                  <label for="backend-url" class="input-label">Supabase URL</label>
+                  <input id="backend-url" class="input-field" value=${customBackendUrl.value}
+                    onInput=${(e: any) => { customBackendUrl.value = e.target.value; applyBackendConfig(); }}
+                    placeholder="https://your-project.supabase.co" autocomplete="url" />
+                  <label for="backend-key" class="input-label">Anon key</label>
+                  <input id="backend-key" class="input-field" value=${customBackendKey.value}
+                    onInput=${(e: any) => { customBackendKey.value = e.target.value; applyBackendConfig(); }}
+                    placeholder="sb_publishable_…" autocomplete="off" />
+                </div>
+              `}
+              <label class=${'backend-option' + (backendChoice.value === 'trailbase' ? ' is-active' : '')}>
+                <input type="radio" name="backend" value="trailbase" checked=${backendChoice.value === 'trailbase'} onChange=${() => pickBackend('trailbase')} />
+                <span class="backend-option-text">
+                  <span class="backend-name">Custom TrailBase</span>
+                  <span class="backend-desc">Your own TrailBase instance</span>
+                </span>
+              </label>
+              ${backendChoice.value === 'trailbase' && html`
+                <div class="backend-config">
+                  <label for="backend-url" class="input-label">TrailBase URL</label>
+                  <input id="backend-url" class="input-field" value=${customBackendUrl.value}
+                    onInput=${(e: any) => { customBackendUrl.value = e.target.value; applyBackendConfig(); }}
+                    placeholder="https://your-trailbase.example.com" autocomplete="url" />
+                </div>
+              `}
+            </div>
             <form onSubmit=${submitRemotePassword}>
               <div class="input-group">
                 <label for="auth-username" class="input-label">Email</label>

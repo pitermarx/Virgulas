@@ -8,6 +8,10 @@
 
 const LOCAL_CONNECT_SOURCES = new Set(['http://127.0.0.1:*', 'http://localhost:*'])
 const WILDCARD_SUPABASE_SOURCE = 'https://*.supabase.co'
+// Custom TrailBase instances on the official domain stay allowed in production
+// (the user's own instance URL cannot be pinned at build time); self-hosted
+// TrailBase on other origins requires adding the origin here + a rebuild.
+const WILDCARD_TRAILBASE_SOURCE = 'https://*.trailbase.io'
 
 export interface SupabaseOriginSources {
     /** `--supabase-url` value from the CLI. */
@@ -39,15 +43,17 @@ export function resolveSupabaseOrigin(sources: SupabaseOriginSources = {}): stri
     }
 }
 
-/** Reads the hosted default URL from the `DEFAULT_CONFIG` literal in source/js/supabaseBackend.ts. */
-export function extractDefaultSupabaseUrl(syncSource: string): string {
-    const match = /DEFAULT_CONFIG\s*=\s*\{[^}]*?url:\s*['"]([^'"]+)['"]/s.exec(syncSource)
+/** Reads the hosted default URL from the `HOSTED_BACKEND` literal in source/js/storage.ts. */
+export function extractDefaultSupabaseUrl(storageSource: string): string {
+    const match = /HOSTED_BACKEND[^}]*?url:\s*['"]([^'"]+)['"]/s.exec(storageSource)
     return match ? match[1] : ''
 }
 
 /**
  * Removes the local-development sources and the `*.supabase.co` wildcard from the
- * CSP `connect-src` directive and pins the concrete Supabase origin.
+ * CSP `connect-src` directive and pins the concrete Supabase origin. The
+ * `*.trailbase.io` wildcard is kept: custom TrailBase instances cannot be
+ * pinned at build time.
  *
  * Only the `Content-Security-Policy` meta tag's `content` attribute is touched, so
  * the word "connect-src" in surrounding comments is ignored.
@@ -79,7 +85,7 @@ export function tightenConnectSrc(html: string, supabaseOrigin: string): string 
             .trim()
             .split(/\s+/)
             .filter(Boolean)
-            .filter((source) => !LOCAL_CONNECT_SOURCES.has(source) && source !== WILDCARD_SUPABASE_SOURCE)
+            .filter((source) => !LOCAL_CONNECT_SOURCES.has(source) && source !== WILDCARD_SUPABASE_SOURCE && source !== WILDCARD_TRAILBASE_SOURCE)
         if (!kept.includes(supabaseOrigin)) kept.push(supabaseOrigin)
         return `connect-src ${kept.join(' ')}`
     })

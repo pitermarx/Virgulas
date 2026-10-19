@@ -191,6 +191,7 @@ export const store = {
     supabase: slot('supabaseconfig'),
     syncTs: slot('vmd_sync_ts'),
     syncHead: slot('vmd_sync_head'),
+    backendSession: slot('vmd_backend_session'),
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
     inboxQueue: slot('vmd_inbox_queue'),

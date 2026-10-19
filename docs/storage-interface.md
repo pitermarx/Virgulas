@@ -571,9 +571,9 @@ Notes:
   seam isolates it inside `supabaseBackend`. Documented limitation — the fix
   (server-managed stamp via trigger + column privilege revoke, adapter returns
   the server token from `write()`) is deferred and revisited with the
-  sync/data findings follow-up work (§12, §13 OQ 6). TrailBase (PR 3) already
-  assumes server-managed stamps, so the follow-up also makes the two backends
-  consistent.
+  sync/data findings follow-up work (§12, §13 OQ 6). The TrailBase adapter
+  (PR 3) shares the same limitation today — it also accepts a client-supplied
+  `updated_at` — so the follow-up makes the two backends consistent.
 - `docId` is deliberately absent from the contracts. If multi-document support
   is ever wanted, it is added as an optional parameter defaulting to a constant;
   retrofitting later touches only adapters. Deciding now is an Open Question.
