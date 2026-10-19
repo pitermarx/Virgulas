@@ -5,13 +5,11 @@ import {
     canStartRemoteSync,
     remoteSyncRetryDelay,
     noteLocalWriteActivity,
-    beginRemotePush,
-    recordCompletedRemotePush,
     runExclusiveRemoteSync,
     setLastSyncedAt,
     getLastSyncedAt,
-    setCredentials,
-    clearCredentials
+    getLastSyncHead,
+    setSyncHead
 } from '../../../source/js/sync.js'
 import { assert, assertEqual, createAsyncSectionHarness } from '../testing.js'
 
@@ -62,16 +60,14 @@ await test('remoteSyncRetryDelay reports how long a push is deferred', () => {
     assertEqual(remoteSyncRetryDelay(base + 500), 0, 'never negative once ready')
 })
 
-await test('beginRemotePush records the start time and returns an ISO timestamp', () => {
+await test('an attempt without mutations stays fresh until a write invalidates it', () => {
+    // Late in this section the typing gate sits far in the future from earlier
+    // tests, so everything here runs at a large offset.
+    const t = Date.now() + 1_000_000_000
     const attempt = createRemoteSyncAttempt()
-    const iso = beginRemotePush(attempt, 5000)
-    assertEqual(attempt.startedAt, 5000, 'startedAt set')
-    assertEqual(new Date(iso).getTime(), 5000, 'ISO timestamp')
-})
-
-await test('recordCompletedRemotePush tolerates attempts without a start time', () => {
-    recordCompletedRemotePush(createRemoteSyncAttempt())
-    recordCompletedRemotePush(null)
+    assertEqual(isRemoteSyncAttemptStale(attempt, t), false, 'fresh attempt')
+    noteLocalWriteActivity(t)
+    assertEqual(isRemoteSyncAttemptStale(attempt, t + outline.dirtyDebounceTimeout + 1), true, 'stale after new write')
 })
 
 section('runExclusiveRemoteSync')
@@ -109,10 +105,13 @@ await test('defaults to 0 when nothing has been stored', () => {
     assertEqual(getLastSyncedAt(), 0, 'default 0')
 })
 
-section('credential helpers')
+section('sync head helpers')
 
-await test('set and clear credentials do not throw', () => {
-    setCredentials('pass', 'salt')
-    clearCredentials()
-    assert(true, 'no throw')
+await test('the sync head token round-trips and clears', () => {
+    localStorage.removeItem('vmd_sync_head')
+    assertEqual(getLastSyncHead(), null, 'no token initially')
+    setSyncHead('token-abc')
+    assertEqual(getLastSyncHead(), 'token-abc', 'token stored')
+    setSyncHead(null)
+    assertEqual(getLastSyncHead(), null, 'token cleared')
 })

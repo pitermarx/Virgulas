@@ -110,7 +110,7 @@ html = html.replace(metaRe, `<meta name="app-version" content="${version}">`)
 // Pin the CSP to the real Supabase origin for production builds. Local builds keep
 // the development policy so `bun run dev` can talk to a local Supabase instance.
 if (!isLocalBuild) {
-    const syncSource = await readFile(path.join(srcDir, 'js', 'sync.ts'), 'utf8')
+    const syncSource = await readFile(path.join(srcDir, 'js', 'supabaseBackend.ts'), 'utf8')
     const supabaseOrigin = resolveSupabaseOrigin({
         cliUrl: supabaseUrlFlag,
         envUrl: process.env.SUPABASE_URL,

@@ -80,6 +80,7 @@ const installPollingMockSupabase = async (
                     sessionState.user = null;
                     return { error: null };
                 },
+                getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                 getUser: async () => ({ data: { user: sessionState.user }, error: null })
             },
             from: () => queryBuilder
@@ -91,7 +92,7 @@ const installPollingMockSupabase = async (
             set: () => { }
         });
 
-        localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
+        localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
     }, { payload });
 };
 

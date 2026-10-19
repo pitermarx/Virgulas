@@ -17,6 +17,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 
 const readSchema = () => readFileSync(path.join(ROOT, 'supabase/schemas/outlines.sql'), 'utf8')
 const readSync = () => readFileSync(path.join(ROOT, 'source/js/sync.ts'), 'utf8')
+const readSupabaseBackend = () => readFileSync(path.join(ROOT, 'source/js/supabaseBackend.ts'), 'utf8')
 
 section('Account deletion wiring')
 
@@ -41,8 +42,8 @@ await test('the DELETE policy stays scoped to the owning user', () => {
 })
 
 await test('the client exposes a server-delete path', () => {
-    const src = readSync()
-    assert(/deleteOutline/.test(src), 'remoteSync.deleteOutline must exist')
+    const src = readSupabaseBackend()
+    assert(/clearRaw/.test(src), 'the backend adapter must expose the row delete (clearRaw)')
     assert(/\.delete\(\)\.eq\('user_id'/.test(src), 'delete must be scoped by user_id')
 })
 

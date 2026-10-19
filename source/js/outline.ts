@@ -358,6 +358,7 @@ function outlineFactory() {
     }
 
     function reset() {
+        console.trace('OUTLINE RESET')
         zoomId.value = rootNodeId
         const root = map.get(rootNodeId);
         if (root) {
@@ -397,6 +398,7 @@ function outlineFactory() {
 
     function deserialize(json: string) {
         log('Deserializing outline, version:', dataVersion.value)
+
         const previousZoomId = zoomId.peek()
         let obj: any
         try {

@@ -974,3 +974,23 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
    salt, persisted by the first write) rather than a separate setup primitive —
    this is §6.2's "setup wraps the first write" realised with the existing
    lock-screen entry point.
+7. **`unlock()` returns an `UnlockResult`** (`{ text, headToken }`, docs §14):
+   the design's void-returning unlock would force a second raw read for the
+   document, which the sync fixtures (one download at unlock) and the real
+   server both model as a single round-trip. The encrypted decorator returns
+   what it already decrypted plus the downloaded record's own change token.
+8. **`remote-rekeyed` is verified, not assumed** (§4.4): a foreign salt alone
+   does not throw — the decrypt is attempted with the session's passphrase;
+   a failure *combined with* a foreign salt maps to `remote-rekeyed`. Rotation
+   changing both salt and passphrase remains the design premise, but the seam
+   cannot assume it: different-salt-same-passphrase flows (independent device
+   setup) legitimately decrypt.
+9. **`retryWithBackoff` skips typed non-retryable failures** (§6.4): only
+   `network`/`unauthenticated` are retried; `remote-rekeyed`, `too-large` and
+   friends throw immediately.
+10. **The offline-cache priming at unlock is cache-side only** — no upsert at
+   unlock time (today's behaviour: the row is written only by saves).
+11. **During continuous typing the whole `write()` is deferred** (cache and
+    primary together), rather than deferring only the primary write. The
+    deferred flush lands ~50ms after the typing gate opens, so the local cache
+    write is delayed by well under a second in the worst case.

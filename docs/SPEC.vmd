@@ -233,8 +233,12 @@
         If the remote is newer, the remote document is fetched and merged before the local write is pushed
         This pull-before-push strategy ensures the server always receives the most up-to-date merged state
       - A background poll runs every 60 seconds while the app is open (in Remote mode)
+        Change detection compares an opaque change token against the last-seen token (vmd_sync_head);
+        the token a successful write returns is adopted as last-seen, so the poll never re-pulls the device's own push
         If the remote is newer and there are no pending conflicts, the remote is fetched and merged silently
         The poll pauses while conflicts are pending and defers while local edits are active
+      - If the passphrase was rotated on another device, a pull cannot decrypt the remote:
+        the device locks and prompts for the new passphrase instead of the next push silently reverting the rotation
       - Uploads are scheduled after typing pauses, so active typing supersedes stale background sync attempts
       - If the upload fails it is retried with exponential back-off (3 retries) then abandoned until the next write
       - Merge is performed at the node level using per-node `lastModified` timestamps and a single `lastSyncedAt` timestamp

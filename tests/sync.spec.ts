@@ -59,6 +59,7 @@ const installFailingMockSupabase = async (
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
@@ -70,7 +71,7 @@ const installFailingMockSupabase = async (
                 set: () => { }
             });
 
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
         },
         options
     );
@@ -245,12 +246,13 @@ test.describe('Sync status indicator', () => {
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
             };
             Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => { } });
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
         }, { downloadData: payload });
 
         await page.reload();
@@ -326,6 +328,7 @@ test.describe('Sync status indicator', () => {
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
@@ -337,7 +340,7 @@ test.describe('Sync status indicator', () => {
                 set: () => { }
             });
 
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
         }, { downloadData: payload });
 
         await page.reload();
@@ -400,6 +403,7 @@ test.describe('Sync status indicator', () => {
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
@@ -411,7 +415,7 @@ test.describe('Sync status indicator', () => {
                 set: () => { }
             });
 
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
         }, { downloadData: payload });
 
         await page.reload();
@@ -540,12 +544,13 @@ test.describe('Sync retry behaviour', () => {
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
             };
             Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => { } });
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
         }, { downloadData: payload });
 
         await page.reload();
@@ -706,6 +711,7 @@ const installMockWithRemoteUpdate = async (
                         return { data: { user: sessionState.user }, error: null };
                     },
                     signOut: async () => { sessionState.user = null; return { error: null }; },
+                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
                     getUser: async () => ({ data: { user: sessionState.user }, error: null })
                 },
                 from: () => queryBuilder
@@ -713,7 +719,7 @@ const installMockWithRemoteUpdate = async (
             Object.defineProperty(window, 'supabase', {
                 configurable: true, get: () => ({ createClient: () => client }), set: () => { }
             });
-            localStorage.setItem('supabaseconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
             // Keep lastSyncedAt at 0 so remote will appear newer
             localStorage.removeItem('vmd_sync_ts');
         },

@@ -100,7 +100,7 @@ await test('refuses a local Supabase origin', () => {
 section('CSP production wiring')
 
 await test('the real shell tightens without localhost or the wildcard', () => {
-    const syncSource = readFileSync(path.join(ROOT, 'source/js/sync.ts'), 'utf8')
+    const syncSource = readFileSync(path.join(ROOT, 'source/js/supabaseBackend.ts'), 'utf8')
     const html = readFileSync(path.join(ROOT, 'source/index.html'), 'utf8')
     const origin = resolveSupabaseOrigin({ appUrl: extractDefaultSupabaseUrl(syncSource) })
 
