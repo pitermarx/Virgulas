@@ -379,10 +379,9 @@ test.describe('Admin / Options modal', () => {
     await installMockSupabase(page, { confirmRequired: true });
     await page.reload();
 
-    // Boots into Memory mode on a fresh profile. "Enable Secure Storage" opens
-    // the Local unlock step, where "Change mode" reveals the mode chooser.
+    // Boots into Memory mode on a fresh profile. "Enable Secure Storage"
+    // opens the storage wizard directly.
     await page.getByRole('button', { name: /Enable Secure Storage/i }).click();
-    await page.getByRole('button', { name: /Change mode/i }).click();
     const wizardGroup = page.locator('.wizard-options');
     await expect(wizardGroup).toBeVisible({ timeout: 10000 });
     await page.getByRole('button', { name: /In the cloud/ }).click();

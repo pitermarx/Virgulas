@@ -721,9 +721,11 @@ async function continueInMemory() {
 async function openSecureStorageSetup() {
   stagedMemoryDocJson = outline.serialize();
   await persistence.lock();
-  authMode.value = 'local';
-  authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
-  authStep.value = 'unlock';
+  // The setup opens the wizard: where should the notes live? The passphrase
+  // form is one of its outcomes, not the forced default.
+  authMode.value = 'memory';
+  wizardStep.value = 'storage';
+  authStep.value = 'choose-mode';
   autoBioAttempted.value = false;
   unlockError.value = '';
   unlockMessage.value = '';

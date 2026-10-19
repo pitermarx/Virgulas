@@ -201,23 +201,30 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
             if (!session) throw new StoreError('unauthenticated', 'Not signed in.')
             // Client-supplied stamp — the same documented limitation as
             // Supabase (docs §5); the server-managed-stamp follow-up covers both.
-            const updatedAt = record.updatedAt || new Date().toISOString()
+            // The at-rest column is INTEGER STRICT, so the RawRecord's ISO
+            // string is normalized to epoch ms; the head token is compared
+            // only against itself.
+            const updatedAtMs = record.updatedAt && !Number.isNaN(Date.parse(record.updatedAt))
+                ? Date.parse(record.updatedAt)
+                : Date.now()
             const existing = await listOwn(config)
             if (existing?.id !== undefined && existing?.id !== null) {
                 const response = await authedFetch(config, `/api/records/v1/${RECORD_API}/${existing.id}`, {
                     method: 'PATCH',
-                    body: JSON.stringify({ data: record.data, salt: record.salt ?? null, updated_at: updatedAt })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: record.data, salt: record.salt ?? null, updated_at: updatedAtMs })
                 })
                 if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
             } else {
                 // The ACL verifies `user` against the authenticated identity.
                 const response = await authedFetch(config, `/api/records/v1/${RECORD_API}`, {
                     method: 'POST',
-                    body: JSON.stringify({ user: session.userId, data: record.data, salt: record.salt ?? null, updated_at: updatedAt })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: session.userId, data: record.data, salt: record.salt ?? null, updated_at: updatedAtMs })
                 })
                 if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
             }
-            return updatedAt
+            return String(updatedAtMs)
         },
 
         async clearRaw(): Promise<void> {
@@ -233,7 +240,9 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
 
         async head(): Promise<string | null> {
             const record = await listOwn(config)
-            return record?.updated_at ?? null
+            return record?.updated_at !== undefined && record?.updated_at !== null
+                ? String(record.updated_at)
+                : null
         }
     }
 }
@@ -252,6 +261,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
             // user always follows up with a sign-in (session: false, §4.5).
             const response = await rawFetch(config, '/api/auth/v1/register', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, password_repeat: password })
             })
             if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
@@ -261,6 +271,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
         async signIn(email, password): Promise<AuthUser> {
             const response = await rawFetch(config, '/api/auth/v1/login', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email_or_username: email, password })
             })
             if (response.status !== 200 || !response.json?.auth_token) {
@@ -289,6 +300,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
                 try {
                     await rawFetch(config, '/api/auth/v1/logout', {
                         method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ refresh_token: session.tokens.refresh_token })
                     })
                 } catch { /* ignore */ }
@@ -308,6 +320,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
         async updatePassword(newPassword): Promise<void> {
             const response = await authedFetch(config, '/api/auth/v1/change_password', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password: newPassword })
             })
             if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
@@ -316,6 +329,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
         async updateEmail(newEmail): Promise<void> {
             const response = await authedFetch(config, '/api/auth/v1/change_email/request', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: newEmail })
             })
             if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
@@ -327,7 +341,10 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
          * auth record on a TrailBase backend.
          */
         async deleteUser(): Promise<void> {
-            const response = await authedFetch(config, '/api/auth/v1/delete', { method: 'POST' })
+            const response = await authedFetch(config, '/api/auth/v1/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
             if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
             writeSession(null)
         },

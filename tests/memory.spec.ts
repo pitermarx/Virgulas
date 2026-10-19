@@ -72,14 +72,15 @@ test.describe('Memory mode (first-ever visit)', () => {
         expect(linkBox.x - (versionBox.x + versionBox.width)).toBeGreaterThanOrEqual(8);
     });
 
-    test('Enable Secure Storage banner opens the lock screen', async ({ page }) => {
+    test('Enable Secure Storage banner opens the storage wizard', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
-        // Upgrade storage now lives in the persistent banner shown while in memory mode
+        // Upgrade storage now lives in the persistent banner shown while in memory mode.
+        // It opens the wizard, not a forced passphrase form.
         await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
 
-        await expect(page.getByText('Unlock Virgulas')).toBeVisible({ timeout: 3000 });
+        await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
     });
 
     test('Enable Secure Storage banner sits above the breadcrumb', async ({ page }) => {

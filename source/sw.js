@@ -1,7 +1,7 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v6'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
-const APP_CACHE = 'virgulas-app-v130'
+const APP_CACHE = 'virgulas-app-v131'
 
 const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
 
@@ -101,6 +101,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
 
   if (request.mode === 'navigate') {
+    // Same-origin API routes must pass through untouched: the registered-app
+    // verification links a user opens in a tab (`/api/auth/v1/verify_email/
+    // confirm/…`) are handler routes, not shell pages. Re-serving them from
+    // the service worker makes the handler see a request it answers 401.
+    if (url.pathname.startsWith('/api/')) return
     event.respondWith(networkFirstNavigation(request))
     return
   }

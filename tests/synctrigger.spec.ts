@@ -51,8 +51,8 @@ const unlockRemote = async (page: Page, pass: string) => {
   await expect(email.or(enableSecureStorage).first()).toBeVisible({ timeout: 15000 });
 
   if (!(await email.isVisible().catch(() => false))) {
+    // The banner opens the storage wizard directly.
     await enableSecureStorage.click();
-    await page.getByRole('button', { name: /Change mode/i }).click();
     await page.getByRole('button', { name: /In the cloud/ }).click();
   }
   await email.fill('a@b.com');
