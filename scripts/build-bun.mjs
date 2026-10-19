@@ -55,6 +55,14 @@ const minify = !args.includes('--no-minify')
 const srcDir = path.resolve(positional[0] || 'source')
 const outDir = path.resolve(positional[1] || 'dist')
 
+// Bump the service worker cache versions before copying, so a rebuild with
+// changed sources always ships a new cache name. Without this, a browser's
+// already-registered service worker keeps serving the stale app bundle from
+// its existing cache — the developer then chases already-fixed bugs.
+const bump = Bun.spawnSync(['bun', 'scripts/bump-sw-caches.mjs'], { cwd: path.resolve(import.meta.dirname, '..') })
+const bumpOut = bump.stdout.toString().trim()
+if (bumpOut) console.log(bumpOut)
+
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 await cp(srcDir, outDir, { recursive: true })
