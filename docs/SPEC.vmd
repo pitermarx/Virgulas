@@ -124,7 +124,8 @@
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
       Default on the very first visit (no localStorage data, no remembered mode).
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
-    - Remote — document encrypted and synced to the cloud via Supabase.
+    - Remote — document encrypted and synced to a cloud backend: the hosted Virgulas server by
+      default, or a self-hosted Supabase/TrailBase instance chosen in the storage wizard.
       Account email, account password, and passphrase are required.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
@@ -144,6 +145,19 @@
       - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
         Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
         The Options panel action label and confirm text are mode-specific so users understand what is and is not lost.
+    + STORAGE WIZARD
+      The choose-mode sheet is a wizard: it asks for the storage location first and reveals
+      details progressively, so the default paths stay simple.
+      - Step 1 — location: "On this device" or "In the cloud"
+      - Step 2, on this device — "Encrypted storage" (passphrase-protected in this browser,
+        recommended), "A .vmd file" (plain text, not encrypted; the user picks the file), or
+        "Memory only" (nothing is saved; notes are gone when the tab closes)
+      - Step 2, in the cloud — "Virgulas server" (free hosted sync, nothing to configure) or
+        "Bring your own"
+      - Step 3, bring your own — Supabase or TrailBase, with the instance URL (and anon key for
+        Supabase); Continue requires the URL and leads to the credentials form
+      - Every step below the first has a Back link; the credentials form names the configured
+        backend and its server options can be reopened from there
     + MEMORY MODE
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
@@ -152,10 +166,11 @@
       - An inline "Enable Secure Storage" prompt appears above the Breadcrumb and the outline, and opens the setup flow
       - The Options panel hides "Upgrade storage…" and the purge/danger action in Memory mode:
         Memory has no data to delete, and the persistent upgrade is offered by the banner instead
-      - Choosing Memory mode is remembered: the lock screen has a "Skip — continue in memory" link
-        at the bottom that bypasses the unlock form and loads the app in memory mode; Memory is set
-        as the remembered mode, so the next visit boots straight into memory without a lock screen
-        until the user selects a persistent mode. Signing out also returns to (and remembers) Memory.
+      - Choosing Memory mode is remembered: the storage wizard's "On this device" step has a
+        "Memory only" option that bypasses the unlock form and loads the app in memory mode;
+        Memory is set as the remembered mode, so the next visit boots straight into memory
+        without a lock screen until the user selects a persistent mode. Signing out also
+        returns to (and remembers) Memory.
       - While the app is locked, the canvas stays visible in a blurred state with INTRO.VMD as backdrop
     + LOCAL MODE
       - The first unlock creates the passphrase; later visits only ask for it

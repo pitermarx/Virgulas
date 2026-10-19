@@ -1,0 +1,37 @@
+# Local TrailBase + Mailpit for Virgulas development (storage seam, PR 3).
+#
+# Start:   docker compose -p virgulas-trail -f scripts/trailbase/compose.yml up -d
+# Stop:    docker compose -p virgulas-trail -f scripts/trailbase/compose.yml down
+#
+# TrailBase  http://127.0.0.1:8099   (record API + auth)
+# Mailpit UI http://127.0.0.1:8025   (captured verification emails)
+#
+# `require_email_verification` is not configurable in TrailBase v0.35.x: a new
+# account stays unverified (cannot sign in) until the verification link in the
+# captured email is opened. Mailpit exposes the messages via its API, so the
+# link can be opened headlessly:
+#
+#   curl -s http://127.0.0.1:8025/api/v1/messages | <extract verify url> && curl <url>
+#
+# The `outlines` schema and ACL are in ./traildepot (mounted into the server).
+name: virgulas-trail
+
+services:
+  trailbase:
+    image: trailbase/trailbase:latest
+    ports:
+      - "8099:4000"
+    volumes:
+      - ./traildepot:/app/traildepot
+    depends_on:
+      - mailpit
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      # TrailBase's SMTP client (lettre) requires an advertised AUTH mechanism;
+      # Mailpit only offers one when accept-any is enabled.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "8025:8025"

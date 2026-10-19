@@ -108,18 +108,25 @@ let state: TrailState;
 
 const expectLockScreen = async (page: Page) => {
     // The boot for a remembered-local/'empty' state lands on the unlock step;
-    // reach the Remote credentials form via the mode switch (as the other
-    // specs do).
+    // reach the Remote credentials form via the wizard (as the other specs do).
     await expect(page.locator('.bottom-sheet')).toBeVisible({ timeout: 15000 });
+    const wizard = page.locator('.wizard-options');
+    if (await wizard.isVisible().catch(() => false)) {
+        await page.getByRole('button', { name: /In the cloud/ }).click();
+        await page.getByRole('button', { name: /Virgulas server/ }).click();
+        return;
+    }
     const modeSwitch = page.locator('.auth-mode-switch');
     if (!(await modeSwitch.isVisible().catch(() => false))) {
         await page.getByRole('button', { name: /Change mode/i }).click();
     }
-    await page.getByRole('button', { name: 'Remote', exact: true }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
 };
 
 /** Chooses Custom TrailBase in the picker and configures the instance URL. */
 const pickTrailbaseBackend = async (page: Page) => {
+    await page.getByRole('button', { name: 'Use your own server' }).click();
     await page.getByRole('radio', { name: /Custom TrailBase/ }).check();
     await page.getByLabel('TrailBase URL').fill(TRAILBASE_URL);
     // The choice persists immediately (backendconfig).
@@ -129,6 +136,35 @@ const pickTrailbaseBackend = async (page: Page) => {
 };
 
 test.describe('backend picker', () => {
+    test('the wizard path: In the cloud → Bring your own → TrailBase → Continue', async ({ page }) => {
+        state = makeTrailState();
+        await installTrailbaseMock(page, state);
+        await page.goto('/');
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await page.reload();
+
+        await expectLockScreen(page);
+
+        // From the credentials form, re-enter the wizard and take the
+        // self-hosted path: In the cloud → Bring your own → TrailBase.
+        await page.getByRole('button', { name: /Change mode/i }).click();
+        await page.getByRole('button', { name: /In the cloud/ }).click();
+        await page.getByRole('button', { name: /Bring your own/ }).click();
+        await expect(page.getByRole('radio', { name: /Supabase/ })).toBeVisible();
+        await page.getByRole('radio', { name: /TrailBase/ }).check();
+        await expect(page.getByLabel('TrailBase URL')).toBeVisible();
+        await expect(page.getByLabel('Anon key')).not.toBeVisible();
+
+        // Continue without a URL is rejected; with one it lands on the
+        // credentials form naming the custom backend.
+        await page.getByRole('button', { name: 'Continue', exact: true }).click();
+        await expect(page.getByText(/Enter the server URL/)).toBeVisible();
+        await page.getByLabel('TrailBase URL').fill(TRAILBASE_URL);
+        await page.getByRole('button', { name: 'Continue', exact: true }).click();
+        await expect(page.getByText('Synced via Custom TrailBase')).toBeVisible();
+        await expect(page.getByLabel('Email')).toBeVisible();
+    });
+
     test('offers Virgulas server, Custom Supabase and Custom TrailBase with per-backend config', async ({ page }) => {
         const pickerState = makeTrailState();
         await installTrailbaseMock(page, pickerState);
@@ -137,6 +173,11 @@ test.describe('backend picker', () => {
         await page.reload();
 
         await expectLockScreen(page);
+
+        // The hosted default keeps the step simple: a one-line summary with an
+        // opt-in expander instead of an always-visible 3-way choice.
+        await expect(page.getByText('Synced via the free Virgulas server')).toBeVisible();
+        await page.getByRole('button', { name: 'Use your own server' }).click();
 
         const virgulas = page.getByRole('radio', { name: /Virgulas server/ });
         const supabase = page.getByRole('radio', { name: /Custom Supabase/ });
@@ -158,6 +199,12 @@ test.describe('backend picker', () => {
         await expect(page.getByLabel('TrailBase URL')).toBeVisible();
         await expect(page.getByLabel('Anon key')).not.toBeVisible();
         await expect(page.getByLabel('Supabase URL')).not.toBeVisible();
+
+        // Back to the hosted server, then collapse via the toggle.
+        await virgulas.check();
+        await page.getByRole('button', { name: 'Hide server options' }).click();
+        await expect(page.getByText('Synced via the free Virgulas server')).toBeVisible();
+        await expect(page.getByRole('radio', { name: /Custom TrailBase/ })).not.toBeVisible();
     });
 });
 

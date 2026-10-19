@@ -135,14 +135,14 @@ const corruptLocalEncryptedDoc = async (page: Page) => {
 };
 
 const openAdvancedStorageOptions = async (page: Page) => {
-  const modeSwitchGroup = page.locator('.auth-mode-switch');
-  if (await modeSwitchGroup.isVisible().catch(() => false)) {
+  const wizardGroup = page.locator('.wizard-options');
+  if (await wizardGroup.isVisible().catch(() => false)) {
     return;
   }
   const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
   await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
   await changeModeBtn.click();
-  await expect(modeSwitchGroup).toBeVisible({ timeout: 10000 });
+  await expect(wizardGroup).toBeVisible({ timeout: 10000 });
 };
 
 test.describe('Authentication', () => {
@@ -324,7 +324,8 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
 
     // Step 1: email + account password only, no passphrase field yet
     const continueButton = page.getByRole('button', { name: 'Continue', exact: true });
@@ -366,10 +367,11 @@ test.describe('Authentication', () => {
     // Attempt 2: accept dialog → clears data → shows choose-mode step
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: /Change mode/i }).click();
-    await expect(page.locator('.auth-mode-switch')).toBeVisible();
+    await expect(page.locator('.wizard-options')).toBeVisible();
 
     // Pick Remote → unlock step with remote mode
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
     const clearedData = await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
@@ -423,7 +425,8 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('existing@virgulas.com');
     await page.getByLabel('Account password').fill('account-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -493,10 +496,11 @@ test.describe('Authentication', () => {
     // Click 'Change mode (Remote)' → confirms sign-out → shows choose-mode step
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: /Change mode/i }).click();
-    await expect(page.locator('.auth-mode-switch')).toBeVisible();
+    await expect(page.locator('.wizard-options')).toBeVisible();
 
     // Pick Local → unlock step for local mode
-    await page.getByRole('button', { name: 'Local' }).click();
+    await page.getByRole('button', { name: /On this device/ }).click();
+    await page.getByRole('button', { name: /Encrypted storage/ }).click();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
     await expect(page.getByLabel('Create a passphrase')).toBeVisible();
 
@@ -629,7 +633,8 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('mock-signup@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
     await page.getByRole('button', { name: 'Sign up' }).click();
@@ -651,7 +656,8 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('mock-error@virgulas.com');
     await page.getByLabel('Account password').fill('wrong-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -680,7 +686,8 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.getByLabel('Email').fill('recover@virgulas.com');
     await page.getByLabel('Account password').fill('mock-password');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -708,12 +715,14 @@ test.describe('Authentication', () => {
 
     await openAdvancedStorageOptions(page);
 
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
     await page.reload();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
     await openAdvancedStorageOptions(page); // no session → goes to choose-mode without dialog
-    await page.getByRole('button', { name: 'Local' }).click();
+    await page.getByRole('button', { name: /On this device/ }).click();
+    await page.getByRole('button', { name: /Encrypted storage/ }).click();
     await page.reload();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'local');
   });
@@ -747,7 +756,8 @@ test.describe('Authentication', () => {
 
     await page.goto('/');
     await openAdvancedStorageOptions(page);
-    await page.getByRole('button', { name: 'File' }).click();
+    await page.getByRole('button', { name: /On this device/ }).click();
+    await page.getByRole('button', { name: /.vmd file/ }).click();
     await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
   });
 
@@ -971,8 +981,10 @@ test.describe('Authentication', () => {
     // Lock screen is visible
     await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible();
 
-    // Click the skip link
-    await page.getByRole('button', { name: 'Skip — continue in memory' }).click();
+    // Open the wizard and pick Memory only under "On this device"
+    await page.getByRole('button', { name: /Change mode/i }).click();
+    await page.getByRole('button', { name: /On this device/ }).click();
+    await page.getByRole('button', { name: /Memory only/ }).click();
 
     // App should be in memory mode now
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');

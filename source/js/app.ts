@@ -45,6 +45,9 @@ const canResetRemoteData = signal(false);
 const backendChoice = signal<BackendKind>('virgulas');
 const customBackendUrl = signal('');
 const customBackendKey = signal('');
+// The hosted server is the default; the per-backend picker is opt-in so the
+// first-run remote step stays a plain email/password form.
+const backendPickerOpen = signal(false);
 
 const backendLabel = (kind: BackendKind = backendChoice.value) =>
   kind === 'virgulas' ? 'Virgulas server' : kind === 'supabase' ? 'Custom Supabase' : 'Custom TrailBase';
@@ -62,8 +65,24 @@ function pickBackend(next: BackendKind) {
   backendChoice.value = next;
   applyBackendConfig();
 }
+
+/** The wizard's self-hosted step: persist the chosen backend, then enter the
+ * credentials form. The URL is required — without it the client cannot reach
+ * the instance. */
+function continueSelfhost() {
+  if (backendChoice.value !== 'virgulas' && !customBackendUrl.value.trim()) {
+    unlockError.value = 'Enter the server URL to continue.';
+    return;
+  }
+  unlockError.value = '';
+  applyBackendConfig();
+  pickMode('remote');
+}
 const canResetLocalData = signal(false);
 const isBusy = signal(false);
+// The choose-mode sheet is a wizard: path first (device vs cloud), then the
+// concrete storage choice, then — only for self-hosted cloud — the backend.
+const wizardStep = signal<'storage' | 'local' | 'server' | 'selfhost'>('storage');
 const authUser = signal<any>(null);
 const authStep = signal('unlock');
 // Remote unlock staging: when true, email+password were collected and we await the passphrase
@@ -459,6 +478,8 @@ async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
     backendChoice.value = config.backend;
     customBackendUrl.value = config.backend !== 'virgulas' ? (config.url || '') : '';
     customBackendKey.value = config.backend === 'supabase' ? (config.key || '') : '';
+    // A remembered custom backend shows its options so the state is discoverable.
+    backendPickerOpen.value = config.backend !== 'virgulas';
   }
 
   // Memory mode: skip the lock screen entirely
@@ -513,6 +534,7 @@ async function requestChangeMode() {
     authUser.value = null;
   }
   authStep.value = 'choose-mode';
+  wizardStep.value = 'storage';
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
@@ -867,21 +889,125 @@ const LockScreen = () => {
         ${browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
 
         ${step === 'choose-mode' && html`
-          <h2 class="auth-title" id="auth-title">Choose Storage</h2>
-          <div class="auth-mode-switch" role="group" aria-label="Storage mode">
-            <button type="button" class=${'auth-mode-btn' + (isLocal ? ' is-active' : '')}
-              onClick=${() => pickMode('local')} disabled=${!authHasEncryptedStorage.value}>Local</button>
-            <button type="button" class=${'auth-mode-btn' + (isRemote ? ' is-active' : '')}
-              onClick=${() => pickMode('remote')} disabled=${!authHasEncryptedStorage.value}>Remote</button>
-            <button type="button" class=${'auth-mode-btn' + (isFilesystem ? ' is-active' : '')}
-              onClick=${() => pickMode('filesystem')}>File</button>
-          </div>
-          ${unlockError.value && html`<div class="form-error" role="alert">${unlockError.value}</div>`}
-          <div class="auth-memory-skip">
-            <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
-              Skip — continue in memory
+          <h2 class="auth-title" id="auth-title">
+            ${wizardStep.value === 'storage' ? 'Where should your notes live?'
+              : wizardStep.value === 'local' ? 'On this device'
+              : wizardStep.value === 'server' ? 'In the cloud'
+              : 'Bring your own server'}
+          </h2>
+
+          ${wizardStep.value === 'storage' && html`
+            <div class="wizard-options" role="group" aria-label="Storage location">
+              <button type="button" class="wizard-option" onClick=${() => { wizardStep.value = 'local'; }}>
+                <span class="backend-option-text">
+                  <span class="backend-name">On this device</span>
+                  <span class="backend-desc">Private to this browser — encrypted, a file, or memory only</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => { wizardStep.value = 'server'; }}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">In the cloud</span>
+                  <span class="backend-desc">Sign in and sync across devices — end-to-end encrypted</span>
+                </span>
+              </button>
+            </div>
+          `}
+
+          ${wizardStep.value === 'local' && html`
+            <div class="wizard-options" role="group" aria-label="Local storage kind">
+              <button type="button" class="wizard-option" onClick=${() => pickMode('local')}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Encrypted storage — recommended</span>
+                  <span class="backend-desc">Passphrase-protected in this browser; survives reloads and restarts</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => pickMode('filesystem')}>
+                <span class="backend-option-text">
+                  <span class="backend-name">A .vmd file</span>
+                  <span class="backend-desc">Plain text you choose and keep — not encrypted; you handle backups</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${continueInMemory} disabled=${isBusy.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Memory only</span>
+                  <span class="backend-desc">Nothing is saved — your notes are gone when the tab closes</span>
+                </span>
+              </button>
+            </div>
+          `}
+
+          ${wizardStep.value === 'server' && html`
+            <div class="wizard-options" role="group" aria-label="Sync backend">
+              <button type="button" class="wizard-option" onClick=${() => { pickBackend('virgulas'); pickMode('remote'); }}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Virgulas server</span>
+                  <span class="backend-desc">Free hosted sync — nothing to configure; only ciphertext is stored</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => { wizardStep.value = 'selfhost'; }}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Bring your own</span>
+                  <span class="backend-desc">A Supabase or TrailBase instance you control</span>
+                </span>
+              </button>
+            </div>
+          `}
+
+          ${wizardStep.value === 'selfhost' && html`
+            <div class="backend-picker" role="radiogroup" aria-label="Self-hosted backend">
+              <label class=${'backend-option' + (backendChoice.value === 'supabase' ? ' is-active' : '')}>
+                <input type="radio" name="selfhost-backend" value="supabase" checked=${backendChoice.value === 'supabase'} onChange=${() => pickBackend('supabase')} />
+                <span class="backend-option-text">
+                  <span class="backend-name">Supabase</span>
+                  <span class="backend-desc">Your own Supabase project</span>
+                </span>
+              </label>
+              ${backendChoice.value === 'supabase' && html`
+                <div class="backend-config">
+                  <label for="backend-url" class="input-label">Supabase URL</label>
+                  <input id="backend-url" class="input-field" value=${customBackendUrl.value}
+                    onInput=${(e: any) => { customBackendUrl.value = e.target.value; }}
+                    placeholder="https://your-project.supabase.co" autocomplete="url" />
+                  <label for="backend-key" class="input-label">Anon key</label>
+                  <input id="backend-key" class="input-field" value=${customBackendKey.value}
+                    onInput=${(e: any) => { customBackendKey.value = e.target.value; }}
+                    placeholder="sb_publishable_…" autocomplete="off" />
+                </div>
+              `}
+              <label class=${'backend-option' + (backendChoice.value === 'trailbase' ? ' is-active' : '')}>
+                <input type="radio" name="selfhost-backend" value="trailbase" checked=${backendChoice.value === 'trailbase'} onChange=${() => pickBackend('trailbase')} />
+                <span class="backend-option-text">
+                  <span class="backend-name">TrailBase</span>
+                  <span class="backend-desc">Your own TrailBase instance</span>
+                </span>
+              </label>
+              ${backendChoice.value === 'trailbase' && html`
+                <div class="backend-config">
+                  <label for="backend-url" class="input-label">TrailBase URL</label>
+                  <input id="backend-url" class="input-field" value=${customBackendUrl.value}
+                    onInput=${(e: any) => { customBackendUrl.value = e.target.value; }}
+                    placeholder="https://your-trailbase.example.com" autocomplete="url" />
+                </div>
+              `}
+            </div>
+            <button type="button" class="lock-submit-btn" onClick=${continueSelfhost} disabled=${isBusy.value}
+              aria-label="Continue" title="Continue">
+              ${isBusy.value ? '...' : 'Continue'}
             </button>
-          </div>
+          `}
+
+          ${unlockError.value && html`<div class="form-error" role="alert">${unlockError.value}</div>`}
+          ${wizardStep.value !== 'storage' && html`
+            <div class="auth-memory-skip">
+              <button type="button" class="auth-memory-link" onClick=${() => { wizardStep.value = 'storage'; unlockError.value = ''; }}>
+                Back
+              </button>
+            </div>
+          `}
         `}
 
         ${step === 'unlock' && html`
@@ -893,6 +1019,14 @@ const LockScreen = () => {
           </div>
 
           ${isRemotePasswordStep && html`
+            <div class="backend-summary">
+              <span class="backend-summary-text">Synced via ${backendChoice.value === 'virgulas' ? 'the free Virgulas server' : backendLabel()}</span>
+              <button type="button" class="auth-memory-link backend-toggle" aria-expanded=${backendPickerOpen.value}
+                onClick=${() => backendPickerOpen.value = !backendPickerOpen.value}>
+                ${backendPickerOpen.value ? 'Hide server options' : 'Use your own server'}
+              </button>
+            </div>
+            ${backendPickerOpen.value && html`
             <div class="backend-picker" role="radiogroup" aria-label="Sync backend">
               <label class=${'backend-option' + (backendChoice.value === 'virgulas' ? ' is-active' : '')}>
                 <input type="radio" name="backend" value="virgulas" checked=${backendChoice.value === 'virgulas'} onChange=${() => pickBackend('virgulas')} />
@@ -936,6 +1070,7 @@ const LockScreen = () => {
                 </div>
               `}
             </div>
+            `}
             <form onSubmit=${submitRemotePassword}>
               <div class="input-group">
                 <label for="auth-username" class="input-label">Email</label>

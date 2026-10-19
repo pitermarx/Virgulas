@@ -86,6 +86,9 @@ Choose per device; your choice is remembered:
 
 - **Memory** — first-visit mode. The document lives in JS memory, the built-in tour shows you
   around, and an **Enable Secure Storage** prompt appears when you are ready to keep your work.
+  The storage wizard asks where your notes should live — on this device (encrypted browser
+  storage, a plain `.vmd` file, or memory only) or in the cloud (the free Virgulas server, or
+  your own Supabase/TrailBase instance).
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
   or using File/Remote mode.

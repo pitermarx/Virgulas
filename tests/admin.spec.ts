@@ -383,9 +383,10 @@ test.describe('Admin / Options modal', () => {
     // the Local unlock step, where "Change mode" reveals the mode chooser.
     await page.getByRole('button', { name: /Enable Secure Storage/i }).click();
     await page.getByRole('button', { name: /Change mode/i }).click();
-    const modeSwitch = page.locator('.auth-mode-switch');
-    await expect(modeSwitch).toBeVisible({ timeout: 10000 });
-    await page.getByRole('button', { name: 'Remote', exact: true }).click();
+    const wizardGroup = page.locator('.wizard-options');
+    await expect(wizardGroup).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await page.getByRole('button', { name: /Virgulas server/ }).click();
 
     await page.getByLabel('Email').fill('new@virgulas.com');
     await page.getByLabel('Account password').fill('account-password-123');
