@@ -566,9 +566,13 @@ async function submitUnlock(e: any) {
       mode: authMode.value,
       username: username.value,
       password: password.value,
-      trustSession: isRemoteSessionValid()
+      trustSession: isRemoteSessionValid(),
+      // Setting up storage from a running memory document (the intro tour,
+      // with the user's edits) carries it over instead of the seed doc.
+      initialDocJson: stagedMemoryDocJson ?? undefined
     });
     if (success) {
+      stagedMemoryDocJson = null;
       remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
@@ -668,8 +672,12 @@ async function submitResetLocalData() {
     persistence.clearLocalData();
     authHasLocalData.value = false;
     canResetLocalData.value = false;
-    const success = await persistence.unlock(passphrase.value, { mode: 'local' });
+    const success = await persistence.unlock(passphrase.value, {
+      mode: 'local',
+      initialDocJson: stagedMemoryDocJson ?? undefined
+    });
     if (success) {
+      stagedMemoryDocJson = null;
       stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
@@ -708,18 +716,23 @@ async function submitResetRemoteData() {
 }
 
 async function continueInMemory() {
+  console.log('[skip] staged?', !!stagedMemoryDocJson, 'len', stagedMemoryDocJson?.length ?? 0);
   const staged = stagedMemoryDocJson;
   stagedMemoryDocJson = null;
   await persistence.unlock('', { mode: 'memory' });
   persistence.setPreferredMode('memory');
   if (staged) {
+    console.log('[skip] restoring len', staged.length);
     outline.deserialize(staged);
+  } else {
+    console.log('[skip] nothing to restore');
   }
   document.body.setAttribute('data-main-view', 'rendered');
 }
 
 async function openSecureStorageSetup() {
   stagedMemoryDocJson = outline.serialize();
+  console.log('[banner] staged len', stagedMemoryDocJson.length);
   await persistence.lock();
   // The setup opens the wizard: where should the notes live? The passphrase
   // form is one of its outcomes, not the forced default.
@@ -874,6 +887,11 @@ const LockScreen = () => {
                   <span class="backend-name">In the cloud</span>
                   <span class="backend-desc">Sign in or sign up — end-to-end encrypted, synced across devices</span>
                 </span>
+              </button>
+            </div>
+            <div class="auth-memory-skip">
+              <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
+                Skip — keep notes in memory
               </button>
             </div>
           `}

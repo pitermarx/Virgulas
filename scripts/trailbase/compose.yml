@@ -1,7 +1,9 @@
 # Local TrailBase + Mailpit for Virgulas development (storage seam, PR 3).
 #
 # TrailBase serves the built app itself (--public-dir), so the app and its
-# sync API share an origin and the client needs no server URL. Build first:
+# sync API share an origin and the client needs no server URL. Build first —
+# and REBUILD after every app change: the server mounts dist/ as-is and does
+# not rebuild it (stale dist = old bugs still reproducible):
 #
 #   bun run build
 #   docker compose -p virgulas-trail -f scripts/trailbase/compose.yml up -d

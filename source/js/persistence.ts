@@ -57,6 +57,10 @@ export interface UnlockOptions {
   username?: string
   password?: string
   trustSession?: boolean
+  /** Serialized document to adopt when the store is empty (first-time setup)
+   * — the running in-memory document (the intro tour, with the user's edits)
+   * carries over instead of being replaced by the seed doc. */
+  initialDocJson?: string
 }
 
 function normalizeMode(mode: unknown): PersistenceMode | null {
@@ -859,17 +863,34 @@ function parseRemoteUnlockError(error: unknown) {
   return error
 }
 
-async function unlockLocal(code: string) {
+/** Adopts a serialized initial document (first-time setup from memory).
+ * Guarantees the doc is never blank: returns false when nothing usable was
+ * adopted, so the caller can seed its default. */
+function adoptInitialDoc(initialDocJson: string | undefined): boolean {
+  if (!initialDocJson) return false
+  try {
+    outline.deserialize(initialDocJson)
+    const root = outline.get('root')
+    return !!root && root.children.peek().length > 0
+  } catch {
+    return false
+  }
+}
+
+async function unlockLocal(code: string, initialDocJson?: string) {
   const hasData = await localDataStore.exists()
 
   if (!hasData) {
     log('No encrypted data found in localStorage, starting with empty doc')
     assertNewPassphrase(code)
     // Adoption: on an empty store, unlock() retains the passphrase with a
-    // fresh salt and the first write persists it (docs §6.2).
+    // fresh salt and the first write persists it (docs §6.2). When setting up
+    // from a running memory document, adopt it so the user's notes survive.
     await localDataStore.unlock(code)
     outline.reset()
-    outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
+    if (!adoptInitialDoc(initialDocJson)) {
+      outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
+    }
     authMode.value = 'local'
     passphrase.value = code
     rememberMode('local')
@@ -903,7 +924,7 @@ async function unlockLocal(code: string) {
   }
 }
 
-async function unlockRemote({ passphrase: code, username, password, trustSession }: { passphrase: string; username?: string; password?: string; trustSession?: boolean }) {
+async function unlockRemote({ passphrase: code, username, password, trustSession, initialDocJson }: { passphrase: string; username?: string; password?: string; trustSession?: boolean; initialDocJson?: string }) {
   const hasCredentials = !!(username && password)
   if (!trustSession && !hasCredentials) {
     throw new Error('Username, password, and passphrase are required.')
@@ -949,9 +970,13 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   if (!unlockResult.text) {
     // First-time remote setup: no row yet — create the document and push it.
+    // When setting up from a running memory document (the intro tour, with the
+    // user's edits), adopt it instead of the seed doc (docs: storage setup).
     assertNewPassphrase(code)
     outline.reset()
-    outline.addChild('root', { text: 'Hello World' })
+    if (!adoptInitialDoc(initialDocJson)) {
+      outline.addChild('root', { text: 'Hello World' })
+    }
     const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
     if (token) setSyncHead(token)
     batch(() => {
@@ -1077,10 +1102,11 @@ async function unlock(code: string, options: UnlockOptions = {}) {
       passphrase: code,
       username: options.username || '',
       password: options.password || '',
-      trustSession: !!options.trustSession
+      trustSession: !!options.trustSession,
+      initialDocJson: options.initialDocJson
     })
   }
-  return unlockLocal(code)
+  return unlockLocal(code, options.initialDocJson)
 }
 
 export default {
