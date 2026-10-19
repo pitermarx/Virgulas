@@ -48,6 +48,10 @@ const isBusy = signal(false);
 // concrete local storage choice. The cloud path goes straight to the
 // credentials form — the server resolves itself.
 const wizardStep = signal<'storage' | 'local'>('storage');
+// The banner opens the wizard OVER the live memory session: nothing is
+// locked or captured until the user commits to a storage mode. Only then is
+// the running document staged and the session locked for setup.
+const wizardOverlay = signal(false);
 
 /** Names the resolved sync server for the credentials form: the app's own
  * origin when it is served by TrailBase, the hosted cloud otherwise. */
@@ -716,29 +720,25 @@ async function submitResetRemoteData() {
 }
 
 async function continueInMemory() {
-  console.log('[skip] staged?', !!stagedMemoryDocJson, 'len', stagedMemoryDocJson?.length ?? 0);
   const staged = stagedMemoryDocJson;
   stagedMemoryDocJson = null;
   await persistence.unlock('', { mode: 'memory' });
   persistence.setPreferredMode('memory');
   if (staged) {
-    console.log('[skip] restoring len', staged.length);
     outline.deserialize(staged);
   } else {
-    console.log('[skip] nothing to restore');
   }
   document.body.setAttribute('data-main-view', 'rendered');
 }
 
-async function openSecureStorageSetup() {
-  stagedMemoryDocJson = outline.serialize();
-  console.log('[banner] staged len', stagedMemoryDocJson.length);
-  await persistence.lock();
-  // The setup opens the wizard: where should the notes live? The passphrase
-  // form is one of its outcomes, not the forced default.
-  authMode.value = 'memory';
+/** Opens the storage wizard from the Enable Secure Storage banner: the
+ * running memory session stays live behind the sheet — the document is only
+ * captured when a storage mode is committed to (commitToWizardMode). */
+function openStorageWizard() {
+  wizardOverlay.value = true;
   wizardStep.value = 'storage';
   authStep.value = 'choose-mode';
+  authMode.value = 'memory';
   autoBioAttempted.value = false;
   unlockError.value = '';
   unlockMessage.value = '';
@@ -746,7 +746,40 @@ async function openSecureStorageSetup() {
   canResetLocalData.value = false;
   password.value = '';
   passphrase.value = '';
-  document.body.removeAttribute('data-main-view');
+}
+
+/** Abandons the wizard over a live session: the running document is untouched. */
+function closeStorageWizard() {
+  wizardOverlay.value = false;
+  authStep.value = 'unlock';
+  unlockError.value = '';
+}
+
+/** The user commits to a storage mode: capture the running memory document
+ * now (its one exit from memory), lock the session for setup, and continue
+ * into the mode's unlock/creation flow, which adopts the staged doc. A
+ * locked entry (Change mode) has no live document to stage. */
+async function commitToWizardMode(nextMode: PersistenceMode) {
+  unlockError.value = '';
+  if (nextMode === 'memory') {
+    if (wizardOverlay.value) {
+      // Already live in memory: the wizard is just an overlay — dismiss it.
+      closeStorageWizard();
+      return;
+    }
+    // Locked entry: the old "skip to memory" semantics.
+    await continueInMemory();
+    return;
+  }
+  if (persistence.isMemory()) {
+    stagedMemoryDocJson = outline.serialize();
+  }
+  wizardOverlay.value = false;
+  if (nextMode !== 'filesystem' && !persistence.isLocked()) {
+    await persistence.lock();
+  }
+  if (nextMode === 'remote') void remoteSync.resolveBackend();
+  pickMode(nextMode);
 }
 
 async function submitRemotePassword(e: any) {
@@ -881,7 +914,7 @@ const LockScreen = () => {
                   <span class="backend-desc">Private to this browser — encrypted, a file, or memory only</span>
                 </span>
               </button>
-              <button type="button" class="wizard-option" onClick=${() => { void remoteSync.resolveBackend(); pickMode('remote'); }}
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('remote')}
                 disabled=${!authHasEncryptedStorage.value}>
                 <span class="backend-option-text">
                   <span class="backend-name">In the cloud</span>
@@ -890,28 +923,28 @@ const LockScreen = () => {
               </button>
             </div>
             <div class="auth-memory-skip">
-              <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
-                Skip — keep notes in memory
+              <button type="button" class="auth-memory-link" onClick=${wizardOverlay.value ? closeStorageWizard : continueInMemory} disabled=${isBusy.value}>
+                ${wizardOverlay.value ? 'Skip — keep notes in memory' : 'Skip — continue in memory'}
               </button>
             </div>
           `}
 
           ${wizardStep.value === 'local' && html`
             <div class="wizard-options" role="group" aria-label="Local storage kind">
-              <button type="button" class="wizard-option" onClick=${() => pickMode('local')}
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('local')}
                 disabled=${!authHasEncryptedStorage.value}>
                 <span class="backend-option-text">
                   <span class="backend-name">Encrypted storage — recommended</span>
                   <span class="backend-desc">Passphrase-protected in this browser; survives reloads and restarts</span>
                 </span>
               </button>
-              <button type="button" class="wizard-option" onClick=${() => pickMode('filesystem')}>
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('filesystem')}>
                 <span class="backend-option-text">
                   <span class="backend-name">A .vmd file</span>
                   <span class="backend-desc">Plain text you choose and keep — not encrypted; you handle backups</span>
                 </span>
               </button>
-              <button type="button" class="wizard-option" onClick=${continueInMemory} disabled=${isBusy.value}>
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('memory')} disabled=${isBusy.value}>
                 <span class="backend-option-text">
                   <span class="backend-name">Memory only</span>
                   <span class="backend-desc">Nothing is saved — your notes are gone when the tab closes</span>
@@ -1098,7 +1131,7 @@ const SecureStoragePrompt = () => {
   if (persistence.isLocked() || !persistence.isMemory() || !authHasEncryptedStorage.value) return null;
 
   return html`
-    <button type="button" class="app-node" onClick=${openSecureStorageSetup}>
+    <button type="button" class="app-node" onClick=${openStorageWizard}>
       <div class="app-node-icon" aria-hidden="true">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -1472,7 +1505,7 @@ const Splash = () => {
         ${!isLocked && html`<${ConflictModal} />`}
         ${!isLocked && html`<${TasksPanel} />`}
       </div>
-      ${isLocked && html`<${LockScreen} />`}
+      ${(isLocked || wizardOverlay.value) && html`<${LockScreen} />`}
       <${QuickCapturePrompt} />
       <${QuickCaptureToast} />
     </div>

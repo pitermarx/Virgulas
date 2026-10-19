@@ -1054,7 +1054,7 @@ async function unlockMemory() {
   return true
 }
 
-async function unlockFilesystem() {
+async function unlockFilesystem(initialDocJson?: string) {
   // Try to reopen the last file silently first
   let json = await filesystemStorage.tryReopen()
   if (json === null) {
@@ -1072,6 +1072,10 @@ async function unlockFilesystem() {
   if (json && json.trim()) {
     outline.reset()
     loadDocIntoOutline(vmdCodec.parse(json))
+    applyHashZoomIfPresent()
+  } else if (adoptInitialDoc(initialDocJson)) {
+    // A new empty file chosen from a running memory session: the live document
+    // becomes the file's content (docs: storage setup).
     applyHashZoomIfPresent()
   } else {
     outline.reset()
@@ -1095,7 +1099,7 @@ async function unlock(code: string, options: UnlockOptions = {}) {
     return unlockMemory()
   }
   if (mode === 'filesystem') {
-    return unlockFilesystem()
+    return unlockFilesystem(options.initialDocJson)
   }
   if (mode === 'remote') {
     return unlockRemote({

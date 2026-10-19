@@ -161,6 +161,11 @@
         The credentials form names the resolved server ("this server" for same-origin)
       - Every step below the first has a Back link; the credentials form can reopen the wizard
         via "Change mode"
+      - Opened from the Enable Secure Storage banner, the wizard is an overlay over the live
+        memory session: nothing is locked or captured while it is open, and "Skip — keep notes
+        in memory" (or "Memory only") dismisses it leaving the document untouched. The document
+        is captured only when the user commits to a storage mode; the chosen mode's setup flow
+        (passphrase creation, file picker, or cloud sign-in) then adopts the captured document
     + MEMORY MODE
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
