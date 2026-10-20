@@ -4,8 +4,9 @@ import { signal, effect } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen } from './shortcuts.js';
 import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
+import type { BackendKind } from './storage.js';
 import { biometrics } from './biometrics.js';
-import { remoteSync } from './sync.js';
+import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
 import { appVersion, store } from './utils.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
@@ -38,8 +39,27 @@ const passphrase = signal('');
 const unlockError = signal('');
 const unlockMessage = signal('');
 const canResetRemoteData = signal(false);
+// There is no user-facing backend choice (docs: server resolution): the sync
+// server is TrailBase on the origin serving the app, resolved automatically
+// in the remote flow. The credentials form names the resolved server.
 const canResetLocalData = signal(false);
 const isBusy = signal(false);
+// The choose-mode sheet is a wizard: path first (device vs cloud), then the
+// concrete local storage choice. The cloud path goes straight to the
+// credentials form — the server resolves itself.
+const wizardStep = signal<'storage' | 'local'>('storage');
+// The banner opens the wizard OVER the live memory session: nothing is
+// locked or captured until the user commits to a storage mode. Only then is
+// the running document staged and the session locked for setup.
+const wizardOverlay = signal(false);
+
+/** Names the resolved sync server for the credentials form: the app's own
+ * origin when it is served by TrailBase, the hosted cloud otherwise. */
+const serverLabel = (): string => {
+  if (backendKind() !== 'trailbase') return 'the Virgulas cloud';
+  if (!backendUrl()) return 'this server';
+  try { return new URL(backendUrl()).host } catch { return backendUrl() }
+};
 const authUser = signal<any>(null);
 const authStep = signal('unlock');
 // Remote unlock staging: when true, email+password were collected and we await the passphrase
@@ -483,6 +503,7 @@ async function requestChangeMode() {
     authUser.value = null;
   }
   authStep.value = 'choose-mode';
+  wizardStep.value = 'storage';
   unlockError.value = '';
   unlockMessage.value = '';
   canResetRemoteData.value = false;
@@ -549,9 +570,13 @@ async function submitUnlock(e: any) {
       mode: authMode.value,
       username: username.value,
       password: password.value,
-      trustSession: isRemoteSessionValid()
+      trustSession: isRemoteSessionValid(),
+      // Setting up storage from a running memory document (the intro tour,
+      // with the user's edits) carries it over instead of the seed doc.
+      initialDocJson: stagedMemoryDocJson ?? undefined
     });
     if (success) {
+      stagedMemoryDocJson = null;
       remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
@@ -591,14 +616,15 @@ async function submitSignUp() {
     // Supabase returns a user object but no session when email confirmation is
     // required. Without this branch the app silently continued and the unlock
     // attempt later failed with "Could not validate remote session", which made
-    // cloud sync look broken. Reset the password stage so the unlock step (where
-    // unlockMessage renders) is shown instead of the credentials form.
+    // cloud sync look broken. Stay on the credentials step (email prefilled):
+    // the user's next action is confirming and signing in, not a passphrase.
     if (persistence.needsEmailConfirmation()) {
       authScenario.value = 'remote-email-unconfirmed';
-      // `isRemotePasswordStep` is true when remotePasswordStage is false, so set
-      // it true to render the unlock step where unlockMessage is displayed.
-      remotePasswordStage.value = true;
-      unlockMessage.value = 'Account created. Check your inbox and confirm your email address, then sign in to unlock cloud sync.';
+      remotePasswordStage.value = false;
+      // TrailBase's register reports success even when the account already
+      // exists (anti-enumeration); the verification email only goes out for
+      // new accounts, so "check your inbox" stays honest either way.
+      unlockMessage.value = 'Sign-up submitted. Check your inbox and confirm your email address, then sign in.';
       return;
     }
 
@@ -607,6 +633,27 @@ async function submitSignUp() {
     }
   } catch (error) {
     unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to sign up.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function submitForgotPassword() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  const email = username.value.trim();
+  if (!email) {
+    unlockError.value = 'Enter your email first, then press Forgot password.';
+    return;
+  }
+  isBusy.value = true;
+  try {
+    await persistence.requestPasswordReset(email);
+    // Anti-enumeration: the backend reports success even for unknown
+    // accounts, so the message never claims an account was found.
+    unlockMessage.value = `Password reset email sent to ${email}. Follow the link in it to set a new password, then sign in.`;
+  } catch (error) {
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to send the password reset email.');
   } finally {
     isBusy.value = false;
   }
@@ -646,8 +693,12 @@ async function submitResetLocalData() {
     persistence.clearLocalData();
     authHasLocalData.value = false;
     canResetLocalData.value = false;
-    const success = await persistence.unlock(passphrase.value, { mode: 'local' });
+    const success = await persistence.unlock(passphrase.value, {
+      mode: 'local',
+      initialDocJson: stagedMemoryDocJson ?? undefined
+    });
     if (success) {
+      stagedMemoryDocJson = null;
       stagedMemoryDocJson = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
@@ -692,16 +743,19 @@ async function continueInMemory() {
   persistence.setPreferredMode('memory');
   if (staged) {
     outline.deserialize(staged);
+  } else {
   }
   document.body.setAttribute('data-main-view', 'rendered');
 }
 
-async function openSecureStorageSetup() {
-  stagedMemoryDocJson = outline.serialize();
-  await persistence.lock();
-  authMode.value = 'local';
-  authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local';
-  authStep.value = 'unlock';
+/** Opens the storage wizard from the Enable Secure Storage banner: the
+ * running memory session stays live behind the sheet — the document is only
+ * captured when a storage mode is committed to (commitToWizardMode). */
+function openStorageWizard() {
+  wizardOverlay.value = true;
+  wizardStep.value = 'storage';
+  authStep.value = 'choose-mode';
+  authMode.value = 'memory';
   autoBioAttempted.value = false;
   unlockError.value = '';
   unlockMessage.value = '';
@@ -709,7 +763,40 @@ async function openSecureStorageSetup() {
   canResetLocalData.value = false;
   password.value = '';
   passphrase.value = '';
-  document.body.removeAttribute('data-main-view');
+}
+
+/** Abandons the wizard over a live session: the running document is untouched. */
+function closeStorageWizard() {
+  wizardOverlay.value = false;
+  authStep.value = 'unlock';
+  unlockError.value = '';
+}
+
+/** The user commits to a storage mode: capture the running memory document
+ * now (its one exit from memory), lock the session for setup, and continue
+ * into the mode's unlock/creation flow, which adopts the staged doc. A
+ * locked entry (Change mode) has no live document to stage. */
+async function commitToWizardMode(nextMode: PersistenceMode) {
+  unlockError.value = '';
+  if (nextMode === 'memory') {
+    if (wizardOverlay.value) {
+      // Already live in memory: the wizard is just an overlay — dismiss it.
+      closeStorageWizard();
+      return;
+    }
+    // Locked entry: the old "skip to memory" semantics.
+    await continueInMemory();
+    return;
+  }
+  if (persistence.isMemory()) {
+    stagedMemoryDocJson = outline.serialize();
+  }
+  wizardOverlay.value = false;
+  if (nextMode !== 'filesystem' && !persistence.isLocked()) {
+    await persistence.lock();
+  }
+  if (nextMode === 'remote') void remoteSync.resolveBackend();
+  pickMode(nextMode);
 }
 
 async function submitRemotePassword(e: any) {
@@ -832,28 +919,72 @@ const LockScreen = () => {
         ${browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
 
         ${step === 'choose-mode' && html`
-          <h2 class="auth-title" id="auth-title">Choose Storage</h2>
-          <div class="auth-mode-switch" role="group" aria-label="Storage mode">
-            <button type="button" class=${'auth-mode-btn' + (isLocal ? ' is-active' : '')}
-              onClick=${() => pickMode('local')} disabled=${!authHasEncryptedStorage.value}>Local</button>
-            <button type="button" class=${'auth-mode-btn' + (isRemote ? ' is-active' : '')}
-              onClick=${() => pickMode('remote')} disabled=${!authHasEncryptedStorage.value}>Remote</button>
-            <button type="button" class=${'auth-mode-btn' + (isFilesystem ? ' is-active' : '')}
-              onClick=${() => pickMode('filesystem')}>File</button>
-          </div>
+          <h2 class="auth-title" id="auth-title">
+            ${wizardStep.value === 'storage' ? 'Where should your notes live?' : 'On this device'}
+          </h2>
+
+          ${wizardStep.value === 'storage' && html`
+            <div class="wizard-options" role="group" aria-label="Storage location">
+              <button type="button" class="wizard-option" onClick=${() => { wizardStep.value = 'local'; }}>
+                <span class="backend-option-text">
+                  <span class="backend-name">On this device</span>
+                  <span class="backend-desc">Private to this browser — encrypted, a file, or memory only</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('remote')}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">In the cloud</span>
+                  <span class="backend-desc">Sign in or sign up — end-to-end encrypted, synced across devices</span>
+                </span>
+              </button>
+            </div>
+            <div class="auth-memory-skip">
+              <button type="button" class="auth-memory-link" onClick=${wizardOverlay.value ? closeStorageWizard : continueInMemory} disabled=${isBusy.value}>
+                ${wizardOverlay.value ? 'Skip — keep notes in memory' : 'Skip — continue in memory'}
+              </button>
+            </div>
+          `}
+
+          ${wizardStep.value === 'local' && html`
+            <div class="wizard-options" role="group" aria-label="Local storage kind">
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('local')}
+                disabled=${!authHasEncryptedStorage.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Encrypted storage — recommended</span>
+                  <span class="backend-desc">Passphrase-protected in this browser; survives reloads and restarts</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('filesystem')}>
+                <span class="backend-option-text">
+                  <span class="backend-name">A .vmd file</span>
+                  <span class="backend-desc">Plain text you choose and keep — not encrypted; you handle backups</span>
+                </span>
+              </button>
+              <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('memory')} disabled=${isBusy.value}>
+                <span class="backend-option-text">
+                  <span class="backend-name">Memory only</span>
+                  <span class="backend-desc">Nothing is saved — your notes are gone when the tab closes</span>
+                </span>
+              </button>
+            </div>
+          `}
+
           ${unlockError.value && html`<div class="form-error" role="alert">${unlockError.value}</div>`}
-          <div class="auth-memory-skip">
-            <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>
-              Skip — continue in memory
-            </button>
-          </div>
+          ${wizardStep.value !== 'storage' && html`
+            <div class="auth-memory-skip">
+              <button type="button" class="auth-memory-link" onClick=${() => { wizardStep.value = 'storage'; unlockError.value = ''; }}>
+                Back
+              </button>
+            </div>
+          `}
         `}
 
         ${step === 'unlock' && html`
           <h2 class="auth-title" id="auth-title">Unlock Virgulas</h2>
           <div class="status-text">
             ${isLocal && (isLocalCreate() ? 'Secure Your Workspace' : 'Encrypted Local Storage')}
-            ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — sign in')}
+            ${isRemote && (isSessionValid ? 'Remote — ' + (authUser.value?.email || '') : 'Remote — ' + serverLabel())}
             ${isFilesystem && 'File'}
           </div>
 
@@ -872,6 +1003,7 @@ const LockScreen = () => {
                   aria-describedby=${unlockError.value ? 'auth-password-error' : undefined} />
               </div>
               ${unlockError.value && html`<div class="form-error" id="auth-password-error" role="alert">${unlockError.value}</div>`}
+              ${unlockMessage.value && html`<div class="form-success" role="status">${unlockMessage.value}</div>`}
               <button type="submit" class="lock-submit-btn" disabled=${passwordStepDisabled} aria-label="Continue" title="Continue">
                 ${isBusy.value ? '...' : 'Continue'}
               </button>
@@ -882,6 +1014,12 @@ const LockScreen = () => {
                 onClick=${submitSignUp}>
                 ${isBusy.value ? '...' : 'Sign up'}
               </button>
+              ${remoteResetAvailable.value && html`
+                <button type="button" class="auth-memory-link" disabled=${isBusy.value || !username.value.trim()}
+                  onClick=${submitForgotPassword} title="Email a password reset link">
+                  Forgot password?
+                </button>
+              `}
             </div>
           `}
 
@@ -1014,7 +1152,7 @@ const SecureStoragePrompt = () => {
   if (persistence.isLocked() || !persistence.isMemory() || !authHasEncryptedStorage.value) return null;
 
   return html`
-    <button type="button" class="app-node" onClick=${openSecureStorageSetup}>
+    <button type="button" class="app-node" onClick=${openStorageWizard}>
       <div class="app-node-icon" aria-hidden="true">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -1367,7 +1505,7 @@ const Splash = () => {
 
     ${ready && html`
     <div class="app-shell">
-      <div class=${`main-view ${isLocked ? 'is-locked' : ''}`}>
+      <div class=${`main-view ${isLocked || wizardOverlay.value ? 'is-locked' : ''}`}>
         <main class="main-content" id="main-content" tabindex="-1"
           inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
           <${MainToolbar} banner=${html`
@@ -1388,7 +1526,7 @@ const Splash = () => {
         ${!isLocked && html`<${ConflictModal} />`}
         ${!isLocked && html`<${TasksPanel} />`}
       </div>
-      ${isLocked && html`<${LockScreen} />`}
+      ${(isLocked || wizardOverlay.value) && html`<${LockScreen} />`}
       <${QuickCapturePrompt} />
       <${QuickCaptureToast} />
     </div>

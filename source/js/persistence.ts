@@ -11,7 +11,7 @@ import { createKeySession, encrypted, type EncryptedStore } from './encryptedSto
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { memoryStore } from './memoryStore.js'
-import { StoreError, type DocStore, type StringStore, type UnlockResult } from './storage.js'
+import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type StringStore, type UnlockResult } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
@@ -44,7 +44,8 @@ import {
   remoteSyncRetryDelay,
   isRemoteSyncAttemptStale,
   runExclusiveRemoteSync,
-  hasSupabaseClient
+  hasSupabaseClient,
+  backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
 import { ensureSupabaseClient, supabaseRaw } from './supabaseBackend.js'
@@ -56,6 +57,10 @@ export interface UnlockOptions {
   username?: string
   password?: string
   trustSession?: boolean
+  /** Serialized document to adopt when the store is empty (first-time setup)
+   * — the running in-memory document (the intro tour, with the user's edits)
+   * carries over instead of being replaced by the seed doc. */
+  initialDocJson?: string
 }
 
 function normalizeMode(mode: unknown): PersistenceMode | null {
@@ -274,11 +279,25 @@ let remoteDataStore: DocStore | null = null
 let remotePrimaryStore: EncryptedStore | null = null   // the server side (string level)
 let remoteCacheStore: StringStore | null = null        // the local cache side
 
+/** The configured sync backend (docs: backend selection UI). */
+function getBackendConfig(): BackendConfig {
+  return parseBackendConfig(store.backend.get())
+}
+
+function setBackendConfig(config: BackendConfig) {
+  store.backend.set(JSON.stringify(config))
+}
+
+/** The configured backend's kind — UI branching (messages, labels). */
+function getBackendKind(): BackendConfig['backend'] {
+  return getBackendConfig().backend
+}
+
 async function buildRemoteStore(): Promise<DocStore> {
-  const client = await ensureSupabaseClient()
+  const { raw } = await backend()
   // Composition (docs §5): codec over cached-over-encrypted — the crypto
   // decorator stays codec-blind and the slot/row bytes are unchanged.
-  const primary = encrypted(supabaseRaw(client), keySession)
+  const primary = encrypted(raw, keySession)
   const cache = encrypted(slotRaw(store.data), keySession)
   remotePrimaryStore = primary
   remoteCacheStore = cache
@@ -328,6 +347,7 @@ function wipeDeviceData() {
   store.mode.del()
   store.syncTs.del()
   store.syncHead.del()
+  store.backendSession.del()
   store.scheduledWindow.del()
   store.inboxNodeName.del()
   store.storageNoticeDismissed.del()
@@ -843,17 +863,34 @@ function parseRemoteUnlockError(error: unknown) {
   return error
 }
 
-async function unlockLocal(code: string) {
+/** Adopts a serialized initial document (first-time setup from memory).
+ * Guarantees the doc is never blank: returns false when nothing usable was
+ * adopted, so the caller can seed its default. */
+function adoptInitialDoc(initialDocJson: string | undefined): boolean {
+  if (!initialDocJson) return false
+  try {
+    outline.deserialize(initialDocJson)
+    const root = outline.get('root')
+    return !!root && root.children.peek().length > 0
+  } catch {
+    return false
+  }
+}
+
+async function unlockLocal(code: string, initialDocJson?: string) {
   const hasData = await localDataStore.exists()
 
   if (!hasData) {
     log('No encrypted data found in localStorage, starting with empty doc')
     assertNewPassphrase(code)
     // Adoption: on an empty store, unlock() retains the passphrase with a
-    // fresh salt and the first write persists it (docs §6.2).
+    // fresh salt and the first write persists it (docs §6.2). When setting up
+    // from a running memory document, adopt it so the user's notes survive.
     await localDataStore.unlock(code)
     outline.reset()
-    outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
+    if (!adoptInitialDoc(initialDocJson)) {
+      outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
+    }
     authMode.value = 'local'
     passphrase.value = code
     rememberMode('local')
@@ -887,7 +924,7 @@ async function unlockLocal(code: string) {
   }
 }
 
-async function unlockRemote({ passphrase: code, username, password, trustSession }: { passphrase: string; username?: string; password?: string; trustSession?: boolean }) {
+async function unlockRemote({ passphrase: code, username, password, trustSession, initialDocJson }: { passphrase: string; username?: string; password?: string; trustSession?: boolean; initialDocJson?: string }) {
   const hasCredentials = !!(username && password)
   if (!trustSession && !hasCredentials) {
     throw new Error('Username, password, and passphrase are required.')
@@ -933,9 +970,13 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   if (!unlockResult.text) {
     // First-time remote setup: no row yet — create the document and push it.
+    // When setting up from a running memory document (the intro tour, with the
+    // user's edits), adopt it instead of the seed doc (docs: storage setup).
     assertNewPassphrase(code)
     outline.reset()
-    outline.addChild('root', { text: 'Hello World' })
+    if (!adoptInitialDoc(initialDocJson)) {
+      outline.addChild('root', { text: 'Hello World' })
+    }
     const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
     if (token) setSyncHead(token)
     batch(() => {
@@ -1013,7 +1054,7 @@ async function unlockMemory() {
   return true
 }
 
-async function unlockFilesystem() {
+async function unlockFilesystem(initialDocJson?: string) {
   // Try to reopen the last file silently first
   let json = await filesystemStorage.tryReopen()
   if (json === null) {
@@ -1031,6 +1072,10 @@ async function unlockFilesystem() {
   if (json && json.trim()) {
     outline.reset()
     loadDocIntoOutline(vmdCodec.parse(json))
+    applyHashZoomIfPresent()
+  } else if (adoptInitialDoc(initialDocJson)) {
+    // A new empty file chosen from a running memory session: the live document
+    // becomes the file's content (docs: storage setup).
     applyHashZoomIfPresent()
   } else {
     outline.reset()
@@ -1054,17 +1099,18 @@ async function unlock(code: string, options: UnlockOptions = {}) {
     return unlockMemory()
   }
   if (mode === 'filesystem') {
-    return unlockFilesystem()
+    return unlockFilesystem(options.initialDocJson)
   }
   if (mode === 'remote') {
     return unlockRemote({
       passphrase: code,
       username: options.username || '',
       password: options.password || '',
-      trustSession: !!options.trustSession
+      trustSession: !!options.trustSession,
+      initialDocJson: options.initialDocJson
     })
   }
-  return unlockLocal(code)
+  return unlockLocal(code, options.initialDocJson)
 }
 
 export default {
@@ -1094,6 +1140,9 @@ export default {
     rememberMode(mode)
   },
   hasSupabase: () => hasSupabaseClient(),
+  getBackendConfig,
+  setBackendConfig,
+  getBackendKind,
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
@@ -1230,6 +1279,9 @@ export default {
     pendingEmailConfirmation = !!res?.user && !res?.session
     return res
   },
+  async requestPasswordReset(email: string) {
+    await remoteSync.requestPasswordReset(email.trim())
+  },
   async resetRemoteData(newPassphrase: string, options: { username?: string; password?: string } = {}) {
     const username = (options.username || '').trim()
     const password = options.password || ''
@@ -1323,7 +1375,16 @@ export default {
     keySession.lock()
     passphrase.value = ''
 
-    await remoteSync.deleteOutline()
+    await remoteDataStore?.clear() ?? await remoteSync.deleteOutline()
+
+    // §4.5 step 4: remove the auth record itself when the backend supports
+    // self-service deletion (TrailBase does; Supabase does not — its auth
+    // record survives, and the UI says so).
+    try {
+      await remoteSync.deleteUser()
+    } catch (error) {
+      if (!(error instanceof StoreError) || error.code !== 'unsupported') throw error
+    }
 
     // Local cleanup: wipe every device-local slot so nothing survives on a
     // shared device (priv-01) — the capture queue, sync metadata, remembered

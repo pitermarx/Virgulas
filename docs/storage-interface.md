@@ -221,7 +221,10 @@ not a boolean here; its presence is the capability, absence-tested like
 
 Backend adapters (localStorage, Supabase, TrailBase, user-defined) implement
 this. They store opaque records; they never see plaintext documents and never
-see the outline model.
+see the outline model. There is no user-facing backend choice: the server is
+TrailBase on the origin serving the app (`trail run --public-dir dist`),
+resolved automatically in the remote flows (override slot → same-origin probe
+→ legacy Supabase read-through → hosted Supabase fallback).
 
 ```ts
 // source/js/storage.ts
@@ -544,7 +547,7 @@ re-run of `store.write(doc)` (Goal 2 becomes literally true).
 | File | `codecStore(vmdCodec, fileStore(handle))` | plain `.vmd` bytes | `file.lastModified` |
 | Local | `codecStore(jsonCodec, encrypted(slotRaw('vmd_data_enc'), session))` | `salt\|v2:600000:…` in slot | content hash of slot |
 | Remote (Supabase) | `codecStore(jsonCodec, cached(encrypted(supabaseRaw(client), session), encrypted(slotRaw('vmd_data_enc'), session)))` + Supabase `AuthProvider` | `outlines` row (`salt`, `data`, `updated_at`) — **unchanged schema**; local cache slot | `updated_at` |
-| Remote (TrailBase, future) | `codecStore(jsonCodec, cached(encrypted(trailbaseRaw(client), session), encrypted(slotRaw('vmd_data_enc'), session)))` + TrailBase `AuthProvider` | `outlines` STRICT table row; local cache slot | `updated_at` |
+| Remote (TrailBase — the default) | `codecStore(jsonCodec, cached(encrypted(trailbaseRaw(config), session), encrypted(slotRaw('vmd_data_enc'), session)))` + TrailBase `AuthProvider` | `outlines` STRICT table row (uuid owner column referencing `_user(id)`); local cache slot | `updated_at` |
 | User-defined (future) | any `RawStore` from the built-in registry | adapter-defined | adapter-defined |
 
 Notes:
@@ -571,9 +574,9 @@ Notes:
   seam isolates it inside `supabaseBackend`. Documented limitation — the fix
   (server-managed stamp via trigger + column privilege revoke, adapter returns
   the server token from `write()`) is deferred and revisited with the
-  sync/data findings follow-up work (§12, §13 OQ 6). TrailBase (PR 3) already
-  assumes server-managed stamps, so the follow-up also makes the two backends
-  consistent.
+  sync/data findings follow-up work (§12, §13 OQ 6). The TrailBase adapter
+  (PR 3) shares the same limitation today — it also accepts a client-supplied
+  `updated_at` — so the follow-up makes the two backends consistent.
 - `docId` is deliberately absent from the contracts. If multi-document support
   is ever wanted, it is added as an optional parameter defaulting to a constant;
   retrofitting later touches only adapters. Deciding now is an Open Question.

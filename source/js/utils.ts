@@ -177,6 +177,12 @@ function backendSlot() {
         get(fallback: string | null = null): string | null {
             return next.get() ?? legacy.get() ?? fallback
         },
+        /** The explicit `backendconfig` override only — no legacy read-through.
+         * Server resolution uses this to tell a pinned config apart from the
+         * legacy key and decide whether the same-origin probe may run. */
+        getOverride(): string | null {
+            return next.get()
+        },
         set: next.set,
         del: next.del
     }
@@ -191,6 +197,7 @@ export const store = {
     supabase: slot('supabaseconfig'),
     syncTs: slot('vmd_sync_ts'),
     syncHead: slot('vmd_sync_head'),
+    backendSession: slot('vmd_backend_session'),
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
     inboxQueue: slot('vmd_inbox_queue'),

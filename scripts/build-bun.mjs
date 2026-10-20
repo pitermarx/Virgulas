@@ -55,6 +55,18 @@ const minify = !args.includes('--no-minify')
 const srcDir = path.resolve(positional[0] || 'source')
 const outDir = path.resolve(positional[1] || 'dist')
 
+// Bump the service worker cache versions before copying, so a rebuild with
+// changed sources always ships a new cache name. Without this, a browser's
+// already-registered service worker keeps serving the stale app bundle from
+// its existing cache — the developer then chases already-fixed bugs.
+// Skipped when SKIP_SW_BUMP is set (the Docker image build: a fresh
+// deployment has no pre-registered service worker to bust).
+if (!process.env.SKIP_SW_BUMP) {
+  const bump = Bun.spawnSync(['bun', 'scripts/bump-sw-caches.mjs'], { cwd: path.resolve(import.meta.dirname, '..') })
+  const bumpOut = bump.stdout.toString().trim()
+  if (bumpOut) console.log(bumpOut)
+}
+
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 await cp(srcDir, outDir, { recursive: true })
@@ -110,12 +122,12 @@ html = html.replace(metaRe, `<meta name="app-version" content="${version}">`)
 // Pin the CSP to the real Supabase origin for production builds. Local builds keep
 // the development policy so `bun run dev` can talk to a local Supabase instance.
 if (!isLocalBuild) {
-    const syncSource = await readFile(path.join(srcDir, 'js', 'supabaseBackend.ts'), 'utf8')
+    const storageSource = await readFile(path.join(srcDir, 'js', 'storage.ts'), 'utf8')
     const supabaseOrigin = resolveSupabaseOrigin({
         cliUrl: supabaseUrlFlag,
         envUrl: process.env.SUPABASE_URL,
         envProject: process.env.SUPABASE_PROJECT,
-        appUrl: extractDefaultSupabaseUrl(syncSource),
+        appUrl: extractDefaultSupabaseUrl(storageSource),
     })
     html = tightenConnectSrc(html, supabaseOrigin)
 }

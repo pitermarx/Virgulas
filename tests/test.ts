@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Locator, type Page } from '@playwright/test';
 
 const env =
     (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
@@ -16,8 +16,10 @@ export const test = base.extend({
         await page.route('https://um.vps.pitermarx.com/**', route => route.abort());
 
         if (configJson) {
+            // The legacy `supabaseconfig` key: the `backendconfig` read-through
+            // picks it up unless a test pins an explicit backend config.
             await page.addInitScript((value: string) => {
-                localStorage.setItem('backendconfig', value);
+                localStorage.setItem('supabaseconfig', value);
             }, configJson);
         }
 
@@ -27,6 +29,27 @@ export const test = base.extend({
 
 export { expect };
 export type { Page, Locator } from '@playwright/test';
+
+/**
+ * Navigates the storage wizard (choose-mode sheet) to the given mode's
+ * credentials step. Assumes the lock screen is visible; opens the wizard via
+ * the step's "Change mode" button when the sheet is on the unlock step.
+ */
+export const pickStorageMode = async (page: Page, mode: 'local' | 'remote' | 'filesystem'): Promise<void> => {
+    const changeMode = page.getByRole('button', { name: /Change mode/i });
+    if (await changeMode.isVisible().catch(() => false)) {
+        await changeMode.click();
+    }
+    if (mode === 'local') {
+        await page.getByRole('button', { name: /On this device/ }).click();
+        await page.getByRole('button', { name: /Encrypted storage/ }).click();
+        return;
+    }
+    // The cloud path is a single step: it goes straight to the credentials
+    // form (the server resolves itself — same-origin TrailBase or the hosted
+    // fallback).
+    await page.getByRole('button', { name: /In the cloud/ }).click();
+};
 
 type NestedNode = {
     id: string,

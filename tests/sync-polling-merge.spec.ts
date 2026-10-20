@@ -1,4 +1,4 @@
-import { test, expect, type Page } from './test';
+import { test, expect, pickStorageMode, type Page } from './test';
 
 const buildEncryptedPayload = async (page: Page, passphrase: string) => {
     return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
@@ -97,19 +97,18 @@ const installPollingMockSupabase = async (
 };
 
 const openAdvancedStorageOptions = async (page: Page) => {
-    const modeSwitchGroup = page.locator('.auth-mode-switch');
-    if (await modeSwitchGroup.isVisible().catch(() => false)) {
-        return;
-    }
-    const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
-    await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
-    await changeModeBtn.click();
-    await expect(modeSwitchGroup).toBeVisible({ timeout: 10000 });
+  const wizardGroup = page.locator('.wizard-options');
+  if (await wizardGroup.isVisible().catch(() => false)) {
+    return;
+  }
+  const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
+  await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
+  await changeModeBtn.click();
+  await expect(wizardGroup).toBeVisible({ timeout: 10000 });
 };
 
 const unlockRemote = async (page: Page, email: string, accountPass: string, passphrase: string) => {
-    await openAdvancedStorageOptions(page);
-    await page.getByRole('button', { name: 'Remote' }).click();
+    await pickStorageMode(page, 'remote');
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Account password').fill(accountPass);
     await page.getByRole('button', { name: 'Continue', exact: true }).click();

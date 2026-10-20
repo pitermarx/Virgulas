@@ -124,8 +124,9 @@
     - Memory — document lives only in JS memory; lost when the tab is closed. No passphrase, no account, no encryption.
       Default on the very first visit (no localStorage data, no remembered mode).
     - Local — document encrypted in-browser (localStorage). Passphrase created on first use. No account needed.
-    - Remote — document encrypted and synced to the cloud via Supabase.
-      Account email, account password, and passphrase are required.
+    - Remote — document encrypted and synced to a cloud backend: the TrailBase instance
+      serving the app (the default — self-hosted or hosted), or the hosted Supabase fallback
+      for static deployments. Account email, account password, and passphrase are required.
     - File — document stored as plain VMD text in a local `.vmd` file via the File System Access API.
       No passphrase or account needed. Only available in browsers that support the API.
     + Rules for selecting a mode
@@ -144,6 +145,27 @@
       - Any remembered mode overrides incidental data signals (leftover ciphertext, cached email)
         Switching modes may discard local data or sign out; a confirmation is shown when that would happen.
         The Options panel action label and confirm text are mode-specific so users understand what is and is not lost.
+    + STORAGE WIZARD
+      The choose-mode sheet is a wizard: it asks for the storage location first and reveals
+      details progressively, so the default paths stay simple.
+      - Step 1 — location: "On this device" or "In the cloud"
+      - Step 2, on this device — "Encrypted storage" (passphrase-protected in this browser,
+        recommended), "A .vmd file" (plain text, not encrypted; the user picks the file), or
+        "Memory only" (nothing is saved; notes are gone when the tab closes)
+      - Step 2, in the cloud — a single "In the cloud" choice leads straight to the
+        sign-in/sign-up form; there is no backend picker and no server URL to enter
+      - Server resolution (remote flows only; never at startup): an explicit backendconfig
+        override (dev/testing), then a same-origin TrailBase probe (the app served by
+        `trail run --public-dir dist` — self-hosted or hosted), then the legacy
+        supabaseconfig read-through for existing users, then the hosted Supabase fallback.
+        The credentials form names the resolved server ("this server" for same-origin)
+      - Every step below the first has a Back link; the credentials form can reopen the wizard
+        via "Change mode"
+      - Opened from the Enable Secure Storage banner, the wizard is an overlay over the live
+        memory session: nothing is locked or captured while it is open, and "Skip — keep notes
+        in memory" (or "Memory only") dismisses it leaving the document untouched. The document
+        is captured only when the user commits to a storage mode; the chosen mode's setup flow
+        (passphrase creation, file picker, or cloud sign-in) then adopts the captured document
     + MEMORY MODE
       - On the very first visit the lock screen is bypassed; the app loads INTRO.VMD from `/intro.vmd`
         INTRO.VMD is a separate VMD file served alongside index.html — not embedded in JS
@@ -152,10 +174,11 @@
       - An inline "Enable Secure Storage" prompt appears above the Breadcrumb and the outline, and opens the setup flow
       - The Options panel hides "Upgrade storage…" and the purge/danger action in Memory mode:
         Memory has no data to delete, and the persistent upgrade is offered by the banner instead
-      - Choosing Memory mode is remembered: the lock screen has a "Skip — continue in memory" link
-        at the bottom that bypasses the unlock form and loads the app in memory mode; Memory is set
-        as the remembered mode, so the next visit boots straight into memory without a lock screen
-        until the user selects a persistent mode. Signing out also returns to (and remembers) Memory.
+      - Choosing Memory mode is remembered: the storage wizard's "On this device" step has a
+        "Memory only" option that bypasses the unlock form and loads the app in memory mode;
+        Memory is set as the remembered mode, so the next visit boots straight into memory
+        without a lock screen until the user selects a persistent mode. Signing out also
+        returns to (and remembers) Memory.
       - While the app is locked, the canvas stays visible in a blurred state with INTRO.VMD as backdrop
     + LOCAL MODE
       - The first unlock creates the passphrase; later visits only ask for it
@@ -212,17 +235,27 @@
       Only the document payload (`vmd_data_enc`) is ciphertext. The following are stored in plaintext
       because they are non-secret operational metadata:
       `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_scheduled_window`,
-      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`, and `supabaseconfig`
+      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`,
+      `backendconfig` (with a read-through of the legacy `supabaseconfig`), and `vmd_backend_session`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC
-    Creating an account enables cloud sync via Supabase. The encryption model is unchanged.
-    The server stores only ciphertext and cannot decrypt user data.
-    - The account password is only used for Supabase Auth — it is unrelated to the encryption passphrase
-      The passphrase is set independently and never sent to any server
-    - To create an account the user provides an email and password for Supabase Auth
-      The PBKDF2 salt and encrypted payload are uploaded to the `outlines` table
+    Remote mode works against a selectable sync backend. The lock screen offers
+    Virgulas server (the hosted Supabase, configured by default), Custom Supabase,
+    and Custom TrailBase; the choice is remembered and each backend stores only
+    ciphertext. The encryption model is unchanged: the server never sees plaintext.
+    - The account password is only used for backend authentication — it is unrelated to the
+      encryption passphrase. The passphrase is set independently and never sent to any server
+    - To create an account the user provides an email and password for backend auth
+      The PBKDF2 salt and encrypted payload are uploaded to the backend's `outlines` record
       From this point, any device that knows the passphrase can re-derive the same key
-    - Signing in on a new device fetches encrypted payload + salt from the `outlines` table
+    - After sign-up the credentials form stays put and explains the next step: confirm the email
+      (when the backend requires confirmation), then sign in
+    - "Forgot password?" on the sign-in form emails a reset link when the backend supports it
+      TrailBase completes the reset on its own hosted page; Supabase links back to the app, where
+      the new password is set via Options → Account password
+      The app always reports the email as sent and never reveals whether the account exists
+      (backends answer anti-enumeration-style, and the UI message stays generic)
+    - Signing in on a new device fetches encrypted payload + salt from the backend's `outlines` record
       The user enters their passphrase, the key is re-derived, and the document is decrypted
       If account auth succeeds but decryption fails, the lock screen offers a destructive reset to
       replace remote encrypted data using a new passphrase

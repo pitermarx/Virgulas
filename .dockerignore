@@ -1,0 +1,6 @@
+# Keep the build context small; the image builds the app itself.
+*
+!package.json
+!bun.lock
+!source
+!scripts

@@ -19,10 +19,13 @@ interface FakeOptions {
     tableError?: any                  // returned by every from('outlines') call
     sessionUser?: any                  // auth.getSession() → data.session.user
     signUp?: { user: any; session: any; error?: any }
+    resetError?: any                   // auth.resetPasswordForEmail → error
 }
 
 function fakeSupabaseClient(options: FakeOptions = {}) {
     const calls: any[] = []
+    const resetCalls: any[] = []
+    const resetError = options.resetError ?? null
     let getUserCalls = 0
     const client = {
         calls,
@@ -53,6 +56,11 @@ function fakeSupabaseClient(options: FakeOptions = {}) {
             async updateUser(args: any) {
                 calls.push('auth:updateUser')
                 return { data: { user: { id: 'user-1', ...args } }, error: null }
+            },
+            async resetPasswordForEmail(email: string, options: any) {
+                calls.push('auth:resetPasswordForEmail')
+                resetCalls.push({ email, ...options })
+                return { data: {}, error: resetError }
             }
         },
         from(table: string) {
@@ -82,7 +90,7 @@ function fakeSupabaseClient(options: FakeOptions = {}) {
             }
         }
     }
-    return { client, getUserCallCount: () => getUserCalls }
+    return { client, getUserCallCount: () => getUserCalls, resetCalls }
 }
 
 async function expectStoreError(fn: () => Promise<unknown>, code: string, label: string): Promise<StoreError> {
@@ -200,11 +208,11 @@ await test('getUser is the server-verified probe and returns null without a sess
     assertEqual(await auth.getUser(), null, 'null user')
 })
 
-await test('deleteUser is absent (presence is the capability), and no password/re-auth parameter exists', () => {
+await test('deleteUser is absent (presence is the capability)', () => {
     const auth = supabaseAuth(fakeSupabaseClient().client)
     assertEqual('deleteUser' in auth, false, 'deleteUser absent on Supabase (§4.5)')
-    assertEqual('requestPasswordReset' in auth, false, 'password reset not offered')
-    assertEqual(auth.capabilities.passwordReset, false, 'passwordReset capability')
+    assertEqual('requestPasswordReset' in auth, true, 'password reset offered (resetPasswordForEmail)')
+    assertEqual(auth.capabilities.passwordReset, true, 'passwordReset capability (resetPasswordForEmail)')
     assertEqual(auth.capabilities.oauth, false, 'oauth capability')
 })
 
@@ -214,4 +222,20 @@ await test('updatePassword and updateEmail go through updateUser', async () => {
     await auth.updatePassword('new-password-123')
     await auth.updateEmail('new@example.com')
     assert(client.calls.includes('auth:updateUser'), 'updateUser called')
+})
+
+await test('requestPasswordReset sends the reset email back to the app origin', async () => {
+    const { client, resetCalls } = fakeSupabaseClient()
+    const auth = supabaseAuth(client)
+    await auth.requestPasswordReset!('u@example.com')
+    assert(client.calls.includes('auth:resetPasswordForEmail'), 'resetPasswordForEmail called')
+    assertEqual(resetCalls.length, 1, 'one reset request')
+    assertEqual(resetCalls[0].email, 'u@example.com', 'email passed through')
+    assertEqual(resetCalls[0].redirectTo, window.location.origin, 'recovery link returns to the app')
+})
+
+await test('requestPasswordReset maps a Supabase error', async () => {
+    const { client } = fakeSupabaseClient({ resetError: { message: 'rate limit reached' } })
+    const auth = supabaseAuth(client)
+    await expectStoreError(() => auth.requestPasswordReset!('u@example.com'), 'network', 'reset error mapped')
 })

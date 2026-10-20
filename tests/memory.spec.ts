@@ -72,14 +72,15 @@ test.describe('Memory mode (first-ever visit)', () => {
         expect(linkBox.x - (versionBox.x + versionBox.width)).toBeGreaterThanOrEqual(8);
     });
 
-    test('Enable Secure Storage banner opens the lock screen', async ({ page }) => {
+    test('Enable Secure Storage banner opens the storage wizard', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
-        // Upgrade storage now lives in the persistent banner shown while in memory mode
+        // Upgrade storage now lives in the persistent banner shown while in memory mode.
+        // It opens the wizard, not a forced passphrase form.
         await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
 
-        await expect(page.getByText('Unlock Virgulas')).toBeVisible({ timeout: 3000 });
+        await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
     });
 
     test('Enable Secure Storage banner sits above the breadcrumb', async ({ page }) => {
@@ -146,5 +147,50 @@ test.describe('Memory mode (first-ever visit)', () => {
 
         // Breadcrumbs should be visible because we are now zoomed into that node.
         await expect(page.locator('.breadcrumbs')).toBeVisible({ timeout: 3000 });
+    });
+});
+
+test.describe('storage setup adopts the in-memory document', () => {
+    test('the banner wizard keeps the running doc: skip restores it, finishing carries it', async ({ page }) => {
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+        // Edit the intro document in memory.
+        await page.locator('.node-text-md').first().click();
+        await page.locator('.node-content input').first().fill('My own note');
+        await page.locator('body').click();
+        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
+            .toContain('My own note');
+
+        // Open the wizard; abandoning it via the skip link restores the doc.
+        await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
+        await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
+        await page.getByRole('button', { name: 'Skip — keep notes in memory' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
+            .toContain('My own note');
+
+        // Finish it into local: the running doc carries over, not the seed.
+        await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
+        await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
+        await page.getByRole('button', { name: /On this device/ }).click();
+        await page.getByRole('button', { name: /Encrypted storage/ }).click();
+        await page.getByLabel('Create a passphrase').fill('carry-pass-1');
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
+        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
+            .toContain('My own note');
+
+        // Reload: the carried document is on disk, encrypted (the autosave
+        // debounce must have flushed first).
+        await expect.poll(async () => await page.evaluate(() => localStorage.getItem('vmd_data_enc')), { timeout: 10000 }).toBeTruthy();
+        await page.reload();
+        await expect(page.getByLabel('Encryption passphrase')).toBeVisible({ timeout: 10000 });
+        await page.getByLabel('Encryption passphrase').fill('carry-pass-1');
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
+        await expect(page.locator('.status-mode')).toHaveText('Local');
+        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
+            .toContain('My own note');
     });
 });
