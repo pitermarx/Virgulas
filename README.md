@@ -88,8 +88,11 @@ Choose per device; your choice is remembered:
   around, and an **Enable Secure Storage** prompt appears when you are ready to keep your work.
   The storage wizard asks where your notes should live — on this device (encrypted browser
   storage, a plain `.vmd` file, or memory only) or in the cloud (encrypted sync through the
-  TrailBase server that serves the app — self-host it with `trail run --public-dir dist`,
-  see `scripts/trailbase/` for a working local setup).
+  TrailBase server that serves the app — self-host it with `trail run --public-dir dist`.
+  See `scripts/trailbase/` for a working local setup and `scripts/trailbase/Dockerfile`
+  for an all-in-one image that builds the app and serves it with TrailBase:
+  `docker build -t virgulas-trailbase -f scripts/trailbase/Dockerfile .` then
+  `docker run -p 8080:4000 virgulas-trailbase`.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
   or using File/Remote mode.

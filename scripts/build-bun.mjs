@@ -59,9 +59,13 @@ const outDir = path.resolve(positional[1] || 'dist')
 // changed sources always ships a new cache name. Without this, a browser's
 // already-registered service worker keeps serving the stale app bundle from
 // its existing cache — the developer then chases already-fixed bugs.
-const bump = Bun.spawnSync(['bun', 'scripts/bump-sw-caches.mjs'], { cwd: path.resolve(import.meta.dirname, '..') })
-const bumpOut = bump.stdout.toString().trim()
-if (bumpOut) console.log(bumpOut)
+// Skipped when SKIP_SW_BUMP is set (the Docker image build: a fresh
+// deployment has no pre-registered service worker to bust).
+if (!process.env.SKIP_SW_BUMP) {
+  const bump = Bun.spawnSync(['bun', 'scripts/bump-sw-caches.mjs'], { cwd: path.resolve(import.meta.dirname, '..') })
+  const bumpOut = bump.stdout.toString().trim()
+  if (bumpOut) console.log(bumpOut)
+}
 
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
