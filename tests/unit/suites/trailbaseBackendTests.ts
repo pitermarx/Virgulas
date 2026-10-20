@@ -390,5 +390,41 @@ await test('capabilities describe the backend honestly', () => {
     assertEqual(caps.encrypted, false, 'raw level is not encrypted')
     const auth = trailbaseAuth(CONFIG)
     assertEqual('deleteUser' in auth, true, 'deleteUser present (unlike Supabase)')
-    assertEqual(auth.capabilities.passwordReset, false, 'passwordReset capability')
+    assertEqual(auth.capabilities.passwordReset, true, 'passwordReset capability (self-service reset exists)')
+})
+
+await test('requestPasswordReset posts to the reset endpoint and never signs in', async () => {
+    let loginCalled = false
+    const fetcher = fakeFetch([
+        (call) => {
+            if (call.url.endsWith('/api/auth/v1/reset_password/request')) {
+                assertEqual(call.method, 'POST', 'POST')
+                assertEqual(call.body.email, 'u@example.com', 'email in the body')
+                assertEqual(call.body.redirect_uri, undefined, 'no redirect: TrailBase hosts the confirm page')
+                return { status: 200, json: {} }
+            }
+            if (call.url.endsWith('/api/auth/v1/login')) loginCalled = true
+            return null
+        }
+    ])
+    try {
+        const auth = trailbaseAuth(CONFIG)
+        await auth.requestPasswordReset!('u@example.com')
+        assertEqual(loginCalled, false, 'no sign-in attempt')
+    } finally {
+        fetcher.restore()
+    }
+})
+
+await test('requestPasswordReset maps a malformed-email 400 to the server\'s words', async () => {
+    const fetcher = fakeFetch([
+        (call) => call.url.endsWith('/api/auth/v1/reset_password/request') ? { status: 400, text: 'Malformed email' } : null
+    ])
+    try {
+        const auth = trailbaseAuth(CONFIG)
+        const error = await expectStoreError(() => auth.requestPasswordReset!('not-an-email'), 'network', 'malformed email')
+        assert(error.message === 'Malformed email', `the server's text is the message (got: ${error.message})`)
+    } finally {
+        fetcher.restore()
+    }
 })

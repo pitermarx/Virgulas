@@ -248,6 +248,13 @@
     - To create an account the user provides an email and password for backend auth
       The PBKDF2 salt and encrypted payload are uploaded to the backend's `outlines` record
       From this point, any device that knows the passphrase can re-derive the same key
+    - After sign-up the credentials form stays put and explains the next step: confirm the email
+      (when the backend requires confirmation), then sign in
+    - "Forgot password?" on the sign-in form emails a reset link when the backend supports it
+      TrailBase completes the reset on its own hosted page; Supabase links back to the app, where
+      the new password is set via Options → Account password
+      The app always reports the email as sent and never reveals whether the account exists
+      (backends answer anti-enumeration-style, and the UI message stays generic)
     - Signing in on a new device fetches encrypted payload + salt from the backend's `outlines` record
       The user enters their passphrase, the key is re-derived, and the document is decrypted
       If account auth succeeds but decryption fails, the lock screen offers a destructive reset to

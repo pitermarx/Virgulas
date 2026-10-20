@@ -6,7 +6,7 @@ import { optionsOpen } from './shortcuts.js';
 import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import type { BackendKind } from './storage.js';
 import { biometrics } from './biometrics.js';
-import { remoteSync, backendKind, backendUrl } from './sync.js';
+import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
 import { appVersion, store } from './utils.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
@@ -616,19 +616,15 @@ async function submitSignUp() {
     // Supabase returns a user object but no session when email confirmation is
     // required. Without this branch the app silently continued and the unlock
     // attempt later failed with "Could not validate remote session", which made
-    // cloud sync look broken. Reset the password stage so the unlock step (where
-    // unlockMessage renders) is shown instead of the credentials form.
+    // cloud sync look broken. Stay on the credentials step (email prefilled):
+    // the user's next action is confirming and signing in, not a passphrase.
     if (persistence.needsEmailConfirmation()) {
       authScenario.value = 'remote-email-unconfirmed';
-      // `isRemotePasswordStep` is true when remotePasswordStage is false, so set
-      // it true to render the unlock step where unlockMessage is displayed.
-      remotePasswordStage.value = true;
-      // TrailBase's register never signs the user in and reports success even
-      // when the account already exists (anti-enumeration) — the honest
-      // follow-up is a plain sign-in attempt, not an email round-trip.
-      unlockMessage.value = backendKind() === 'trailbase'
-        ? 'Sign-up submitted. Sign in with your email and password.'
-        : 'Account created. Check your inbox and confirm your email address, then sign in to unlock cloud sync.';
+      remotePasswordStage.value = false;
+      // TrailBase's register reports success even when the account already
+      // exists (anti-enumeration); the verification email only goes out for
+      // new accounts, so "check your inbox" stays honest either way.
+      unlockMessage.value = 'Sign-up submitted. Check your inbox and confirm your email address, then sign in.';
       return;
     }
 
@@ -637,6 +633,27 @@ async function submitSignUp() {
     }
   } catch (error) {
     unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to sign up.');
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function submitForgotPassword() {
+  unlockError.value = '';
+  unlockMessage.value = '';
+  const email = username.value.trim();
+  if (!email) {
+    unlockError.value = 'Enter your email first, then press Forgot password.';
+    return;
+  }
+  isBusy.value = true;
+  try {
+    await persistence.requestPasswordReset(email);
+    // Anti-enumeration: the backend reports success even for unknown
+    // accounts, so the message never claims an account was found.
+    unlockMessage.value = `Password reset email sent to ${email}. Follow the link in it to set a new password, then sign in.`;
+  } catch (error) {
+    unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to send the password reset email.');
   } finally {
     isBusy.value = false;
   }
@@ -986,6 +1003,7 @@ const LockScreen = () => {
                   aria-describedby=${unlockError.value ? 'auth-password-error' : undefined} />
               </div>
               ${unlockError.value && html`<div class="form-error" id="auth-password-error" role="alert">${unlockError.value}</div>`}
+              ${unlockMessage.value && html`<div class="form-success" role="status">${unlockMessage.value}</div>`}
               <button type="submit" class="lock-submit-btn" disabled=${passwordStepDisabled} aria-label="Continue" title="Continue">
                 ${isBusy.value ? '...' : 'Continue'}
               </button>
@@ -996,6 +1014,12 @@ const LockScreen = () => {
                 onClick=${submitSignUp}>
                 ${isBusy.value ? '...' : 'Sign up'}
               </button>
+              ${remoteResetAvailable.value && html`
+                <button type="button" class="auth-memory-link" disabled=${isBusy.value || !username.value.trim()}
+                  onClick=${submitForgotPassword} title="Email a password reset link">
+                  Forgot password?
+                </button>
+              `}
             </div>
           `}
 

@@ -155,11 +155,10 @@ test.describe('TrailBase end-to-end (same origin)', () => {
         await page.getByLabel('Email').fill('owner@virgulas.com');
         await page.getByLabel('Account password').fill('pw-123456');
         await page.getByRole('button', { name: 'Sign up' }).click();
-        // The anti-enumeration register reports success; the app parks on the
-        // unlock step with the message. Go back to the credentials form and
-        // sign in with the same credentials.
+        // The anti-enumeration register reports success; the app stays on the
+        // credentials form (email prefilled) with the explainer. Sign in with
+        // the same credentials.
         await expect(page.getByText(/Sign-up submitted/)).toBeVisible();
-        await page.getByRole('button', { name: 'Back' }).click();
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
         await page.getByLabel('Encryption passphrase').fill('trail-pass-1');
         await page.getByRole('button', { name: 'Unlock' }).click();

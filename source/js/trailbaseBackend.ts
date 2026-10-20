@@ -350,6 +350,23 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
             if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
         },
 
+        /** TrailBase's self-service reset: the email links to TrailBase's own
+         * hosted page where the new password is set. Anti-enumeration: the
+         * request succeeds even when the account does not exist, so the UI
+         * message must never claim an account was found. */
+        async requestPasswordReset(email): Promise<void> {
+            const response = await rawFetch(config, '/api/auth/v1/reset_password/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            })
+            // 200 = sent (or unknown account); 303 is the redirect_uri variant,
+            // which this flow never sends. 400 = malformed email.
+            if (response.status !== 200 && response.status !== 303) {
+                throw mapTrailbaseError(response.status, response.json)
+            }
+        },
+
         /**
          * TrailBase supports self-service account deletion — PRESENT, unlike
          * Supabase (§4.5): the account-deletion flow can honestly remove the
@@ -365,7 +382,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
         },
 
         capabilities: {
-            passwordReset: false,
+            passwordReset: true,
             oauth: false
         }
     }

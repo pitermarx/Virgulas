@@ -99,7 +99,8 @@ Choose per device; your choice is remembered:
 - **Remote** — encrypted and synced to a cloud backend: the hosted Virgulas server, your own
   Supabase project, or your own TrailBase instance (picked on the lock screen). An account
   email/password controls access; a separate passphrase controls encryption, so the server never
-  sees plaintext.
+  sees plaintext. Forgot your account password? A "Forgot password?" link on the sign-in form
+  emails a reset link (your encrypted notes are untouched — the passphrase is separate).
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 

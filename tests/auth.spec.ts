@@ -635,7 +635,11 @@ test.describe('Authentication', () => {
     await page.getByLabel('Account password').fill('mock-password');
     await page.getByRole('button', { name: 'Sign up' }).click();
 
-    // Sign-up succeeds → now the passphrase step for creating remote data
+    // Sign-up succeeds → the app stays on the credentials form with the
+    // explainer (email confirmation pending), then Continue → passphrase step
+    await expect(page.getByText(/Sign-up submitted/)).toBeVisible();
+    await expect(page.getByLabel('Encryption passphrase')).not.toBeVisible();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
     await page.getByLabel('Encryption passphrase').fill('signup-passphrase');
     await expect(page.getByRole('button', { name: 'Unlock' })).toBeEnabled();

@@ -212,13 +212,24 @@ export function supabaseAuth(client: any): AuthProvider {
             if (error) throw mapSupabaseError(error)
         },
 
+        /** Supabase's self-service reset: the email links back to this app's
+         * origin, where supabase-js consumes the recovery token and the user
+         * sets a new password via Options → Account password (updatePassword).
+         * Anti-enumeration: no error when the account does not exist. */
+        async requestPasswordReset(email: string): Promise<void> {
+            const { error } = await client.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin
+            })
+            if (error) throw mapSupabaseError(error)
+        },
+
         // deleteUser is deliberately ABSENT: deleting `auth.users` needs the
         // service role, which the browser never holds. Presence is the
         // capability — the account-deletion flow branches on it for its
         // "the auth record survives" caveat.
 
         capabilities: {
-            passwordReset: false,
+            passwordReset: true,
             oauth: false
         }
     }

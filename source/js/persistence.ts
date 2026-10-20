@@ -1279,6 +1279,9 @@ export default {
     pendingEmailConfirmation = !!res?.user && !res?.session
     return res
   },
+  async requestPasswordReset(email: string) {
+    await remoteSync.requestPasswordReset(email.trim())
+  },
   async resetRemoteData(newPassphrase: string, options: { username?: string; password?: string } = {}) {
     const username = (options.username || '').trim()
     const password = options.password || ''

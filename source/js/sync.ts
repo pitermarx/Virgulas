@@ -72,9 +72,14 @@ export async function backend(): Promise<{ raw: RawStore; auth: AuthProvider }> 
             const client = await ensureSupabaseClient(config)
             resolvedBackend = { raw: supabaseRaw(client), auth: supabaseAuth(client) }
         }
+        remoteResetAvailable.value = !!resolvedBackend.auth.requestPasswordReset
     }
     return resolvedBackend
 }
+
+/** Whether the resolved backend can send password reset emails — gates the
+ * lock screen's "Forgot password?" affordance (capability, §4.5). */
+export const remoteResetAvailable = signal(false)
 
 /** The resolved backend's kind — UI branching (sign-up messaging, labels).
  * 'supabase' until the first remote flow resolves the real backend. */
@@ -94,6 +99,15 @@ export const remoteSync = {
     getUser: async () => (await backend()).auth.getUser(),
     updatePassword: async (newPassword: string) => (await backend()).auth.updatePassword(newPassword),
     updateEmail: async (newEmail: string) => (await backend()).auth.updateEmail(newEmail),
+    /** Self-service password reset email — only on backends that support it
+     * (both built-ins do; the capability keeps custom adapters honest). */
+    requestPasswordReset: async (email: string) => {
+        const auth = (await backend()).auth
+        if (!auth.requestPasswordReset) throw new StoreError('unsupported', 'This backend cannot send password reset emails.')
+        await auth.requestPasswordReset(email)
+    },
+    /** True when the configured backend can send password reset emails. */
+    hasPasswordReset: async () => !!(await backend()).auth.requestPasswordReset,
     /**
      * Self-service auth-account deletion — present only on backends that
      * support it (TrailBase does; Supabase needs the service role, which the
