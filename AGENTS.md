@@ -51,7 +51,7 @@ Contributor workflow changes belong in this file instead, not in `README.md`.
 
 Whenever you add or change a feature or behaviour, add or update the corresponding test(s).
 
-- Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.ts`, run with `bun test`. Register the suite in `tests/unit/unit.test.ts`.
+- Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.test.ts`, run with `bun test`.
 - UI behaviour and integration flows → Playwright spec in `tests/*.spec.ts`.
 - E2E specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module instances as the running app.
 - A feature is not considered implemented until its tests pass
@@ -108,9 +108,8 @@ Do not create files outside these locations without explicit instruction:
 │   ├── test.ts             — shared Playwright fixtures/helpers
 │   ├── setup/dom.ts        — happy-dom preload for unit tests
 │   └── unit/
-│       ├── unit.test.ts    — bun test entry (replays the suites)
-│       ├── testing.ts      — section harness (asserts + runner)
-│       └── suites/*.ts     — unit suites
+│       ├── testing.ts      — shared assert helpers
+│       └── suites/*.test.ts — native bun:test unit suites (auto-discovered)
 ├── AGENTS.md               — this file
 ├── README.md               — user-facing description, keep in sync
 ├── LICENSE                 — Unlicense (public domain)
@@ -583,9 +582,10 @@ bun run typecheck                # tsc app config + test config
 
 - Run in-process under `bun test` with happy-dom, preloaded through `bunfig.toml` →
   `tests/setup/dom.ts`.
-- Suites live in `tests/unit/suites/*.ts` and must be registered in `tests/unit/unit.test.ts`.
-- `tests/unit/testing.ts` provides the shared assert/runner harness.
-- `tests/unit/suites/cspTests.ts` and `staticPathTests.ts` cover build/server helpers rather than
+- Suites are native `bun:test` files (`describe`/`it`/`beforeEach`) in `tests/unit/suites/*.test.ts`;
+  `bun test tests/unit` discovers them automatically — no registration step.
+- `tests/unit/testing.ts` provides the shared `assert`/`assertEqual`/`assertNotEqual` helpers.
+- `tests/unit/suites/csp.test.ts` and `staticPath.test.ts` cover build/server helpers rather than
   browser modules; keep that pattern when adding tooling tests.
 
 ### Playwright tests
@@ -603,8 +603,6 @@ bun run typecheck                # tsc app config + test config
   (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
   no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e-seam.spec.ts`
   asserts both builds behave.
-- `tests/browserTestsInNode.js` is a legacy Node runner; the supported entry points are the bun
-  unit suite and Playwright.
 
 ### Test seams
 

@@ -1,3 +1,4 @@
+import { describe, it } from 'bun:test'
 // Contract conformance suite (docs/storage-interface.md §10, rollout PR 2a).
 // Every adapter runs against the same behavioural spec: upsert semantics,
 // exists-without-key, head invariants, typed errors, capability descriptors.
@@ -14,12 +15,7 @@ import { encrypted, createKeySession } from '../../../source/js/encryptedStore.j
 import { codecStore, jsonCodec } from '../../../source/js/docCodec.js'
 import { StoreError, type RawRecord, type RawStore, type StringStore } from '../../../source/js/storage.js'
 import { store } from '../../../source/js/utils.js'
-import { assert, assertEqual, createAsyncSectionHarness } from '../testing.js'
-
-const harness = createAsyncSectionHarness({})
-export const sections = harness.sections
-const section = harness.section
-const test = harness.test
+import { assert, assertEqual } from '../testing.js'
 
 // ─── fakes ───────────────────────────────────────────────────────────────────
 
@@ -99,15 +95,15 @@ async function expectStoreError(fn: () => Promise<unknown>, code: string, label:
 // ─── raw-store contract ──────────────────────────────────────────────────────
 
 async function rawStoreContract(make: () => RawStore, label: string) {
-    section(`contract — raw store (${label})`)
+    describe(`contract — raw store (${label})`, () => {
 
-    await test('readRaw is null before any write; exists is false', async () => {
+    it('readRaw is null before any write; exists is false', async () => {
         const raw = make()
         assertEqual(await raw.readRaw(), null, 'no record initially')
         assertEqual(await raw.exists(), false, 'exists false initially')
     })
 
-    await test('writeRaw/readRaw round-trip with upsert semantics (no read-before-write)', async () => {
+    it('writeRaw/readRaw round-trip with upsert semantics (no read-before-write)', async () => {
         const raw = make()
         await raw.writeRaw({ data: 'first', salt: 'salt-a' })
         assertEqual((await raw.readRaw())?.data, 'first', 'first write lands')
@@ -116,7 +112,7 @@ async function rawStoreContract(make: () => RawStore, label: string) {
         assertEqual((await raw.readRaw())?.salt, 'salt-b', 'salt carried')
     })
 
-    await test('writeRaw resolves with the token head() reports; head stable when unchanged', async () => {
+    it('writeRaw resolves with the token head() reports; head stable when unchanged', async () => {
         const raw = make()
         const token = await raw.writeRaw({ data: 'first', salt: 'salt-a' })
         assertEqual(await raw.head!(), token, 'write token equals head')
@@ -124,12 +120,13 @@ async function rawStoreContract(make: () => RawStore, label: string) {
         assertEqual(again, token, 'head stable when nothing changed')
     })
 
-    await test('clearRaw removes the record', async () => {
+    it('clearRaw removes the record', async () => {
         const raw = make()
         await raw.writeRaw({ data: 'first', salt: 'salt-a' })
         await raw.clearRaw()
         assertEqual(await raw.readRaw(), null, 'record gone')
         assertEqual(await raw.exists(), false, 'exists false after clear')
+    })
     })
 }
 
@@ -137,9 +134,9 @@ async function rawStoreContract(make: () => RawStore, label: string) {
 
 async function stringStoreContract(make: () => StringStore, label: string, opts: { passphrase?: string } = {}) {
     const encryptedStore = opts.passphrase !== undefined
-    section(`contract — string store (${label})`)
+    describe(`contract — string store (${label})`, () => {
 
-    await test('read() is null on an empty store, never throws for it', async () => {
+    it('read() is null on an empty store, never throws for it', async () => {
         const s = make()
         if (encryptedStore) {
             await s.unlock!(opts.passphrase!)  // first-time setup on empty
@@ -147,7 +144,7 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
         assertEqual(await s.read(), null, 'empty store reads null')
     })
 
-    await test('exists() needs no passphrase or unlock', async () => {
+    it('exists() needs no passphrase or unlock', async () => {
         const s = make()
         assertEqual(await s.exists(), false, 'empty store: exists false while locked')
         if (encryptedStore) {
@@ -158,7 +155,7 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
         }
     })
 
-    await test('write()→read() round-trip; write resolves with the head token', async () => {
+    it('write()→read() round-trip; write resolves with the head token', async () => {
         const s = make()
         if (encryptedStore) await s.unlock!(opts.passphrase!)
         const token = await s.write('hello world')
@@ -168,7 +165,7 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
         assertEqual(await s.head?.(), stable, 'head stable when unchanged')
     })
 
-    await test('upsert semantics: second write replaces the first', async () => {
+    it('upsert semantics: second write replaces the first', async () => {
         const s = make()
         if (encryptedStore) await s.unlock!(opts.passphrase!)
         await s.write('one')
@@ -176,7 +173,7 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
         assertEqual(await s.read(), 'two', 'last write wins')
     })
 
-    await test('clear() empties the store', async () => {
+    it('clear() empties the store', async () => {
         const s = make()
         if (encryptedStore) await s.unlock!(opts.passphrase!)
         await s.write('data')
@@ -186,13 +183,13 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
     })
 
     if (encryptedStore) {
-        await test('read()/write() while locked throw a typed error', async () => {
+        it('read()/write() while locked throw a typed error', async () => {
             const s = make()
             await expectStoreError(() => s.read(), 'unauthenticated', 'locked read')
             await expectStoreError(() => s.write('x'), 'unauthenticated', 'locked write')
         })
 
-        await test('unlock with the wrong passphrase throws wrong-key', async () => {
+        it('unlock with the wrong passphrase throws wrong-key', async () => {
             const s = make()
             await s.unlock!(opts.passphrase!)
             await s.write('secret')
@@ -201,24 +198,25 @@ async function stringStoreContract(make: () => StringStore, label: string, opts:
             assert(error.cause, 'cause preserved (two-channel errors)')
         })
 
-        await test('capabilities advertise encrypted: true', async () => {
+        it('capabilities advertise encrypted: true', async () => {
             const s = make()
             assertEqual(s.capabilities.encrypted, true, 'encrypted capability')
         })
     } else {
-        await test('capabilities advertise encrypted: false', async () => {
+        it('capabilities advertise encrypted: false', async () => {
             const s = make()
             assertEqual(s.capabilities.encrypted, false, 'plain store')
         })
     }
+    })
 }
 
 // ─── doc-store lift ──────────────────────────────────────────────────────────
 
 async function docStoreContract(make: () => StringStore, label: string) {
-    section(`contract — codecStore lift (${label})`)
+    describe(`contract — codecStore lift (${label})`, () => {
 
-    await test('codecStore round-trips documents through the codec', async () => {
+    it('codecStore round-trips documents through the codec', async () => {
         const docStore = codecStore(jsonCodec, make())
         const doc = { modelVersion: 'v1', dataVersion: 1, nodes: [{ id: 'root', children: [] }] }
         const token = await docStore.write(doc)
@@ -228,11 +226,12 @@ async function docStoreContract(make: () => StringStore, label: string) {
         if (docStore.head) assertEqual(await docStore.head(), token, 'token passthrough')
     })
 
-    await test('codecStore parse failure is a typed invalid-document error', async () => {
+    it('codecStore parse failure is a typed invalid-document error', async () => {
         const inner = make()
         await inner.write('not json at all')
         const docStore = codecStore(jsonCodec, inner)
         await expectStoreError(() => docStore.read(), 'invalid-document', 'bad document')
+    })
     })
 }
 
@@ -254,70 +253,73 @@ await docStoreContract(() => memoryStore(), 'memory')
 
 // ─── capability descriptors (§10) ────────────────────────────────────────────
 
-section('capability descriptors')
 
-await test('memory: durable never, change detection on, always available', () => {
-    const caps = memoryStore().capabilities
-    assertEqual(caps.durable, 'never', 'memory durability')
-    assertEqual(caps.changeDetection, true, 'head available')
-    assertEqual(caps.available, true, 'no environment requirement')
-    assertEqual(caps.encrypted, false, 'not encrypted')
+describe('capability descriptors', () => {
+
+  it('memory: durable never, change detection on, always available', () => {
+      const caps = memoryStore().capabilities
+      assertEqual(caps.durable, 'never', 'memory durability')
+      assertEqual(caps.changeDetection, true, 'head available')
+      assertEqual(caps.available, true, 'no environment requirement')
+      assertEqual(caps.encrypted, false, 'not encrypted')
+  })
+
+  it('file: durable always, available tracks showSaveFilePicker presence', () => {
+      assertEqual(isFileStoreAvailable({} as any), false, 'unavailable without the API')
+      assertEqual(isFileStoreAvailable({ showSaveFilePicker: () => { } } as any), true, 'available with the API')
+      const caps = fileStore(fakeFileHandle() as unknown as FileSystemFileHandle).capabilities
+      assertEqual(caps.durable, 'always', 'file durability')
+      assertEqual(caps.available, isFileStoreAvailable(), 'available mirrors the probe')
+  })
+
+  it('local slot: durable prompt (evictable, persist() prompt hangs off this)', () => {
+      const caps = slotRaw(fakeSlot()).capabilities
+      assertEqual(caps.durable, 'prompt', 'local durability')
+      assertEqual(caps.encrypted, false, 'raw level is not encrypted')
+  })
+
+  it('encrypted() inherits the inner descriptor and sets encrypted: true', () => {
+      const raw = fakeRaw({ durable: 'prompt' })
+      const caps = encrypted(raw, createKeySession()).capabilities
+      assertEqual(caps.durable, 'prompt', 'inherited durability')
+      assertEqual(caps.encrypted, true, 'encryption is the decorator\u2019s doing')
+      assertEqual(caps.changeDetection, true, 'inherited change detection')
+  })
+
+  // ─── local slot specifics ────────────────────────────────────────────────────
 })
 
-await test('file: durable always, available tracks showSaveFilePicker presence', () => {
-    assertEqual(isFileStoreAvailable({} as any), false, 'unavailable without the API')
-    assertEqual(isFileStoreAvailable({ showSaveFilePicker: () => { } } as any), true, 'available with the API')
-    const caps = fileStore(fakeFileHandle() as unknown as FileSystemFileHandle).capabilities
-    assertEqual(caps.durable, 'always', 'file durability')
-    assertEqual(caps.available, isFileStoreAvailable(), 'available mirrors the probe')
-})
+describe('local slot adapter', () => {
 
-await test('local slot: durable prompt (evictable, persist() prompt hangs off this)', () => {
-    const caps = slotRaw(fakeSlot()).capabilities
-    assertEqual(caps.durable, 'prompt', 'local durability')
-    assertEqual(caps.encrypted, false, 'raw level is not encrypted')
-})
+  it('the real store.data slot round-trips through slotRaw (snapshot restored)', async () => {
+      const before = store.data.get()
+      try {
+          const raw = slotRaw(store.data)
+          assertEqual(await raw.readRaw(), null, 'clean slate')
+          const token = await raw.writeRaw({ data: 'envelope-data', salt: 'salt-value' })
+          const record = await raw.readRaw()
+          assertEqual(record?.data, 'envelope-data', 'data round-trips')
+          assertEqual(record?.salt, 'salt-value', 'salt round-trips')
+          assertEqual(await raw.head!(), token, 'content-hash head')
+          assertEqual(await raw.exists(), true, 'exists')
+          await raw.clearRaw()
+          assertEqual(await raw.readRaw(), null, 'cleared')
+      } finally {
+          if (before === null) store.data.del()
+          else store.data.set(before)
+      }
+  })
 
-await test('encrypted() inherits the inner descriptor and sets encrypted: true', () => {
-    const raw = fakeRaw({ durable: 'prompt' })
-    const caps = encrypted(raw, createKeySession()).capabilities
-    assertEqual(caps.durable, 'prompt', 'inherited durability')
-    assertEqual(caps.encrypted, true, 'encryption is the decorator\u2019s doing')
-    assertEqual(caps.changeDetection, true, 'inherited change detection')
-})
+  it('a slot value without the salt separator reads as no record (today\u2019s behaviour)', async () => {
+      const slot = fakeSlot()
+      slot.set('no-separator-here')
+      const raw = slotRaw(slot)
+      assertEqual(await raw.readRaw(), null, 'malformed value reads as empty')
+      assertEqual(await raw.exists(), true, 'but the slot is occupied — exists is a storage probe')
+  })
 
-// ─── local slot specifics ────────────────────────────────────────────────────
-
-section('local slot adapter')
-
-await test('the real store.data slot round-trips through slotRaw (snapshot restored)', async () => {
-    const before = store.data.get()
-    try {
-        const raw = slotRaw(store.data)
-        assertEqual(await raw.readRaw(), null, 'clean slate')
-        const token = await raw.writeRaw({ data: 'envelope-data', salt: 'salt-value' })
-        const record = await raw.readRaw()
-        assertEqual(record?.data, 'envelope-data', 'data round-trips')
-        assertEqual(record?.salt, 'salt-value', 'salt round-trips')
-        assertEqual(await raw.head!(), token, 'content-hash head')
-        assertEqual(await raw.exists(), true, 'exists')
-        await raw.clearRaw()
-        assertEqual(await raw.readRaw(), null, 'cleared')
-    } finally {
-        if (before === null) store.data.del()
-        else store.data.set(before)
-    }
-})
-
-await test('a slot value without the salt separator reads as no record (today\u2019s behaviour)', async () => {
-    const slot = fakeSlot()
-    slot.set('no-separator-here')
-    const raw = slotRaw(slot)
-    assertEqual(await raw.readRaw(), null, 'malformed value reads as empty')
-    assertEqual(await raw.exists(), true, 'but the slot is occupied — exists is a storage probe')
-})
-
-await test('a quota failure on write surfaces as too-large (data-06, adapter half)', async () => {
-    const raw = slotRaw(fakeSlot({ quota: 10 }))
-    await expectStoreError(() => raw.writeRaw({ data: 'much longer than ten chars', salt: 'salt' }), 'too-large', 'quota exceeded')
+  it('a quota failure on write surfaces as too-large (data-06, adapter half)', async () => {
+      const raw = slotRaw(fakeSlot({ quota: 10 }))
+      await expectStoreError(() => raw.writeRaw({ data: 'much longer than ten chars', salt: 'salt' }), 'too-large', 'quota exceeded')
+  })
 })
