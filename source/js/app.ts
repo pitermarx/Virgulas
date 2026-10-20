@@ -972,9 +972,6 @@ const LockScreen = () => {
           </div>
 
           ${isRemotePasswordStep && html`
-            <div class="backend-summary">
-              <span class="backend-summary-text">Synced via ${serverLabel()}</span>
-            </div>
             <form onSubmit=${submitRemotePassword}>
               <div class="input-group">
                 <label for="auth-username" class="input-label">Email</label>

@@ -34,7 +34,7 @@ test('real sign-up against the real local TrailBase', async ({ page }) => {
     await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
     await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: /In the cloud/ }).click();
-    await expect(page.getByText('Synced via this server')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByLabel('Email')).toBeVisible({ timeout: 15000 });
 
     const email = `live-${Date.now()}@virgulas.com`;
     await page.getByLabel('Email').fill(email);

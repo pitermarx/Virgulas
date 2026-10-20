@@ -662,21 +662,6 @@ a:hover {
 }
 /* ── Backend picker (Remote mode backend selection) ──────────────────────── */
 
-/* The one-line server summary with the opt-in expander. The hosted server is
-   the default, so first-run users see a single quiet line, not a 3-way choice. */
-.backend-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.backend-summary-text {
-  color: var(--color-text-muted);
-  font-size: var(--text-size-description);
-}
-
 .backend-picker {
   display: flex;
   flex-direction: column;

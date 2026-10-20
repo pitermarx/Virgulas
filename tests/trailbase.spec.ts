@@ -137,7 +137,7 @@ test.describe('same-origin server resolution', () => {
 
         // The same-origin probe resolved the mocked TrailBase: the form names
         // it, and no backend picker or URL field exists anywhere.
-        await expect(page.getByText('Synced via this server')).toBeVisible();
+        await expect(page.getByText('Remote — this server')).toBeVisible();
         await expect(page.getByRole('radiogroup')).toHaveCount(0);
         await expect(page.getByLabel(/URL/)).toHaveCount(0);
         await expect(page.getByLabel('Email')).toBeVisible();
