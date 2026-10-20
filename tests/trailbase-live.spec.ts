@@ -86,7 +86,7 @@ test('forgot password sends a reset email for a real account', async ({ page }) 
     const messagesJson = await (await page.request.get(`${MAILPIT}/api/v1/messages`)).json();
     const msgs = (messagesJson.messages ?? []).filter((m: any) =>
         (m.To ?? []).some((t: any) => String(t.Address) === email));
-    expect(msgs.length).toBeGreaterThanOrEqual(2, 'verification AND reset emails arrived');
+    expect(msgs.length, 'verification AND reset emails arrived').toBeGreaterThanOrEqual(2);
     const full = await (await page.request.get(`${MAILPIT}/api/v1/message/${msgs[0].ID}`)).json();
     expect(full.Text as string).toMatch(/password/i);
 });
