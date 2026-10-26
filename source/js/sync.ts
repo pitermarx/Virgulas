@@ -168,9 +168,9 @@ let remoteSyncQueue: Promise<any> = Promise.resolve()
 
 // ── Remote store injection (docs §6.4) ───────────────────────────────────────
 //
-// The orchestration (persistence.ts) constructs the cached() composition and
-// injects it here; every pull and push goes through the store, which owns the
-// codec and the crypto. Secrets never transit this module.
+// The orchestration (persistence.ts constructs it, remoteSave.ts owns saves)
+// injects the cached() composition here; every pull and push goes through the
+// store, which owns the codec and the crypto. Secrets never transit this module.
 
 let _remoteStore: DocStore | null = null
 

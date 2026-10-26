@@ -26,28 +26,23 @@ import inbox from './inbox.js'
 import {
   remoteSync,
   syncStatus,
-  pendingConflicts,
-  pullAndMerge,
   remoteRekeyed,
-  handleSyncFailure,
   startPolling,
   stopPolling,
-  setRemoteStore,
-  getLastSyncHead,
   setSyncHead,
-  skipNextRemotePush,
   setLastSyncedAt,
   noteLocalWriteActivity,
-  createRemoteSyncAttempt,
-  canStartRemoteSync,
   allowImmediateRemoteSync,
-  remoteSyncRetryDelay,
-  isRemoteSyncAttemptStale,
-  runExclusiveRemoteSync,
   hasSupabaseClient,
   backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
+import {
+  clearDeferredPush,
+  getRemoteSaveStore,
+  saveRemoteDocument,
+  setRemoteSaveStore
+} from './remoteSave.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
@@ -269,12 +264,12 @@ function loadDocIntoOutline(doc: OutlineDoc) {
 }
 
 /**
- * The Remote composition (docs §4.7/§5): the Supabase row is the source of
+ * The Remote composition (docs §4.7/§5): the server row is the source of
  * truth, the local `vmd_data_enc` slot is the offline cache. Both sides share
  * the one KeySession with Local mode, so the two copies always carry the same
- * salt and envelope. Built on remote unlock; torn down on lock/sign-out.
+ * salt and envelope. Built on remote unlock, handed to `remoteSave.ts` (which
+ * owns saves, retries and the deferred push), torn down on lock/sign-out.
  */
-let remoteDataStore: DocStore | null = null
 let remoteCacheStore: StringStore | null = null        // the local cache side
 
 /** The configured sync backend (resolved by `sync.ts`). */
@@ -311,8 +306,8 @@ async function buildRemoteStore(): Promise<DocStore> {
 }
 
 function teardownRemoteStore() {
-  remoteDataStore = null
-  setRemoteStore(null)
+  // Nulls the save handle and the sync module's store in one place.
+  setRemoteSaveStore(null)
 }
 
 /**
@@ -425,22 +420,6 @@ function dismissLocalStoragePersistenceNotice() {
 // actionable message instead of an unexplained unlock failure.
 let pendingEmailConfirmation = false
 
-async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
-  for (let i = 0; i <= maxRetries; i++) {
-    try {
-      return await fn()
-    } catch (err) {
-      if (i === maxRetries) throw err
-      // Typed non-retryable failures (docs §6.4): a rotated remote or an
-      // oversized document will never succeed on retry.
-      if (err instanceof StoreError && err.code !== 'network' && err.code !== 'unauthenticated') throw err
-      await new Promise(r => setTimeout(r, baseMs * Math.pow(2, i)))
-    }
-  }
-  throw new Error('retryWithBackoff exhausted all attempts')
-}
-
 let lastTimeoutId: ReturnType<typeof setTimeout> | null = null
 
 // The save debounce below is reset by every change, so continuous typing would
@@ -506,105 +485,8 @@ export async function flushPendingSave(): Promise<boolean> {
 }
 
 // A remote push is skipped while the user is still typing (`canStartRemoteSync`
-// is false until the write debounce elapses). Previously that skip silently
-// dropped the push: the edit only reached the server on the next unrelated save.
-// These track a deferred push so it is retried once typing stops.
-let deferredPushTimer: ReturnType<typeof setTimeout> | null = null
-let deferredPushDoc: OutlineDoc | null = null
-
-function clearDeferredPush() {
-  if (deferredPushTimer !== null) {
-    clearTimeout(deferredPushTimer)
-    deferredPushTimer = null
-  }
-  deferredPushDoc = null
-}
-
-/**
- * Schedules the most recent encrypted payload to be pushed once the write
- * debounce has elapsed. Only one retry is ever queued: a newer payload replaces
- * an older one, so the server converges on the latest state.
- */
-function scheduleDeferredPush(doc: OutlineDoc) {
-  // Only one retry is ever queued: a newer document replaces an older one, so
-  // the server converges on the latest state (docs §6.4).
-  deferredPushDoc = doc
-  if (deferredPushTimer !== null) {
-    clearTimeout(deferredPushTimer)
-  }
-  // +50ms so we land just after `remoteSyncNotBefore` rather than exactly on it.
-  const delay = remoteSyncRetryDelay() + 50
-  deferredPushTimer = setTimeout(() => {
-    deferredPushTimer = null
-    void flushDeferredPush()
-  }, delay)
-}
-
-async function flushDeferredPush() {
-  const doc = deferredPushDoc
-  // Keep the document until the retry actually runs; a later edit replaces it.
-  if (!doc) return
-  const remote = remoteDataStore
-  if (!remote) return
-  if (!canStartRemoteSync()) {
-    // Still typing — re-arm for the remaining deferral.
-    scheduleDeferredPush(doc)
-    return
-  }
-  if (pendingConflicts.peek().length > 0) {
-    // A merge is pending; the conflict flow owns the upload.
-    deferredPushDoc = null
-    return
-  }
-
-  const attempt = createRemoteSyncAttempt()
-  await runExclusiveRemoteSync(async () => {
-    if (pendingConflicts.peek().length > 0) return
-    // This flush writes whatever the latest queued document is, not a specific
-    // edit, so it must not bail on a newer write epoch — the whole point is to
-    // converge the server on the newest state once typing pauses.
-
-    try {
-      syncStatus.value = 'syncing'
-      // Pull-before-push still applies to a flush: converge without clobbering
-      // a newer remote (docs §6.4).
-      let headToken: string | null = null
-      try {
-        headToken = await remote.head?.() ?? null
-      } catch { /* proceed with a direct write */ }
-
-      if (headToken && headToken !== getLastSyncHead()) {
-        const result = await pullAndMerge()
-        if (!result.clean) {
-          syncStatus.value = 'synced'
-          deferredPushDoc = null
-          return
-        }
-        const mergedJson = result.mergedJson
-        if (mergedJson) {
-          const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-          if (mergedToken) setSyncHead(mergedToken)
-          setLastSyncedAt(Date.now())
-          skipNextRemotePush.value = true
-          outline.deserialize(mergedJson)
-          syncStatus.value = 'synced'
-          deferredPushDoc = null
-          return
-        }
-      }
-
-      // A flush re-runs the store write — cache and primary (docs §6.4).
-      const token = await retryWithBackoff(() => remote.write(doc))
-      if (token) setSyncHead(token)
-      setLastSyncedAt(Date.now())
-      syncStatus.value = 'synced'
-      deferredPushDoc = null
-    } catch (error) {
-      log('[Persistence] Deferred push failed:', error)
-      handleSyncFailure(error)
-    }
-  })
-}
+// is false until the write debounce elapses) and retried once it stops. That
+// queue and its pull-before-push flow live in remoteSave.ts.
 effect(() => {
   const mode = authMode.value
   if (mode !== 'remote') return
@@ -737,106 +619,13 @@ effect(() => {
   async function doSave(): Promise<boolean> {
     clearMaxWaitSave()
     saveArmed = false
-    const remote = remoteDataStore
-    if (!remote) return false
+    if (!getRemoteSaveStore()) return false
     try {
       const doc = jsonCodec.parse(outline.serialize()) // get latest doc state
       lastSavedVersion = version
-
-      // A save that was already in flight when the session ended must not push:
-      // signing out / deleting the account locks the KeySession, so the store's
-      // write fails unauthenticated and nothing reaches the server.
-      if (!canStartRemoteSync()) {
-        // Deferring because the user is still typing must not drop the push.
-        log('[Persistence] Push deferred until typing pauses')
-        scheduleDeferredPush(doc)
-        return true
-      }
-
-      const remoteAttempt = createRemoteSyncAttempt()
-      await runExclusiveRemoteSync(async () => {
-        if (isRemoteSyncAttemptStale(remoteAttempt)) {
-          // Superseded by newer typing: queue the latest document instead of
-          // silently abandoning this edit's remote push.
-          scheduleDeferredPush(doc)
-          return
-        }
-
-        // Skip remote push if a merge was just applied (prevents double-push).
-        // The merge path already wrote both copies through the store.
-        if (skipNextRemotePush.peek()) {
-          skipNextRemotePush.value = false
-          log('[Persistence] Skipping remote push after merge apply')
-          return
-        }
-
-        clearDeferredPush()
-        syncStatus.value = 'syncing'
-
-        // Pull-before-push: the primary changed since our last-seen head token?
-        let headToken: string | null = null
-        try {
-          headToken = await remote.head?.() ?? null
-        } catch { /* ignore, proceed with direct write */ }
-
-        if (isRemoteSyncAttemptStale(remoteAttempt)) return
-
-        if (headToken && headToken !== getLastSyncHead()) {
-          try {
-            const result = await pullAndMerge()
-            if (isRemoteSyncAttemptStale(remoteAttempt)) return
-
-            if (!result.clean) {
-              log('[Persistence] Sync blocked by conflicts')
-              syncStatus.value = 'synced'
-              return
-            }
-
-            const mergedJson = result.mergedJson
-            if (mergedJson) {
-              const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-              if (isRemoteSyncAttemptStale(remoteAttempt)) return
-              if (mergedToken) setSyncHead(mergedToken)
-              setLastSyncedAt(Date.now())
-              syncStatus.value = 'synced'
-              // Apply merged doc; flag prevents the triggered save from re-pushing
-              skipNextRemotePush.value = true
-              outline.deserialize(mergedJson)
-            } else {
-              // Remote not newer after all (race) or no data to merge
-              const token = await remote.write(doc)
-              if (token) setSyncHead(token)
-              if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-                setLastSyncedAt(Date.now())
-                syncStatus.value = 'synced'
-              }
-            }
-          } catch (pullErr) {
-            console.error('[Persistence] Pull-merge failed:', pullErr)
-            if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-              handleSyncFailure(pullErr)
-            }
-          }
-          return
-        }
-
-        // Remote not newer — direct push. The write's returned token is
-        // adopted unconditionally: it IS the new head, and the poller must
-        // never mistake this device's own push for a remote change (docs §6.4).
-        try {
-          const token = await retryWithBackoff(() => remote.write(doc))
-          if (token) setSyncHead(token)
-          if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-            setLastSyncedAt(Date.now())
-            syncStatus.value = 'synced'
-          }
-        } catch (syncError) {
-          console.error('[Persistence] Remote sync upload failed after retries:', syncError)
-          if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-            handleSyncFailure(syncError)
-          }
-        }
-      })
+      // Pull-before-push, retries and the typing-time deferral live in
+      // remoteSave.ts; failures there map onto the sync status, not this save.
+      await saveRemoteDocument(doc)
       log('[Persistence] Saved doc v' + version)
       return true
     } catch (error) {
@@ -960,8 +749,8 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // KeySession) and verify against the primary — decryption is the verifier
   // (docs §6.2). unlock is primary-only: an offline Remote reload needs
   // connectivity, exactly as before.
-  remoteDataStore = await buildRemoteStore()
-  setRemoteStore(remoteDataStore)
+  const remote = await buildRemoteStore()
+  setRemoteSaveStore(remote)
 
   // One round-trip: unlock() verifies the passphrase by decrypting the
   // downloaded record and returns its text plus the record's change token
@@ -970,7 +759,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // Primary-only: an offline Remote reload needs connectivity, as before.
   let unlockResult: UnlockResult
   try {
-    const result = await remoteDataStore.unlock?.(code)
+    const result = await remote.unlock?.(code)
     if (!result) throw new Error('The Remote store did not report an unlocked document.')
     unlockResult = result
   } catch (error) {
@@ -986,7 +775,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     if (!adoptInitialDoc(initialDocJson)) {
       outline.addChild('root', { text: 'Hello World' })
     }
-    const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
+    const token = await remote.write(jsonCodec.parse(outline.serialize()))
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
@@ -1308,14 +1097,14 @@ export default {
       throw new Error('Could not validate remote session. Sign in again before resetting data.')
     }
 
-    remoteDataStore = await buildRemoteStore()
-    setRemoteStore(remoteDataStore)
+    const remote = await buildRemoteStore()
+    setRemoteSaveStore(remote)
     // Rotation is the session's job: a fresh salt and the new passphrase become
     // active and the write re-encrypts both copies (docs §6.7).
     keySession.rotate(newPassphrase)
     outline.reset()
     outline.addChild('root', { text: 'Hello World' })
-    const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
+    const token = await remote.write(jsonCodec.parse(outline.serialize()))
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
@@ -1384,7 +1173,7 @@ export default {
     keySession.lock()
     passphrase.value = ''
 
-    await remoteDataStore?.clear() ?? await remoteSync.deleteOutline()
+    await getRemoteSaveStore()?.clear() ?? await remoteSync.deleteOutline()
 
     // §4.5 step 4: remove the auth record itself when the backend supports
     // self-service deletion (TrailBase does; Supabase does not — its auth
@@ -1459,9 +1248,8 @@ export default {
       // Rotation is the session's job (docs §6.7): both copies are re-encrypted
       // under the new salt by this write.
       keySession.rotate(newPassphrase)
-      const remote = remoteDataStore ?? await buildRemoteStore()
-      remoteDataStore = remote
-      setRemoteStore(remote)
+      const remote = getRemoteSaveStore() ?? await buildRemoteStore()
+      setRemoteSaveStore(remote)
       const token = await remote.write(jsonCodec.parse(json))
       if (token) setSyncHead(token)
       setLastSyncedAt(Date.now())

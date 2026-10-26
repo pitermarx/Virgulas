@@ -473,7 +473,9 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. All four modes' data paths run through the storage seam — Remote is `cached(encrypted(raw), encrypted(slotRaw))` over one shared KeySession; `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. All four modes' data paths run through the storage seam — Remote is `cached(encrypted(raw), encrypted(slotRaw))` over one shared KeySession; `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the save debounce, the session lifecycle and the store construction; hands the composed remote store to `remoteSave.ts`.
+- `remoteSave.ts`:
+  Remote save orchestration: the injected composed store (also handed to `sync.ts`), pull-before-push on save, the retry policy (only `network`/`unauthenticated` retry), and the deferred-push queue that retries an edit skipped while typing. Holds documents, never ciphertext or keys.
 - `sync.ts`:
   Remote sync scheduling: backend resolution, the background poll (head-token change detection against `vmd_sync_head`), typing-gate/epoch bookkeeping, backoff, status/conflict signals, and the thin `remoteSync` auth facade over the resolved backend. No client code, no row payloads, no secrets — pulls and pushes go through the injected remote DocStore; the merge algorithm lives in `merge.ts` (`mergeDocuments` is re-exported for the e2e seam).
 - `crypto2.ts`:

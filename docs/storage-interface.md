@@ -673,6 +673,9 @@ every 60s:  token = remoteStore.head()
 - Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff`,
   `skipNextRemotePush` all stay in the orchestration, keyed off the typed
   `network`/`unauthenticated` errors. Stores do single operations only.
+  `remoteSave.ts` owns the save-side half: the injected store, the
+  pull-before-push cycle, the retry policy and the deferred queue;
+  `persistence.ts` keeps the debounce and session lifecycle.
 - The deferred-push queue holds **documents** (`{ doc, attempt }`), never
   ciphertext/salt/passphrase — a flush re-runs `store.write(doc)`, and the
   epoch-staleness guard (today's `isRemoteSyncAttemptStale`) makes the flush
@@ -724,12 +727,13 @@ prompt instead of silently reverting the rotation (sync-01 fix).
 | `memoryStore.ts`, `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters | from `persistence.ts` mode branches |
 | `supabaseBackend.ts` (new) | `RawStore` + `AuthProvider` over `@supabase/supabase-js` (dynamic import preserved) | from `sync.ts` |
 | `sync.ts` (shrinks) | scheduling, poll, backoff, status/conflict signals — no client code | remainder of current `sync.ts` |
-| `persistence.ts` (shrinks) | pure orchestration: boot, unlock UX wiring, autosave wiring, mode switching | remainder of current |
+| `persistence.ts` (shrinks) | pure orchestration: boot, unlock UX wiring, autosave debounce, mode switching, store construction | remainder of current |
+| `remoteSave.ts` (new) | Remote save orchestration: injected store, pull-before-push, retry policy, deferred-push queue | `persistence.ts` `doSave` + deferred queue |
 | `crypto2.ts`, `outline.ts`, `biometrics.ts`, `utils.ts` | unchanged | — |
 
 Circular-dependency rule: adapters import `storage.ts` (contracts only); nothing
-below imports anything above. `persistence.ts` and `sync.ts` sit at the top and
-are the only consumers of `merge` + `DocStore` together.
+below imports anything above. `persistence.ts`, `remoteSave.ts` and `sync.ts`
+sit at the top and are the only consumers of `merge` + `DocStore` together.
 
 Module size rule: each new module is well under the 350–450 line split threshold.
 
