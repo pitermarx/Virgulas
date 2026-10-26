@@ -1,0 +1,189 @@
+import { test, expect, type Page } from '../test';
+import { setupDoc } from '../test';
+
+test.describe('Mobile swipe indentation', () => {
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support Playwright mobile contexts (isMobile).');
+
+    test.use({
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        userAgent:
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1'
+    });
+
+    test.beforeEach(async ({ page }) => {
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'A', text: 'Node A', children: [] },
+                { id: 'B', text: 'Node B', children: [] },
+                { id: 'C', text: 'Node C', children: [] }
+            ]
+        });
+    });
+
+    // The mobile layout renders the document flat (the DOM does not nest child
+    // nodes), so indentation is asserted through the visual x-offset: an
+    // indented node renders 16px further right than its unindented origin.
+    async function nodeX(page: Page, nodeId: string): Promise<number | null> {
+        return (await page.locator(`[data-node-id="${nodeId}"]`).boundingBox())?.x ?? null;
+    }
+
+    test('swipe right indents and swipe left outdents', async ({ page }) => {
+        const flatX = await nodeX(page, 'B');
+        await swipeNode(page, 'B', 120);
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1)
+            .toBeGreaterThan((flatX ?? 0) + 8);
+
+        await swipeNode(page, 'B', -120);
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1).toBe(flatX);
+    });
+
+    test('swipe does not focus the swiped node', async ({ page }) => {
+        const flatX = await nodeX(page, 'B');
+
+        // Swipe node B to indent it
+        await swipeNode(page, 'B', 120);
+        await expect.poll(async () => (await nodeX(page, 'B')) ?? -1)
+            .toBeGreaterThan((flatX ?? 0) + 8);
+
+        // Node B should not be focused (no input visible inside node B)
+        const nodeBInput = page.locator('[data-node-id="B"] input');
+        await expect(nodeBInput).toHaveCount(0);
+    });
+
+    test('? shortcuts button is not visible on mobile', async ({ page }) => {
+        await expect(page.getByRole('button', { name: '?' })).toHaveCount(0);
+    });
+
+    test('Search button opens search mode on mobile', async ({ page }) => {
+        const searchButton = page.getByRole('button', { name: 'Search' });
+        await expect(searchButton).toBeVisible();
+
+        await searchButton.tap();
+
+        const searchInput = page.getByPlaceholder('Search...');
+        await expect(searchInput).toBeVisible();
+        await expect(searchInput).toBeFocused();
+    });
+
+    test('tap to edit keeps node focus stable', async ({ page }) => {
+        await page.locator('[data-node-id="A"] .node-text-md').tap();
+
+        const nodeAInput = page.locator('[data-node-id="A"] input');
+        await expect(nodeAInput).toBeFocused();
+        await expect.poll(() => activeNodeId(page)).toBe('A');
+        await expectFocusedNodeStable(page, 'A');
+    });
+
+    test('tap from one node to another keeps edit focus stable', async ({ page }) => {
+        await page.locator('[data-node-id="A"] .node-text-md').tap();
+        await expect(page.locator('[data-node-id="A"] input')).toBeFocused();
+
+        await page.locator('[data-node-id="B"] .node-text-md').tap();
+
+        const nodeBInput = page.locator('[data-node-id="B"] input');
+        await expect(nodeBInput).toBeFocused();
+        await expect.poll(() => activeNodeId(page)).toBe('B');
+        await expectFocusedNodeStable(page, 'B');
+    });
+
+    test('status bar remains visible above keyboard when input is focused', async ({ page }) => {
+        const toolbar = page.locator('.status-toolbar');
+        await expect(toolbar).toBeVisible();
+
+        // Simulate the visual viewport shrinking (keyboard appears)
+        // by setting the --keyboard-inset CSS variable as the JS listener would
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '300px')
+        });
+
+        // Toolbar should still be in the DOM and visible
+        await expect(toolbar).toBeVisible();
+
+        // Padding-bottom should reflect the inset
+        const paddingBottom = await toolbar.evaluate(el => getComputedStyle(el).paddingBottom);
+        // Padding bottom should be > 0 (at least the inset of 300px)
+        const pbValue = parseFloat(paddingBottom);
+        expect(pbValue).toBeGreaterThan(0);
+
+        // Reset
+        await page.evaluate(() => {
+            document.documentElement.style.setProperty('--keyboard-inset', '0px')
+        });
+    });
+
+    test('main content prevents vertical overscroll', async ({ page }) => {
+        const overscrollBehaviorY = await page.locator('.main-content').evaluate(el => getComputedStyle(el).overscrollBehaviorY);
+        expect(overscrollBehaviorY).toBe('none');
+    });
+});
+
+
+async function activeNodeId(page: Page): Promise<string | null> {
+    return page.evaluate(() => {
+        const activeEl = document.activeElement;
+        return activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') || null;
+    });
+}
+
+async function expectFocusedNodeStable(page: Page, nodeId: string, durationMs = 260) {
+    const stayedFocused = await page.evaluate(async ({ id, ms }) => {
+        const deadline = performance.now() + ms;
+        while (performance.now() < deadline) {
+            const activeEl = document.activeElement;
+            const activeNode = activeEl?.closest?.('.node-content')?.getAttribute('data-node-id') || null;
+            if (activeNode !== id) {
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        return true;
+    }, { id: nodeId, ms: durationMs });
+
+    expect(stayedFocused).toBe(true);
+}
+
+async function swipeNode(page: Page, nodeId: string, deltaX: number, deltaY = 0) {
+    const node = page.locator(`[data-node-id="${nodeId}"]`);
+    await expect(node).toBeVisible();
+
+    const box = await node.boundingBox();
+    if (!box) {
+        throw new Error(`Could not resolve bounds for node ${nodeId}`);
+    }
+
+    const startX = box.x + 28;
+    const startY = box.y + box.height / 2;
+    const endX = startX + deltaX;
+    const endY = startY + deltaY;
+
+    await node.evaluate((el, coords) => {
+        const makeTouchList = (x: number, y: number) => ([{
+            identifier: 1,
+            clientX: x,
+            clientY: y,
+            pageX: x + window.scrollX,
+            pageY: y + window.scrollY,
+            screenX: x,
+            screenY: y
+        }]);
+
+        const dispatch = (name: string, touches: Array<Record<string, number>>, changedTouches: Array<Record<string, number>>) => {
+            const event = new Event(name, { bubbles: true, cancelable: true });
+            Object.defineProperty(event, 'touches', { value: touches, configurable: true });
+            Object.defineProperty(event, 'targetTouches', { value: touches, configurable: true });
+            Object.defineProperty(event, 'changedTouches', { value: changedTouches, configurable: true });
+            el.dispatchEvent(event);
+        };
+
+        const startTouches = makeTouchList(coords.startX, coords.startY);
+        const endTouches = makeTouchList(coords.endX, coords.endY);
+
+        dispatch('touchstart', startTouches, startTouches);
+        dispatch('touchmove', endTouches, endTouches);
+        dispatch('touchend', [], endTouches);
+    }, { startX, startY, endX, endY });
+}

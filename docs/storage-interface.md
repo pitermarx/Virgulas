@@ -749,7 +749,7 @@ Module size rule: each new module is well under the 350–450 line split thresho
    `outlines.sql` carry over verbatim.
 3. **Test seams.** The `__TEST_HOOKS__` window-supabase seam becomes a gated
    window hook that injects a `RawStore`/`AuthProvider` *factory* for specs.
-   Production builds still compile it out; `tests/e2e-seam.spec.ts` continues to
+   Production builds still compile it out; `tests/e2e/e2e-seam.spec.ts` continues to
    assert both builds behave. The e2e `e2e` binding stays as is.
 4. **User-defined backends — policy.** Supported tiers: (a) config-driven
    presets pointing built-in adapters at user-chosen instances (same trust model

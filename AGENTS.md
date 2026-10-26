@@ -52,7 +52,9 @@ Contributor workflow changes belong in this file instead, not in `README.md`.
 Whenever you add or change a feature or behaviour, add or update the corresponding test(s).
 
 - Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.test.ts`, run with `bun test`.
-- UI behaviour and integration flows → Playwright spec in `tests/*.spec.ts`.
+- UI behaviour → behavior-driven Playwright spec in `tests/e2e/*.spec.ts` (oblivious to app internals).
+- Backend-coupled flows (mocked Supabase/TrailBase via the `window.supabase` seam, or the `e2e` introspection
+  binding) → integration spec in `tests/integration/*.spec.ts` (excluded from the daily production run).
 - E2E specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module instances as the running app.
 - A feature is not considered implemented until its tests pass
 - Tests must cover the happy path and all edge cases described in `SPEC.vmd`
@@ -104,7 +106,8 @@ Do not create files outside these locations without explicit instruction:
 │   ├── config.toml         — local Supabase configuration
 │   └── seed.sql            — optional local seed script (currently no-op)
 ├── tests/
-│   ├── *.spec.ts           — Playwright E2E specs
+│   ├── e2e/*.spec.ts       — Playwright BDD specs (run locally and against production)
+│   ├── integration/*.spec.ts — Playwright specs with a mocked backend (test build only)
 │   ├── test.ts             — shared Playwright fixtures/helpers
 │   ├── setup/dom.ts        — happy-dom preload for unit tests
 │   └── unit/
@@ -570,7 +573,7 @@ left behind.
 ```bash
 bun run test                     # unit + e2e
 bun run test:e2e                 # e2e specs only
-bun run test:e2e -- tests/sync.spec.ts
+bun run test:e2e -- tests/integration/sync.spec.ts
 bun run test:e2e -- --headed     # visible browser
 bun run test:unit                # bun test (tests/unit)
 bun run typecheck                # tsc app config + test config
@@ -601,7 +604,7 @@ bun run typecheck                # tsc app config + test config
 - Specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module
   instances as the running app. The singletons are published through a single gated `e2e` binding
   (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
-  no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e-seam.spec.ts`
+  no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e/e2e-seam.spec.ts`
   asserts both builds behave.
 
 ### Test seams
@@ -642,9 +645,9 @@ Workflows live in `.github/workflows/`.
 
 ### `daily.yml` — production E2E
 
-Runs the suite against `https://virgulas.com`, sharded the same way. Specs that rely on the
-`__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded, because
-production builds compile that seam out.
+Runs the suite against `https://virgulas.com`, sharded the same way. The `tests/integration/`
+directory is excluded (production builds compile the `__TEST_HOOKS__` seam out), so only the
+behavior-driven `tests/e2e/` specs run. Unit tests never run in the daily workflow.
 
 ### Repository secrets and variables
 
