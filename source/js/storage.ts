@@ -109,8 +109,10 @@ export interface DocStore {
      */
     head?(): Promise<string | null>
 
-    /** Encrypted stores additionally expose the lock lifecycle. */
-    unlock?(passphrase: string): Promise<void>   // throws StoreError('wrong-key')
+    /** Encrypted stores additionally expose the lock lifecycle. unlock()
+     * resolves with what it decrypted (§4.3); every decorator passes the
+     * result through unchanged. Throws StoreError('wrong-key'). */
+    unlock?(passphrase: string): Promise<UnlockResult | void>
     lock?(): Promise<void>
 
     capabilities: StoreCapabilities

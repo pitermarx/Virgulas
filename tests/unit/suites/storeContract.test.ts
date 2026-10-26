@@ -251,6 +251,25 @@ await stringStoreContract(() => encrypted(slotRaw(sharedSlot), createKeySession(
 
 await docStoreContract(() => memoryStore(), 'memory')
 
+// ─── unlock result passthrough ──────────────────────────────────────────────
+
+describe('contract — codecStore unlock passthrough', () => {
+
+  it('returns the encrypted store\'s UnlockResult so callers need no inner handle', async () => {
+      const raw = fakeRaw()
+      const docStore = codecStore(jsonCodec, encrypted(raw, createKeySession()))
+
+      const fresh = await docStore.unlock!('test-passphrase-123')
+      assertEqual(fresh?.text, null, 'first-time setup reports no document')
+
+      await docStore.write({ modelVersion: 'v1', dataVersion: 1, nodes: [{ id: 'root', children: [] }] })
+      await docStore.lock!()
+      const reopened = await docStore.unlock!('test-passphrase-123')
+      assertEqual(typeof reopened?.text, 'string', 'the downloaded document text comes back')
+      assertEqual(reopened?.text?.includes('"root"'), true, 'it is the stored document')
+  })
+})
+
 // ─── capability descriptors (§10) ────────────────────────────────────────────
 
 

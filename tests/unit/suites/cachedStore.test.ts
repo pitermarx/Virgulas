@@ -47,6 +47,7 @@ function fakeStringStore(label: string, log: string[], options: FakeStringOption
         },
         async unlock(passphrase: string) {
             log.push(`${label}:unlock`)
+            return { text: value, headToken: value === null ? null : `${label}-token` }
         },
         async lock() {
             log.push(`${label}:lock`)
@@ -210,12 +211,17 @@ describe('cached() — exists, head, unlock, clear', () => {
       assertEqual(log.filter(entry => entry === 'cache:head').length, 0, 'the cache is never probed for head')
   })
 
-  it('unlock is primary-only (offline unlock is a future capability, OQ 8)', async () => {
+  it('unlock is primary-only and returns its UnlockResult (offline unlock is a future capability, OQ 8)', async () => {
       const log: string[] = []
-      const store = cached(fakeStringStore('primary', log), fakeStringStore('cache', log))
-      await store.unlock?.('passphrase')
+      const store = cached(
+          fakeStringStore('primary', log, { initial: 'remote text' }),
+          fakeStringStore('cache', log, { initial: 'cached text' })
+      )
+      const result = await store.unlock?.('passphrase')
       assert(log.includes('primary:unlock'), 'primary unlocked')
       assertEqual(log.includes('cache:unlock'), false, 'cache not unlocked')
+      assertEqual(result?.text, 'remote text', 'the primary result is passed through')
+      assertEqual(result?.headToken, 'primary-token', 'the primary head token comes with it')
   })
 
   it('clear clears both sides', async () => {

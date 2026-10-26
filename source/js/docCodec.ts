@@ -237,7 +237,9 @@ export const vmdCodec: DocCodec = {
 // ── codecStore — lift a StringStore into a DocStore (§4.6) ─────────────────
 
 /** Lifts a StringStore into a DocStore: read → parse, write → serialize,
- * clear/exists/head and the lock lifecycle pass through untouched. */
+ * clear/exists/head and the lock lifecycle pass through untouched; unlock's
+ * UnlockResult is returned as-is so the orchestration never needs the inner
+ * store. */
 export function codecStore(codec: DocCodec, inner: StringStore): DocStore {
     return {
         async read() {
@@ -257,7 +259,7 @@ export function codecStore(codec: DocCodec, inner: StringStore): DocStore {
             return inner.head?.() ?? null
         },
         async unlock(passphrase) {
-            await inner.unlock?.(passphrase)
+            return inner.unlock?.(passphrase)
         },
         async lock() {
             await inner.lock?.()

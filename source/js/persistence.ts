@@ -7,7 +7,7 @@ import {
 import outline, { CorruptDocumentError, MODEL_VERSION } from "./outline.js"
 import { codecStore, jsonCodec, vmdCodec } from './docCodec.js'
 import type { OutlineDoc } from './docCodec.js'
-import { createKeySession, encrypted, type EncryptedStore } from './encryptedStore.js'
+import { createKeySession, encrypted } from './encryptedStore.js'
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { memoryStore } from './memoryStore.js'
@@ -275,7 +275,6 @@ function loadDocIntoOutline(doc: OutlineDoc) {
  * salt and envelope. Built on remote unlock; torn down on lock/sign-out.
  */
 let remoteDataStore: DocStore | null = null
-let remotePrimaryStore: EncryptedStore | null = null   // the server side (string level)
 let remoteCacheStore: StringStore | null = null        // the local cache side
 
 /** The configured sync backend (resolved by `sync.ts`). */
@@ -298,7 +297,6 @@ async function buildRemoteStore(): Promise<DocStore> {
   // decorator stays codec-blind and the slot/row bytes are unchanged.
   const primary = encrypted(raw, keySession)
   const cache = encrypted(slotRaw(store.data), keySession)
-  remotePrimaryStore = primary
   remoteCacheStore = cache
   return codecStore(jsonCodec, cached(primary, cache, {
     // data-06 in Remote mode: the server row is the source of truth, so a
@@ -967,11 +965,14 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
 
   // One round-trip: unlock() verifies the passphrase by decrypting the
   // downloaded record and returns its text plus the record's change token
-  // (docs §6.2). Primary-only: an offline Remote reload needs connectivity,
-  // exactly as before.
+  // (docs §4.3/§6.2). The composition passes the primary's result through, so
+  // the orchestration never holds a string-level handle on the server store.
+  // Primary-only: an offline Remote reload needs connectivity, as before.
   let unlockResult: UnlockResult
   try {
-    unlockResult = await remotePrimaryStore!.unlock(code)
+    const result = await remoteDataStore.unlock?.(code)
+    if (!result) throw new Error('The Remote store did not report an unlocked document.')
+    unlockResult = result
   } catch (error) {
     throw parseRemoteUnlockError(error)
   }

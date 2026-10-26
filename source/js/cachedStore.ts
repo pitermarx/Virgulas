@@ -80,8 +80,9 @@ export function cached(primary: StringStore, cache: StringStore, options: Cached
 
         async unlock(passphrase) {
             // Primary only: today's unlockRemote verifies against the remote
-            // record, and an offline Remote reload needs connectivity.
-            await primary.unlock?.(passphrase)
+            // record, and an offline Remote reload needs connectivity. The
+            // result passes through so the caller needs no inner handle.
+            return primary.unlock?.(passphrase)
         },
 
         async lock() {

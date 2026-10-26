@@ -161,8 +161,10 @@ export interface DocStore {
    */
   head?(): Promise<string | null>
 
-  /** Encrypted stores additionally expose the lock lifecycle. */
-  unlock?(passphrase: string): Promise<void>   // throws WrongKeyError
+  /** Encrypted stores additionally expose the lock lifecycle. unlock()
+   *  resolves with what it decrypted (§4.3); decorators pass the result
+   *  through unchanged. */
+  unlock?(passphrase: string): Promise<UnlockResult | void>   // throws StoreError('wrong-key')
   lock?(): Promise<void>
 
   capabilities: StoreCapabilities
@@ -290,7 +292,7 @@ export interface StringStore {
   clear(): Promise<void>
   exists(): Promise<boolean)
   head?(): Promise<string | null>
-  unlock?(passphrase: string): Promise<void>   // throws WrongKeyError
+  unlock?(passphrase: string): Promise<UnlockResult | void>   // throws StoreError('wrong-key')
   lock?(): Promise<void>
   capabilities: StoreCapabilities
 }
@@ -497,6 +499,9 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
   plain VMD.
 - Composition order keeps the crypto decorator codec-blind (§9.5): e.g.
   `codecStore(jsonCodec, encrypted(slotRaw('vmd_data_enc'), session))`.
+- `codecStore()` returns `unlock()`'s `UnlockResult` unchanged (as does
+  `cached()`); orchestration calls the outermost store and never needs a
+  string-level handle on the inner primary.
 - `merge` is a pure three-way function over two models and a numeric baseline
   (epoch ms): per-node `lastModified` vs baseline distinguishes changed /
   unchanged / deleted; same-field edits conflict. Extracted from the current
@@ -523,10 +528,10 @@ Remote mode is really two stores: the backend (source of truth) and the local
 cache slot (`vmd_data_enc`), which is what makes offline mid-session operation
 (the write tee, cached reads after connectivity loss) and a correct lock
 screen on offline boot (the `exists()` union) work. It does **not** make
-offline *unlock* work — see the `unlock` row. Today that pairing is
-hard-coded across `persistence.ts`; `cached()` makes it a composition. Both
-sides share the one `KeySession` (§4.3), so the two copies always carry the
-same salt and envelope.
+offline *unlock* work — see the `unlock` row. The orchestration builds the
+pairing once (`buildRemoteStore`); `cached()` makes it a composition, and the
+caller holds only the composed store. Both sides share the one `KeySession`
+(§4.3), so the two copies always carry the same salt and envelope.
 
 | Op | Rule | Rationale |
 | --- | --- | --- |
@@ -536,7 +541,7 @@ same salt and envelope.
 | `read()` | primary; on `network` error fall back to cache | mid-session connectivity-loss reads (an already-unlocked session; offline *boot* stops at the primary-only `unlock` row below). The fallback may be stale — a merge against a stale self-copy is a no-op merge |
 | `exists()` | `cache ∥ primary` | offline boot must still show the lock screen |
 | `head()` | primary only; errors → orchestration treats as "no change" | change detection is about the source of truth (today's `checkRemoteNewer` catch) |
-| `unlock(pw)` | **primary only**; a `network` error fails the unlock exactly as today — no cache fallback. A foreign-salt primary → `remote-rekeyed` (§4.3) | behaviour-preserving: today's `unlockRemote` verifies against the **remote** record, and an offline Remote reload needs connectivity. Offline unlock via the cache is a future capability (OQ 8), not a decorator side effect |
+| `unlock(pw)` | **primary only**; resolves with the primary's `UnlockResult`; a `network` error fails the unlock exactly as today — no cache fallback. A foreign-salt primary → `remote-rekeyed` (§4.3) | behaviour-preserving: today's `unlockRemote` verifies against the **remote** record, and an offline Remote reload needs connectivity. The passthrough means the caller never holds the inner string store. Offline unlock via the cache is a future capability (OQ 8), not a decorator side effect |
 | `clear()` | clear both | purge means purge everywhere |
 
 With `write()` taking an `OutlineDoc`, the orchestration's deferred-push queue
@@ -995,7 +1000,9 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
    the design's void-returning unlock would force a second raw read for the
    document, which the sync fixtures (one download at unlock) and the real
    server both model as a single round-trip. The encrypted decorator returns
-   what it already decrypted plus the downloaded record's own change token.
+   what it already decrypted plus the downloaded record's own change token;
+   `codecStore()` and `cached()` pass it through, so the orchestration calls
+   the composed store and never keeps a string-level handle on the primary.
 8. **`remote-rekeyed` is verified, not assumed** (§4.4): a foreign salt alone
    does not throw — the decrypt is attempted with the session's passphrase;
    a failure *combined with* a foreign salt maps to `remote-rekeyed`. Rotation
