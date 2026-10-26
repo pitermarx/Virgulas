@@ -37,18 +37,31 @@ export type { Page, Locator } from '@playwright/test';
  */
 export const pickStorageMode = async (page: Page, mode: 'local' | 'remote' | 'filesystem'): Promise<void> => {
     const changeMode = page.getByRole('button', { name: /Change mode/i });
-    if (await changeMode.isVisible().catch(() => false)) {
-        await changeMode.click();
-    }
+    const modeOption = mode === 'local'
+        ? page.getByRole('button', { name: /On this device/ })
+        : page.getByRole('button', { name: /In the cloud/ });
+
+    // The lock screen can re-render while the app is still booting, which
+    // clears the wizard state and can swallow a click on "Change mode" — the
+    // same race submitUnlock guards against. Retry opening the sheet until the
+    // requested option is genuinely on screen.
+    await expect(async () => {
+        if (await modeOption.isVisible().catch(() => false)) return;
+        if (await changeMode.isVisible().catch(() => false)) {
+            await changeMode.click();
+        }
+        await expect(modeOption).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+
     if (mode === 'local') {
-        await page.getByRole('button', { name: /On this device/ }).click();
+        await modeOption.click();
         await page.getByRole('button', { name: /Encrypted storage/ }).click();
         return;
     }
     // The cloud path is a single step: it goes straight to the credentials
     // form (the server resolves itself — same-origin TrailBase or the hosted
     // fallback).
-    await page.getByRole('button', { name: /In the cloud/ }).click();
+    await modeOption.click();
 };
 
 type NestedNode = {
