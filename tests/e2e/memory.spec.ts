@@ -159,16 +159,14 @@ test.describe('storage setup adopts the in-memory document', () => {
         await page.locator('.node-text-md').first().click();
         await page.locator('.node-content input').first().fill('My own note');
         await page.locator('body').click();
-        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
-            .toContain('My own note');
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
 
         // Open the wizard; abandoning it via the skip link restores the doc.
         await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
         await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
         await page.getByRole('button', { name: 'Skip — keep notes in memory' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
-            .toContain('My own note');
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
 
         // Finish it into local: the running doc carries over, not the seed.
         await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
@@ -178,8 +176,7 @@ test.describe('storage setup adopts the in-memory document', () => {
         await page.getByLabel('Create a passphrase').fill('carry-pass-1');
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
-        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
-            .toContain('My own note');
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
 
         // Reload: the carried document is on disk, encrypted (the autosave
         // debounce must have flushed first).
@@ -190,7 +187,6 @@ test.describe('storage setup adopts the in-memory document', () => {
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
         await expect(page.locator('.status-mode')).toHaveText('Local');
-        expect(await page.evaluate(() => import('/js/app.js' as string).then(m => m.e2e.outline.serialize())))
-            .toContain('My own note');
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
     });
 });
