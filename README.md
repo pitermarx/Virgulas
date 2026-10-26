@@ -103,7 +103,9 @@ Choose per device; your choice is remembered:
   sign-in form emails a reset link (your encrypted notes are untouched — the passphrase is
   separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
   example the browser's storage is full), the remote save still completes and the status toolbar
-  says the document is not saved locally.
+  says the document is not saved locally. Deleting the account removes the server document and,
+  on a TrailBase server, the account itself; the hosted Supabase fallback keeps the account
+  record unless support removes it.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 

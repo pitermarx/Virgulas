@@ -84,7 +84,7 @@ Pain points, each of which the new seam removes:
 | Salt stored differently per mode (row column vs `salt\|` prefix vs absent) | `persistence.ts` / schema |
 | Envelope format knowledge (`v2:<iter>:`, KDF-upgrade-on-save) spread across flows | `persistence.ts` |
 | "Email confirmation required" known only via a code comment | `sync.ts signUp` docstring |
-| Account deletion is half-honest (auth record survives) baked into the product | `persistence.ts deleteAccount` |
+| Account deletion was half-honest (auth record survives) on every backend | `persistence.ts deleteAccount` now branches on `deleteUser` |
 | Merge entangled with Supabase read/write specifics | `sync.ts` / `persistence.ts` |
 
 ---
@@ -462,12 +462,12 @@ export interface AuthProvider {
   3. `store.clear()` — on an authenticated store this deletes the RLS-scoped
      row. It **must succeed before the device wipe**; if it throws, the flow
      aborts with local data intact (retryable),
-  4. `auth.deleteUser?.()` when present (absent on every planned backend —
-     the Supabase `auth.users` record survives),
+  4. `auth.deleteUser?.()` when present — TrailBase deletes the auth record;
+     the Supabase adapter omits it, so its `auth.users` row survives,
   5. device wipe (every slot, biometric seal, offline shell caches),
   6. `auth.signOut()`.
-  UI messaging is unchanged: the "auth record survives" caveat branches on
-  `deleteUser` presence, exactly as today.
+  UI messaging branches on `deleteUser` presence: TrailBase says the account
+  is deleted, Supabase says the auth record is kept.
 
 ### 4.6 Codecs and merge — library modules, not a layer
 

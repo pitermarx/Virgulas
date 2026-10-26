@@ -91,4 +91,20 @@ describe('Options footer and account controls', () => {
           'the Delete account button must be gated on Remote mode'
       )
   })
+
+  it('the delete account copy follows the backend deletion capability', () => {
+      const src = readApp()
+      assert(
+          /remoteSync\.hasDeleteUser\(\)/.test(src),
+          'Options must ask the resolved backend whether it deletes the auth record'
+      )
+      assert(
+          /accountDeletesUser\.value\s*\?[\s\S]*?account itself/.test(src),
+          'a self-service backend must say the account is deleted'
+      )
+      assert(
+          /accountDeletesUser\.value[\s\S]*?The account itself is kept/.test(src),
+          'the kept-account caveat must remain the fallback copy'
+      )
+  })
 })

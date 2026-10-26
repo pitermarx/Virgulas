@@ -409,6 +409,9 @@ test.describe('Admin / Options modal', () => {
     await unlockRemote(page, 'remote-pass');
 
     await openOptions(page);
+    // Supabase cannot delete `auth.users` with the browser client, so the copy
+    // keeps the old caveat instead of promising an account deletion.
+    await expect(page.getByText(/The account itself is kept/)).toBeVisible();
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Delete account' }).click();
 

@@ -1127,10 +1127,12 @@ export default {
    * Deletes the signed-in user's server-side data, then clears the local session
    * and signs out.
    *
-   * The encrypted `outlines` row is removed through the RLS-scoped DELETE policy.
-   * The `auth.users` record itself is NOT removed: deleting it requires the
-   * service role, which the browser client never holds. Local data is cleared
-   * regardless, so the device cannot resurrect the deleted document.
+   * The encrypted `outlines` row is removed through the RLS/ACL-scoped DELETE
+   * policy. On a backend with self-service account deletion (TrailBase) the auth
+   * record is removed too; Supabase's `auth.users` row needs the service role,
+   * which the browser client never holds, so it survives and the Options copy
+   * says so. Local data is cleared regardless, so the device cannot resurrect
+   * the deleted document.
    */
   async deleteAccount() {
     const user = await remoteSync.getUser()
@@ -1151,7 +1153,7 @@ export default {
 
     // §4.5 step 4: remove the auth record itself when the backend supports
     // self-service deletion (TrailBase does; Supabase does not — its auth
-    // record survives, and the UI says so).
+    // record survives, and the Options copy says so).
     try {
       await remoteSync.deleteUser()
     } catch (error) {

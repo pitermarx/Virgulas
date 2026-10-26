@@ -18,11 +18,12 @@ type TrailState = {
     registerCalls: number
     patchCalls: number
     postCalls: number
-    deleteCalls: number
+    authDeleteCalls: number
+    recordDeleteCalls: number
 }
 
 function makeTrailState(): TrailState {
-    return { users: new Map(), row: null, loginCalls: 0, registerCalls: 0, patchCalls: 0, postCalls: 0, deleteCalls: 0 };
+    return { users: new Map(), row: null, loginCalls: 0, registerCalls: 0, patchCalls: 0, postCalls: 0, authDeleteCalls: 0, recordDeleteCalls: 0 };
 }
 
 /** Installs the route-mocked TrailBase API. The state lives in the Node scope:
@@ -58,7 +59,7 @@ const installTrailbaseMock = async (page: Page, state: TrailState) => {
             return fulfill(route, 200, { user: { id: 'tb-user-1' } });
         }
         if (path.endsWith('/api/auth/v1/delete')) {
-            state.deleteCalls++;
+            state.authDeleteCalls++;
             return fulfill(route, 200, {});
         }
         return fulfill(route, 404, {});
@@ -86,7 +87,7 @@ const installTrailbaseMock = async (page: Page, state: TrailState) => {
             return fulfill(route, 200, { record: state.row });
         }
         if (method === 'DELETE') {
-            state.deleteCalls++;
+            state.recordDeleteCalls++;
             state.row = null;
             return fulfill(route, 200, {});
         }
@@ -104,6 +105,25 @@ const decryptRow = async (page: Page, passphrase: string): Promise<string> => {
 };
 
 let state: TrailState;
+
+/** Signs into the mocked TrailBase from a remembered Remote boot. */
+const unlockRememberedRemote = async (page: Page) => {
+    await page.goto('/');
+    await page.evaluate(() => {
+        localStorage.clear();
+        localStorage.removeItem('supabaseconfig');
+        localStorage.setItem('vmd_last_mode', 'remote');
+    });
+    await page.reload();
+
+    await expect(page.getByText('Remote — this server')).toBeVisible({ timeout: 15000 });
+    await page.getByLabel('Email').fill('owner@virgulas.com');
+    await page.getByLabel('Account password').fill('pw-123456');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByLabel('Encryption passphrase').fill('trail-pass-1');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+};
 
 /** A fresh first-run: no remembered mode, no legacy Supabase config — so the
  * same-origin probe decides the backend. Seeds local mode so the boot lands
@@ -198,23 +218,29 @@ test.describe('TrailBase end-to-end (same origin)', () => {
         // An existing account on the instance: this flow signs in directly.
         state.users.set('owner@virgulas.com', { id: 'tb-user-1', email: 'owner@virgulas.com', password: 'pw-123456' });
         await installTrailbaseMock(page, state);
-        await page.goto('/');
-        await page.evaluate(() => {
-            localStorage.clear();
-            localStorage.removeItem('supabaseconfig');
-            localStorage.setItem('vmd_last_mode', 'remote');
-        });
-        await page.reload();
-
-        // The lock screen names the server...
-        await expect(page.getByText('Remote — this server')).toBeVisible({ timeout: 15000 });
-        // ...and sign-in runs against the TrailBase adapter.
-        await page.getByLabel('Email').fill('owner@virgulas.com');
-        await page.getByLabel('Account password').fill('pw-123456');
-        await page.getByRole('button', { name: 'Continue', exact: true }).click();
-        await page.getByLabel('Encryption passphrase').fill('trail-pass-1');
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+        await unlockRememberedRemote(page);
         expect(state.loginCalls).toBeGreaterThanOrEqual(1);
+    });
+
+    test('deletes the account itself when the backend supports self-service deletion', async ({ page }) => {
+        state = makeTrailState();
+        state.users.set('owner@virgulas.com', { id: 'tb-user-1', email: 'owner@virgulas.com', password: 'pw-123456' });
+        await installTrailbaseMock(page, state);
+        await unlockRememberedRemote(page);
+
+        await page.getByRole('button', { name: 'Options' }).click();
+        await expect(page.getByRole('heading', { name: 'Options' })).toBeVisible();
+        // TrailBase's deleteUser is present, so the copy promises the account
+        // deletion rather than Supabase's kept-record caveat.
+        await expect(page.getByText(/and the account itself, then signs out/)).toBeVisible();
+        await expect(page.getByText(/The account itself is kept/)).toHaveCount(0);
+
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.getByRole('button', { name: 'Delete account' }).click();
+
+        await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
+        expect(state.recordDeleteCalls).toBe(1);
+        expect(state.authDeleteCalls).toBe(1);
+        expect(state.row).toBeNull();
     });
 });

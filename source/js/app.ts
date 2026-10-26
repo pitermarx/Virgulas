@@ -70,6 +70,10 @@ const remotePasswordStage = signal(false);
 const bioEnrolled = signal(false);
 const autoBioAttempted = signal(false);
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 });
+/** True when the resolved Remote backend can delete the auth record itself
+ * (TrailBase). Supabase keeps it — deleting `auth.users` needs the service
+ * role — so the Options copy and the confirmation say which one happens. */
+const accountDeletesUser = signal(false);
 const adminBusy = signal(false);
 const adminError = signal('');
 const adminMessage = signal('');
@@ -287,6 +291,11 @@ effect(() => {
 async function refreshAccountInfo() {
   let user: any = null;
   try { user = await persistence.getUser(); } catch { /* ignore */ }
+  let deletesUser = false;
+  if (persistence.getMode() === 'remote') {
+    try { deletesUser = await remoteSync.hasDeleteUser(); } catch { /* keep the conservative copy */ }
+  }
+  accountDeletesUser.value = deletesUser;
   accountInfo.value = {
     email: user?.email || '',
     mode: persistence.getMode(),
@@ -1208,7 +1217,9 @@ const OptionsModal = () => {
 
   async function handleDeleteAccount() {
     const confirmed = confirm(
-      'Delete your account and all server data? This erases the encrypted document stored for your account and signs you out on this device. This cannot be undone, and your remote backup is unrecoverable without your passphrase.'
+      accountDeletesUser.value
+        ? 'Delete your account and all server data? This permanently deletes the encrypted document stored for your account and the account itself, then signs you out on this device. This cannot be undone, and your data is unrecoverable without your passphrase.'
+        : 'Delete your account and all server data? This erases the encrypted document stored for your account and signs you out on this device. This cannot be undone, and your remote backup is unrecoverable without your passphrase.'
     );
     if (!confirmed) return;
 
@@ -1438,7 +1449,9 @@ const OptionsModal = () => {
               <button class="btn btn-danger" onClick=${handleDeleteAccount} disabled=${isBusy.value}>Delete account</button>
             </div>
             <p class="admin-hint">
-              Deletes the encrypted document stored for your account on the server and signs out on this device. The account itself is kept; contact support to remove it.
+              ${accountDeletesUser.value
+                ? 'Deletes the encrypted document stored for your account and the account itself, then signs out on this device.'
+                : 'Deletes the encrypted document stored for your account on the server and signs out on this device. The account itself is kept; contact support to remove it.'}
             </p>
           `}
 

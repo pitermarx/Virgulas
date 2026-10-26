@@ -314,7 +314,9 @@
       - Options → Data shows the mode, the signed-in email, and (Remote) controls to change email
         and account password inline
       - Options → Delete account (Remote) deletes the encrypted document row on the server and signs
-        out on this device. The account itself is kept; removing it needs the service role
+        out on this device. On a backend with self-service account deletion (TrailBase) the auth
+        account is deleted too; on Supabase the account itself is kept, because removing it needs
+        the service role
       - There is no way to revoke other sessions yet
   + SEARCH
     - Search can be done with simple substring matches
@@ -449,7 +451,8 @@
       - Mode-specific session action: Lock (Local), Change file (File)
       - Mode-specific danger action: "Sign out" (Remote, ends the remote session and clears this
         device), "Clear file session" (File), "Delete local data" (Local); hidden in Memory mode
-      - Remote only: "Delete account"
+      - Remote only: "Delete account". The hint and confirmation say whether the auth account is
+        deleted with it (TrailBase) or kept (Supabase)
       - Footer: app version and "See on GitHub" link
     + KEYBOARD SHORTCUTS MODAL
       - Opened by the "?" button in the status toolbar; desktop only (the button is hidden on mobile)
