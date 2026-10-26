@@ -111,7 +111,7 @@ describe('trailbaseAuth — flows', () => {
       ])
       try {
           const auth = trailbaseAuth(CONFIG)
-          const error = await expectStoreError(() => auth.signUp('u@example.com', 'test'), 'invalid-document', 'short password')
+          const error = await expectStoreError(() => auth.signUp('u@example.com', 'test'), 'invalid-input', 'short password')
           assert(error.message.includes('at least 8 characters'), `friendly message (got: ${error.message})`)
           assertEqual(fetcher.calls.length, 0, 'no network round-trip for the common miss')
       } finally {
@@ -125,7 +125,7 @@ describe('trailbaseAuth — flows', () => {
       ])
       try {
           const auth = trailbaseAuth(CONFIG)
-          const error = await expectStoreError(() => auth.signUp('u@example.com', 'longenough1'), 'network', 'policy 400')
+          const error = await expectStoreError(() => auth.signUp('u@example.com', 'longenough1'), 'invalid-input', 'policy 400')
           assert(error.message === 'Password too short', `the server's text is the message (got: ${error.message})`)
       } finally {
           fetcher.restore()
@@ -382,6 +382,42 @@ describe('trailbaseRaw — records', () => {
       }
   })
 
+  it('HTTP rejections separate input errors from retryable failures', async () => {
+      seedSession()
+      const cases: Array<{ status: number; code: string; label: string }> = [
+          { status: 400, code: 'invalid-input', label: 'malformed request' },
+          { status: 409, code: 'invalid-input', label: 'conflicting write' },
+          { status: 422, code: 'invalid-input', label: 'validation failure' },
+          { status: 408, code: 'network', label: 'timeout stays retryable' },
+          { status: 429, code: 'network', label: 'rate limit stays retryable' },
+          { status: 500, code: 'network', label: 'server failure stays retryable' },
+          { status: 503, code: 'network', label: 'unavailable stays retryable' }
+      ]
+      try {
+          for (const { status, code, label } of cases) {
+              const fetcher = fakeFetch([
+                  (call) => {
+                      if (call.url.endsWith('/api/records/v1/outlines?_limit=1')) {
+                          return { status: 200, json: { records: [] } }
+                      }
+                      if (call.url.includes('/api/records/v1/outlines') && call.method === 'POST') {
+                          return { status, json: { error: `status ${status}` } }
+                      }
+                      return null
+                  }
+              ])
+              try {
+                  const raw = trailbaseRaw(CONFIG)
+                  await expectStoreError(() => raw.writeRaw({ data: 'x' }), code, label)
+              } finally {
+                  fetcher.restore()
+              }
+          }
+      } finally {
+          store.backendSession.del()
+      }
+  })
+
   it('capabilities describe the backend honestly', () => {
       const caps = trailbaseRaw(CONFIG).capabilities
       assertEqual(caps.durable, 'always', 'server-side durability')
@@ -421,7 +457,7 @@ describe('trailbaseRaw — records', () => {
       ])
       try {
           const auth = trailbaseAuth(CONFIG)
-          const error = await expectStoreError(() => auth.requestPasswordReset!('not-an-email'), 'network', 'malformed email')
+          const error = await expectStoreError(() => auth.requestPasswordReset!('not-an-email'), 'invalid-input', 'malformed email')
           assert(error.message === 'Malformed email', `the server's text is the message (got: ${error.message})`)
       } finally {
           fetcher.restore()

@@ -24,8 +24,9 @@ export type StoreErrorCode =
     | 'wrong-key'           // GCM auth failure during unlock — passphrase is wrong
     | 'remote-rekeyed'      // remote salt ≠ session salt — passphrase rotated elsewhere
     | 'unauthenticated'     // no signed-in user, or the store is locked
-    | 'network'             // transport failure — retryable (backoff keys off this)
+    | 'network'             // transport failure or 5xx/408/429 — retryable
     | 'not-found'           // backend reports the record does not exist
+    | 'invalid-input'       // request rejected by validation/policy (4xx) — retrying cannot help
     | 'too-large'           // payload exceeds the backend's size bound (quota, row limit)
     | 'invalid-document'    // codec parse/validate failure
     | 'corrupt-data'        // undecryptable/structurally broken at-rest payload

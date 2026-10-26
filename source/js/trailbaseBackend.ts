@@ -84,9 +84,14 @@ interface TrailbaseResponse {
 
 function mapTrailbaseError(status: number, json: any): StoreError {
     const message = json?.error || json?.message || `The TrailBase instance returned ${status}.`
-    if (status === 401) return new StoreError('unauthenticated', message, json)
-    if (status === 403) return new StoreError('unauthenticated', message, json)
+    if (status === 401 || status === 403) return new StoreError('unauthenticated', message, json)
     if (status === 404) return new StoreError('not-found', message, json)
+    // The request itself was rejected — malformed email, password policy, a
+    // conflicting write: retrying the same request cannot succeed. Timeout
+    // and rate-limit responses stay retryable, as do 5xx server failures.
+    if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        return new StoreError('invalid-input', message, json)
+    }
     return new StoreError('network', message, json)
 }
 
@@ -272,7 +277,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
             // instance may configure more); save the round-trip for the common
             // miss and say so in the same words the server would.
             if (password.length < 8) {
-                throw new StoreError('invalid-document', 'Password too short — use at least 8 characters.')
+                throw new StoreError('invalid-input', 'Password too short — use at least 8 characters.')
             }
             const response = await rawFetch(config, '/api/auth/v1/register', {
                 method: 'POST',

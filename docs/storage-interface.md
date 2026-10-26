@@ -355,7 +355,7 @@ export interface KeySession {
 ```ts
 export class StoreError extends Error {
   code: 'wrong-key' | 'remote-rekeyed' | 'unauthenticated' | 'network'
-      | 'not-found' | 'too-large' | 'invalid-document'
+      | 'not-found' | 'invalid-input' | 'too-large' | 'invalid-document'
       | 'corrupt-data' | 'unsupported-runtime' | 'unsupported'
   cause?: unknown   // the original typed error, preserved for UI branching
 }
@@ -373,6 +373,10 @@ orchestration's backoff keys off this); the 16 MiB size check → `too-large`
 (adapters enforce their own bounds, mirroring today's SQL constraints); a
 localStorage quota failure in the local slot → `too-large` as well, surfaced
 instead of swallowed (fixes data-06).
+TrailBase: 401/403 → `unauthenticated`, 404 → `not-found`, every other 4xx
+except 408/429 → `invalid-input` (a malformed email, password-policy rejection,
+conflicting write — retrying the same request cannot succeed), while 408/429
+and 5xx/transport failures → `network` (retryable).
 Codec parse failures after a successful decrypt → `invalid-document` (raised by
 the codec, §4.6). A pulled record whose salt differs from the session's
 `activeSalt` → `remote-rekeyed`: another device rotated the passphrase. It is
