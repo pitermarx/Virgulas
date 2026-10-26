@@ -9,7 +9,7 @@ import type { OutlineDoc } from './docCodec.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
-import { appVersion, store } from './utils.js';
+import { appVersion, clearAppCaches, store } from './utils.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
 import inbox, { type CaptureIntent } from './inbox.js';
 import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
@@ -1222,6 +1222,16 @@ const OptionsModal = () => {
     await persistence.pickNewFile();
   }
 
+  // After a device wipe the app lands in memory mode, whose intro fetch would
+  // let the service worker recreate the app cache that the wipe just cleared.
+  // Clear Cache Storage last and await it, so a purge really leaves no
+  // app-owned cache behind.
+  async function bootMemoryAfterWipe() {
+    await persistence.unlock('', { mode: 'memory' });
+    persistence.setPreferredMode('memory');
+    await clearAppCaches();
+  }
+
   async function handleDeleteAccount() {
     const confirmed = confirm(
       accountDeletesUser.value
@@ -1241,8 +1251,7 @@ const OptionsModal = () => {
       remotePasswordStage.value = false;
       stagedMemoryDoc = null;
       // Land in memory mode with the intro doc, same as sign-out.
-      await persistence.unlock('', { mode: 'memory' });
-      persistence.setPreferredMode('memory');
+      await bootMemoryAfterWipe();
       document.body.setAttribute('data-main-view', 'rendered');
     } catch (err) {
       adminError.value = String((err as { message?: string } | null)?.message || 'Failed to delete the account.');
@@ -1289,9 +1298,8 @@ const OptionsModal = () => {
     persistence.reset();
     authHasLocalData.value = false;
     authUser.value = null;
-    // Reload into memory mode so the intro appears
-    await persistence.unlock('', { mode: 'memory' });
-    persistence.setPreferredMode('memory');
+    // Reload into memory mode so the intro appears.
+    await bootMemoryAfterWipe();
     document.body.setAttribute('data-main-view', 'rendered');
   }
 

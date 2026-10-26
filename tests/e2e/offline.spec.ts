@@ -124,8 +124,10 @@ test.describe('Service worker offline shell', () => {
         // Purge through the actual Options → "Delete local data" UI path.
         await purgeViaOptions(page);
 
-        // clearAppCaches runs best-effort; poll until every virgulas cache is gone.
-        await expect.poll(virgulasCacheCount, { timeout: 10000 }).toBe(0);
+        // The purge clears Cache Storage after the memory-mode boot, whose
+        // /intro.vmd fetch the service worker would otherwise cache; the flow
+        // must end with no app-owned cache at all.
+        expect(await virgulasCacheCount()).toBe(0);
     });
 
     test('a full purge leaves no user data in localStorage (priv-01)', async ({ page }) => {
