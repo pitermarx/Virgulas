@@ -591,6 +591,9 @@ async function submitUnlock(e: any) {
       initialDoc: stagedMemoryDoc ?? undefined
     });
     if (success) {
+      // The passphrase now lives only in KeySession: drop the form copy instead
+      // of keeping it in memory for the rest of the session.
+      passphrase.value = '';
       stagedMemoryDoc = null;
       remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
@@ -713,6 +716,7 @@ async function submitResetLocalData() {
       initialDoc: stagedMemoryDoc ?? undefined
     });
     if (success) {
+      passphrase.value = '';
       stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
@@ -741,6 +745,7 @@ async function submitResetRemoteData() {
       username: username.value,
       password: password.value
     });
+    passphrase.value = '';
     canResetRemoteData.value = false;
     document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
@@ -853,7 +858,6 @@ async function unlockWithBiometrics() {
       unlockError.value = 'Biometric unlock failed. Enter your passphrase instead.';
       return;
     }
-    passphrase.value = recovered;
     const success = await persistence.unlock(recovered, {
       mode: authMode.value,
       username: username.value,
@@ -861,6 +865,9 @@ async function unlockWithBiometrics() {
       trustSession: isRemoteSessionValid()
     });
     if (success) {
+      // KeySession now holds the secret; never mirror the recovered passphrase
+      // into the lock-screen form state.
+      passphrase.value = '';
       remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();

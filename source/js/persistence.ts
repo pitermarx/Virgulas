@@ -194,6 +194,16 @@ const filesystemStorage = (function () {
 //   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
+
+/** Reactive mirror of `keySession.unlocked` for the save effect and the lock
+ * screen. The passphrase itself never leaves KeySession (docs §4.3); this flag
+ * is all the orchestration and the UI ever hold. */
+const sessionUnlocked = signal(false)
+
+function markSessionUnlocked() {
+  sessionUnlocked.value = keySession.unlocked
+}
+
 const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
@@ -287,7 +297,7 @@ effect(() => {
   clearDeferredPush()
   clearPendingSave()
   keySession.lock()
-  passphrase.value = ''
+  markSessionUnlocked()
   teardownRemoteStore()
   remoteRekeyedNotice.value = true
 })
@@ -334,7 +344,6 @@ function applyHashZoomIfPresent() {
   }
 }
 
-const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
@@ -468,7 +477,7 @@ effect(() => {
   // at all. Subscribing to dirtyWrites makes the effect react to each change so
   // the save timer is armed immediately.
   void outline.dirtyWrites.value
-  const passphraseValue = passphrase.value // subscribe to changes on passphrase
+  const unlocked = sessionUnlocked.value // subscribe to the KeySession lock state
   const fsReady = filesystemReady.value   // subscribe for filesystem mode
   const _memReady = memoryReady.value     // subscribe for memory mode
   const mode = authMode.value
@@ -516,10 +525,10 @@ effect(() => {
   // Local mode: the encrypted slot store owns the data path (storage seam).
   // The KeySession holds the secret; this branch never handles ciphertext.
   if (mode === 'local') {
-    if (!passphraseValue) {
+    if (!unlocked) {
       activeSave = null
       clearMaxWaitSave()
-      log('No passphrase, skipping encryption')
+      log('Session locked, skipping encryption')
       return
     }
 
@@ -559,10 +568,10 @@ effect(() => {
     return () => clearTimeout(timeoutId)
   }
 
-  if (!passphraseValue) {
+  if (!unlocked) {
     activeSave = null
     clearMaxWaitSave()
-    log('No passphrase, skipping encryption')
+    log('Session locked, skipping encryption')
     return
   }
 
@@ -634,7 +643,7 @@ function adoptInitialDoc(initialDoc: OutlineDoc | undefined): boolean {
   }
 }
 
-/** First-time Local setup: retain the passphrase with a fresh salt and seed
+/** First-time Local setup: activate the KeySession with a fresh salt and seed
  * the live model. The first write persists it (docs §6.2). */
 function setupLocal(code: string, initialDoc?: OutlineDoc) {
   assertNewPassphrase(code)
@@ -645,7 +654,7 @@ function setupLocal(code: string, initialDoc?: OutlineDoc) {
     outline.addChild('root', { text: '' })
   }
   authMode.value = 'local'
-  passphrase.value = code
+  markSessionUnlocked()
   rememberMode('local')
   void refreshLocalStorageDurability(false)
   return true
@@ -677,7 +686,7 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
 
     batch(() => {
       authMode.value = 'local'
-      passphrase.value = code
+      markSessionUnlocked()
       applyHashZoomIfPresent()
     })
 
@@ -754,7 +763,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      passphrase.value = code
+      markSessionUnlocked()
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -779,7 +788,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
   batch(() => {
     authMode.value = 'remote'
-    passphrase.value = code
+    markSessionUnlocked()
     applyHashZoomIfPresent()
   })
   rememberMode('remote')
@@ -888,17 +897,17 @@ async function unlock(code: string, options: UnlockOptions = {}) {
 
 export default {
   wipeDeviceData,
-  isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
+  isLocked: () => !sessionUnlocked.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
   getLastUsername: () => store.user.get('') || '',
   /**
-   * sec-05: the passphrase string never leaves this module. The only consumer
-   * that legitimately needed it was the biometric straight-flow, which now
-   * calls this instead of reading `getPassphrase()`.
+   * sec-05: the passphrase never leaves KeySession. The only consumer that
+   * legitimately needed it was the biometric straight-flow, which reads the
+   * active credentials here instead of a `getPassphrase()` accessor.
    */
   async enrollBiometrics(userLabel: string | null = null) {
-      const current = passphrase.value
+      const current = keySession.activeCredentials()?.passphrase
       if (!current) {
           throw new Error('Unlock with a passphrase before enabling biometric unlock.')
       }
@@ -1082,7 +1091,7 @@ export default {
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      passphrase.value = newPassphrase
+      markSessionUnlocked()
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -1099,22 +1108,22 @@ export default {
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
-    passphrase.value = ''
+    markSessionUnlocked()
     filesystemReady.value = false
     memoryReady.value = false
   },
   async signOut() {
     stopPolling()
-    // Push pending edits while the session and passphrase are still valid, so
-    // signing out cannot silently drop the last change.
+    // Push pending edits while the session is still unlocked, so signing out
+    // cannot silently drop the last change.
     await flushPendingSave()
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
-    // Drop the passphrase before the remaining awaits so an in-flight save cannot
+    // Lock the session before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
-    passphrase.value = ''
+    markSessionUnlocked()
     // Revoke the device-local biometric seal: signing out means this device may no
     // longer recover the passphrase without the user typing it.
     await biometrics.forget().catch(() => { })
@@ -1141,13 +1150,13 @@ export default {
     }
 
     // Stop background writes before the row disappears, so an in-flight upload
-    // cannot recreate it after deletion. Clearing the passphrase here (not after
+    // cannot recreate it after deletion. Locking the key session here (not after
     // the awaits) invalidates any save that is already past its timer.
     stopPolling()
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
-    passphrase.value = ''
+    markSessionUnlocked()
 
     await getRemoteSaveStore()?.clear() ?? await remoteSync.deleteOutline()
 
@@ -1189,10 +1198,10 @@ export default {
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
+    markSessionUnlocked()
     localSaveFailed.value = false
     outline.reset()
     authMode.value = 'local'
-    passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
     wipeDeviceData()
@@ -1213,7 +1222,7 @@ export default {
       // new passphrase become active and the write re-encrypts (docs §6.7).
       keySession.rotate(newPassphrase)
       await localDataStore.write(doc)
-      passphrase.value = newPassphrase
+      markSessionUnlocked()
       return true
     }
 
@@ -1232,7 +1241,7 @@ export default {
       setLastSyncedAt(Date.now())
     }
 
-    passphrase.value = newPassphrase
+    markSessionUnlocked()
     return true
   },
   exportVmd() {
