@@ -399,6 +399,13 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   font-style: italic;
 }
 
+.status-save-failed {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--color-danger);
+}
+
 /* ── Options section heading ── */
 .options-section-heading {
   font-size: 0.75rem;

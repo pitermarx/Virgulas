@@ -511,7 +511,12 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
 
 ```ts
 // source/js/cachedStore.ts
-export function cached(primary: StringStore, cache: StringStore): StringStore
+export interface CachedOptions {
+  /** null on success, the error on failure. When present the caller owns the
+   * local-failure surface and a cache error no longer fails the write. */
+  onCacheWrite?(error: unknown | null): void
+}
+export function cached(primary: StringStore, cache: StringStore, options?: CachedOptions): StringStore
 ```
 
 Remote mode is really two stores: the backend (source of truth) and the local
@@ -527,7 +532,7 @@ same salt and envelope.
 | --- | --- | --- |
 | `write(doc)` | cache first, then primary; resolve with the primary's token | matches today's local-save-then-remote-push order |
 | primary fails `network` | cache write **stands**; the error propagates | deferral/retry belongs to the orchestration (§6.4); stores do single operations |
-| cache fails (quota) | primary is still attempted, then `too-large` propagates | the save is durable remotely but not locally — today's outcome, minus the silence (fixes data-06) |
+| cache fails (quota) | primary is still attempted; with `onCacheWrite` the failure is reported there and the write resolves with the primary token, without it `too-large` propagates | the save is durable remotely but not locally; Remote's hook drives the toolbar's "not saved locally" state (fixes data-06) |
 | `read()` | primary; on `network` error fall back to cache | mid-session connectivity-loss reads (an already-unlocked session; offline *boot* stops at the primary-only `unlock` row below). The fallback may be stale — a merge against a stale self-copy is a no-op merge |
 | `exists()` | `cache ∥ primary` | offline boot must still show the lock screen |
 | `head()` | primary only; errors → orchestration treats as "no change" | change detection is about the source of truth (today's `checkRemoteNewer` catch) |
@@ -628,8 +633,10 @@ The derived key comes from the session cache — no KDF per save. A legacy 310k
 envelope is transparently re-encrypted at 600k on this write. In Remote mode
 the write goes through `cached()` (§4.7): the cache write is the durable local
 save; a primary `network` failure propagates to the orchestration, which
-defers and retries (§6.4). A cache quota failure surfaces as `too-large`
-(data-06 fix).
+defers and retries (§6.4). A cache quota failure is reported through the
+composition's `onCacheWrite` hook: the remote save completes and the status
+toolbar reports the document as not saved locally until the next successful
+cache write (data-06).
 
 ### 6.4 Remote poll / pull-before-push (Remote mode)
 

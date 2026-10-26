@@ -101,7 +101,9 @@ Choose per device; your choice is remembered:
   An account email/password controls access; a separate passphrase controls encryption, so the
   server never sees plaintext. Forgot your account password? A "Forgot password?" link on the
   sign-in form emails a reset link (your encrypted notes are untouched — the passphrase is
-  separate).
+  separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
+  example the browser's storage is full), the remote save still completes and the status toolbar
+  says the document is not saved locally.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 

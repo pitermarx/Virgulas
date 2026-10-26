@@ -2,8 +2,8 @@ import { describe, it } from 'bun:test'
 // cached() decorator suite (docs/storage-interface.md §4.7/§10, rollout PR 2b):
 // write order (cache before primary), primary network failure leaves the cache
 // write standing and propagates, read falls back to cache only on network,
-// exists-union, head is primary-only, cache quota failure surfaces too-large
-// after the primary attempt, unlock is primary-only, clear clears both.
+// exists-union, head is primary-only, cache quota failure attempts the primary
+// and reports through onCacheWrite, unlock is primary-only, clear clears both.
 
 import { cached } from '../../../source/js/cachedStore.js'
 import { encrypted, createKeySession } from '../../../source/js/encryptedStore.js'
@@ -106,18 +106,45 @@ describe('cached() — write', () => {
       assertEqual(await (cache.read()), 'document', 'the cache write stands — deferral belongs to the orchestration')
   })
 
-  it('a cache quota failure still attempts the primary, then surfaces too-large (data-06)', async () => {
+  it('a cache quota failure still attempts the primary and reports through onCacheWrite (data-06)', async () => {
       const log: string[] = []
       const quotaCache: StringStore = {
           ...fakeStringStore('cache', log),
           async write() { log.push('cache:write'); throw new StoreError('too-large', 'quota') }
       }
       const primary = fakeStringStore('primary', log)
-      const store = cached(primary, quotaCache)
+      const outcomes: Array<unknown | null> = []
+      const store = cached(primary, quotaCache, { onCacheWrite: error => outcomes.push(error) })
 
-      await expectStoreError(() => store.write('document'), 'too-large', 'quota failure')
+      const token = await store.write('document')
+      assertEqual(token, 'primary-token', 'resolves with the primary token — the remote save stands')
       assert(log.includes('primary:write'), 'the primary was still attempted — durable remotely, minus the silence')
       assertEqual(await primary.read(), 'document', 'primary holds the save')
+      assertEqual(outcomes.length, 1, 'the cache outcome is reported once')
+      assert(outcomes[0] instanceof StoreError && outcomes[0].code === 'too-large', 'the cache error reaches the orchestration')
+  })
+
+  it('a successful cache write reports null so the save-failed state can clear', async () => {
+      const outcomes: Array<unknown | null> = []
+      const store = cached(
+          fakeStringStore('primary', []),
+          fakeStringStore('cache', []),
+          { onCacheWrite: error => outcomes.push(error) }
+      )
+
+      await store.write('document')
+      assertEqual(outcomes.length, 1, 'one cache outcome')
+      assertEqual(outcomes[0], null, 'success clears the local save-failed state')
+  })
+
+  it('without a hook the cache quota failure still propagates (contract default)', async () => {
+      const quotaCache: StringStore = {
+          ...fakeStringStore('cache', []),
+          async write() { throw new StoreError('too-large', 'quota') }
+      }
+      const store = cached(fakeStringStore('primary', []), quotaCache)
+
+      await expectStoreError(() => store.write('document'), 'too-large', 'no hook: the error is not swallowed')
   })
 
   // ─── read ────────────────────────────────────────────────────────────────────

@@ -300,7 +300,16 @@ async function buildRemoteStore(): Promise<DocStore> {
   const cache = encrypted(slotRaw(store.data), keySession)
   remotePrimaryStore = primary
   remoteCacheStore = cache
-  return codecStore(jsonCodec, cached(primary, cache))
+  return codecStore(jsonCodec, cached(primary, cache, {
+    // data-06 in Remote mode: the server row is the source of truth, so a
+    // failed device-local cache write must not fail the save or read as a
+    // sync error. The status toolbar reports "not saved locally" until the
+    // next cache write succeeds.
+    onCacheWrite(error) {
+      localSaveFailed.value = error !== null
+      if (error) console.error('[Persistence] Offline cache write failed:', error)
+    }
+  }))
 }
 
 function teardownRemoteStore() {

@@ -145,6 +145,49 @@ test.describe('storage seam — remote flows', () => {
     expect(typeof last.updated_at).toBe('string');
   });
 
+  test('a failed device-local cache write leaves the remote save standing and says so', async ({ page }) => {
+    await page.goto('/');
+    const seed = await buildEncryptedPayload(page, 'pass-123456', 'Start');
+    await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'remote'); });
+    await installMock(page, seed);
+    // Simulate a full browser storage quota for the document slot only: every
+    // other slot (session, sync head) keeps working, like a real quota failure
+    // on the one large value.
+    await page.addInitScript(() => {
+      const nativeSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+        if (key === 'vmd_data_enc' && (window as any).__failLocalCache) {
+          throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        }
+        return nativeSetItem.call(this, key, value);
+      };
+    });
+    await page.reload();
+    await unlockRemote(page, 'pass-123456');
+
+    // The offline cache cannot take the next save; the server row still can.
+    await page.evaluate(() => { (window as any).__failLocalCache = true; });
+    const before = await page.evaluate(() => (window as any).__mock.upserts.length);
+    await page.locator('.node-text-md').first().click();
+    await page.locator('.node-content input').first().fill('Cache quota edit');
+    await page.locator('body').click();
+
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__mock.upserts.length), { timeout: 10000 })
+      .toBeGreaterThan(before);
+    await expect(page.locator('.status-save-failed')).toHaveText('Not saved locally');
+    await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: save-failed');
+
+    // A later successful local write clears the state.
+    await page.evaluate(() => { (window as any).__failLocalCache = false; });
+    await page.locator('.node-text-md').first().click();
+    await page.locator('.node-content input').first().fill('Cache recovered');
+    await page.locator('body').click();
+
+    await expect(page.locator('.status-save-failed')).toHaveCount(0);
+    await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
+  });
+
   test('a remote rotated on another device locks and prompts without pushing (sync-01)', async ({ page }) => {
     await page.goto('/');
     const seed = await buildEncryptedPayload(page, 'pass-123456', 'Start');

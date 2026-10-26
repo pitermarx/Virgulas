@@ -197,6 +197,10 @@
       - The status toolbar shows the signed-in email/username when Remote mode is active
       - Signing out flushes (and pushes) any pending change while the session is still valid
         The push ignores the typing debounce, so signing out cannot drop the most recent edit
+      - Remote mode keeps an encrypted offline copy of the document in this browser
+      - If that offline copy cannot be written (for example the browser's storage quota is full),
+        the remote save still completes and the status toolbar reports that the document is
+        not saved locally; the state clears on the next successful local write
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
@@ -293,6 +297,9 @@
         "Apply" is disabled until every conflict has a resolution; pressing it pushes the merged result
       - The status toolbar shows a sync indicator while the user is signed in
         Possible states: synced, syncing, unsynced (local edits not yet uploaded), error, offline
+        A failed write of the device-local offline copy is reported as save-failed instead:
+        the remote save still completes, and the indicator returns to the sync state after
+        the next successful local write
     + DATABASE SCHEMA
       - `outlines` table
         - `user_id` uuid primary key — references auth.users, cascade on delete
