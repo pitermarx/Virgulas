@@ -14,11 +14,10 @@
 // client-clock trust — pre-existing, documented in §5. The seam isolates that
 // weakness here so the follow-up fix has a single touch point.
 //
-// The client loader duplicates sync.ts's loader (dynamic import so local/
-// memory/file users never download the ~220 KB chunk, plus the __TEST_HOOKS__
-// window seam). PR 2d shrinks sync.ts onto this module and the duplicate
-// disappears; until then this module is dead code and sync.ts stays
-// authoritative.
+// The client loader lives here: a dynamic import so TrailBase, local, memory and
+// file users never download the ~220 KB chunk, plus the __TEST_HOOKS__ window
+// seam. `sync.ts` resolves the backend and uses this module; nothing else loads
+// the Supabase client.
 
 import { HOSTED_BACKEND, StoreError, type AuthProvider, type AuthUser, type BackendConfig, type RawRecord, type RawStore } from './storage.js'
 import { store } from './utils.js'

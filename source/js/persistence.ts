@@ -48,7 +48,6 @@ import {
   backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
-import { ensureSupabaseClient, supabaseRaw } from './supabaseBackend.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
@@ -238,15 +237,15 @@ const localEncryptedData = {
   }
 }
 
-// -- Storage seam (docs/storage-interface.md, rollout PR 2c) ------------------
+// -- Storage seam (docs/storage-interface.md) --------------------------------
 //
-// Memory/File/Local now route their data paths through the seam:
+// All four modes route their data paths through the seam:
 //   Local   = encrypted(slotRaw(store.data), keySession)  -- StringStore level,
 //             so read() returns the decrypted at-rest text for deserialize
 //   File    = codecStore(vmdCodec, fileStore(handle))
 //   Memory  = codecStore(jsonCodec, memoryStore())        -- validation for free
-// Remote keeps its legacy path (including the 'passphrase' signal and
-// 'localEncryptedData' for the local cache) until PR 2d cuts it over.
+//   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
+//             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
 const localDataStore = encrypted(slotRaw(store.data), keySession)
 
@@ -279,7 +278,7 @@ let remoteDataStore: DocStore | null = null
 let remotePrimaryStore: EncryptedStore | null = null   // the server side (string level)
 let remoteCacheStore: StringStore | null = null        // the local cache side
 
-/** The configured sync backend (docs: backend selection UI). */
+/** The configured sync backend (resolved by `sync.ts`). */
 function getBackendConfig(): BackendConfig {
   return parseBackendConfig(store.backend.get())
 }
