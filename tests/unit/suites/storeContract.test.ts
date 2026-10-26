@@ -270,6 +270,64 @@ describe('contract — codecStore unlock passthrough', () => {
   })
 })
 
+// ─── local composed DocStore (§5 composition table) ─────────────────────────
+
+describe('contract — local composed DocStore', () => {
+
+  const DOC = {
+      modelVersion: 'v1',
+      dataVersion: 3,
+      nodes: [
+          { id: 'root', parentId: null, text: '', children: ['a'] },
+          { id: 'a', parentId: 'root', text: 'Secret note' }
+      ]
+  }
+  const PASSPHRASE = 'local-passphrase-123'
+  const make = (slot = fakeSlot()) => ({ slot, docStore: codecStore(jsonCodec, encrypted(slotRaw(slot), createKeySession())) })
+
+  it('first-time setup writes the document as ciphertext in the slot', async () => {
+      const { slot, docStore } = make()
+      await docStore.unlock!(PASSPHRASE)
+      await docStore.write(DOC)
+
+      const atRest = slot.get('')!
+      assert(atRest.includes('|'), 'slot keeps the <salt>|<envelope> shape')
+      assert(!atRest.includes('Secret note'), 'plaintext document text never reaches the slot')
+      assert(!atRest.includes('"nodes"'), 'the serialized document never reaches the slot')
+
+      const read = await docStore.read()
+      assertEqual(read?.nodes.length, 2, 'document read back through the codec')
+      assertEqual(read?.nodes[1].text, 'Secret note', 'node text preserved')
+      assertEqual(read?.dataVersion, 3, 'document metadata preserved')
+  })
+
+  it('a locked store hides the document and reopens with unlock + read', async () => {
+      const { docStore } = make()
+      await docStore.unlock!(PASSPHRASE)
+      await docStore.write(DOC)
+      await docStore.lock!()
+
+      assertEqual(await docStore.exists(), true, 'exists needs no passphrase')
+      await expectStoreError(() => docStore.read(), 'unauthenticated', 'locked read')
+      await expectStoreError(() => docStore.unlock!('wrong-passphrase'), 'wrong-key', 'wrong passphrase')
+
+      const result = await docStore.unlock!(PASSPHRASE)
+      assertEqual(typeof result?.text, 'string', 'unlock returns the decrypted text')
+      const read = await docStore.read()
+      assertEqual(read?.nodes[1].text, 'Secret note', 'document reopens')
+  })
+
+  it('write resolves with the head token and clear empties the store', async () => {
+      const { docStore } = make()
+      await docStore.unlock!(PASSPHRASE)
+      const token = await docStore.write(DOC)
+      if (docStore.head) assertEqual(await docStore.head(), token, 'write token equals head')
+      await docStore.clear()
+      assertEqual(await docStore.read(), null, 'read null after clear')
+      assertEqual(await docStore.exists(), false, 'exists false after clear')
+  })
+})
+
 // ─── capability descriptors (§10) ────────────────────────────────────────────
 
 

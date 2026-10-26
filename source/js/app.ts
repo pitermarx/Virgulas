@@ -5,6 +5,7 @@ import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "
 import { optionsOpen } from './shortcuts.js';
 import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import type { BackendKind } from './storage.js';
+import type { OutlineDoc } from './docCodec.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
@@ -415,7 +416,7 @@ function handleInboxNodeNameChange(e: any) {
 const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
 
-let stagedMemoryDocJson: string | null = null;
+let stagedMemoryDoc: OutlineDoc | null = null;
 let cachedIntroText: string | null = null;
 
 async function getIntroText() {
@@ -550,8 +551,13 @@ async function submitUnlock(e: any) {
   isBusy.value = true;
   try {
     if (authMode.value === 'filesystem') {
-      await persistence.unlock('', { mode: 'filesystem' });
-      stagedMemoryDocJson = null;
+      await persistence.unlock('', {
+        mode: 'filesystem',
+        // A file chosen while a memory document is running adopts it instead
+        // of being reset to one empty node (same as Local/Remote setup).
+        initialDoc: stagedMemoryDoc ?? undefined
+      });
+      stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
       return;
     }
@@ -573,15 +579,15 @@ async function submitUnlock(e: any) {
       trustSession: isRemoteSessionValid(),
       // Setting up storage from a running memory document (the intro tour,
       // with the user's edits) carries it over instead of the seed doc.
-      initialDocJson: stagedMemoryDocJson ?? undefined
+      initialDoc: stagedMemoryDoc ?? undefined
     });
     if (success) {
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
       remotePasswordStage.value = false;
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Unable to unlock this storage mode.';
@@ -669,7 +675,7 @@ async function submitSignOut() {
     remotePasswordStage.value = false;
     await persistence.unlock('', { mode: 'memory' });
     persistence.setPreferredMode('memory');
-    stagedMemoryDocJson = null;
+    stagedMemoryDoc = null;
     document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
     unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to sign out.');
@@ -695,11 +701,10 @@ async function submitResetLocalData() {
     canResetLocalData.value = false;
     const success = await persistence.unlock(passphrase.value, {
       mode: 'local',
-      initialDocJson: stagedMemoryDocJson ?? undefined
+      initialDoc: stagedMemoryDoc ?? undefined
     });
     if (success) {
-      stagedMemoryDocJson = null;
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Failed to create new local data.';
@@ -737,12 +742,12 @@ async function submitResetRemoteData() {
 }
 
 async function continueInMemory() {
-  const staged = stagedMemoryDocJson;
-  stagedMemoryDocJson = null;
+  const staged = stagedMemoryDoc;
+  stagedMemoryDoc = null;
   await persistence.unlock('', { mode: 'memory' });
   persistence.setPreferredMode('memory');
   if (staged) {
-    outline.deserialize(staged);
+    outline.load(staged);
   } else {
   }
   document.body.setAttribute('data-main-view', 'rendered');
@@ -789,10 +794,10 @@ async function commitToWizardMode(nextMode: PersistenceMode) {
     return;
   }
   if (persistence.isMemory()) {
-    stagedMemoryDocJson = outline.serialize();
+    stagedMemoryDoc = outline.snapshot();
   }
   wizardOverlay.value = false;
-  if (nextMode !== 'filesystem' && !persistence.isLocked()) {
+  if (!persistence.isLocked()) {
     await persistence.lock();
   }
   if (nextMode === 'remote') void remoteSync.resolveBackend();
@@ -851,7 +856,7 @@ async function unlockWithBiometrics() {
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Invalid passphrase.';
@@ -1216,7 +1221,7 @@ const OptionsModal = () => {
       authUser.value = null;
       authHasLocalData.value = false;
       remotePasswordStage.value = false;
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
       // Land in memory mode with the intro doc, same as sign-out.
       await persistence.unlock('', { mode: 'memory' });
       persistence.setPreferredMode('memory');
@@ -1260,7 +1265,7 @@ const OptionsModal = () => {
         isBusy.value = false;
       }
       remotePasswordStage.value = false;
-      stagedMemoryDocJson = null;
+      stagedMemoryDoc = null;
     }
 
     persistence.reset();

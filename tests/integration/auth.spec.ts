@@ -808,6 +808,27 @@ test.describe('Authentication', () => {
     }, { timeout: 5000 }).toContain('|');
   });
 
+  test('a local slot without an envelope falls back to first-time setup', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('vmd_data_enc', 'not-an-envelope');
+      localStorage.setItem('vmd_last_mode', 'local');
+    });
+    await page.reload();
+
+    await page.getByLabel('Encryption passphrase').fill('fresh-passphrase-1');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await expect(page.locator('.status-mode')).toHaveText('Local');
+
+    // The first save replaces the malformed slot with a real salt|envelope.
+    await expect.poll(async () => {
+      return await page.evaluate(() => localStorage.getItem('vmd_data_enc'));
+    }, { timeout: 5000 }).toMatch(/^[^|]+\|v2:/);
+  });
+
   test('corrupted decrypted document offers reset without unlocking', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(async () => {
@@ -824,7 +845,7 @@ test.describe('Authentication', () => {
     await page.getByLabel('Encryption passphrase').fill('old-passphrase');
     await page.getByRole('button', { name: 'Unlock' }).click();
 
-    await expect(page.getByText('The decrypted document is not valid JSON.')).toBeVisible();
+    await expect(page.getByText('The document is not valid JSON.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reset Local Data With New Passphrase' })).toBeVisible();
     await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
   });

@@ -1,6 +1,5 @@
 import { signal, effect, batch } from '@preact/signals'
 import {
-  CorruptEnvelopeError,
   WrongPassphraseError,
   MIN_PASSPHRASE_LENGTH
 } from "./crypto2.js"
@@ -11,7 +10,7 @@ import { createKeySession, encrypted } from './encryptedStore.js'
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { memoryStore } from './memoryStore.js'
-import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type StringStore, type UnlockResult } from './storage.js'
+import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type UnlockResult } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
@@ -51,10 +50,10 @@ export interface UnlockOptions {
   username?: string
   password?: string
   trustSession?: boolean
-  /** Serialized document to adopt when the store is empty (first-time setup)
-   * — the running in-memory document (the intro tour, with the user's edits)
+  /** Document value to adopt when the store is empty (first-time setup) —
+   * the running in-memory document (the intro tour, with the user's edits)
    * carries over instead of being replaced by the seed doc. */
-  initialDocJson?: string
+  initialDoc?: OutlineDoc
 }
 
 function normalizeMode(mode: unknown): PersistenceMode | null {
@@ -139,40 +138,31 @@ const filesystemStorage = (function () {
   return {
     isSupported: () => typeof window !== 'undefined' && !!window.showOpenFilePicker,
 
+    /** Acquires a handle from the picker. Reading is the file store's job. */
     async open() {
       const [handle] = await window.showOpenFilePicker!({
         types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
       })
       _handle = handle
       await saveHandle(handle)
-      const file = await handle.getFile()
-      return await file.text()
     },
 
-    async create() {
-      const handle = await window.showSaveFilePicker!({
-        suggestedName: 'notes.vmd',
-        types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
-      })
-      _handle = handle
-      await saveHandle(handle)
-      return null
-    },
-
+    /** Reopens the remembered handle; false means "ask the user". */
     async tryReopen() {
       const handle = await getSavedHandle()
-      if (!handle) return null
+      if (!handle) return false
       try {
         const perm = await handle.queryPermission!({ mode: 'readwrite' })
-        if (perm === 'denied') return null
+        if (perm === 'denied') return false
         if (perm !== 'granted') {
           const req = await handle.requestPermission!({ mode: 'readwrite' })
-          if (req !== 'granted') return null
+          if (req !== 'granted') return false
         }
+        // Probe readability: a deleted/inaccessible file falls back to the picker.
+        await handle.getFile()
         _handle = handle
-        const file = await handle.getFile()
-        return await file.text()
-      } catch { return null }
+        return true
+      } catch { return false }
     },
 
     async hasSavedHandle() {
@@ -180,19 +170,11 @@ const filesystemStorage = (function () {
       return !!handle
     },
 
-    async write(json: string) {
-      if (!_handle) throw new Error('No file open')
-      const writable = await _handle.createWritable()
-      await writable.write(json)
-      await writable.close()
-    },
-
     async pickNewFile() {
       _handle = null
-      return this.open()
+      await this.open()
     },
 
-    hasHandle: () => !!_handle,
     currentHandle: () => _handle,
 
     async clear() {
@@ -203,46 +185,16 @@ const filesystemStorage = (function () {
 })()
 
 
-const localEncryptedData = {
-  get() {
-    const v = store.data.get()
-    if (!v) {
-      return { salt: null, data: null }
-    }
-    const idx = v.indexOf('|')
-    if (idx === -1) {
-      log('Invalid encrypted data format, missing "|" salt separator')
-      return { salt: null, data: null }
-    }
-    return { salt: v.substring(0, idx), data: v.substring(idx + 1) }
-  },
-  reset() {
-    store.data.del()
-  },
-  set(value: string | null, salt: string | null) {
-    if (value && salt) {
-      store.data.set(salt + '|' + value)
-    }
-    else if (value || salt) {
-      throw new Error('Both value and salt are required to set encrypted data')
-    }
-    else {
-      store.data.del()
-    }
-  }
-}
-
 // -- Storage seam (docs/storage-interface.md) --------------------------------
 //
 // All four modes route their data paths through the seam:
-//   Local   = encrypted(slotRaw(store.data), keySession)  -- StringStore level,
-//             so read() returns the decrypted at-rest text for deserialize
+//   Local   = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 //   File    = codecStore(vmdCodec, fileStore(handle))
-//   Memory  = codecStore(jsonCodec, memoryStore())        -- validation for free
+//   Memory  = the live outline (no store instance; see §14)
 //   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
-const localDataStore = encrypted(slotRaw(store.data), keySession)
+const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
 export const localSaveFailed = signal(false)
@@ -256,11 +208,20 @@ function setFileHandle(handle: FileSystemFileHandle | null) {
 
 /**
  * Loads a codec-parsed document into the live outline. VMD-sourced documents
- * carry no model version, so the wrapper supplies one (deserialize validates
- * it); document-level fields already on the doc win over the defaults.
+ * carry no model version, so the wrapper supplies one (load validates it);
+ * document-level fields already on the doc win over the defaults.
  */
 function loadDocIntoOutline(doc: OutlineDoc) {
-  outline.deserialize(JSON.stringify({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }))
+  outline.load({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
+}
+
+/**
+ * A parsed VMD document with no nodes beyond the implicit root is an empty
+ * file: treat it like a blank one (seed an empty node) instead of loading an
+ * outline the user cannot type in.
+ */
+function hasDocumentNodes(doc: OutlineDoc | null): doc is OutlineDoc {
+  return !!doc && doc.nodes.some(node => node.id !== 'root')
 }
 
 /**
@@ -270,7 +231,7 @@ function loadDocIntoOutline(doc: OutlineDoc) {
  * salt and envelope. Built on remote unlock, handed to `remoteSave.ts` (which
  * owns saves, retries and the deferred push), torn down on lock/sign-out.
  */
-let remoteCacheStore: StringStore | null = null        // the local cache side
+let remoteCacheStore: DocStore | null = null          // the local cache side, doc-level
 
 /** The configured sync backend (resolved by `sync.ts`). */
 function getBackendConfig(): BackendConfig {
@@ -292,7 +253,7 @@ async function buildRemoteStore(): Promise<DocStore> {
   // decorator stays codec-blind and the slot/row bytes are unchanged.
   const primary = encrypted(raw, keySession)
   const cache = encrypted(slotRaw(store.data), keySession)
-  remoteCacheStore = cache
+  remoteCacheStore = codecStore(jsonCodec, cache)
   return codecStore(jsonCodec, cached(primary, cache, {
     // data-06 in Remote mode: the server row is the source of truth, so a
     // failed device-local cache write must not fail the save or read as a
@@ -306,8 +267,9 @@ async function buildRemoteStore(): Promise<DocStore> {
 }
 
 function teardownRemoteStore() {
-  // Nulls the save handle and the sync module's store in one place.
+  // Nulls the save handle, the sync module's store and the cache handle in one place.
   setRemoteSaveStore(null)
+  remoteCacheStore = null
 }
 
 /**
@@ -343,7 +305,7 @@ effect(() => {
  */
 function wipeDeviceData() {
   inbox.clear()
-  localEncryptedData.set(null, null)
+  void localDataStore.clear()
   store.user.del()
   store.mode.del()
   store.syncTs.del()
@@ -523,7 +485,7 @@ effect(() => {
     const doWrite = async () => {
       try {
         // Through the seam: live outline -> document -> VMD text -> file.
-        await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+        await fileDataStore!.write(outline.snapshot())
         localSaveFailed.value = false
         log('[Persistence] Saved filesystem doc v' + version)
       } catch (error) {
@@ -564,9 +526,9 @@ effect(() => {
     async function doLocalSave(): Promise<boolean> {
       clearMaxWaitSave()
       saveArmed = false
-      const json = outline.serialize() // get latest doc state
+      const doc = outline.snapshot() // get latest doc state
       try {
-        await localDataStore.write(json)
+        await localDataStore.write(doc)
         lastSavedVersion = version
         localSaveFailed.value = false
         // The persist() prompt hangs off the capability, nowhere else.
@@ -621,7 +583,7 @@ effect(() => {
     saveArmed = false
     if (!getRemoteSaveStore()) return false
     try {
-      const doc = jsonCodec.parse(outline.serialize()) // get latest doc state
+      const doc = outline.snapshot() // get latest doc state
       lastSavedVersion = version
       // Pull-before-push, retries and the typing-time deferral live in
       // remoteSave.ts; failures there map onto the sync status, not this save.
@@ -658,13 +620,13 @@ function parseRemoteUnlockError(error: unknown) {
   return error
 }
 
-/** Adopts a serialized initial document (first-time setup from memory).
+/** Adopts an initial document value (first-time setup from memory).
  * Guarantees the doc is never blank: returns false when nothing usable was
  * adopted, so the caller can seed its default. */
-function adoptInitialDoc(initialDocJson: string | undefined): boolean {
-  if (!initialDocJson) return false
+function adoptInitialDoc(initialDoc: OutlineDoc | undefined): boolean {
+  if (!initialDoc) return false
   try {
-    outline.deserialize(initialDocJson)
+    outline.load(initialDoc)
     const root = outline.get('root')
     return !!root && root.children.peek().length > 0
   } catch {
@@ -672,33 +634,46 @@ function adoptInitialDoc(initialDocJson: string | undefined): boolean {
   }
 }
 
-async function unlockLocal(code: string, initialDocJson?: string) {
+/** First-time Local setup: retain the passphrase with a fresh salt and seed
+ * the live model. The first write persists it (docs §6.2). */
+function setupLocal(code: string, initialDoc?: OutlineDoc) {
+  assertNewPassphrase(code)
+  outline.reset()
+  // When setting up from a running memory document, adopt it so the user's
+  // notes survive; otherwise the doc is never blank.
+  if (!adoptInitialDoc(initialDoc)) {
+    outline.addChild('root', { text: '' })
+  }
+  authMode.value = 'local'
+  passphrase.value = code
+  rememberMode('local')
+  void refreshLocalStorageDurability(false)
+  return true
+}
+
+async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
   const hasData = await localDataStore.exists()
 
   if (!hasData) {
     log('No encrypted data found in localStorage, starting with empty doc')
-    assertNewPassphrase(code)
-    // Adoption: on an empty store, unlock() retains the passphrase with a
-    // fresh salt and the first write persists it (docs §6.2). When setting up
-    // from a running memory document, adopt it so the user's notes survive.
-    await localDataStore.unlock(code)
-    outline.reset()
-    if (!adoptInitialDoc(initialDocJson)) {
-      outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
-    }
-    authMode.value = 'local'
-    passphrase.value = code
-    rememberMode('local')
-    void refreshLocalStorageDurability(false)
-    return true
+    await localDataStore.unlock!(code)
+    return setupLocal(code, initialDoc)
   }
 
   try {
     // unlock() performs the one-and-only passphrase verification (decryption
-    // is the verifier) and returns the decrypted at-rest text.
-    const result = await localDataStore.unlock(code)
-    if (result.text === null) throw new CorruptEnvelopeError('Local encrypted data is missing.')
-    outline.deserialize(result.text)
+    // is the verifier) in one round-trip (docs §14.7). It returns the at-rest
+    // text, which the codec parses into the document value the orchestration
+    // handles; reads and writes below are doc-level.
+    const result = await localDataStore.unlock!(code)
+    if (!result || result.text === null) {
+      // The slot is occupied but holds no readable record (a value without
+      // the `<salt>|<envelope>` shape reads as "no record"). Match the
+      // pre-seam behaviour: treat it as first-time setup.
+      log('Local data is unreadable, starting with a new document')
+      return setupLocal(code, initialDoc)
+    }
+    outline.load(jsonCodec.parse(result.text))
 
     batch(() => {
       authMode.value = 'local'
@@ -719,7 +694,7 @@ async function unlockLocal(code: string, initialDocJson?: string) {
   }
 }
 
-async function unlockRemote({ passphrase: code, username, password, trustSession, initialDocJson }: { passphrase: string; username?: string; password?: string; trustSession?: boolean; initialDocJson?: string }) {
+async function unlockRemote({ passphrase: code, username, password, trustSession, initialDoc }: { passphrase: string; username?: string; password?: string; trustSession?: boolean; initialDoc?: OutlineDoc }) {
   const hasCredentials = !!(username && password)
   if (!trustSession && !hasCredentials) {
     throw new Error('Username, password, and passphrase are required.')
@@ -772,10 +747,10 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     // user's edits), adopt it instead of the seed doc (docs: storage setup).
     assertNewPassphrase(code)
     outline.reset()
-    if (!adoptInitialDoc(initialDocJson)) {
+    if (!adoptInitialDoc(initialDoc)) {
       outline.addChild('root', { text: 'Hello World' })
     }
-    const token = await remote.write(jsonCodec.parse(outline.serialize()))
+    const token = await remote.write(outline.snapshot())
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
@@ -788,7 +763,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 
   const doc = jsonCodec.parse(unlockResult.text)
-  outline.deserialize(unlockResult.text)
+  outline.load(doc)
   // Adopt the downloaded record's token as last-seen (docs §8), and mark the
   // sync baseline so the next edit doesn't falsely see remote as newer.
   if (unlockResult.headToken) setSyncHead(unlockResult.headToken)
@@ -797,7 +772,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // no upsert at unlock time. Best-effort: a failed cache write surfaces via
   // the save-failed state, not a failed unlock.
   try {
-    await remoteCacheStore!.write(JSON.stringify({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }))
+    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
   } catch (error) {
     console.error('[Persistence] Offline cache priming failed:', error)
     if (error instanceof StoreError && error.code === 'too-large') localSaveFailed.value = true
@@ -833,8 +808,8 @@ async function unlockMemory() {
 
   outline.reset()
   if (introText && introText.trim()) {
-    // Memory mode round-trips through jsonCodec: uniform code path,
-    // validation for free (docs §4.6). VMD parsing lives in the codec.
+    // Memory mode round-trips the intro through jsonCodec: validation for
+    // free (docs §4.6); the live outline itself is the store (§14.12).
     const memoryDataStore = codecStore(jsonCodec, memoryStore())
     // The jsonCodec-backed store requires a model version on the document.
     await memoryDataStore.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...vmdCodec.parse(introText) })
@@ -852,13 +827,12 @@ async function unlockMemory() {
   return true
 }
 
-async function unlockFilesystem(initialDocJson?: string) {
-  // Try to reopen the last file silently first
-  let json = await filesystemStorage.tryReopen()
-  if (json === null) {
-    // No saved handle or permission denied — prompt user to open or create
+async function unlockFilesystem(initialDoc?: OutlineDoc) {
+  // Reopen the remembered handle silently, otherwise ask for a file. Handle
+  // acquisition is orchestration; the bytes are the file store's job.
+  if (!(await filesystemStorage.tryReopen())) {
     try {
-      json = await filesystemStorage.open()
+      await filesystemStorage.open()
     } catch (err) {
       if ((err as { name?: string } | null)?.name === 'AbortError') throw new Error('No file selected.')
       throw err
@@ -867,11 +841,12 @@ async function unlockFilesystem(initialDocJson?: string) {
 
   setFileHandle(filesystemStorage.currentHandle())
 
-  if (json && json.trim()) {
+  const doc = await fileDataStore!.read()
+  if (hasDocumentNodes(doc)) {
     outline.reset()
-    loadDocIntoOutline(vmdCodec.parse(json))
+    loadDocIntoOutline(doc)
     applyHashZoomIfPresent()
-  } else if (adoptInitialDoc(initialDocJson)) {
+  } else if (adoptInitialDoc(initialDoc)) {
     // A new empty file chosen from a running memory session: the live document
     // becomes the file's content (docs: storage setup).
     applyHashZoomIfPresent()
@@ -880,7 +855,7 @@ async function unlockFilesystem(initialDocJson?: string) {
     outline.addChild('root', { text: '' })
     applyHashZoomIfPresent()
     // Write initial doc with one empty node to file
-    await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+    await fileDataStore!.write(outline.snapshot())
   }
 
   batch(() => {
@@ -897,7 +872,7 @@ async function unlock(code: string, options: UnlockOptions = {}) {
     return unlockMemory()
   }
   if (mode === 'filesystem') {
-    return unlockFilesystem(options.initialDocJson)
+    return unlockFilesystem(options.initialDoc)
   }
   if (mode === 'remote') {
     return unlockRemote({
@@ -905,15 +880,14 @@ async function unlock(code: string, options: UnlockOptions = {}) {
       username: options.username || '',
       password: options.password || '',
       trustSession: !!options.trustSession,
-      initialDocJson: options.initialDocJson
+      initialDoc: options.initialDoc
     })
   }
-  return unlockLocal(code, options.initialDocJson)
+  return unlockLocal(code, options.initialDoc)
 }
 
 export default {
   wipeDeviceData,
-  hasData: () => !!localEncryptedData.get().data,
   isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
@@ -956,7 +930,7 @@ export default {
     const browserCapabilities = detectBrowserCapabilities()
     const encryptedStorageAvailable = supportsEncryptedStorage(browserCapabilities)
     const browserSupportWarning = describeBrowserSupport(browserCapabilities, encryptedStorageAvailable)
-    const hasLocalData = !!localEncryptedData.get().data
+    const hasLocalData = await localDataStore.exists()
     const hasSupabase = hasSupabaseClient()
     const hasFilesystem = filesystemStorage.isSupported()
     const lastUsername = store.user.get('') || ''
@@ -1104,7 +1078,7 @@ export default {
     keySession.rotate(newPassphrase)
     outline.reset()
     outline.addChild('root', { text: 'Hello World' })
-    const token = await remote.write(jsonCodec.parse(outline.serialize()))
+    const token = await remote.write(outline.snapshot())
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
@@ -1196,15 +1170,16 @@ export default {
     memoryReady.value = false
   },
   async pickNewFile() {
-    const text = await filesystemStorage.pickNewFile()
+    await filesystemStorage.pickNewFile()
     setFileHandle(filesystemStorage.currentHandle())
-    if (text && text.trim()) {
+    const doc = await fileDataStore!.read()
+    if (hasDocumentNodes(doc)) {
       outline.reset()
-      loadDocIntoOutline(vmdCodec.parse(text))
+      loadDocIntoOutline(doc)
       applyHashZoomIfPresent()
     } else {
       outline.reset()
-      await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+      await fileDataStore!.write(outline.snapshot())
     }
     rememberMode('filesystem')
   },
@@ -1229,13 +1204,13 @@ export default {
     if (mode === 'memory' || mode === 'filesystem') {
       throw new Error('This mode has no encryption passphrase.')
     }
-    const json = outline.serialize()
+    const doc = outline.snapshot()
 
     if (mode === 'local') {
       // Storage seam: rotation is the session's job -- a fresh salt and the
       // new passphrase become active and the write re-encrypts (docs §6.7).
       keySession.rotate(newPassphrase)
-      await localDataStore.write(json)
+      await localDataStore.write(doc)
       passphrase.value = newPassphrase
       return true
     }
@@ -1250,7 +1225,7 @@ export default {
       keySession.rotate(newPassphrase)
       const remote = getRemoteSaveStore() ?? await buildRemoteStore()
       setRemoteSaveStore(remote)
-      const token = await remote.write(jsonCodec.parse(json))
+      const token = await remote.write(doc)
       if (token) setSyncHead(token)
       setLastSyncedAt(Date.now())
     }

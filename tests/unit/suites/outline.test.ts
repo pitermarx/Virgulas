@@ -554,6 +554,126 @@ describe("Deserialize", () => {
 
 })
 
+// The storage seam consumes OutlineDoc values, never serialized text:
+// snapshot() is the model-side producer and load() the model-side consumer.
+// Text only exists inside the codecs (jsonCodec / vmdCodec).
+describe("snapshot / load", () => {
+
+  it("snapshot returns a document value with modelVersion, dataVersion and nodes", () => {
+    buildTree()
+    const doc = outline.snapshot()
+    assertEqual(doc.modelVersion, 'v1', "modelVersion")
+    assertEqual(doc.dataVersion, outline.version.peek(), "dataVersion")
+    assert(Array.isArray(doc.nodes), "nodes should be an array")
+    assert(doc.nodes.some(node => node.id === 'root'), "snapshot should include the root")
+  })
+
+  it("snapshot matches the JSON payload of serialize", () => {
+    buildTree()
+    outline.updateNode('A', { text: 'Alfa', description: 'first' })
+    outline.toggleOpen('B')
+    assertEqual(JSON.stringify(outline.snapshot()), outline.serialize(), "snapshot and serialize must agree")
+  })
+
+  it("snapshot captures text, description, open state and child order", () => {
+    buildTree()
+    outline.updateNode('A', { text: 'Alfa', description: 'first' })
+    outline.toggleOpen('B')
+    outline.moveUp('C')
+    const doc = outline.snapshot()
+    const byId = (id: string) => doc.nodes.find(node => node.id === id)!
+    assertEqual(byId('A').text, 'Alfa', "A text")
+    assertEqual(byId('A').description, 'first', "A description")
+    assertEqual(byId('B').open, false, "B open")
+    assertEqual(JSON.stringify(byId('root').children), JSON.stringify(['A', 'C', 'B']), "root child order")
+    assertEqual(JSON.stringify(byId('B').children), JSON.stringify(['D', 'E']), "B children")
+  })
+
+  it("snapshot is a value: mutating it does not touch the live outline", () => {
+    buildTree()
+    const doc = outline.snapshot()
+    doc.nodes.find(node => node.id === 'root')!.children!.push('mutated')
+    doc.nodes.find(node => node.id === 'A')!.text = 'mutated'
+    assertChildren('root', ['A', 'B', 'C'])
+    assertEqual(outline.get('A')!.text.peek(), 'A', "live text unchanged")
+  })
+
+  it("load restores a snapshot without going through JSON text", () => {
+    buildTree()
+    outline.updateNode('A', { text: 'Alfa', description: 'first' })
+    outline.toggleOpen('B')
+    const doc = outline.snapshot()
+    outline.reset()
+    outline.load(doc)
+    assertEqual(outline.get('A')!.text.peek(), 'Alfa', "A text after load")
+    assertEqual(outline.get('A')!.description.peek(), 'first', "A description after load")
+    assertEqual(outline.get('B')!.open.peek(), false, "B open after load")
+    assertChildren('root', ['A', 'B', 'C'])
+    assertChildren('B', ['D', 'E'])
+  })
+
+  it("snapshot / load preserve task state and lastModified", () => {
+    addChild('root', { id: 'A', text: 'Task' })
+    outline.toggleDone('A') // null → false
+    const doc = outline.snapshot()
+    const before = doc.nodes.find(node => node.id === 'A')!
+    assertEqual(before.done, false, "done: false is kept (not omitted as falsy)")
+    assert(typeof before.lastModified === 'number' && before.lastModified > 0, "lastModified captured")
+
+    outline.reset()
+    outline.load(doc)
+    const after = outline.snapshot().nodes.find(node => node.id === 'A')!
+    assertEqual(after.done, false, "done survives the round-trip")
+    assertEqual(after.lastModified, before.lastModified, "lastModified survives the round-trip")
+  })
+
+  it("load sanitises like deserialize (drops orphan nodes)", () => {
+    outline.load({
+      modelVersion: 'v1',
+      dataVersion: 0,
+      nodes: [
+        { id: 'root', parentId: null, text: '', children: [] },
+        { id: 'orphan', parentId: 'missing', text: 'orphan' }
+      ]
+    })
+    assertEqual(outline.get('orphan'), undefined, "orphan should be skipped")
+  })
+
+  it("load throws on a wrong model version", () => {
+    let error: unknown
+    try {
+      outline.load({ modelVersion: 'v99', dataVersion: 0, nodes: [{ id: 'root', text: '' }] })
+    } catch (caught) {
+      error = caught
+    }
+    assert(error instanceof UnsupportedVersionError, "Unknown modelVersion should have a typed unsupported-version error")
+  })
+
+  it("load throws on a document without a root node", () => {
+    let error: unknown
+    try {
+      outline.load({ modelVersion: 'v1', dataVersion: 0, nodes: [{ id: 'X', text: 'X' }] })
+    } catch (caught) {
+      error = caught
+    }
+    assert(error instanceof CorruptDocumentError, "A missing root should have a typed corruption error")
+  })
+
+  it("load rejects a non-object document without replacing the existing outline", () => {
+    outline.reset()
+    outline.addChild('root', { id: 'preserved', text: 'Preserved' })
+    let error: unknown
+    try {
+      outline.load(null as any)
+    } catch (caught) {
+      error = caught
+    }
+    assert(error instanceof CorruptDocumentError, "A non-object should have a typed corruption error")
+    assertEqual(outline.get('preserved')?.text.peek(), 'Preserved', "Invalid document should not reset the existing outline")
+  })
+
+})
+
 describe("dataVersion tracking", () => {
 
   it("Starts at 0 after reset", () => {

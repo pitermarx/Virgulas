@@ -166,6 +166,62 @@ test.describe('File mode', () => {
         await expect(page.locator('.status-mode')).toHaveText('File');
     });
 
+    test('a blank .vmd file starts with one empty node and is seeded', async ({ page }) => {
+        await installMockFilesystem(page, { initialContent: '   ' });
+        await page.addInitScript(() => {
+            localStorage.setItem('vmd_last_mode', 'filesystem');
+        });
+
+        await page.goto('/');
+        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await page.getByRole('button', { name: 'Unlock' }).click();
+
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+        await expect(page.locator('.node-content')).toHaveCount(1);
+        await expect.poll(
+            () => page.evaluate(() => {
+                const files = JSON.parse(sessionStorage.getItem('__fsMockFiles') || '{}');
+                return files['mock-file-1']?.content ?? '';
+            }),
+            { timeout: 5000, intervals: [300] }
+        ).toBe('- \n');
+    });
+
+    test('creating a file from a running memory document carries the notes over', async ({ page }) => {
+        await installMockFilesystem(page, { initialContent: '' });
+
+        await page.goto('/');
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+
+        // Edit the intro document in memory.
+        await page.locator('.node-text-md').first().click();
+        await page.locator('.node-content input').first().fill('Carried to a file');
+        await page.locator('body').click();
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('Carried to a file');
+
+        // Set up File storage from the running memory document.
+        await page.getByRole('button', { name: /Enable Secure Storage/ }).click();
+        await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
+        await page.getByRole('button', { name: /On this device/ }).click();
+        await page.getByRole('button', { name: /A \.vmd file/ }).click();
+
+        await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
+        await page.getByRole('button', { name: 'Unlock' }).click();
+
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+        await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('Carried to a file');
+        await expect(page.locator('.status-mode')).toHaveText('File');
+
+        // The carried document reaches the chosen (empty) file.
+        await expect.poll(
+            () => page.evaluate(() => {
+                const files = JSON.parse(sessionStorage.getItem('__fsMockFiles') || '{}');
+                return files['mock-file-1']?.content ?? '';
+            }),
+            { timeout: 5000, intervals: [300] }
+        ).toContain('Carried to a file');
+    });
+
     test('writes changes to file after 1 second debounce', async ({ page }) => {
         await installMockFilesystem(page, { initialContent: '- Initial Node' });
         await page.addInitScript(() => {

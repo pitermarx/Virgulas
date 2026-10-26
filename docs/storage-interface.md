@@ -102,7 +102,7 @@ tree never meet; serialized text exists only transiently inside codec calls.
 ├──────────────────────────────────────────────────────────────┤
 │ storage.ts contracts — DocStore (public, speaks the model)   │
 │   codecStore(codec, inner): serialization boundary           │
-│     jsonCodec (Local/Remote/Memory at rest), vmdCodec (File) │
+│     jsonCodec (Local/Remote at rest), vmdCodec (File)        │
 │   encrypted(session): crypto boundary — string-level,        │
 │     codec-blind; StringStore above, RawStore below           │
 │   built-ins: memory, file; composed: local, remote           │
@@ -515,8 +515,9 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
   The baseline is orchestration-owned sync state, **not** a store property,
   and must not be conflated with the opaque `head()` token — two clocks, two
   slots (§8, resolved).
-- Memory mode round-trips through `jsonCodec` (uniform code path, validation
-  for free); VMD is no longer involved outside File/export.
+- Memory mode round-trips the intro tour through `jsonCodec` (validation for
+  free); the live outline itself is the Memory store (§14.12). VMD is no longer
+  involved outside File/export.
 
 ### 4.7 `cached()` — the offline-cache decorator
 
@@ -561,7 +562,7 @@ re-run of `store.write(doc)` (Goal 2 becomes literally true).
 
 | Mode | Composition | At-rest shape | Change token (`head`) |
 | --- | --- | --- | --- |
-| Memory | `codecStore(jsonCodec, memoryStore())` | RAM string (JSON) | monotonically increasing counter |
+| Memory | live outline (no store instance; §14.12) | RAM only | n/a |
 | File | `codecStore(vmdCodec, fileStore(handle))` | plain `.vmd` bytes | `file.lastModified` |
 | Local | `codecStore(jsonCodec, encrypted(slotRaw('vmd_data_enc'), session))` | `salt\|v2:600000:…` in slot | content hash of slot |
 | Remote (Supabase) | `codecStore(jsonCodec, cached(encrypted(supabaseRaw(client), session), encrypted(slotRaw('vmd_data_enc'), session)))` + Supabase `AuthProvider` | `outlines` row (`salt`, `data`, `updated_at`) — **unchanged schema**; local cache slot | `updated_at` |
@@ -1028,3 +1029,12 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
     primary together), rather than deferring only the primary write. The
     deferred flush lands ~50ms after the typing gate opens, so the local cache
     write is delayed by well under a second in the worst case.
+12. **Memory mode keeps no store instance** (`codecStore(jsonCodec,
+    memoryStore())` is the composition template the other modes follow): the
+    live outline *is* the Memory store. It is already RAM-only, survives no
+    reload (non-goal), and has no unlock lifecycle, so a second codecStore-backed
+    copy would duplicate the document in RAM and re-serialize it on every save
+    for no observable effect. The intro still round-trips through `jsonCodec` on
+    load (validation for free), and `memoryStore()` remains the RAM adapter the
+    contract suite exercises. Local and File compose their DocStores exactly as
+    §5 describes; their read/write paths are doc-level.

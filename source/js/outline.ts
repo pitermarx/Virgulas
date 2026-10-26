@@ -370,8 +370,13 @@ function outlineFactory() {
     }
 
 
-    function serialize(pretty = false) {
-        return JSON.stringify({
+    /**
+     * The live document as a plain value (OutlineDoc): every node snapshot plus
+     * the document-level fields. This is the model-side entry point the storage
+     * seam consumes; serialize() is only the JSON-text wrapper around it.
+     */
+    function snapshot(): OutlineDoc {
+        return {
             modelVersion,
             dataVersion: dataVersion.peek(),
             nodes: [...map.values()]
@@ -381,24 +386,37 @@ function outlineFactory() {
                     parentId: node.parentId,
                     text: node.text,
                     description: node.description === '' ? undefined : node.description, // omit description if empty to save space
-                    children: node.children.length > 0 ? node.children : undefined, // omit children if empty to save space
+                    children: node.children.length > 0 ? [...node.children] : undefined, // copy: the value must not alias the live model
                     open: node.open === true ? undefined : node.open, // omit open if true to save space, since most nodes are open by default
                     lastModified: node.lastModified > 0 ? node.lastModified : undefined, // omit lastModified when 0 for backwards compat
                     done: node.done !== null && node.done !== undefined ? node.done : undefined, // omit done if null (not a task)
                 }))
-        }, null, pretty ? 2 : 0)
+        }
+    }
+
+    function serialize(pretty = false) {
+        return JSON.stringify(snapshot(), null, pretty ? 2 : 0)
     }
 
     function deserialize(json: string) {
-        log('Deserializing outline, version:', dataVersion.value)
-
-        const previousZoomId = zoomId.peek()
         let obj: any
         try {
             obj = JSON.parse(json)
         } catch {
             throw new CorruptDocumentError('The decrypted document is not valid JSON.')
         }
+        load(obj)
+    }
+
+    /**
+     * Loads an already-parsed document value with the same validation and
+     * model sanitisation as deserialize(). The storage seam calls this directly,
+     * so a store read never round-trips through JSON text in orchestration.
+     */
+    function load(obj: OutlineDoc) {
+        log('Deserializing outline, version:', dataVersion.value)
+
+        const previousZoomId = zoomId.peek()
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
             throw new CorruptDocumentError()
         }
@@ -938,6 +956,8 @@ function outlineFactory() {
         getVMD: (id?: string) => getVMD(id || zoomId.value),
         setVMD,
         setRootVMD,
+        snapshot,
+        load,
         serialize,
         deserialize,
 

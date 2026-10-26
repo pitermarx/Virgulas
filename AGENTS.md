@@ -455,7 +455,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `outline.ts`:
   Core document model and tree operations (CRUD, move/indent/outdent, serialization, search tree generation); delegates VMD parsing/writing to `docCodec.ts`.
 - `docCodec.ts`:
-  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
+  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
 - `model.ts`:
   Shared document-model constants (`MODEL_VERSION`) and `CorruptDocumentError`. No imports, so `outline.ts` and `docCodec.ts` can share them without a cycle.
 - `merge.ts`:
@@ -473,7 +473,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. All four modes' data paths run through the storage seam — Remote is `cached(encrypted(raw), encrypted(slotRaw))` over one shared KeySession; `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the save debounce, the session lifecycle and the store construction; hands the composed remote store to `remoteSave.ts`.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the save debounce, the session lifecycle and the store construction; hands the composed remote store to `remoteSave.ts`.
 - `remoteSave.ts`:
   Remote save orchestration: the injected composed store (also handed to `sync.ts`), pull-before-push on save, the retry policy (only `network`/`unauthenticated` retry), and the deferred-push queue that retries an edit skipped while typing. Holds documents, never ciphertext or keys.
 - `sync.ts`:
