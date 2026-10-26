@@ -239,10 +239,12 @@
       `backendconfig` (with a read-through of the legacy `supabaseconfig`), and `vmd_backend_session`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC
-    Remote mode works against a selectable sync backend. The lock screen offers
-    Virgulas server (the hosted Supabase, configured by default), Custom Supabase,
-    and Custom TrailBase; the choice is remembered and each backend stores only
-    ciphertext. The encryption model is unchanged: the server never sees plaintext.
+    Remote mode works against the sync backend resolved for this deployment: the
+    TrailBase instance serving the app (self-hosted or hosted), or the hosted
+    Supabase fallback for static deployments. There is no in-app backend picker
+    and no server URL field; the credentials form names the resolved server.
+    Each backend stores only ciphertext. The encryption model is unchanged: the
+    server never sees plaintext.
     - The account password is only used for backend authentication — it is unrelated to the
       encryption passphrase. The passphrase is set independently and never sent to any server
     - To create an account the user provides an email and password for backend auth

@@ -1,9 +1,11 @@
 # Storage Interface — Design Document
 
-Status: draft (planning; not yet a SPEC change)
-Scope: refactor of persistence/sync internals. **No user-visible behaviour change.**
-Companion: this document precedes the backend adapters work (Supabase → TrailBase
-migration, user-defined backends).
+Status: implemented (rollout through PR 3 shipped; §12 records the original plan).
+Scope: persistence/sync internals, the documented data-06 and sync-01 behaviour
+  fixes, and the TrailBase backend. TrailBase on the serving origin is the
+  default; Supabase remains the static-deployment fallback.
+Companion: `AGENTS.md` describes the shipped module map; §14 records the
+  implementation deviations.
 
 ---
 
@@ -863,13 +865,18 @@ updates in the same PR as the code. Per Rule 1: if any SPEC line turns out to
 *depend* on the current interleaving (rather than describing observable
 behaviour), stop and raise it rather than rewriting the SPEC to fit the code.
 
-`README.md`: no user-visible change; only if it describes storage mechanics.
-`AGENTS.md`: module map + encryption section updated (§7 table replaces the
+`README.md`: updated for the TrailBase default and the absence of a backend picker.
+`AGENTS.md`: module map, Rule 7, sync and build sections updated (§7 table replaces the
 current sync/persistence description).
 
 ---
 
 ## 12. Rollout
+
+All rows through PR 3 have shipped; row 4 remains optional. The proof column records the
+plan-time expectation. §10's "fixture-only" expectation was superseded by the
+e2e/integration split (`tests/integration/` holds backend-coupled flows); §14 records the
+implementation deviations.
 
 | PR | Content | Proof |
 | --- | --- | --- |

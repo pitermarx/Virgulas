@@ -96,11 +96,12 @@ Choose per device; your choice is remembered:
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
   or using File/Remote mode.
-- **Remote** — encrypted and synced to a cloud backend: the hosted Virgulas server, your own
-  Supabase project, or your own TrailBase instance (picked on the lock screen). An account
-  email/password controls access; a separate passphrase controls encryption, so the server never
-  sees plaintext. Forgot your account password? A "Forgot password?" link on the sign-in form
-  emails a reset link (your encrypted notes are untouched — the passphrase is separate).
+- **Remote** — encrypted and synced to a cloud backend: the TrailBase instance serving the app
+  (self-hosted or hosted), with the hosted Supabase project as the fallback for static deployments.
+  An account email/password controls access; a separate passphrase controls encryption, so the
+  server never sees plaintext. Forgot your account password? A "Forgot password?" link on the
+  sign-in form emails a reset link (your encrypted notes are untouched — the passphrase is
+  separate).
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 
