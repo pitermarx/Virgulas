@@ -453,9 +453,11 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `shortcuts.ts`:
   Keyboard interaction and focus/navigation behaviour (including search key handling).
 - `outline.ts`:
-  Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+  Core document model and tree operations (CRUD, move/indent/outdent, serialization, search tree generation); delegates VMD parsing/writing to `docCodec.ts`.
 - `docCodec.ts`:
-  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format) — pure codecs over `outline.ts` semantics.
+  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
+- `model.ts`:
+  Shared document-model constants (`MODEL_VERSION`) and `CorruptDocumentError`. No imports, so `outline.ts` and `docCodec.ts` can share them without a cycle.
 - `merge.ts`:
   Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
 - `storage.ts`:

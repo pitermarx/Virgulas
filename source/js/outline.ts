@@ -1,7 +1,13 @@
 import { signal, effect, createModel, type Signal } from "@preact/signals"
 import { randomId, UnsupportedVersionError } from "./crypto2.js"
+import { CorruptDocumentError, MODEL_VERSION } from './model.js'
+import { parseVmdNodeLine, parseVmdTree, vmdNodeId, writeVmd, type OutlineDoc } from './docCodec.js'
 import { log } from './utils.js';
 import { parseMeta, advanceDueDate } from './meta.js';
+
+// The model version and the corrupt-document error live in model.ts so the
+// codecs can share the VMD implementation without importing this module back.
+export { CorruptDocumentError, MODEL_VERSION } from './model.js'
 
 // The document structure is an infinite tree of nodes
 // a node is { id: string, parentId: string, text: string, description: string, children: string[], open: boolean, done: boolean|null }
@@ -12,19 +18,6 @@ import { parseMeta, advanceDueDate } from './meta.js';
 // done: null = plain node (not a task), false = unchecked task, true = completed task
 
 export type DoneState = boolean | null
-
-/**
- * Document model version — the single source of truth shared by
- * outline.serialize()/deserialize() and the codecs in docCodec.ts.
- */
-export const MODEL_VERSION = 'v1'
-
-export class CorruptDocumentError extends Error {
-    constructor(message = 'The decrypted document is corrupted or invalid.') {
-        super(message)
-        this.name = 'CorruptDocumentError'
-    }
-}
 
 export interface NodeInput {
     id?: string
@@ -624,59 +617,13 @@ function outlineFactory() {
     }
 
     function getVMD(nodeId: string, level = 0): string {
-        const node = map.get(nodeId)
-        if (!node) return ''
-        const peek = node.peek()
-
-        let result = '';
-        const ch = peek.children
-        level = nodeId === rootNodeId || level < 0 ? -1 : level // root node is not rendered, so it doesn't add to the indent level
-        if (level >= 0) {
-            const indent = '  '.repeat(level);
-            const bullet = (ch.length > 0 && !peek.open) ? '+' : '-';
-            let vmdText = peek.text
-            if (peek.done !== null) vmdText = `${peek.done ? '[x]' : '[ ]'} ${vmdText}`
-            result += `${indent}${bullet} ${vmdText}\n`;
-
-            if (peek.description) {
-                const descIndent = '  '.repeat(level + 1);
-                const lines = peek.description.split('\n');
-                for (const line of lines) {
-                    result += `${descIndent}${line}\n`;
-                }
-            }
-        }
-
-        for (const child of ch) {
-            result += getVMD(child, level + 1);
-        }
-
-        return result;
+        // The writer is shared with vmdCodec (docCodec.ts): the root is a
+        // container and is not rendered, so its children start at level 0.
+        return writeVmd(nodeId, id => map.get(id)?.peek(), nodeId === rootNodeId || level < 0 ? -1 : level)
     }
 
-    function parseNodeLine(rawNodeText: string): { text: string; done: DoneState } {
-        let nodeText = rawNodeText.trim()
-        let taskDone: DoneState = null
-        const cbMatch = nodeText.match(/^\[([ xX])\]\s*(.*)/)
-        if (cbMatch) { taskDone = cbMatch[1].toLowerCase() === 'x'; nodeText = cbMatch[2].trim() }
-        return { text: nodeText, done: taskDone }
-    }
-
-    // VMD carries no node IDs, and Memory/File documents are re-parsed from VMD
-    // text on every load. Deriving an ID from the node's position in the tree
-    // keeps it stable across reloads, so a URL hash that references a node still
-    // resolves after a reload. `randomId()` is base36 and never contains an
-    // underscore, so the `v_` prefix cannot collide with a generated ID.
-    //
-    // A positional ID already encodes the whole path, so a child extends its
-    // parent's ID instead of re-prefixing it (`v_root_0_0`, not
-    // `v_v_root_0_0`). A parent with a random ID (`abc123`) starts a new path
-    // (`v_abc123_0`). Either way the full path stays unique in the tree.
-    function vmdNodeId(parentId: string, siblingIndex: number): string {
-        return parentId.startsWith('v_') ? `${parentId}_${siblingIndex}` : `v_${parentId}_${siblingIndex}`
-    }
-
-    /** Append a VMD-parsed child, preferring the stable positional ID. */
+    /** Append a VMD-parsed child, preferring the stable positional ID shared
+     * with vmdCodec (see vmdNodeId there). */
     function addVmdChild(parentId: string, nodeData: NodeInput, siblingIndex: number, previousSiblingId: string | false): Node | undefined {
         const stable = addChild(parentId, { ...nodeData, id: vmdNodeId(parentId, siblingIndex) }, previousSiblingId)
         if (stable) return stable
@@ -716,7 +663,7 @@ function outlineFactory() {
                 const match = line.match(/^(\s*)([-+])(.*)$/);
                 if (match) {
                     const [, indentStr, bullet, rawText] = match;
-                    const parsed = parseNodeLine(rawText)
+                    const parsed = parseVmdNodeLine(rawText)
                     const nodeData = { ...parsed, open: bullet === '-' }
 
                     // Pop stack until we find the correct parent level
@@ -870,52 +817,45 @@ function outlineFactory() {
     function setRootVMD(text: string) {
         const root = map.get(zoomId.value)
         if (!root) return
+
+        // Parse first: an invalid VMD leaves the live document untouched. The
+        // parser is the codec's (docCodec.parseVmdTree), so File import and the
+        // root editor cannot disagree about the format.
+        let parsedDoc: OutlineDoc
+        try {
+            parsedDoc = parseVmdTree(text)
+        } catch (error) {
+            log('Error parsing root VMD, document left unchanged', error)
+            throw new Error('Invalid VMD: each description line must belong to a node.')
+        }
+
         const serializedBeforeChange = serialize()
         try {
-            // Delete all existing children of the zoom root
+            const byId = new Map(parsedDoc.nodes.map(node => [node.id, node]))
+            const parsedRoot = byId.get('root')!
+
+            // Delete all existing children of the zoom root, then replay the
+            // parsed tree onto it through addChild so IDs, open/done state and
+            // the dirty counter keep the live-model semantics.
             const existingChildren = [...root.children.peek()]
             existingChildren.forEach(id => deleteNode(id, true))
 
-            const stack = [{ node: root, indentLen: -1 }]
-            const lines = text.split(/\r?\n/)
-            for (const line of lines) {
-                if (!line.trim()) continue
-
-                const match = line.match(/^(\s*)([-+])\s?(.*)$/)
-                if (match) {
-                    const [, indentStr, bullet, rawNodeText] = match
-                    const indentLen = indentStr.length
-                    const parsed = parseNodeLine(rawNodeText)
-                    const nodeData = { ...parsed, open: bullet === '-' }
-
-                    // Pop stack until we find the right parent level
-                    while (stack.length > 1 && stack[stack.length - 1].indentLen >= indentLen) {
-                        stack.pop()
-                    }
-
-                    const parentNode = stack[stack.length - 1].node
-                    const siblings = parentNode.children.peek()
-                    const prevSiblingId = siblings.slice(-1)[0]
-                    const newNode = addVmdChild(parentNode.id, nodeData, siblings.length, prevSiblingId)
-                    stack.push({ node: newNode!, indentLen })
-                    continue
-                }
-
-                // Description lines must belong to a previously parsed node.
-                if (stack.length === 1) {
-                    throw new Error('Description line must follow a node bullet.')
-                }
-
-                const lastNode = stack[stack.length - 1].node
-                const existing = lastNode.description.peek()
-                let trimmed = line.trim()
-                if (trimmed.startsWith('\\-') || trimmed.startsWith('\\+') || trimmed.startsWith('\\\\')) {
-                    trimmed = trimmed.substring(1)
-                }
-                if (trimmed) {
-                    lastNode.description.value = existing ? `${existing}\n${trimmed}` : trimmed
+            const appendParsed = (parentId: string, parsedParentId: string) => {
+                const parsedParent = byId.get(parsedParentId)!
+                for (const parsedChildId of parsedParent.children || []) {
+                    const parsedChild = byId.get(parsedChildId)!
+                    const siblings = map.get(parentId)!.children.peek()
+                    const previousSiblingId = siblings[siblings.length - 1]
+                    const newNode = addVmdChild(parentId, {
+                        text: parsedChild.text,
+                        description: parsedChild.description,
+                        done: parsedChild.done ?? null,
+                        open: parsedChild.open ?? true
+                    }, siblings.length, previousSiblingId)
+                    if (newNode) appendParsed(newNode.id, parsedChildId)
                 }
             }
+            appendParsed(root.id, parsedRoot.id)
 
             dirtyWrites.value = dirtyWrites.peek() + 1
         } catch (error) {

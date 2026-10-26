@@ -478,9 +478,8 @@ export interface DocCodec {
   parse(text: string): OutlineDoc   // validates; throws StoreError('invalid-document')
 }
 
-export const jsonCodec: DocCodec   // wraps outline.serialize/deserialize —
-                                   // the existing Local/Remote/Memory at-rest format
-export const vmdCodec: DocCodec    // wraps outline.ts VMD parser/writer —
+export const jsonCodec: DocCodec   // JSON at-rest format (outline.serialize/deserialize)
+export const vmdCodec: DocCodec    // the single VMD parser/writer, shared with outline.ts —
                                    // File mode, export/import, intro.vmd
 
 /** Lifts a StringStore into a DocStore: read → parse, write → serialize. */
@@ -495,9 +494,12 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
 //             | { kind: 'conflict'; conflicts: NodeConflict[]; partial: OutlineDoc }
 ```
 
-- Backends **choose** a codec; they never write one. Serialization exists in
-  exactly two thin wrappers over `outline.ts`. All future format versioning
-  and migrations live in `docCodec.ts` and nowhere else.
+- Backends **choose** a codec; they never write one. Serialization is owned by
+  exactly these two implementations, and the VMD parser/writer is shared:
+  `outline.getVMD()` / `outline.setRootVMD()` delegate to `docCodec.ts` (the
+  per-node `outline.setVMD` keeps its own backtick-escape editor path). All
+  future format versioning and migrations live in `docCodec.ts` and nowhere
+  else.
 - Zero at-rest migration: Local/Remote keep JSON-in-envelope (the codec choice
   sits below the crypto line, so envelope bytes are unchanged); File keeps
   plain VMD.
@@ -717,7 +719,7 @@ prompt instead of silently reverting the rotation (sync-01 fix).
 | `storage.ts` (new) | Contracts: `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, capabilities, `StoreError`, backend registry/factory. **Not** the `store` slots in `utils.ts` — Rule 7's vocabulary is unchanged; the new abstraction owns the capitalized `*Store` filenames (`encryptedStore.ts`, `cachedStore.ts`, `memoryStore.ts`, …), `utils.store` remains the localStorage-slot facade | extracted from `sync.ts` + new |
 | `encryptedStore.ts` (new) | `encrypted()` decorator (string-level, codec-blind), `KeySession` (via `crypto2.ts`) | from `persistence.ts`/`sync.ts` envelope logic |
 | `cachedStore.ts` (new) | `cached()` decorator: write order, offline read fallback, exists-union, quota propagation | from `persistence.ts` local-cache branches |
-| `docCodec.ts` (new) | `DocCodec` contract, `jsonCodec`, `vmdCodec`, `codecStore` lift, parse/validate errors | thin wrappers over `outline.ts` |
+| `docCodec.ts` (new) | `DocCodec` contract, `jsonCodec`, `vmdCodec`, `codecStore` lift, parse/validate errors; owns the VMD parser/writer that `outline.ts` delegates to | codecs are the serialization source of truth |
 | `merge.ts` (new) | pure three-way merge over the model (baseline-aware) | from `sync.ts mergeDocuments` |
 | `memoryStore.ts`, `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters | from `persistence.ts` mode branches |
 | `supabaseBackend.ts` (new) | `RawStore` + `AuthProvider` over `@supabase/supabase-js` (dynamic import preserved) | from `sync.ts` |

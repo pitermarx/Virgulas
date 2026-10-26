@@ -1394,6 +1394,32 @@ describe("Task model — VMD round-trip", () => {
     const id2 = outline.getRoot()!.children.peek()[0]
     assertEqual(outline.get(id2)!.done.peek(), null, 'stale done cleared')
   })
+
+  it("setRootVMD parses onto the current zoom root and keeps its identity", () => {
+    addChild('root', { id: 'A', text: 'A' })
+    addChild('root', { id: 'B', text: 'B' })
+    outline.zoomIn('A')
+
+    outline.setRootVMD('- Child\n  - Grandchild\n')
+
+    assertEqual(outline.zoomId.peek(), 'A', 'zoom root unchanged')
+    assertEqual(outline.get('A')!.text.peek(), 'A', 'the zoom root itself is not replaced')
+    const childId = outline.get('A')!.children.peek()[0]
+    assertEqual(childId, 'v_A_0', 'positional id under the zoom root')
+    assertEqual(outline.get(childId)!.text.peek(), 'Child', 'parsed under the zoom root')
+    assertEqual(outline.get(childId)!.children.peek()[0], 'v_A_0_0', 'nested id extends the zoom path')
+  })
+
+  it("setRootVMD reverts and rethrows when the VMD is invalid", () => {
+    addChild('root', { id: 'A', text: 'Keep me' })
+    const before = outline.serialize()
+
+    let threw: any = null
+    try { outline.setRootVMD('stray description') } catch (error) { threw = error }
+
+    assert(threw instanceof Error && threw.message.includes('Invalid VMD'), 'invalid VMD throws')
+    assertEqual(outline.serialize(), before, 'the document is unchanged')
+  })
 })
 
 describe("VMD stable IDs", () => {
