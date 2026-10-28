@@ -1,12 +1,19 @@
 import { describe, it } from 'bun:test'
 // supabaseBackend adapter suite (docs/storage-interface.md §10, rollout PR 2b):
 // error mapping with a fake client, cached-session uid on the write path,
-// token semantics, and the AuthProvider contract including the absent
-// deleteUser capability.
+// token semantics, the store-backed auth storage (§4.5), and the AuthProvider
+// contract including the absent deleteUser capability.
 
-import { supabaseRaw, supabaseAuth } from '../../../source/js/supabaseBackend.js'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createSupabaseClient, supabaseAuthStorage, supabaseRaw, supabaseAuth } from '../../../source/js/supabaseBackend.js'
 import { StoreError } from '../../../source/js/storage.js'
+import { store } from '../../../source/js/utils.js'
 import { assert, assertEqual } from '../testing.js'
+
+const readSource = (relative: string) =>
+    readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..', relative), 'utf8')
 
 // ─── fake client ─────────────────────────────────────────────────────────────
 
@@ -237,5 +244,71 @@ describe('supabaseAuth — contract', () => {
       const { client } = fakeSupabaseClient({ resetError: { message: 'rate limit reached' } })
       const auth = supabaseAuth(client)
       await expectStoreError(() => auth.requestPasswordReset!('u@example.com'), 'network', 'reset error mapped')
+  })
+})
+
+// ─── auth session storage (Rule 7, docs §4.5) ────────────────────────────────
+//
+// supabase-js persists the session, the user copy and the PKCE verifier under
+// its own `sb-<ref>-*` keys. Rule 7 requires those to live behind a `store`
+// slot so the device wipe can clear them deterministically.
+
+describe('supabaseBackend — auth session storage', () => {
+
+  it('builds the SDK client with the store-backed storage adapter', () => {
+      let received: any = null
+      const factory = (url: string, key: string, options: any) => {
+          received = { url, key, options }
+          return { fake: true }
+      }
+      store.supabaseSession.del()
+
+      const client = createSupabaseClient(factory, 'https://demo.supabase.co', 'anon-key')
+
+      assertEqual(client.fake, true, 'the factory result is returned')
+      assertEqual(received.url, 'https://demo.supabase.co', 'url passed through')
+      assert(received.options?.auth?.storage, 'createClient must receive auth.storage')
+      assertEqual(typeof received.options.auth.storage.getItem, 'function', 'storage exposes getItem')
+      assertEqual(received.options.realtime.enabled, false, 'realtime stays disabled')
+  })
+
+  it('keeps SDK keys in the session slot and never writes them to localStorage', () => {
+      store.supabaseSession.del()
+      const storage = supabaseAuthStorage()
+
+      storage.setItem('sb-demo-auth-token', 'token-json')
+      assertEqual(storage.getItem('sb-demo-auth-token'), 'token-json', 'round-trips through the slot')
+      assertEqual(localStorage.getItem('sb-demo-auth-token'), null, 'no direct SDK localStorage key')
+      assert(
+          (store.supabaseSession.get() || '').includes('sb-demo-auth-token'),
+          'the slot holds the SDK key/value map'
+      )
+
+      storage.removeItem('sb-demo-auth-token')
+      assertEqual(storage.getItem('sb-demo-auth-token'), null, 'removeItem drops the entry')
+      assertEqual(store.supabaseSession.get(null), null, 'an empty map removes the slot')
+  })
+
+  it('adopts and deletes a legacy sb-*-auth-token key written by an older build', () => {
+      store.supabaseSession.del()
+      localStorage.setItem('sb-legacyproj-auth-token', 'legacy-token-json')
+
+      const storage = supabaseAuthStorage()
+      createSupabaseClient(() => ({}), 'https://legacyproj.supabase.co', 'anon-key')
+
+      assertEqual(storage.getItem('sb-legacyproj-auth-token'), 'legacy-token-json', 'legacy token adopted')
+      assertEqual(localStorage.getItem('sb-legacyproj-auth-token'), null, 'legacy key removed')
+  })
+
+  it('ensureSupabaseClient builds through createSupabaseClient', () => {
+      const src = readSource('source/js/supabaseBackend.ts')
+      assert(
+          /_client = createSupabaseClient\(factory, url, key\)/.test(src),
+          'ensureSupabaseClient must not bypass the store-backed storage adapter'
+      )
+      assert(
+          !/factory\(url, key, \{ realtime: \{ enabled: false \} \}/.test(src),
+          'the client must not be constructed with bare options'
+      )
   })
 })

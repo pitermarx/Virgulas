@@ -20,6 +20,11 @@ async function seedAllSlots() {
     store.mode.set('local')
     store.user.set('someone@example.com')
     store.syncTs.set('12345')
+    store.syncHead.set('head-token')
+    store.backendSession.set(JSON.stringify({ access_token: 'trailbase-token' }))
+    store.supabaseSession.set(JSON.stringify({ 'sb-test-auth-token': 'supabase-token' }))
+    // A token an older build let supabase-js write directly (no slot).
+    localStorage.setItem('sb-legacyproj-auth-token', 'legacy-token-json')
     store.scheduledWindow.set('7')
     store.inboxNodeName.set('Capture')
     store.storageNoticeDismissed.set('1')
@@ -43,6 +48,11 @@ describe('device wipe (priv-01)', () => {
           assert(store[name as keyof typeof store].get(null) === null, `${name} must be removed by the wipe`)
       }
       assertEqual(store.theme.get('light'), 'dark', 'theme survives the wipe')
+      assertEqual(
+          localStorage.getItem('sb-legacyproj-auth-token'),
+          null,
+          'a legacy Supabase SDK key written outside the slots must not survive the wipe'
+      )
   })
 
   it('wipeDeviceData removes the quick-capture queue', async () => {

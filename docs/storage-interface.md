@@ -455,7 +455,12 @@ export interface AuthProvider {
 
 - Session/token persistence across reloads is provider-internal. If a provider
   persists tokens in `localStorage`, it must go through a `store` slot in
-  `utils.ts` (Rule 7).
+  `utils.ts` (Rule 7). Both adapters do: TrailBase keeps its tokens in
+  `store.backendSession`; the Supabase adapter passes an `auth.storage` adapter
+  to `createClient` that holds supabase-js's own `sb-<ref>-*` keys as one JSON
+  map in `store.supabaseSession` (so the SDK never writes a bare localStorage
+  key), and it adopts — then deletes — a key an older build wrote directly. The
+  device wipe clears both slots and sweeps any leftover `sb-*-auth-token` key.
 - `getUser()` is the **server-verified** probe (a network round-trip on
   Supabase): boot and session checks use it; the write path must not. The
   Supabase adapter sources its uid from the cached session (§4.2).

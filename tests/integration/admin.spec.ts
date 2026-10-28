@@ -403,6 +403,10 @@ test.describe('Admin / Options modal', () => {
     await page.evaluate(() => {
       localStorage.clear();
       localStorage.setItem('vmd_last_mode', 'remote');
+      // Device-local sign-in residue: the store slot and a token an older build
+      // let supabase-js write directly. Delete account must remove both.
+      localStorage.setItem('vmd_supabase_session', JSON.stringify({ 'sb-e2eproj-auth-token': '{"access_token":"t"}' }));
+      localStorage.setItem('sb-e2eproj-auth-token', '{"access_token":"legacy"}');
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
@@ -425,10 +429,14 @@ test.describe('Admin / Options modal', () => {
     // resurrect the deleted document.
     const leftover = await page.evaluate(() => ({
       data: localStorage.getItem('vmd_data_enc'),
-      mode: localStorage.getItem('vmd_last_mode')
+      mode: localStorage.getItem('vmd_last_mode'),
+      supabaseSession: localStorage.getItem('vmd_supabase_session'),
+      legacySession: localStorage.getItem('sb-e2eproj-auth-token')
     }));
     expect(leftover.data).toBeNull();
     expect(leftover.mode).toBe('memory');
+    expect(leftover.supabaseSession).toBeNull();
+    expect(leftover.legacySession).toBeNull();
   });
 
   test('locking flushes the pending write before dropping the key', async ({ page }) => {

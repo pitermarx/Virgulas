@@ -166,7 +166,9 @@
         </tr>
         <tr>
           <td>Sign-in session (Remote mode) — lets you stay signed in across visits</td>
-          <td>Supabase session and refresh tokens in <code>localStorage</code></td>
+          <td><code>localStorage</code> key <code>vmd_supabase_session</code> (Supabase session
+            and refresh tokens; a token an older build kept in the SDK's own
+            <code>sb-*-auth-token</code> key is read once and removed)</td>
           <td>Tokens are opaque; the document key is never in them</td>
           <td>Options → <em>Sign out</em>, <em>Delete local data</em>, or <em>Delete account</em></td>
         </tr>

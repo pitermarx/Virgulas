@@ -238,9 +238,10 @@
     - PLAINTEXT METADATA
       Only the document payload (`vmd_data_enc`) is ciphertext. The following are stored in plaintext
       because they are non-secret operational metadata:
-      `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_scheduled_window`,
-      `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`, `vmd_debug`,
-      `backendconfig` (with a read-through of the legacy `supabaseconfig`), and `vmd_backend_session`
+      `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_sync_head`,
+      `vmd_scheduled_window`, `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`,
+      `vmd_debug`, `backendconfig` (with a read-through of the legacy `supabaseconfig`),
+      `vmd_backend_session` (TrailBase sign-in tokens), and `vmd_supabase_session`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC
     Remote mode works against the sync backend resolved for this deployment: the

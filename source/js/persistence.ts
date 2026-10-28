@@ -14,6 +14,7 @@ import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type
 import {
   detectBrowserCapabilities,
   clearAppCaches,
+  clearLegacySupabaseSessions,
   isStoragePersistent,
   log,
   requestPersistentStorage,
@@ -307,11 +308,11 @@ effect(() => {
  *
  * Clearing only the ciphertext left plaintext residue behind: the quick-capture
  * queue (captured page text), sync timestamps, the scheduled-tasks window, the
- * Inbox node name and the notice-dismissal preference all outlived "Delete
- * local data" and "Delete account". Theme and the (non-secret) Supabase
- * config are the only slots kept — they are device preferences, not content.
- * The biometric seal and the offline shell caches live outside localStorage
- * and are dropped best-effort, as in sign-out.
+ * Inbox node name, the backend auth sessions and the notice-dismissal
+ * preference all outlived "Delete local data" and "Delete account". Theme and
+ * the (non-secret) Supabase config are the only slots kept — they are device
+ * preferences, not content. The biometric seal and the offline shell caches
+ * live outside localStorage and are dropped best-effort, as in sign-out.
  */
 function wipeDeviceData() {
   inbox.clear()
@@ -321,6 +322,8 @@ function wipeDeviceData() {
   store.syncTs.del()
   store.syncHead.del()
   store.backendSession.del()
+  store.supabaseSession.del()
+  clearLegacySupabaseSessions()
   store.scheduledWindow.del()
   store.inboxNodeName.del()
   store.storageNoticeDismissed.del()

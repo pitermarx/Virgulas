@@ -141,6 +141,9 @@ test.describe('Service worker offline shell', () => {
             localStorage.setItem('vmd_inbox_node_name', 'Capture');
             localStorage.setItem('vmd_scheduled_window', '7');
             localStorage.setItem('vmd_inbox_queue', JSON.stringify([{ id: 'a', text: 'captured secret' }]));
+            localStorage.setItem('vmd_supabase_session', JSON.stringify({ 'sb-e2eproj-auth-token': '{"access_token":"t"}' }));
+            // A token an older build let supabase-js write directly.
+            localStorage.setItem('sb-e2eproj-auth-token', '{"access_token":"legacy"}');
             localStorage.setItem('vmd_theme', 'dark');
         });
 
@@ -148,11 +151,13 @@ test.describe('Service worker offline shell', () => {
         await purgeViaOptions(page);
 
         const state = await page.evaluate(() => ({
-            residual: ['vmd_sync_ts', 'vmd_sync_head', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue']
+            residual: ['vmd_sync_ts', 'vmd_sync_head', 'vmd_inbox_node_name', 'vmd_scheduled_window', 'vmd_inbox_queue', 'vmd_supabase_session']
                 .filter((key) => localStorage.getItem(key) !== null),
+            legacySession: localStorage.getItem('sb-e2eproj-auth-token'),
             theme: localStorage.getItem('vmd_theme'),
         }));
         expect(state.residual).toEqual([]);
+        expect(state.legacySession).toBeNull();
         expect(state.theme).toBe('dark');
     });
 
