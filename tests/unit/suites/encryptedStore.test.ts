@@ -270,6 +270,36 @@ describe('encrypted() — key cache', () => {
       })
   })
 
+  it('rotate() drops the old key: the previous derivation is not reused', async () => {
+      await withDerivationCount(async count => {
+          const raw = fakeRaw()
+          const session = createKeySession()
+          const store = encrypted(raw, session)
+          await store.unlock('kdf-rotate-old')      // adoption — fresh salt, no derivation
+          await store.write('before rotation')      // derivation 1 (old passphrase)
+          const beforeRecord = { ...raw.records[0] }
+          assertEqual(count(), 1, 'the old passphrase key is derived once')
+
+          // A second session on the same (passphrase, salt) pair reuses it.
+          const oldRaw = fakeRaw()
+          await oldRaw.writeRaw(beforeRecord)
+          const oldStore = encrypted(oldRaw, createKeySession())
+          await oldStore.unlock('kdf-rotate-old')
+          assertEqual(count(), 1, 'the pre-rotation key is still cached for its pair')
+
+          session.rotate('kdf-rotate-new')
+          await store.write('after rotation')       // derivation 2 (new passphrase)
+          assertEqual(count(), 2, 'the new pair derives once after rotation')
+
+          // The pre-rotation pair has no cached key any more: it must derive
+          // again, which proves rotation evicted it rather than leaving the old
+          // passphrase reachable in the cache key (docs §4.3 item 6).
+          await oldStore.unlock('kdf-rotate-old')
+          assertEqual(count(), 3, 'rotation dropped the old passphrase key')
+          assertEqual(await oldStore.read(), 'before rotation', 'the old record still decrypts')
+      })
+  })
+
   it('alternating salts derive once each, not once per operation (sync-10)', async () => {
       await withDerivationCount(async count => {
           const storeA = encrypted(fakeRaw(), createKeySession())

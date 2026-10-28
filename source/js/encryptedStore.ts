@@ -11,7 +11,8 @@
 // lives inside crypto2's multi-entry key cache, so autosave never re-runs the
 // 600k PBKDF2 and alternating salts (local cache vs rotated remote) cost one
 // derivation each, not one per operation (sync-10). Because that cache is
-// keyed by the passphrase, `lock()` clears it along with the passphrase.
+// keyed by the passphrase, `lock()` and `rotate()` clear it, so the passphrase
+// a session stops using never outlives it.
 
 import {
     CorruptEnvelopeError,
@@ -42,7 +43,8 @@ export interface KeySession {
      * Rotation / first-time setup with a fresh salt: a fresh salt is generated
      * and the new passphrase becomes active. Subsequent writes re-encrypt
      * everything under the new key (docs §6.7); derivation itself is lazy —
-     * crypto2 derives on the next encrypt/decrypt and caches the result.
+     * crypto2 derives on the next encrypt/decrypt and caches the result, after
+     * the cached keys from the previous passphrase are dropped.
      */
     rotate(newPassphrase: string): void
 
@@ -68,6 +70,11 @@ export function createKeySession(): KeySession {
         rotate(newPassphrase: string) {
             passphrase = newPassphrase
             salt = generateSalt()
+            // The old passphrase stops being the session's secret here, so its
+            // entries must not linger in the cache keys (docs §4.3 item 6).
+            // Nothing needs the old key afterwards: rotation is followed by a
+            // re-encrypting write under the new salt.
+            clearKeyCache()
         },
         lock() {
             passphrase = null

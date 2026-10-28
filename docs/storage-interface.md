@@ -315,8 +315,8 @@ Responsibilities (all currently scattered in persistence flows, now in one place
    letting the next push overwrite the rotated remote (fixes sync-01). The cache
    holds 2–4 entries keyed by (salt, iterations), so alternating salts cost one
    derivation each, not one per operation (fixes sync-10). The cache is dropped
-   on `lock()`, so no key (and no passphrase — the cache key contains it)
-   outlives the session.
+   on `lock()` and on `rotate()`, so neither a key nor a passphrase — the cache
+   key contains it — outlives the session that uses it.
 3. **Legacy envelopes** — raw base64 payloads decrypt at 310,000 iterations
    (unchanged); any successful save re-encrypts at current parameters (600k),
    preserving today's upgrade-on-save behaviour.
@@ -327,7 +327,9 @@ Responsibilities (all currently scattered in persistence flows, now in one place
 6. **Secret retention** — the session passphrase lives **only** inside
    `KeySession` (memory-only; derived keys are non-extractable; on `lock()` the
    passphrase, the active salt and crypto2's derived-key cache are all dropped —
-   the cache key embeds the passphrase, so clearing it is part of the invariant).
+   the cache key embeds the passphrase, so clearing it is part of the invariant —
+   and `rotate()` drops the cache too, so the passphrase a rotation replaces does
+   not linger until the next lock).
    This replaces today's three retention sites:
    `sync.ts _passphrase`, the `persistence.ts` passphrase signal, and the
    `deferredPushPayload` copy. Orchestration holds no secrets (Goal 2).
@@ -995,8 +997,8 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
    requires all crypto through `crypto2.ts`, whose `encrypt`/`decrypt` take
    `(text, passphrase, salt)` — so the multi-entry (salt, iterations) key cache
    lives inside crypto2 (bounded LRU, 4 entries; same sync-10 outcome), and
-   `KeySession.lock()` clears it through `crypto2.clearKeyCache()` so the
-   passphrase its cache keys embed does not outlive the session.
+   `KeySession.lock()` / `rotate()` clear it through `crypto2.clearKeyCache()`
+   so the passphrase its cache keys embed does not outlive the session.
    `keyFor()` is dropped; `activate(passphrase, salt)` / `rotate(newPassphrase)`
    (sync, lazy derivation) / `lock()` remain, plus `activeCredentials()` for
    crypto2 calls.

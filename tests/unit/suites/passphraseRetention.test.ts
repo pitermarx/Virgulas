@@ -34,13 +34,22 @@ describe('passphrase retention', () => {
       )
   })
 
-  it('KeySession.lock() drops the derived-key cache too', () => {
+  it('the key session drops derived keys on lock and on rotation', () => {
       const crypto = read('source/js/crypto2.ts')
       assert(
           /export function clearKeyCache\(\)/.test(crypto),
-          'crypto2 must expose clearKeyCache() for the session lock'
+          'crypto2 must expose clearKeyCache() for the session'
       )
       const store = read('source/js/encryptedStore.ts')
+      const rotateBody = store.slice(
+          store.indexOf('rotate(newPassphrase: string) {'),
+          store.indexOf('lock() {', store.indexOf('rotate(newPassphrase: string) {'))
+      )
+      assert(rotateBody.length > 0, 'the KeySession rotate body must be found')
+      assert(
+          /clearKeyCache\(\)/.test(rotateBody),
+          'rotate() must drop the keys the cache holds under the previous passphrase'
+      )
       const lockBody = store.slice(
           store.indexOf('lock() {'),
           store.indexOf('activeCredentials() {', store.indexOf('lock() {'))
