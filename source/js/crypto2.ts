@@ -144,6 +144,11 @@ async function deriveKey(passphrase: string, saltBase64: string, iterations: num
 // slot and the remote row, and a passphrase rotated on another device puts a
 // foreign salt in the remote record — alternating salts must cost one
 // derivation each, not one per operation (sync-10, docs §4.3).
+//
+// The cache key contains the plaintext passphrase, so the cache is part of the
+// session's secret retention surface: KeySession.lock() calls clearKeyCache()
+// so a lock, sign-out or teardown leaves no passphrase (and no key) behind
+// (docs §4.3 item 6).
 const KEY_CACHE_MAX = 4
 const keyCache = new Map<string, { key: CryptoKey }>()
 
@@ -163,6 +168,21 @@ async function getDerivedKey(passphrase: string, salt: string, iterations: numbe
         if (oldest !== undefined) keyCache.delete(oldest)
     }
     return key
+}
+
+/**
+ * Drops every cached derived key (and with each entry the passphrase the cache
+ * key holds). Called by `KeySession.lock()`, so locking, signing out and
+ * tearing the session down really do leave no key material behind (docs §4.3
+ * item 6); the next unlock derives again.
+ *
+ * The cache is module-wide rather than per session, so this also drops entries
+ * another live session could reuse. That only costs one derivation there;
+ * correctness is unaffected, and a single session is the normal shape (Local
+ * and Remote share one).
+ */
+export function clearKeyCache(): void {
+    keyCache.clear()
 }
 
 function randomId(): string {

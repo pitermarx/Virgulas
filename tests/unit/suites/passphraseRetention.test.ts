@@ -34,6 +34,24 @@ describe('passphrase retention', () => {
       )
   })
 
+  it('KeySession.lock() drops the derived-key cache too', () => {
+      const crypto = read('source/js/crypto2.ts')
+      assert(
+          /export function clearKeyCache\(\)/.test(crypto),
+          'crypto2 must expose clearKeyCache() for the session lock'
+      )
+      const store = read('source/js/encryptedStore.ts')
+      const lockBody = store.slice(
+          store.indexOf('lock() {'),
+          store.indexOf('activeCredentials() {', store.indexOf('lock() {'))
+      )
+      assert(lockBody.length > 0, 'the KeySession lock body must be found')
+      assert(
+          /clearKeyCache\(\)/.test(lockBody),
+          'lock() must drop the derived keys the cache retains under the passphrase'
+      )
+  })
+
   it('the lock screen drops its form copy after a successful unlock', () => {
       const src = read('source/js/app.ts')
       assert(

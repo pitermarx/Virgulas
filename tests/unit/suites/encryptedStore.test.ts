@@ -250,7 +250,7 @@ describe('encrypted() — rotation', () => {
 
 describe('encrypted() — key cache', () => {
 
-  it('one derivation per (passphrase, salt): unlock, reads and writes reuse the cached key', async () => {
+  it('one derivation per (passphrase, salt); lock() drops the key so unlocking derives again', async () => {
       // Self-contained: a passphrase never derived elsewhere in the suite and a
       // freshly adopted salt, so the derivation happens inside the counter scope.
       await withDerivationCount(async count => {
@@ -261,10 +261,12 @@ describe('encrypted() — key cache', () => {
           await store.read()
           await store.write('cache me again')      // cached key
           await store.read()
+          assertEqual(count(), 1, 'one derivation while the session stays unlocked')
+
           await store.lock()
-          await store.unlock('kdf-count-pass-1')   // same (passphrase, salt) — cached
-          await store.read()
-          assertEqual(count(), 1, 'exactly one PBKDF2 derivation for the session')
+          await store.unlock('kdf-count-pass-1')   // same pair, but the cache was dropped
+          await store.read()                        // derivation 2
+          assertEqual(count(), 2, 'lock() clears the derived-key cache (docs §4.3 item 6)')
       })
   })
 

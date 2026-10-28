@@ -10,13 +10,15 @@
 // passphrase: orchestration holds no secrets (Goal 2). Derivation caching
 // lives inside crypto2's multi-entry key cache, so autosave never re-runs the
 // 600k PBKDF2 and alternating salts (local cache vs rotated remote) cost one
-// derivation each, not one per operation (sync-10).
+// derivation each, not one per operation (sync-10). Because that cache is
+// keyed by the passphrase, `lock()` clears it along with the passphrase.
 
 import {
     CorruptEnvelopeError,
     UnsupportedBrowserError,
     UnsupportedVersionError,
     WrongPassphraseError,
+    clearKeyCache,
     decrypt,
     encrypt,
     generateSalt
@@ -44,7 +46,8 @@ export interface KeySession {
      */
     rotate(newPassphrase: string): void
 
-    /** Drop the passphrase and the active salt (lock, sign-out, teardown). */
+    /** Drop the passphrase, the active salt and every cached derived key
+     * (lock, sign-out, teardown). */
     lock(): void
 
     /** Credentials for crypto2 calls; null while locked. */
@@ -69,6 +72,10 @@ export function createKeySession(): KeySession {
         lock() {
             passphrase = null
             salt = null
+            // The key cache is keyed by the plaintext passphrase, so dropping
+            // the passphrase alone would leave it reachable in the Map key
+            // (docs §4.3 item 6). The next unlock derives again.
+            clearKeyCache()
         },
         activeCredentials() {
             return passphrase !== null && salt !== null ? { passphrase, salt } : null
