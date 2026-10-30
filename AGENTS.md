@@ -653,6 +653,11 @@ Workflows live in `.github/workflows/`.
 | `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
+- The `test` job starts local Supabase with up to three attempts, stopping the half-started
+  stack between them. The CLI publishes fixed host ports 54321-54329 (54324 is the mail UI),
+  which sit inside the Linux ephemeral port range, so a runner socket on one of them or a
+  registry pull limit fails the start transiently. Do not collapse that step back to a single
+  `bun run db:start`.
 - The deploy build passes `--no-sourcemap` and refuses to deploy if `dist/js/app.js.map` appears.
 - The deploy job zips `dist/` contents (no wrapper directory, no maps) into
   `virgulas-<version>.zip` and attaches it to the `v<version>` release when that tag exists.

@@ -81,8 +81,31 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps
 
+      # The local stack binds fixed host ports 54321-54329 (54324 is the mail UI,
+      # and it is the last container the CLI starts). Those ports sit inside the
+      # Linux ephemeral range (32768-60999), so a socket or a stale container on
+      # the runner can hold one of them and Docker fails with "failed to bind
+      # host port ... address already in use". That is a transient runner
+      # collision, not a broken config: roll the half-started stack back and
+      # retry instead of failing the shard. Registry pull limits ("Data limit
+      # exceeded") fail the start the same way and recover the same way.
       - name: Start local Supabase
-        run: bun run db:start
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if bun run db:start; then
+              echo "Local Supabase started (attempt $attempt)."
+              exit 0
+            fi
+            echo "::warning::supabase start failed on attempt $attempt; cleaning up and retrying"
+            bun run db:stop || true
+            docker ps -aq --filter "name=supabase_" | xargs -r docker rm -f || true
+            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' || true
+            sleep 15
+          done
+          echo "::error::Local Supabase failed to start after 3 attempts."
+          exit 1
 
       - name: Run unit tests
         run: bun run test:unit
