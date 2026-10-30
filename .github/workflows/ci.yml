@@ -285,6 +285,98 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.plan.outputs.resolved_version }} [skip ci]"
           git push
 
+  # Validate the all-in-one Dockerfile on pull requests without publishing.
+  validate-image:
+    name: Validate container image
+    needs: [commit-policy]
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg APP_VERSION=0.0.0-pr \
+            -f scripts/trailbase/Dockerfile \
+            -t virgulas-trailbase:pr \
+            .
+
+  # The all-in-one image: Virgulas served by TrailBase from the same origin.
+  # Every main push refreshes latest/main/sha; a release adds its version tag.
+  publish-image:
+    name: Publish TrailBase image
+    needs: [test, release]
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.test.result == 'success' && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # append the pull command to the release notes
+      packages: write      # GHCR push
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push multi-arch image
+        env:
+          VERSION: ${{ needs.release.outputs.resolved_version }}
+          RELEASE_NEEDED: ${{ needs.release.outputs.release_needed }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/virgulas-trailbase"
+
+          TAGS=(
+            --tag "$IMAGE:latest"
+            --tag "$IMAGE:main"
+            --tag "$IMAGE:sha-${GITHUB_SHA:0:7}"
+          )
+          BUILD_VERSION=""
+          if [ "$RELEASE_NEEDED" = "true" ] && [ -n "$VERSION" ]; then
+            TAGS+=(--tag "$IMAGE:$VERSION")
+            BUILD_VERSION="$VERSION"
+          fi
+
+          docker buildx build \
+            --file scripts/trailbase/Dockerfile \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg APP_VERSION="$BUILD_VERSION" \
+            "${TAGS[@]}" \
+            --push \
+            .
+
+      - name: Add pull command to release notes
+        if: ${{ needs.release.outputs.release_needed == 'true' && needs.release.outputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.release_tag }}
+          VERSION: ${{ needs.release.outputs.resolved_version }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/virgulas-trailbase"
+          BODY="$(gh release view "$TAG" --json body -q .body)"
+
+          if printf '%s' "$BODY" | grep -qF '## Container image'; then
+            exit 0
+          fi
+
+          {
+            printf '%s\n\n' "$BODY"
+            printf '## Container image\n\n'
+            printf 'Multi-arch (`linux/amd64`, `linux/arm64`):\n\n'
+            printf '```bash\ndocker pull %s:%s\n```\n' "$IMAGE" "$VERSION"
+          } > /tmp/release-notes.md
+
+          gh release edit "$TAG" --notes-file /tmp/release-notes.md
+
   deploy:
     name: Deploy to GitHub Pages
     needs: [test, publish-db, release]
