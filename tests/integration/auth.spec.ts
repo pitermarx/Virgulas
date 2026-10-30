@@ -909,7 +909,7 @@ test.describe('Authentication', () => {
 
     await page.goto('/');
     // When localStorage is broken, the app falls back gracefully to memory mode
-    await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+    await expect(page.locator('#splash')).toBeHidden();
     await expect(page.locator('#app')).toBeVisible();
   });
 

@@ -81,6 +81,22 @@ test('splash fades out on the same node, then is removed', async ({ page }) => {
   await expect(page.locator('#app .app-shell')).toBeVisible();
 });
 
+test('splash is removed even when no transition event arrives', async ({ page }) => {
+  // WebKit can stall or skip a transition while the browser is busy, so removal
+  // cannot hang off `transitionend`. Swallow the transition events in the
+  // capture phase, before they can reach the splash's handler, so only the
+  // fallback timer in app.ts can drop the node.
+  await page.addInitScript(() => {
+    for (const type of ['transitionrun', 'transitionend']) {
+      document.addEventListener(type, event => event.stopPropagation(), true);
+    }
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#splash')).toHaveCount(0);
+  await expect(page.locator('#app .app-shell')).toBeVisible();
+});
+
 test('splash does not wait for the webfont', async ({ page }) => {
   await trackSplashTransitions(page);
 

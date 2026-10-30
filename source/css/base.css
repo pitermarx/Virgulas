@@ -166,12 +166,20 @@ textarea {
   justify-content: center;
   z-index: 9999;
   /* Easing only: reusing --transition-base here would inject its 150ms as a
-     transition *delay* (the shorthand's second <time>). */
-  transition: opacity 0.7s var(--ease-base);
+     transition *delay* (the shorthand's second <time>). The visibility step is
+     delayed to the end of the fade so the splash leaves the visibility tree and
+     the accessibility tree exactly when it has finished fading, without cutting
+     the fade short. */
+  transition: opacity 0.7s var(--ease-base), visibility 0s linear 0.7s;
 }
 
+/* Opacity alone leaves the faded splash visible to hit testing, Playwright's
+   visibility check and assistive tech. The node is removed right after the fade
+   (app.ts); this rule keeps a splash that is still waiting for that removal out
+   of the visible tree, so nothing can depend on the removal's timing. */
 #splash.hidden {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 

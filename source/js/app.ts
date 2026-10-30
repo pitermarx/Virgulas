@@ -1,5 +1,4 @@
 import { html, render } from 'htm/preact';
-import { useEffect } from 'preact/hooks';
 import { signal, effect } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen } from './shortcuts.js';
@@ -229,6 +228,7 @@ function startAuthBootstrap(options: { forceLockScreen?: boolean } = {}) {
       console.error('Failed to initialise app state', error);
     } finally {
       appReady.value = true;
+      scheduleSplashDismissal();
     }
   })();
 }
@@ -473,10 +473,45 @@ async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
   }
 }
 
-// Fallback when the splash's computed transition can't be read.
+// Fallback when the splash's computed transition can't be read. Mirrors
+// `--splash-fade` in base.css.
 const DEFAULT_SPLASH_FADE_MS = 700;
+// Grace on top of the fade so `transitionend` normally wins the race.
+const SPLASH_FADE_GRACE_MS = 400;
 
 let splashFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+function splashFadeMs(): number {
+  if (typeof document === 'undefined') return DEFAULT_SPLASH_FADE_MS;
+  const element = document.getElementById('splash');
+  if (!element) return DEFAULT_SPLASH_FADE_MS;
+  const styles = window.getComputedStyle(element);
+  // The splash declares more than one transition (the fade, and the visibility
+  // step that ends with it), so the node is only gone when the *last* of them
+  // has finished: take the longest duration + delay pair rather than the first.
+  const durations = styles.transitionDuration.split(',').map(value => parseFloat(value) || 0);
+  const delays = styles.transitionDelay.split(',').map(value => parseFloat(value) || 0);
+  const seconds = Math.max(0, ...durations.map((duration, index) => duration + (delays[index] ?? 0)));
+  return seconds > 0 ? seconds * 1000 : DEFAULT_SPLASH_FADE_MS;
+}
+
+/**
+ * Schedule the splash removal once, when the app becomes ready.
+ *
+ * This deliberately runs outside a component effect. The removal is the
+ * readiness gate the user (and the e2e suite) waits on, so it must not depend
+ * on a Preact effect flush: effects are queued behind an animation frame and
+ * are superseded when a re-render happens first, which is how a WebKit shard
+ * kept `<div id="splash" class="hidden">` mounted for a whole 5 s assertion
+ * window. Module-level state survives every re-render, so this one timer covers
+ * the lifetime of the component. `#splash.hidden` also leaves the visible tree
+ * at the end of the fade (base.css), so the app never waits on this callback to
+ * become visible or usable.
+ */
+function scheduleSplashDismissal() {
+  if (splashDismissed.value || splashFallbackTimer !== null) return;
+  splashFallbackTimer = setTimeout(dismissSplash, splashFadeMs() + SPLASH_FADE_GRACE_MS);
+}
 
 function dismissSplash() {
   if (splashFallbackTimer !== null) {
@@ -1492,26 +1527,8 @@ const Splash = () => {
   const ready = appReady.value;
   let isLocked = false;
 
-  // `transitionend` is the normal path to removal. This timer is the safety net
-  // for a transition that never runs (reduced motion, background tab). It is
-  // derived from the element's own computed transition so it cannot drift from
-  // the CSS, and is scheduled after the `hidden` class has been committed.
-  useEffect(() => {
-    if (!ready) return;
-    const element = document.getElementById('splash');
-    const styles = element ? window.getComputedStyle(element) : null;
-    const seconds = styles
-      ? (parseFloat(styles.transitionDuration) || 0) + (parseFloat(styles.transitionDelay) || 0)
-      : 0;
-    const fadeMs = seconds > 0 ? seconds * 1000 : DEFAULT_SPLASH_FADE_MS;
-    splashFallbackTimer = setTimeout(dismissSplash, fadeMs + 400);
-    return () => {
-      if (splashFallbackTimer !== null) {
-        clearTimeout(splashFallbackTimer);
-        splashFallbackTimer = null;
-      }
-    };
-  }, [ready]);
+  // `transitionend` is the normal path to removal; `scheduleSplashDismissal`
+  // is the safety net, armed when `appReady` flips (see startAuthBootstrap).
 
   if (ready) {
     isLocked = persistence.isLocked();
