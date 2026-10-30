@@ -650,6 +650,7 @@ Workflows live in `.github/workflows/`.
 | `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
+| `publish-image` | `main` only | builds the all-in-one image for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/virgulas-trailbase` (`latest`, `main`, `sha-<commit>`, plus the release version), and appends the pull command to the release notes |
 | `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
@@ -688,6 +689,10 @@ behavior-driven `tests/e2e/` specs run. Unit tests never run in the daily workfl
   grouped release notes and emits `GITHUB_OUTPUT` values for the workflow.
 - On `main`, the release job creates the tag and Release, bumps `package.json` and
   `source/version.json`, and pushes `chore: bump version to <version> [skip ci]`.
+- The `publish-image` job pushes the all-in-one image to GHCR on every `main` build. The GHCR
+  package must be made public in the repository's package settings for anonymous pulls; the
+  image does not contain SMTP credentials, so self-hosters mount their own
+  `traildepot/config.textproto` (see `scripts/trailbase/compose.vps.yml`).
 - The deploy build stamps `<version>` into the `app-version` meta tag and into `dist/version.json`
   (`version`, `sha`, `generatedAt`). The in-app version label reads it.
 - Dry-run locally:

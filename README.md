@@ -88,11 +88,10 @@ Choose per device; your choice is remembered:
   around, and an **Enable Secure Storage** prompt appears when you are ready to keep your work.
   The storage wizard asks where your notes should live — on this device (encrypted browser
   storage, a plain `.vmd` file, or memory only) or in the cloud (encrypted sync through the
-  TrailBase server that serves the app — self-host it with `trail run --public-dir dist`.
-  See `scripts/trailbase/` for a working local setup and `scripts/trailbase/Dockerfile`
-  for an all-in-one image that builds the app and serves it with TrailBase:
-  `docker build -t virgulas-trailbase -f scripts/trailbase/Dockerfile .` then
-  `docker run -p 8080:4000 virgulas-trailbase`.)
+  TrailBase server that serves the app — self-host it with the published
+  all-in-one Docker image; see [Self-host with Docker](#self-host-with-docker).
+  `scripts/trailbase/` also has the local development setup and the image
+  source.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
   or using File/Remote mode.
@@ -169,6 +168,56 @@ bun run typecheck  # strict TypeScript, app + tests
 Local Playwright runs need local Supabase credentials; see
 [`AGENTS.md`](AGENTS.md#database-setup). Everything else — architecture, bundling, the service
 worker, database workflow, CI/CD, and the contribution rules — lives in [`AGENTS.md`](AGENTS.md).
+
+## Self-host with Docker
+
+The release workflow publishes an all-in-one image to the GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/pitermarx/virgulas-trailbase:latest
+```
+
+It bundles the Virgulas frontend and TrailBase in one origin, so Remote mode talks to the
+TrailBase instance that served the app. Images are multi-arch (`linux/amd64`, `linux/arm64`) and
+carry `latest`, `main`, `sha-<commit>` and — for tagged releases — version tags such as `4.0.1`.
+Pin a version in production instead of following `latest`.
+
+The GHCR package must be public for anonymous pulls; if it is private, log in with a token that
+has `read:packages`. After the first publish, set **Packages → virgulas-trailbase → Package
+settings → Change visibility → Public** in GitHub.
+
+A Caddy + TrailBase compose stack is in `scripts/trailbase/`:
+
+```bash
+cd scripts/trailbase
+cp .env.vps.example .env
+cp traildepot/config.vps.example.textproto traildepot/config.textproto
+# edit .env and traildepot/config.textproto
+docker compose -f compose.vps.yml up -d
+```
+
+You need:
+
+- a DNS name pointing at the VPS, with ports 80/443 open (Caddy obtains the certificate);
+- a transactional SMTP account — TrailBase sends account-verification email, and sign-up cannot
+  complete without it;
+- `site_url` and `VIRGULAS_DOMAIN` set to the same public HTTPS origin;
+- the `virgulas_data` volume backed up; it contains the TrailBase SQLite data.
+
+The image does not contain your SMTP credentials; they are mounted from
+`traildepot/config.textproto`. TrailBase prints its admin credentials to the container logs on
+first boot:
+
+```bash
+docker compose -f compose.vps.yml logs -f virgulas
+```
+
+For a Cloudflare-proxied domain, issue the certificate with the DNS record set to DNS-only, or use
+a Cloudflare origin certificate/DNS challenge; the default HTTP challenge needs direct port 80
+reachability.
+
+The release ZIP is only the static frontend. Use the image above when you want a self-hosted
+TrailBase backend; the ZIP is for static hosting or the hosted Supabase fallback.
 
 ## Documentation
 

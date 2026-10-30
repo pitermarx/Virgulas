@@ -4,8 +4,12 @@
 # serves it WITH TrailBase on one origin (the deployment shape the app's
 # server resolution expects: the sync server is the origin serving the app).
 #
+# Published multi-arch image (built by the release workflow):
+#   ghcr.io/pitermarx/virgulas-trailbase:<version>
+#
 # Build (from the repository root, so the context has source/ and scripts/):
-#   docker build -t virgulas-trailbase -f scripts/trailbase/Dockerfile .
+#   docker build --build-arg APP_VERSION=4.0.1 \
+#     -t virgulas-trailbase -f scripts/trailbase/Dockerfile .
 #
 # Run:
 #   docker run -p 8080:4000 -e PUBLIC_URL=http://localhost:8080 \
@@ -23,6 +27,9 @@
 
 FROM oven/bun:1 AS build
 WORKDIR /app
+# Release images pass the version resolved by the release workflow; local
+# builds fall back to package.json.
+ARG APP_VERSION
 # No pre-registered service worker to bust inside a fresh image, and the bump
 # script would fail on a partial source tree.
 ENV SKIP_SW_BUMP=1
@@ -31,7 +38,11 @@ COPY package.json bun.lock ./
 COPY scripts ./scripts
 RUN bun install --frozen-lockfile
 COPY source ./source
-RUN bun run build
+RUN if [ -n "$APP_VERSION" ]; then \
+      bun scripts/build-bun.mjs source dist --version "$APP_VERSION" --no-sourcemap; \
+    else \
+      bun run build; \
+    fi
 
 FROM trailbase/trailbase:latest
 # The outlines schema (migration) + record API with the owner ACL rules

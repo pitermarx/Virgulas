@@ -1,0 +1,59 @@
+# Virgulas + TrailBase behind Caddy on a VPS.
+#
+# The image is the all-in-one build published by the release workflow:
+# Virgulas and the TrailBase API share one origin.
+#
+#   cp .env.vps.example .env
+#   cp traildepot/config.vps.example.textproto traildepot/config.textproto
+#   # edit both files (domain + SMTP)
+#   docker compose -f compose.vps.yml up -d
+#
+# Pin VIRGULAS_IMAGE to a released version for reproducible deployments.
+# The image is multi-arch (linux/amd64, linux/arm64); the GHCR package must be
+# public, or log in with a token that has read:packages.
+name: virgulas
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      VIRGULAS_DOMAIN: ${VIRGULAS_DOMAIN:?set VIRGULAS_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile.vps:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - virgulas
+
+  virgulas:
+    image: ${VIRGULAS_IMAGE:-ghcr.io/pitermarx/virgulas-trailbase:latest}
+    restart: unless-stopped
+    command:
+      - /app/trail
+      - --depot
+      - /app/traildepot
+      - --public-url
+      - https://${VIRGULAS_DOMAIN}
+      - run
+      - --public-dir
+      - /public
+      - --spa
+      - --address
+      - 0.0.0.0:4000
+    environment:
+      PUBLIC_URL: https://${VIRGULAS_DOMAIN}
+    volumes:
+      - ./traildepot/config.textproto:/app/traildepot/config.textproto:ro
+      - virgulas_data:/app/traildepot/data
+    expose:
+      - "4000"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  virgulas_data:

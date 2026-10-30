@@ -1,0 +1,35 @@
+# Production TrailBase config for the published Virgulas image.
+#
+# Copy to config.textproto and replace the domain/SMTP placeholders:
+#   cp traildepot/config.vps.example.textproto traildepot/config.textproto
+#
+# `site_url` and the compose `--public-url` must both be the public HTTPS
+# origin. The sender/domain must be authorised by your SMTP provider.
+server {
+  application_name: "Virgulas"
+  site_url: "https://notes.example.com"
+}
+
+email {
+  smtp_host: "smtp.example.com"
+  smtp_username: "smtp-user"
+  smtp_password: "smtp-password"
+  smtp_port: 587
+  # Port 587 normally uses STARTTLS; check your provider (465 is often TLS).
+  smtp_encryption: SMTP_ENCRYPTION_STARTTLS
+  sender_name: "Virgulas"
+  sender_address: "no-reply@example.com"
+}
+
+record_apis: [
+  {
+    name: "outlines"
+    table_name: "outlines"
+    conflict_resolution: REPLACE
+    acl_authenticated: [CREATE, READ, UPDATE, DELETE]
+    create_access_rule: "_REQ_.user = _USER_.id"
+    read_access_rule: "_ROW_.user = _USER_.id"
+    update_access_rule: "_ROW_.user = _USER_.id"
+    delete_access_rule: "_ROW_.user = _USER_.id"
+  }
+]
