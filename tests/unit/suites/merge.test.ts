@@ -4,7 +4,7 @@ import { describe, it } from 'bun:test'
 // (it now re-exports the extracted function); this suite covers the
 // document-level merge() contract: the merged/conflict result shape,
 // metadata carry-over, baseline semantics, and pureness.
-import { merge, mergeDocuments } from '../../../source/js/merge.js'
+import { documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
 import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
 import { assert, assertEqual } from '../testing.js'
 
@@ -168,6 +168,44 @@ describe('merge — equivalence with mergeDocuments', () => {
 
       if (docLevel.kind !== 'merged') throw new Error('expected a merged result')
       assertEqual(JSON.stringify(docLevel.doc.nodes), JSON.stringify(nodeLevel.merged), 'same merged nodes')
+  })
+})
+
+describe('documentsEquivalent — pull write-back guard', () => {
+
+  it('ignores node order, dataVersion and per-node lastModified', () => {
+      const local = doc([node({ id: 'n1', lastModified: T1 }), node({ id: 'n2', lastModified: T1 })])
+      const remote = doc([node({ id: 'n1', lastModified: T0 }), node({ id: 'n2', lastModified: T0 })])
+      remote.nodes = [...remote.nodes].reverse()
+      remote.dataVersion = 99
+
+      assert(documentsEquivalent(local, remote), 'bookkeeping and node order are not content')
+  })
+
+  it('treats omitted empty/default node fields as equal', () => {
+      const compact: OutlineDoc = {
+          modelVersion: 'v1',
+          nodes: [
+              { id: 'root', text: '', parentId: null, children: ['n1'] },
+              { id: 'n1', text: 'Hello', parentId: 'root', children: [] }
+          ]
+      }
+      const full = doc([node({ id: 'n1' })])
+
+      assert(documentsEquivalent(compact, full), 'defaults normalize to the same content')
+  })
+
+  it('detects user-visible changes', () => {
+      const base = doc([node({ id: 'n1', text: 'Hello' })])
+      const text = doc([node({ id: 'n1', text: 'Changed' })])
+      const open = doc([node({ id: 'n1', text: 'Hello', open: false })])
+      const children = doc([node({ id: 'n1', text: 'Hello', children: ['n2'] }), node({ id: 'n2' })])
+      const extra = doc([node({ id: 'n1', text: 'Hello', futureField: 'x' })])
+
+      assert(!documentsEquivalent(base, text), 'text')
+      assert(!documentsEquivalent(base, open), 'open state')
+      assert(!documentsEquivalent(base, children), 'children')
+      assert(!documentsEquivalent(base, extra), 'unknown future fields')
   })
 })
 

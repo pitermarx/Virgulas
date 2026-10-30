@@ -672,8 +672,10 @@ cache write (data-06).
 every 60s:  token = remoteStore.head()
             token ≠ lastSeen → doc = remoteStore.read()
                                 → merge(localDoc, doc, baseline)      // pure (§4.6)
-                                → merged: write local + remote stores
-                                          lastSeen := token returned by write()
+                                → merged: if content ≠ remote, write remote
+                                          apply merged doc locally
+                                          lastSeen := written token, or the
+                                                      observed head without a write
                                 → conflict: blocking modal (unchanged UX)
             lastSeen updated from every successful write's returned token
 ```
@@ -687,6 +689,9 @@ every 60s:  token = remoteStore.head()
   re-pulls its own update. It replaces today's
   `beginRemotePush`/`recordCompletedRemotePush`/`isSupersededOwnRemoteUpdate`
   client-timestamp bookkeeping.
+- A pull whose merged document equals the remote content is applied locally
+  but **not** written back. Without that guard, two open clients would each
+  turn the other's poll into a new remote revision every 60 seconds.
 - Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff`,
   `skipNextRemotePush` all stay in the orchestration, keyed off the typed
   `network`/`unauthenticated` errors. Stores do single operations only.

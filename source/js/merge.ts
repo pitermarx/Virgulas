@@ -161,3 +161,59 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
     }
     return { kind: 'merged', doc: { ...local, nodes: merged } }
 }
+
+/**
+ * Whether two documents have the same user-visible content.
+ *
+ * Used after a pull to decide if the merged result needs a write-back. Node
+ * order, the local `dataVersion` counter and per-node `lastModified` stamps
+ * are bookkeeping, not content: a pull that only changed those must not create
+ * a new remote revision (which would make every other client pull again).
+ * Unknown fields are still compared, so future document data cannot be
+ * silently skipped.
+ */
+export function documentsEquivalent(a: OutlineDoc, b: OutlineDoc): boolean {
+    return canonicalDocument(a) === canonicalDocument(b)
+}
+
+function canonicalDocument(doc: OutlineDoc): string {
+    const canonical: Record<string, unknown> = {}
+    for (const key of Object.keys(doc).sort()) {
+        if (key === 'nodes' || key === 'dataVersion') continue
+        const value = doc[key]
+        if (value === undefined) continue
+        canonical[key] = canonicalValue(value)
+    }
+    canonical.nodes = [...doc.nodes]
+        .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+        .map(canonicalNode)
+    return JSON.stringify(canonical)
+}
+
+function canonicalNode(node: OutlineNode): unknown {
+    const rest: Record<string, unknown> = { ...node }
+    delete rest.lastModified
+    return canonicalValue({
+        ...rest,
+        parentId: node.parentId ?? null,
+        text: node.text ?? '',
+        description: node.description ?? '',
+        children: node.children ?? [],
+        open: node.open === undefined ? true : !!node.open,
+        done: node.done ?? null
+    })
+}
+
+function canonicalValue(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonicalValue)
+    if (value && typeof value === 'object') {
+        const canonical: Record<string, unknown> = {}
+        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+            const entry = (value as Record<string, unknown>)[key]
+            if (entry === undefined) continue
+            canonical[key] = canonicalValue(entry)
+        }
+        return canonical
+    }
+    return value
+}

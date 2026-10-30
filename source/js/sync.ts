@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals'
 import outline from './outline.js'
 import { log, store } from './utils.js'
-import { merge, mergeDocuments } from './merge.js'
+import { documentsEquivalent, merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
@@ -274,23 +274,36 @@ export function handleSyncFailure(error: unknown): boolean {
 
 // ── Pull-before-push ─────────────────────────────────────────────────────────
 
+export interface PullAndMergeResult {
+    clean: boolean
+    mergedJson: string | null
+    /**
+     * True when the merged document differs from the remote copy. When false,
+     * the remote already holds this content: callers must apply the document
+     * locally and adopt the observed head token without writing it back. A
+     * write-back here would create a new revision, which makes every other
+     * client pull again and write it back in turn.
+     */
+    needsPush: boolean
+}
+
 /**
  * Fetches the remote document through the store and merges it with the local
- * doc. Does NOT push and does NOT apply to the live outline. Returns
- * { clean: true, mergedJson: string | null } or { clean: false, mergedJson: null }.
- * When clean, mergedJson is the merged document JSON (or null if no merge was
- * needed). When !clean, pendingConflicts and pendingMergedDoc are set.
+ * doc. Does NOT push and does NOT apply to the live outline. When clean,
+ * mergedJson is the merged document JSON (or null if no remote document was
+ * read); needsPush says whether that document differs from the remote copy.
+ * When !clean, pendingConflicts and pendingMergedDoc are set.
  *
  * Decryption happens inside the store's session; a remote rotated on another
  * device surfaces as a remote-rekeyed StoreError — deliberately NOT swallowed
  * into a clean result (that was the sync-01 silent-overwrite bug).
  */
-export async function pullAndMerge(): Promise<{ clean: boolean; mergedJson: string | null }> {
+export async function pullAndMerge(): Promise<PullAndMergeResult> {
     const remote = requireRemoteStore()
 
     const remoteDoc = await remote.read()
     if (!remoteDoc) {
-        return { clean: true, mergedJson: null }
+        return { clean: true, mergedJson: null, needsPush: true }
     }
 
     const localDoc = jsonCodec.parse(outline.serialize())
@@ -301,10 +314,14 @@ export async function pullAndMerge(): Promise<{ clean: boolean; mergedJson: stri
         pendingConflicts.value = result.conflicts
         pendingMergedDoc.value = result.partial
         pendingConflictResolutions.value = new Map()
-        return { clean: false, mergedJson: null }
+        return { clean: false, mergedJson: null, needsPush: false }
     }
 
-    return { clean: true, mergedJson: jsonCodec.serialize(result.doc) }
+    return {
+        clean: true,
+        mergedJson: jsonCodec.serialize(result.doc),
+        needsPush: !documentsEquivalent(result.doc, remoteDoc)
+    }
 }
 
 /**
@@ -411,13 +428,21 @@ export function startPolling() {
                 }
 
                 if (result.mergedJson) {
-                    const mergedDoc = jsonCodec.parse(result.mergedJson)
-                    // Push the merged doc; write() resolves with the new head
-                    // token, which the poller adopts so it never re-pulls its
-                    // own update.
-                    const newToken = await remote.write(mergedDoc)
-                    if (isRemoteSyncAttemptStale(attempt)) return
-                    if (newToken) setSyncHead(newToken)
+                    if (result.needsPush) {
+                        const mergedDoc = jsonCodec.parse(result.mergedJson)
+                        // Push the merged doc; write() resolves with the new head
+                        // token, which the poller adopts so it never re-pulls its
+                        // own update.
+                        const newToken = await remote.write(mergedDoc)
+                        if (isRemoteSyncAttemptStale(attempt)) return
+                        if (newToken) setSyncHead(newToken)
+                    } else {
+                        if (isRemoteSyncAttemptStale(attempt)) return
+                        // The remote already has this content. Adopt the token
+                        // we just observed instead of writing an identical
+                        // document, which would only make other clients pull.
+                        setSyncHead(token)
+                    }
                     setLastSyncedAt(Date.now())
                     // Apply locally; flag prevents persistence effect re-push
                     skipNextRemotePush.value = true
