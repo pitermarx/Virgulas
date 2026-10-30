@@ -81,8 +81,80 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps
 
+      # The CLI publishes host ports 54321-54329 by default, and that whole range
+      # sits inside the Linux ephemeral range (32768-60999). Docker binds every
+      # published port explicitly, so any outgoing socket on the runner that
+      # happens to hold one of them fails the start with "failed to bind host
+      # port ...: address already in use" before a single test runs. Move every
+      # published port below the ephemeral range first: the suite resolves the
+      # API from `supabase status -o env` and the development CSP allows any
+      # loopback port, so nothing else has to change.
+      - name: Move local Supabase off the ephemeral port range
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs')
+
+          // Section -> the default host ports the CLI publishes for it.
+          const ports = {
+            api: { port: 32001 },
+            db: { port: 32002, shadow_port: 32003 },
+            'db.pooler': { port: 32004 },
+            studio: { port: 32005 },
+            inbucket: { port: 32006 },
+            analytics: { port: 32007 },
+          }
+
+          const file = 'supabase/config.toml'
+          const seen = new Set()
+          let section = ''
+          const rewritten = fs.readFileSync(file, 'utf8').split('\n').map((line) => {
+            const header = /^\s*\[([^\]]+)\]\s*$/.exec(line)
+            if (header) {
+              section = header[1]
+              return line
+            }
+            const entry = /^(\s*)(port|shadow_port)\s*=\s*(\d+)\s*$/.exec(line)
+            const next = entry ? ports[section]?.[entry[2]] : undefined
+            if (!next) return line
+            seen.add(`${section}.${entry[2]}`)
+            return `${entry[1]}${entry[2]} = ${next}`
+          }).join('\n')
+
+          // Fail loudly instead of silently starting on the ephemeral defaults.
+          const expected = Object.entries(ports).flatMap(([name, values]) =>
+            Object.keys(values).map((key) => `${name}.${key}`)
+          )
+          const missing = expected.filter((key) => !seen.has(key))
+          if (missing.length > 0) {
+            console.error(`config.toml no longer declares: ${missing.join(', ')}`)
+            process.exit(1)
+          }
+
+          fs.writeFileSync(file, rewritten)
+          console.log('Local Supabase host ports:', JSON.stringify(ports))
+          NODE
+
+      # Registry pull limits ("Data limit exceeded") and a container still
+      # winding down fail the start the same way. Roll the half-started stack
+      # back and retry instead of failing the shard.
       - name: Start local Supabase
-        run: bun run db:start
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if bun run db:start; then
+              echo "Local Supabase started (attempt $attempt)."
+              exit 0
+            fi
+            echo "::warning::supabase start failed on attempt $attempt; cleaning up and retrying"
+            bun run db:stop || true
+            docker ps -aq --filter "name=supabase_" | xargs -r docker rm -f || true
+            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' || true
+            sleep 15
+          done
+          echo "::error::Local Supabase failed to start after 3 attempts."
+          exit 1
 
       - name: Run unit tests
         run: bun run test:unit

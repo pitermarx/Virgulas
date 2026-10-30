@@ -6,7 +6,7 @@ test.describe('Memory mode (first-ever visit)', () => {
         await page.goto('/');
 
         // Splash disappears
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
 
         // App renders without asking for a passphrase
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
@@ -126,7 +126,7 @@ test.describe('Memory mode (first-ever visit)', () => {
             localStorage.setItem('vmd_last_mode', 'local');
         });
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         // Lock screen should appear
         await expect(page.getByText('Unlock Virgulas')).toBeVisible();
     });

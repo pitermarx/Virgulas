@@ -653,6 +653,14 @@ Workflows live in `.github/workflows/`.
 | `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
+- The `test` job starts local Supabase on host ports below the Linux ephemeral range
+  (32768-60999), then retries the start up to three times, stopping the half-started stack
+  between attempts. The CLI's defaults (54321-54329) sit inside that range, and Docker binds
+  every published port explicitly, so any runner socket that happens to hold one of them fails
+  the start with "failed to bind host port ...: address already in use"; a registry pull limit
+  fails it the same way. Keep both mitigations: move the ports, and retry transient failures.
+  Specs resolve the API URL from `supabase status -o env`, so the remapped ports need no test
+  change. Do not collapse that step back to a single `bun run db:start`.
 - The deploy build passes `--no-sourcemap` and refuses to deploy if `dist/js/app.js.map` appears.
 - The deploy job zips `dist/` contents (no wrapper directory, no maps) into
   `virgulas-<version>.zip` and attaches it to the `v<version>` release when that tag exists.
