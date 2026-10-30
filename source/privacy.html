@@ -166,7 +166,9 @@
         </tr>
         <tr>
           <td>Sign-in session (Remote mode) — lets you stay signed in across visits</td>
-          <td>Supabase session and refresh tokens in <code>localStorage</code></td>
+          <td><code>localStorage</code> key <code>vmd_supabase_session</code> (Supabase session
+            and refresh tokens; a token an older build kept in the SDK's own
+            <code>sb-*-auth-token</code> key is read once and removed)</td>
           <td>Tokens are opaque; the document key is never in them</td>
           <td>Options → <em>Sign out</em>, <em>Delete local data</em>, or <em>Delete account</em></td>
         </tr>
@@ -176,7 +178,9 @@
           <td><code>localStorage</code> keys <code>vmd_theme</code>, <code>vmd_last_mode</code>,
             <code>vmd_sync_ts</code>, <code>vmd_sync_head</code>, <code>vmd_scheduled_window</code>,
             <code>vmd_inbox_node_name</code>, <code>vmd_storage_notice_dismissed</code>,
-            <code>backendconfig</code> (migrated from <code>supabaseconfig</code>)</td>
+            <code>backendconfig</code> (migrated from <code>supabaseconfig</code>),
+            <code>vmd_backend_session</code> (a custom TrailBase backend's sign-in
+            tokens — a short-lived access token and a refresh token)</td>
           <td>No — none of these contain document text</td>
           <td>Mostly kept; <em>Delete local data</em> removes the session-related ones</td>
         </tr>

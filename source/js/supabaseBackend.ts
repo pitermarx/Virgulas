@@ -14,34 +14,115 @@
 // client-clock trust — pre-existing, documented in §5. The seam isolates that
 // weakness here so the follow-up fix has a single touch point.
 //
-// The client loader duplicates sync.ts's loader (dynamic import so local/
-// memory/file users never download the ~220 KB chunk, plus the __TEST_HOOKS__
-// window seam). PR 2d shrinks sync.ts onto this module and the duplicate
-// disappears; until then this module is dead code and sync.ts stays
-// authoritative.
+// The client loader lives here: a dynamic import so TrailBase, local, memory and
+// file users never download the ~220 KB chunk, plus the __TEST_HOOKS__ window
+// seam. `sync.ts` resolves the backend and uses this module; nothing else loads
+// the Supabase client.
 
-import { StoreError, type AuthProvider, type AuthUser, type RawRecord, type RawStore } from './storage.js'
-import { store } from './utils.js'
+import { HOSTED_BACKEND, StoreError, type AuthProvider, type AuthUser, type BackendConfig, type RawRecord, type RawStore } from './storage.js'
+import { legacySlot, store, type StoreSlot } from './utils.js'
 
 // ── Client loading ───────────────────────────────────────────────────────────
 
-const DEFAULT_CONFIG = { url: 'https://gcpdascpdrakecpknrtt.supabase.co', key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc' }
+type ClientFactory = (url: string, key: string, options?: any) => any
 
-function readConfig() {
+/** The subset of the Web Storage API supabase-js uses for the auth session. */
+export interface SupabaseAuthStorage {
+    getItem(key: string): string | null
+    setItem(key: string, value: string): void
+    removeItem(key: string): void
+}
+
+type AuthStorageMap = Record<string, string>
+
+function readAuthStorageMap(sessionSlot: StoreSlot): AuthStorageMap {
+    const raw = sessionSlot.get()
+    if (!raw) return {}
     try {
-        const raw = store.backend.get()
-        if (!raw) return DEFAULT_CONFIG
         const parsed = JSON.parse(raw)
-        const url = parsed.url || parsed.supabaseUrl
-        const key = parsed.key || parsed.supabaseAnonKey
-        if (!url || !key) return DEFAULT_CONFIG
-        return { url, key }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+        const map: AuthStorageMap = Object.create(null)
+        for (const [key, value] of Object.entries(parsed)) {
+            if (typeof value === 'string') map[key] = value
+        }
+        return map
     } catch {
-        return DEFAULT_CONFIG
+        return {}
     }
 }
 
-type ClientFactory = (url: string, key: string, options?: any) => any
+function writeAuthStorageMap(sessionSlot: StoreSlot, map: AuthStorageMap) {
+    if (Object.keys(map).length === 0) sessionSlot.del()
+    else sessionSlot.set(JSON.stringify(map))
+}
+
+/**
+ * supabase-js persists the session (and, depending on options, the user and
+ * PKCE verifier) under sibling keys. A single store slot cannot hold them as
+ * separate localStorage entries, so the adapter keeps the SDK's key/value
+ * pairs in one JSON map inside `store.supabaseSession`. TrailBase's session
+ * keeps its own `store.backendSession` slot (Rule 7, docs §4.5).
+ */
+export function supabaseAuthStorage(sessionSlot: StoreSlot = store.supabaseSession): SupabaseAuthStorage {
+    return {
+        getItem(key: string): string | null {
+            const map = readAuthStorageMap(sessionSlot)
+            return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null
+        },
+        setItem(key: string, value: string): void {
+            const map = readAuthStorageMap(sessionSlot)
+            map[key] = value
+            writeAuthStorageMap(sessionSlot, map)
+        },
+        removeItem(key: string): void {
+            const map = readAuthStorageMap(sessionSlot)
+            if (!Object.prototype.hasOwnProperty.call(map, key)) return
+            delete map[key]
+            writeAuthStorageMap(sessionSlot, map)
+        }
+    }
+}
+
+/** The SDK's default session key for a project URL (`sb-<ref>-auth-token`). */
+function defaultAuthStorageKey(url: string): string | null {
+    try {
+        return `sb-${new URL(url).hostname.split('.')[0]}-auth-token`
+    } catch {
+        return null
+    }
+}
+
+/**
+ * Adopts the token an older build let supabase-js write directly into
+ * localStorage, then removes the old key. Without this, upgrading would sign
+ * every existing Supabase user out and leave the token behind on the device.
+ */
+function adoptLegacyAuthSession(url: string, storage: SupabaseAuthStorage) {
+    const key = defaultAuthStorageKey(url)
+    if (!key) return
+    const legacy = legacySlot(key)
+    const value = legacy.get()
+    if (value === null) return
+    if (storage.getItem(key) === null) storage.setItem(key, value)
+    legacy.del()
+}
+
+/** Options passed to `createClient`: the bundled client and the test seam both
+ * go through this, so the auth session always lands in the store slot. */
+export function supabaseClientOptions(storage: SupabaseAuthStorage = supabaseAuthStorage()) {
+    return {
+        realtime: { enabled: false },
+        auth: { storage }
+    }
+}
+
+/** Builds the SDK client through the injected factory, wiring the store-backed
+ * auth persistence before the client can read a session. */
+export function createSupabaseClient(factory: ClientFactory, url: string, key: string): any {
+    const storage = supabaseAuthStorage()
+    adoptLegacyAuthSession(url, storage)
+    return factory(url, key, supabaseClientOptions(storage))
+}
 
 let _clientFactory: ClientFactory | null = null
 
@@ -63,12 +144,19 @@ async function loadClientFactory(): Promise<ClientFactory> {
 }
 
 let _client: any = null
+let _clientConfig: { url: string; key: string } | null = null
 
-export async function ensureSupabaseClient(): Promise<any> {
-    if (_client) return _client
+/** Builds (or reuses) the client for the given backend config. A config change
+ * (the user switching instances) rebuilds the client. The auth session always
+ * goes through `createSupabaseClient`, so supabase-js never writes its own
+ * `sb-*-auth-token` key into localStorage (Rule 7, docs §4.5). */
+export async function ensureSupabaseClient(config: BackendConfig = HOSTED_BACKEND): Promise<any> {
+    const url = config.url || HOSTED_BACKEND.url!
+    const key = config.key || HOSTED_BACKEND.key!
+    if (_client && _clientConfig && _clientConfig.url === url && _clientConfig.key === key) return _client
     const factory = await loadClientFactory()
-    const config = readConfig()
-    _client = factory(config.url, config.key, { realtime: { enabled: false } } as any)
+    _client = createSupabaseClient(factory, url, key)
+    _clientConfig = { url, key }
     return _client
 }
 
@@ -223,13 +311,24 @@ export function supabaseAuth(client: any): AuthProvider {
             if (error) throw mapSupabaseError(error)
         },
 
+        /** Supabase's self-service reset: the email links back to this app's
+         * origin, where supabase-js consumes the recovery token and the user
+         * sets a new password via Options → Account password (updatePassword).
+         * Anti-enumeration: no error when the account does not exist. */
+        async requestPasswordReset(email: string): Promise<void> {
+            const { error } = await client.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin
+            })
+            if (error) throw mapSupabaseError(error)
+        },
+
         // deleteUser is deliberately ABSENT: deleting `auth.users` needs the
         // service role, which the browser never holds. Presence is the
         // capability — the account-deletion flow branches on it for its
         // "the auth record survives" caveat.
 
         capabilities: {
-            passwordReset: false,
+            passwordReset: true,
             oauth: false
         }
     }

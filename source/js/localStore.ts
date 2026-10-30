@@ -1,13 +1,13 @@
 // Local slot adapter (docs/storage-interface.md §5, rollout PR 2a).
 // The RawStore over a `store` slot in utils.ts (Rule 7: all localStorage access
 // goes through those slots — this adapter is no exception). The at-rest shape
-// is exactly today's `vmd_data_enc` value: `<salt>|<envelope>`; a value
-// without the separator is legacy/corrupt and reads as "no record", matching
-// today's `localEncryptedData` behaviour.
+// is exactly the `vmd_data_enc` value: `<salt>|<envelope>`; a value without
+// the separator is legacy/corrupt and reads as "no record", matching the
+// pre-seam behaviour.
 //
 // The quota failure path (a failed slot write) surfaces as StoreError
 // 'too-large' instead of being swallowed — the adapter-level half of the
-// data-06 fix; the orchestration surfaces it when the cutover lands (PR 2c).
+// data-06 fix; persistence surfaces it through `localSaveFailed`.
 
 import { StoreError, type RawRecord, type RawStore, type StoreCapabilities } from './storage.js'
 import { log, store } from './utils.js'

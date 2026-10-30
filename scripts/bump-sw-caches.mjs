@@ -64,6 +64,12 @@ async function hashGroup(paths) {
 }
 
 async function main() {
+    // The Docker image build has no pre-registered service worker to bust; a
+    // partial source tree would fail the hashing.
+    if (process.env.SKIP_SW_BUMP === '1') {
+        console.log('skipped (SKIP_SW_BUMP set).')
+        return
+    }
     const stored = (await exists(HASHES_PATH))
         ? JSON.parse(await readFile(HASHES_PATH, 'utf8'))
         : {}

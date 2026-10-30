@@ -86,11 +86,26 @@ Choose per device; your choice is remembered:
 
 - **Memory** — first-visit mode. The document lives in JS memory, the built-in tour shows you
   around, and an **Enable Secure Storage** prompt appears when you are ready to keep your work.
+  The storage wizard asks where your notes should live — on this device (encrypted browser
+  storage, a plain `.vmd` file, or memory only) or in the cloud (encrypted sync through the
+  TrailBase server that serves the app — self-host it with `trail run --public-dir dist`.
+  See `scripts/trailbase/` for a working local setup and `scripts/trailbase/Dockerfile`
+  for an all-in-one image that builds the app and serves it with TrailBase:
+  `docker build -t virgulas-trailbase -f scripts/trailbase/Dockerfile .` then
+  `docker run -p 8080:4000 virgulas-trailbase`.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
   or using File/Remote mode.
-- **Remote** — encrypted and synced through Supabase. An account email/password controls access;
-  a separate passphrase controls encryption, so the server never sees plaintext.
+- **Remote** — encrypted and synced to a cloud backend: the TrailBase instance serving the app
+  (self-hosted or hosted), with the hosted Supabase project as the fallback for static deployments.
+  An account email/password controls access; a separate passphrase controls encryption, so the
+  server never sees plaintext. Forgot your account password? A "Forgot password?" link on the
+  sign-in form emails a reset link (your encrypted notes are untouched — the passphrase is
+  separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
+  example the browser's storage is full), the remote save still completes and the status toolbar
+  says the document is not saved locally. Deleting the account removes the server document and,
+  on a TrailBase server, the account itself; the hosted Supabase fallback keeps the account
+  record unless support removes it.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 

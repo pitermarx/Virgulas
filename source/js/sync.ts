@@ -5,9 +5,9 @@ import { merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
-import { StoreError, type DocStore } from './storage.js'
+import { HOSTED_BACKEND, parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type DocStore, type RawStore } from './storage.js'
 import { ensureSupabaseClient, supabaseAuth, supabaseRaw } from './supabaseBackend.js'
-import type { AuthProvider } from './storage.js'
+import { sameOriginTrailbase, trailbaseAuth, trailbaseRaw } from './trailbaseBackend.js'
 
 // Re-exported for the app/e2e seam and the unit suite: the merge algorithm
 // itself lives in merge.ts (storage seam PR 1).
@@ -36,36 +36,105 @@ export interface ConflictResolution {
 // remoteSync is a thin auth/data facade over the backend adapters — no client
 // construction, no error-code mapping, no row payloads.
 
-let _auth: AuthProvider | null = null
+/**
+ * Resolves and builds the backend adapters. There is no user-facing backend
+ * choice: the server is TrailBase on the origin serving the app, so the
+ * resolution is —
+ * 1. an explicit `backendconfig` override (dev/testing; no UI),
+ * 2. a same-origin TrailBase probe (the app served by `trail run
+ *    --public-dir dist` — self-hosted or hosted),
+ * 3. the legacy `supabaseconfig` read-through (existing users keep their
+ *    hosted Supabase data),
+ * 4. the hosted Supabase fallback for static deployments without a server.
+ * Resolution runs once per session and only inside the remote flows, so
+ * startup never depends on a network round trip.
+ */
+let resolvedBackend: { raw: RawStore; auth: AuthProvider } | null = null
+// A signal so the UI labels re-render when the remote flow resolves the server.
+const resolvedKind = signal<'trailbase' | 'supabase'>('supabase')
+let resolvedUrl = ''
 
-async function authProvider(): Promise<AuthProvider> {
-    if (!_auth) _auth = supabaseAuth(await ensureSupabaseClient())
-    return _auth
+export async function backend(): Promise<{ raw: RawStore; auth: AuthProvider }> {
+    if (!resolvedBackend) {
+        const override = store.backend.getOverride()
+        const config: BackendConfig = override
+            ? parseBackendConfig(override)
+            : await sameOriginTrailbase()
+                ? { backend: 'trailbase', url: '' }
+                : store.supabase.get()
+                    ? parseBackendConfig(store.supabase.get())
+                    : { ...HOSTED_BACKEND }
+        resolvedKind.value = config.backend === 'trailbase' ? 'trailbase' : 'supabase'
+        resolvedUrl = config.url || ''
+        if (config.backend === 'trailbase') {
+            resolvedBackend = { raw: trailbaseRaw(config), auth: trailbaseAuth(config) }
+        } else {
+            const client = await ensureSupabaseClient(config)
+            resolvedBackend = { raw: supabaseRaw(client), auth: supabaseAuth(client) }
+        }
+        remoteResetAvailable.value = !!resolvedBackend.auth.requestPasswordReset
+    }
+    return resolvedBackend
+}
+
+/** Whether the resolved backend can send password reset emails — gates the
+ * lock screen's "Forgot password?" affordance (capability, §4.5). */
+export const remoteResetAvailable = signal(false)
+
+/** The resolved backend's kind — UI branching (sign-up messaging, labels).
+ * 'supabase' until the first remote flow resolves the real backend. */
+export function backendKind(): 'trailbase' | 'supabase' {
+    return resolvedKind.value
+}
+
+/** The resolved backend's base URL: '' when same-origin (the default). */
+export function backendUrl(): string {
+    return resolvedUrl
 }
 
 export const remoteSync = {
-    signIn: async (email: string, password: string) => (await authProvider()).signIn(email, password),
-    signUp: async (email: string, password: string) => (await authProvider()).signUp(email, password),
-    signOut: async () => (await authProvider()).signOut(),
-    getUser: async () => (await authProvider()).getUser(),
-    updatePassword: async (newPassword: string) => (await authProvider()).updatePassword(newPassword),
-    updateEmail: async (newEmail: string) => (await authProvider()).updateEmail(newEmail),
+    signIn: async (email: string, password: string) => (await backend()).auth.signIn(email, password),
+    signUp: async (email: string, password: string) => (await backend()).auth.signUp(email, password),
+    signOut: async () => (await backend()).auth.signOut(),
+    getUser: async () => (await backend()).auth.getUser(),
+    updatePassword: async (newPassword: string) => (await backend()).auth.updatePassword(newPassword),
+    updateEmail: async (newEmail: string) => (await backend()).auth.updateEmail(newEmail),
+    /** Self-service password reset email — only on backends that support it
+     * (both built-ins do; the capability keeps custom adapters honest). */
+    requestPasswordReset: async (email: string) => {
+        const auth = (await backend()).auth
+        if (!auth.requestPasswordReset) throw new StoreError('unsupported', 'This backend cannot send password reset emails.')
+        await auth.requestPasswordReset(email)
+    },
+    /** True when the configured backend can send password reset emails. */
+    hasPasswordReset: async () => !!(await backend()).auth.requestPasswordReset,
     /**
-     * Deletes the signed-in user's own `outlines` row (RLS-scoped DELETE
-     * policy). This removes the encrypted document from the server. It cannot
-     * remove the `auth.users` record — that needs the service role and is out
-     * of reach of the browser client.
+     * Self-service auth-account deletion — present only on backends that
+     * support it (TrailBase does; Supabase needs the service role, which the
+     * browser never holds). The account-deletion flow branches on this.
      */
+    deleteUser: async () => {
+        const auth = (await backend()).auth
+        if (!auth.deleteUser) throw new StoreError('unsupported', 'This backend cannot delete the auth account.')
+        await auth.deleteUser()
+    },
+    /** True when the configured backend can delete the auth account. */
+    hasDeleteUser: async () => !!(await backend()).auth.deleteUser,
+    /** Deletes the signed-in user's own document row (ACL/RLS-scoped). The
+     * auth account itself is only removed when deleteUser is present. */
     deleteOutline: async () => {
-        const raw = supabaseRaw(await ensureSupabaseClient())
-        await raw.clearRaw()
+        await (await backend()).raw.clearRaw()
     },
     /**
      * Raw row probe for boot: no decryption, no passphrase — only ever runs
      * for a persisted Remote mode (the startup-path rule keeps it off everyone
      * else's boot).
      */
-    readRow: async () => supabaseRaw(await ensureSupabaseClient()).readRaw()
+    readRow: async () => (await backend()).raw.readRaw(),
+
+    /** Eager backend resolution — the wizard's cloud path calls this so the
+     * credentials form names the resolved server as soon as it renders. */
+    resolveBackend: async () => backend()
 }
 
 /**
@@ -99,9 +168,9 @@ let remoteSyncQueue: Promise<any> = Promise.resolve()
 
 // ── Remote store injection (docs §6.4) ───────────────────────────────────────
 //
-// The orchestration (persistence.ts) constructs the cached() composition and
-// injects it here; every pull and push goes through the store, which owns the
-// codec and the crypto. Secrets never transit this module.
+// The orchestration (persistence.ts constructs it, remoteSave.ts owns saves)
+// injects the cached() composition here; every pull and push goes through the
+// store, which owns the codec and the crypto. Secrets never transit this module.
 
 let _remoteStore: DocStore | null = null
 

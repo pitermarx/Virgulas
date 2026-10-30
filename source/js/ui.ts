@@ -587,11 +587,12 @@ export function StatusToolbar() {
     const isMemory = mode === 'memory'
     const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : isMemory ? 'Memory' : 'Local'
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
-    const syncState = mode === 'remote'
-        ? syncStatus.value
-        : localSaveFailed.value
-            ? 'save-failed'
+    const syncState = localSaveFailed.value
+        ? 'save-failed'
+        : mode === 'remote'
+            ? syncStatus.value
             : (outline.isDirty ? 'unsynced' : 'synced')
+    const saveFailedLabel = mode === 'remote' ? 'Not saved locally' : 'Not saved'
     const dotColors: Record<string, string> = {
         synced: 'var(--color-synced)',
         syncing: 'var(--color-syncing)',
@@ -623,6 +624,9 @@ export function StatusToolbar() {
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
             : html`<span class="status-mode" title="Current storage mode">${modeLabel}</span>`}
+            ${localSaveFailed.value
+            ? html`<span class="status-save-failed" title=${saveFailedLabel}>${saveFailedLabel}</span>`
+            : null}
             ${mode === 'remote' && remoteIdentity ? html`<span class="status-user" title=${remoteIdentity}>${remoteIdentity}</span>` : null}
             <span class="status-brand">${isMobile ? "V" : "Virgulas"}</span>
         </div>

@@ -51,8 +51,10 @@ Contributor workflow changes belong in this file instead, not in `README.md`.
 
 Whenever you add or change a feature or behaviour, add or update the corresponding test(s).
 
-- Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.ts`, run with `bun test`. Register the suite in `tests/unit/unit.test.ts`.
-- UI behaviour and integration flows → Playwright spec in `tests/*.spec.ts`.
+- Pure logic (document model, parsers, crypto, sync merge, markdown) → unit suite in `tests/unit/suites/*.test.ts`, run with `bun test`.
+- UI behaviour → behavior-driven Playwright spec in `tests/e2e/*.spec.ts` (oblivious to app internals).
+- Backend-coupled flows (mocked Supabase/TrailBase via the `window.supabase` seam, or the `e2e` introspection
+  binding) → integration spec in `tests/integration/*.spec.ts` (excluded from the daily production run).
 - E2E specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module instances as the running app.
 - A feature is not considered implemented until its tests pass
 - Tests must cover the happy path and all edge cases described in `SPEC.vmd`
@@ -104,13 +106,13 @@ Do not create files outside these locations without explicit instruction:
 │   ├── config.toml         — local Supabase configuration
 │   └── seed.sql            — optional local seed script (currently no-op)
 ├── tests/
-│   ├── *.spec.ts           — Playwright E2E specs
+│   ├── e2e/*.spec.ts       — Playwright BDD specs (run locally and against production)
+│   ├── integration/*.spec.ts — Playwright specs with a mocked backend (test build only)
 │   ├── test.ts             — shared Playwright fixtures/helpers
 │   ├── setup/dom.ts        — happy-dom preload for unit tests
 │   └── unit/
-│       ├── unit.test.ts    — bun test entry (replays the suites)
-│       ├── testing.ts      — section harness (asserts + runner)
-│       └── suites/*.ts     — unit suites
+│       ├── testing.ts      — shared assert helpers
+│       └── suites/*.test.ts — native bun:test unit suites (auto-discovered)
 ├── AGENTS.md               — this file
 ├── README.md               — user-facing description, keep in sync
 ├── LICENSE                 — Unlicense (public domain)
@@ -130,7 +132,7 @@ Do not introduce dependencies or frameworks beyond what is listed here.
 - TypeScript throughout (`source/js/*.ts`), strict mode. No plain `.js` app modules.
 - **Bun** is the runtime, bundler (`bun build`), and unit test runner (`bun test`).
 - **Preact** + **Preact Signals** + **htm** for UI, installed from npm and bundled — no import map, no CDN
-- **Supabase JS client** from npm (imported in `sync.ts`)
+- **Supabase JS client** from npm (imported dynamically in `supabaseBackend.ts`)
 - **marked** + **dompurify** for markdown; **happy-dom** for the unit-test DOM
 - All crypto via the native **Web Crypto API** — no third-party crypto libraries
 - All styling via plain CSS and CSS variables — no frameworks or preprocessors
@@ -145,11 +147,13 @@ Do not introduce dependencies or frameworks beyond what is listed here.
 - All encryption and decryption must go through `crypto2.ts`. Do not inline crypto logic elsewhere.
   Exception: `biometrics.ts` performs its own AES-GCM wrapping for the device-local passphrase
   seal. That key is never used for document encryption.
-- All Supabase calls must go through `sync.ts` (`remoteSync`). Do not call Supabase from UI code.
+- All Supabase calls must go through `supabaseBackend.ts` (the `RawStore`/`AuthProvider`
+  adapter). UI code calls the `remoteSync` facade in `sync.ts`, never a backend directly.
+  Do not call Supabase from UI code.
 - All `localStorage` reads and writes must go through the `store` slots in `utils.ts`.
   Do not access `localStorage` directly from UI code.
   Only the encrypted document payload (`vmd_data_enc`) is ciphertext; mode/theme/username,
-  sync timestamps, the Supabase config, and the inbox queue are non-secret metadata stored
+  sync timestamps, the backend config, and the inbox queue are non-secret metadata stored
   in plaintext.
 
 ### Rule 8 — Definition of done
@@ -242,7 +246,8 @@ feature exists; update this list when a gap is found or closed.
 
 - Bun 1.4 or later (runs TypeScript directly, the bundler, and the unit test runner)
 - Node.js 20 or later (only needed to launch Playwright)
-- A Supabase project (free tier is sufficient)
+- A Supabase project (free tier is sufficient) for the tests and the hosted fallback; optionally
+  a TrailBase instance for Remote mode
 
 ### Environment variables
 
@@ -255,8 +260,10 @@ SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
-The app reads Supabase settings from `localStorage.supabaseconfig`.
-On first run, it seeds this key with hosted defaults:
+The app resolves Remote's server from `localStorage.backendconfig` (with a read-through of the
+legacy `localStorage.supabaseconfig`), then the same-origin TrailBase probe and the hosted
+Supabase fallback. When no config is stored, the hosted Supabase constants in `storage.ts` are
+the fallback:
 
 ```json
 {
@@ -352,7 +359,8 @@ bunx supabase db push --linked --dry-run
 
 Virgulas is a static site. There is no application server: `index.html` loads the bundled
 `js/app.js` and `js/app.css` from the same origin, and every document operation happens in the
-browser. The only network access is Supabase in Remote mode, plus the SRI-pinned Umami tracker.
+browser. The only network access is the resolved sync backend (TrailBase or Supabase) in
+Remote mode, plus the SRI-pinned Umami tracker.
 
 `source/js/app.ts` is the entry point. It renders the Preact tree, owns the lock screen and modal
 orchestration, and delegates everything else to the focused modules listed under
@@ -364,7 +372,7 @@ orchestration, and delegates everything else to the focused modules listed under
 | --- | --- | --- |
 | Memory | JS memory only; lost on reload | none |
 | Local | `localStorage.vmd_data_enc` | passphrase → PBKDF2 → AES-GCM |
-| Remote | Supabase `outlines` row (plus the local cache) | passphrase → PBKDF2 → AES-GCM |
+| Remote | TrailBase record or Supabase `outlines` row (plus the local cache) | passphrase → PBKDF2 → AES-GCM |
 | File | a user-chosen `.vmd` file (File System Access API) | none |
 
 `persistence.getAuthBootstrap` picks the mode from the remembered mode and existing data signals
@@ -393,7 +401,9 @@ before any document work happens.
 
 ### Sync
 
-All Supabase access goes through `sync.ts` (`remoteSync`) — Rule 7.
+All remote backend access goes through the storage seam. `supabaseBackend.ts` and
+`trailbaseBackend.ts` are the only modules that touch the network; `sync.ts` owns
+scheduling, merge triggering, and the `remoteSync` auth facade — Rule 7.
 
 - Uploads are scheduled after typing pauses; a 60-second poll checks for remote updates while the
   app is open in Remote mode, and defers to active local edits.
@@ -401,8 +411,9 @@ All Supabase access goes through `sync.ts` (`remoteSync`) — Rule 7.
   is fetched and merged before the local write is uploaded.
 - Merge is per node using `lastModified` timestamps. Same-node different-field edits auto-merge;
   same-field conflicts open a blocking modal.
-- `@supabase/supabase-js` is imported dynamically and emitted as a separate chunk so Local, Memory
-  and File users never download it. Do not turn that into a static import.
+- `@supabase/supabase-js` is imported dynamically from `supabaseBackend.ts` and emitted as a
+  separate chunk so TrailBase, Local, Memory and File users never download it. Do not turn that
+  into a static import.
 
 ### Analytics tracker and SRI
 
@@ -442,9 +453,11 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `shortcuts.ts`:
   Keyboard interaction and focus/navigation behaviour (including search key handling).
 - `outline.ts`:
-  Core document model and tree operations (CRUD, move/indent/outdent, serialization, VMD parser/writer, search tree generation).
+  Core document model and tree operations (CRUD, move/indent/outdent, serialization, search tree generation); delegates VMD parsing/writing to `docCodec.ts`.
 - `docCodec.ts`:
-  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote/Memory at-rest format) and `vmdCodec` (File/export format) — pure codecs over `outline.ts` semantics.
+  Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
+- `model.ts`:
+  Shared document-model constants (`MODEL_VERSION`) and `CorruptDocumentError`. No imports, so `outline.ts` and `docCodec.ts` can share them without a cycle.
 - `merge.ts`:
   Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
 - `storage.ts`:
@@ -455,12 +468,16 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
 - `supabaseBackend.ts`:
   Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping (provider messages preserved), and the auth contract (deleteUser absent by design).
+- `trailbaseBackend.ts`:
+  Pure-`fetch` RawStore + AuthProvider for TrailBase (the same-origin default): register/sign-in/reset/logout/delete, one 401 → refresh → retry, and `outlines` row CRUD.
 - `cachedStore.ts`:
-  The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(supabaseRaw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
+  The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. All four modes' data paths run through the storage seam — Remote is `cached(encrypted(supabaseRaw), encrypted(slotRaw))` over one shared KeySession; `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the save debounce, the session lifecycle and the store construction; hands the composed remote store to `remoteSave.ts`.
+- `remoteSave.ts`:
+  Remote save orchestration: the injected composed store (also handed to `sync.ts`), pull-before-push on save, the retry policy (only `network`/`unauthenticated` retry), and the deferred-push queue that retries an edit skipped while typing. Holds documents, never ciphertext or keys.
 - `sync.ts`:
-  Remote sync scheduling: the background poll (head-token change detection against `vmd_sync_head`), typing-gate/epoch bookkeeping, backoff, status/conflict signals, and the thin `remoteSync` auth facade over `supabaseBackend`. No client code, no row payloads, no secrets — pulls and pushes go through the injected remote DocStore; the merge algorithm lives in `merge.ts` (`mergeDocuments` is re-exported for the e2e seam).
+  Remote sync scheduling: backend resolution, the background poll (head-token change detection against `vmd_sync_head`), typing-gate/epoch bookkeeping, backoff, status/conflict signals, and the thin `remoteSync` auth facade over the resolved backend. No client code, no row payloads, no secrets — pulls and pushes go through the injected remote DocStore; the merge algorithm lives in `merge.ts` (`mergeDocuments` is re-exported for the e2e seam).
 - `crypto2.ts`:
   Cryptographic primitives and key derivation (Web Crypto only).
 - `markdown.ts`:
@@ -503,7 +520,7 @@ Build flags (`bun scripts/build-bun.mjs source dist [flags]`):
 
 - `--version <semver>` overrides the version stamped into the app (defaults to `package.json`)
 - `--local` keeps the development `connect-src` (localhost + `*.supabase.co`); production builds
-  tighten it to the concrete Supabase origin from `sync.ts` (`--supabase-url` / `SUPABASE_PROJECT` /
+  tighten it to the concrete Supabase origin from `storage.ts` (`--supabase-url` / `SUPABASE_PROJECT` /
   `SUPABASE_URL` can override)
 - `--test-hooks` enables the `__TEST_HOOKS__` seam (`window.supabase`) and scales PBKDF2 down for
   Playwright. Production must leave this off
@@ -517,10 +534,10 @@ Notes:
 - `scripts/serve-bun.mjs` is a Bun static server used for local dev and Playwright.
 - Do not add a runtime CDN import; add dependencies to `package.json` and import them.
 - **Code splitting:** `@supabase/supabase-js` (~220 KB minified) is imported **dynamically** in
-  `sync.ts` and emitted as a separate `dist/js/chunk-*.js`. It is fetched only when Remote is the
-  persisted mode (`persistence.getAuthBootstrap` gates the session probe on it), so local, memory
-  and file users never download or parse it. Do not turn that import back into a static one — a
-  top-level `import` puts it back on the critical path for everyone. The chunk name is
+  `supabaseBackend.ts` and emitted as a separate `dist/js/chunk-*.js`. It is fetched only when the
+  resolved backend is Supabase, so TrailBase, local, memory and file users never download or parse
+  it. Do not turn that import back into a static one — a top-level `import` puts it back on the
+  critical path for everyone. The chunk name is
   content-hashed, so it is intentionally **not** listed in the service worker `APP_SHELL`; the
   SW caches it cache-first on first use (see the service worker section below).
 - **Source maps:** `bun run dev` emits a linked `dist/js/app.js.map` (with `sourcesContent`, so the
@@ -571,7 +588,7 @@ left behind.
 ```bash
 bun run test                     # unit + e2e
 bun run test:e2e                 # e2e specs only
-bun run test:e2e -- tests/sync.spec.ts
+bun run test:e2e -- tests/integration/sync.spec.ts
 bun run test:e2e -- --headed     # visible browser
 bun run test:unit                # bun test (tests/unit)
 bun run typecheck                # tsc app config + test config
@@ -583,9 +600,10 @@ bun run typecheck                # tsc app config + test config
 
 - Run in-process under `bun test` with happy-dom, preloaded through `bunfig.toml` →
   `tests/setup/dom.ts`.
-- Suites live in `tests/unit/suites/*.ts` and must be registered in `tests/unit/unit.test.ts`.
-- `tests/unit/testing.ts` provides the shared assert/runner harness.
-- `tests/unit/suites/cspTests.ts` and `staticPathTests.ts` cover build/server helpers rather than
+- Suites are native `bun:test` files (`describe`/`it`/`beforeEach`) in `tests/unit/suites/*.test.ts`;
+  `bun test tests/unit` discovers them automatically — no registration step.
+- `tests/unit/testing.ts` provides the shared `assert`/`assertEqual`/`assertNotEqual` helpers.
+- `tests/unit/suites/csp.test.ts` and `staticPath.test.ts` cover build/server helpers rather than
   browser modules; keep that pattern when adding tooling tests.
 
 ### Playwright tests
@@ -601,10 +619,8 @@ bun run typecheck                # tsc app config + test config
 - Specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module
   instances as the running app. The singletons are published through a single gated `e2e` binding
   (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
-  no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e-seam.spec.ts`
+  no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e/e2e-seam.spec.ts`
   asserts both builds behave.
-- `tests/browserTestsInNode.js` is a legacy Node runner; the supported entry points are the bun
-  unit suite and Playwright.
 
 ### Test seams
 
@@ -644,9 +660,9 @@ Workflows live in `.github/workflows/`.
 
 ### `daily.yml` — production E2E
 
-Runs the suite against `https://virgulas.com`, sharded the same way. Specs that rely on the
-`__TEST_HOOKS__` seam (admin, auth, sync, sync-polling-merge, synctrigger) are excluded, because
-production builds compile that seam out.
+Runs the suite against `https://virgulas.com`, sharded the same way. The `tests/integration/`
+directory is excluded (production builds compile the `__TEST_HOOKS__` seam out), so only the
+behavior-driven `tests/e2e/` specs run. Unit tests never run in the daily workflow.
 
 ### Repository secrets and variables
 
@@ -676,8 +692,8 @@ production builds compile that seam out.
 1. Check `docs/SPEC.vmd` (Rule 1). If the behaviour is not there, stop and ask.
 2. Pick the module from the [module map](#frontend-module-map-sourcejs); extract shared state
    instead of importing across features.
-3. Implement, keeping Rule 7 conventions (crypto through `crypto2.ts`, Supabase through `sync.ts`,
-   `localStorage` through `store` slots).
+3. Implement, keeping Rule 7 conventions (crypto through `crypto2.ts`, remote backends through
+   the storage seam, `localStorage` through `store` slots).
 4. Add or update tests (Rule 3): pure logic → unit suite; UI/integration → Playwright spec.
 5. Update `docs/SPEC.vmd` if it was missing the behaviour, and `README.md` (Rule 2).
 6. If you touched `source/fonts/`, `source/media/`, the app shell, or the manifest, run

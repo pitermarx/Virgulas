@@ -1,20 +1,20 @@
 import { signal, effect, batch } from '@preact/signals'
 import {
-  CorruptEnvelopeError,
   WrongPassphraseError,
   MIN_PASSPHRASE_LENGTH
 } from "./crypto2.js"
 import outline, { CorruptDocumentError, MODEL_VERSION } from "./outline.js"
 import { codecStore, jsonCodec, vmdCodec } from './docCodec.js'
 import type { OutlineDoc } from './docCodec.js'
-import { createKeySession, encrypted, type EncryptedStore } from './encryptedStore.js'
+import { createKeySession, encrypted } from './encryptedStore.js'
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { memoryStore } from './memoryStore.js'
-import { StoreError, type DocStore, type StringStore, type UnlockResult } from './storage.js'
+import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type UnlockResult } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
+  clearLegacySupabaseSessions,
   isStoragePersistent,
   log,
   requestPersistentStorage,
@@ -26,28 +26,23 @@ import inbox from './inbox.js'
 import {
   remoteSync,
   syncStatus,
-  pendingConflicts,
-  pullAndMerge,
   remoteRekeyed,
-  handleSyncFailure,
   startPolling,
   stopPolling,
-  setRemoteStore,
-  getLastSyncHead,
   setSyncHead,
-  skipNextRemotePush,
   setLastSyncedAt,
   noteLocalWriteActivity,
-  createRemoteSyncAttempt,
-  canStartRemoteSync,
   allowImmediateRemoteSync,
-  remoteSyncRetryDelay,
-  isRemoteSyncAttemptStale,
-  runExclusiveRemoteSync,
-  hasSupabaseClient
+  hasSupabaseClient,
+  backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
-import { ensureSupabaseClient, supabaseRaw } from './supabaseBackend.js'
+import {
+  clearDeferredPush,
+  getRemoteSaveStore,
+  saveRemoteDocument,
+  setRemoteSaveStore
+} from './remoteSave.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
@@ -56,6 +51,10 @@ export interface UnlockOptions {
   username?: string
   password?: string
   trustSession?: boolean
+  /** Document value to adopt when the store is empty (first-time setup) —
+   * the running in-memory document (the intro tour, with the user's edits)
+   * carries over instead of being replaced by the seed doc. */
+  initialDoc?: OutlineDoc
 }
 
 function normalizeMode(mode: unknown): PersistenceMode | null {
@@ -140,40 +139,31 @@ const filesystemStorage = (function () {
   return {
     isSupported: () => typeof window !== 'undefined' && !!window.showOpenFilePicker,
 
+    /** Acquires a handle from the picker. Reading is the file store's job. */
     async open() {
       const [handle] = await window.showOpenFilePicker!({
         types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
       })
       _handle = handle
       await saveHandle(handle)
-      const file = await handle.getFile()
-      return await file.text()
     },
 
-    async create() {
-      const handle = await window.showSaveFilePicker!({
-        suggestedName: 'notes.vmd',
-        types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
-      })
-      _handle = handle
-      await saveHandle(handle)
-      return null
-    },
-
+    /** Reopens the remembered handle; false means "ask the user". */
     async tryReopen() {
       const handle = await getSavedHandle()
-      if (!handle) return null
+      if (!handle) return false
       try {
         const perm = await handle.queryPermission!({ mode: 'readwrite' })
-        if (perm === 'denied') return null
+        if (perm === 'denied') return false
         if (perm !== 'granted') {
           const req = await handle.requestPermission!({ mode: 'readwrite' })
-          if (req !== 'granted') return null
+          if (req !== 'granted') return false
         }
+        // Probe readability: a deleted/inaccessible file falls back to the picker.
+        await handle.getFile()
         _handle = handle
-        const file = await handle.getFile()
-        return await file.text()
-      } catch { return null }
+        return true
+      } catch { return false }
     },
 
     async hasSavedHandle() {
@@ -181,19 +171,11 @@ const filesystemStorage = (function () {
       return !!handle
     },
 
-    async write(json: string) {
-      if (!_handle) throw new Error('No file open')
-      const writable = await _handle.createWritable()
-      await writable.write(json)
-      await writable.close()
-    },
-
     async pickNewFile() {
       _handle = null
-      return this.open()
+      await this.open()
     },
 
-    hasHandle: () => !!_handle,
     currentHandle: () => _handle,
 
     async clear() {
@@ -204,46 +186,26 @@ const filesystemStorage = (function () {
 })()
 
 
-const localEncryptedData = {
-  get() {
-    const v = store.data.get()
-    if (!v) {
-      return { salt: null, data: null }
-    }
-    const idx = v.indexOf('|')
-    if (idx === -1) {
-      log('Invalid encrypted data format, missing "|" salt separator')
-      return { salt: null, data: null }
-    }
-    return { salt: v.substring(0, idx), data: v.substring(idx + 1) }
-  },
-  reset() {
-    store.data.del()
-  },
-  set(value: string | null, salt: string | null) {
-    if (value && salt) {
-      store.data.set(salt + '|' + value)
-    }
-    else if (value || salt) {
-      throw new Error('Both value and salt are required to set encrypted data')
-    }
-    else {
-      store.data.del()
-    }
-  }
+// -- Storage seam (docs/storage-interface.md) --------------------------------
+//
+// All four modes route their data paths through the seam:
+//   Local   = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
+//   File    = codecStore(vmdCodec, fileStore(handle))
+//   Memory  = the live outline (no store instance; see §14)
+//   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
+//             -- one shared KeySession for the server row and the local cache
+const keySession = createKeySession()
+
+/** Reactive mirror of `keySession.unlocked` for the save effect and the lock
+ * screen. The passphrase itself never leaves KeySession (docs §4.3); this flag
+ * is all the orchestration and the UI ever hold. */
+const sessionUnlocked = signal(false)
+
+function markSessionUnlocked() {
+  sessionUnlocked.value = keySession.unlocked
 }
 
-// -- Storage seam (docs/storage-interface.md, rollout PR 2c) ------------------
-//
-// Memory/File/Local now route their data paths through the seam:
-//   Local   = encrypted(slotRaw(store.data), keySession)  -- StringStore level,
-//             so read() returns the decrypted at-rest text for deserialize
-//   File    = codecStore(vmdCodec, fileStore(handle))
-//   Memory  = codecStore(jsonCodec, memoryStore())        -- validation for free
-// Remote keeps its legacy path (including the 'passphrase' signal and
-// 'localEncryptedData' for the local cache) until PR 2d cuts it over.
-const keySession = createKeySession()
-const localDataStore = encrypted(slotRaw(store.data), keySession)
+const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
 export const localSaveFailed = signal(false)
@@ -257,37 +219,68 @@ function setFileHandle(handle: FileSystemFileHandle | null) {
 
 /**
  * Loads a codec-parsed document into the live outline. VMD-sourced documents
- * carry no model version, so the wrapper supplies one (deserialize validates
- * it); document-level fields already on the doc win over the defaults.
+ * carry no model version, so the wrapper supplies one (load validates it);
+ * document-level fields already on the doc win over the defaults.
  */
 function loadDocIntoOutline(doc: OutlineDoc) {
-  outline.deserialize(JSON.stringify({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }))
+  outline.load({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
 }
 
 /**
- * The Remote composition (docs §4.7/§5): the Supabase row is the source of
+ * A parsed VMD document with no nodes beyond the implicit root is an empty
+ * file: treat it like a blank one (seed an empty node) instead of loading an
+ * outline the user cannot type in.
+ */
+function hasDocumentNodes(doc: OutlineDoc | null): doc is OutlineDoc {
+  return !!doc && doc.nodes.some(node => node.id !== 'root')
+}
+
+/**
+ * The Remote composition (docs §4.7/§5): the server row is the source of
  * truth, the local `vmd_data_enc` slot is the offline cache. Both sides share
  * the one KeySession with Local mode, so the two copies always carry the same
- * salt and envelope. Built on remote unlock; torn down on lock/sign-out.
+ * salt and envelope. Built on remote unlock, handed to `remoteSave.ts` (which
+ * owns saves, retries and the deferred push), torn down on lock/sign-out.
  */
-let remoteDataStore: DocStore | null = null
-let remotePrimaryStore: EncryptedStore | null = null   // the server side (string level)
-let remoteCacheStore: StringStore | null = null        // the local cache side
+let remoteCacheStore: DocStore | null = null          // the local cache side, doc-level
+
+/** The configured sync backend (resolved by `sync.ts`). */
+function getBackendConfig(): BackendConfig {
+  return parseBackendConfig(store.backend.get())
+}
+
+function setBackendConfig(config: BackendConfig) {
+  store.backend.set(JSON.stringify(config))
+}
+
+/** The configured backend's kind — UI branching (messages, labels). */
+function getBackendKind(): BackendConfig['backend'] {
+  return getBackendConfig().backend
+}
 
 async function buildRemoteStore(): Promise<DocStore> {
-  const client = await ensureSupabaseClient()
+  const { raw } = await backend()
   // Composition (docs §5): codec over cached-over-encrypted — the crypto
   // decorator stays codec-blind and the slot/row bytes are unchanged.
-  const primary = encrypted(supabaseRaw(client), keySession)
+  const primary = encrypted(raw, keySession)
   const cache = encrypted(slotRaw(store.data), keySession)
-  remotePrimaryStore = primary
-  remoteCacheStore = cache
-  return codecStore(jsonCodec, cached(primary, cache))
+  remoteCacheStore = codecStore(jsonCodec, cache)
+  return codecStore(jsonCodec, cached(primary, cache, {
+    // data-06 in Remote mode: the server row is the source of truth, so a
+    // failed device-local cache write must not fail the save or read as a
+    // sync error. The status toolbar reports "not saved locally" until the
+    // next cache write succeeds.
+    onCacheWrite(error) {
+      localSaveFailed.value = error !== null
+      if (error) console.error('[Persistence] Offline cache write failed:', error)
+    }
+  }))
 }
 
 function teardownRemoteStore() {
-  remoteDataStore = null
-  setRemoteStore(null)
+  // Nulls the save handle, the sync module's store and the cache handle in one place.
+  setRemoteSaveStore(null)
+  remoteCacheStore = null
 }
 
 /**
@@ -305,7 +298,7 @@ effect(() => {
   clearDeferredPush()
   clearPendingSave()
   keySession.lock()
-  passphrase.value = ''
+  markSessionUnlocked()
   teardownRemoteStore()
   remoteRekeyedNotice.value = true
 })
@@ -315,19 +308,22 @@ effect(() => {
  *
  * Clearing only the ciphertext left plaintext residue behind: the quick-capture
  * queue (captured page text), sync timestamps, the scheduled-tasks window, the
- * Inbox node name and the notice-dismissal preference all outlived "Delete
- * local data" and "Delete account". Theme and the (non-secret) Supabase
- * config are the only slots kept — they are device preferences, not content.
- * The biometric seal and the offline shell caches live outside localStorage
- * and are dropped best-effort, as in sign-out.
+ * Inbox node name, the backend auth sessions and the notice-dismissal
+ * preference all outlived "Delete local data" and "Delete account". Theme and
+ * the (non-secret) Supabase config are the only slots kept — they are device
+ * preferences, not content. The biometric seal and the offline shell caches
+ * live outside localStorage and are dropped best-effort, as in sign-out.
  */
 function wipeDeviceData() {
   inbox.clear()
-  localEncryptedData.set(null, null)
+  void localDataStore.clear()
   store.user.del()
   store.mode.del()
   store.syncTs.del()
   store.syncHead.del()
+  store.backendSession.del()
+  store.supabaseSession.del()
+  clearLegacySupabaseSessions()
   store.scheduledWindow.del()
   store.inboxNodeName.del()
   store.storageNoticeDismissed.del()
@@ -351,7 +347,6 @@ function applyHashZoomIfPresent() {
   }
 }
 
-const passphrase = signal('')
 const authMode = signal('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
@@ -398,22 +393,6 @@ function dismissLocalStoragePersistenceNotice() {
 // requires email confirmation. Consumed by the lock screen so the user gets an
 // actionable message instead of an unexplained unlock failure.
 let pendingEmailConfirmation = false
-
-async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
-  for (let i = 0; i <= maxRetries; i++) {
-    try {
-      return await fn()
-    } catch (err) {
-      if (i === maxRetries) throw err
-      // Typed non-retryable failures (docs §6.4): a rotated remote or an
-      // oversized document will never succeed on retry.
-      if (err instanceof StoreError && err.code !== 'network' && err.code !== 'unauthenticated') throw err
-      await new Promise(r => setTimeout(r, baseMs * Math.pow(2, i)))
-    }
-  }
-  throw new Error('retryWithBackoff exhausted all attempts')
-}
 
 let lastTimeoutId: ReturnType<typeof setTimeout> | null = null
 
@@ -480,105 +459,8 @@ export async function flushPendingSave(): Promise<boolean> {
 }
 
 // A remote push is skipped while the user is still typing (`canStartRemoteSync`
-// is false until the write debounce elapses). Previously that skip silently
-// dropped the push: the edit only reached the server on the next unrelated save.
-// These track a deferred push so it is retried once typing stops.
-let deferredPushTimer: ReturnType<typeof setTimeout> | null = null
-let deferredPushDoc: OutlineDoc | null = null
-
-function clearDeferredPush() {
-  if (deferredPushTimer !== null) {
-    clearTimeout(deferredPushTimer)
-    deferredPushTimer = null
-  }
-  deferredPushDoc = null
-}
-
-/**
- * Schedules the most recent encrypted payload to be pushed once the write
- * debounce has elapsed. Only one retry is ever queued: a newer payload replaces
- * an older one, so the server converges on the latest state.
- */
-function scheduleDeferredPush(doc: OutlineDoc) {
-  // Only one retry is ever queued: a newer document replaces an older one, so
-  // the server converges on the latest state (docs §6.4).
-  deferredPushDoc = doc
-  if (deferredPushTimer !== null) {
-    clearTimeout(deferredPushTimer)
-  }
-  // +50ms so we land just after `remoteSyncNotBefore` rather than exactly on it.
-  const delay = remoteSyncRetryDelay() + 50
-  deferredPushTimer = setTimeout(() => {
-    deferredPushTimer = null
-    void flushDeferredPush()
-  }, delay)
-}
-
-async function flushDeferredPush() {
-  const doc = deferredPushDoc
-  // Keep the document until the retry actually runs; a later edit replaces it.
-  if (!doc) return
-  const remote = remoteDataStore
-  if (!remote) return
-  if (!canStartRemoteSync()) {
-    // Still typing — re-arm for the remaining deferral.
-    scheduleDeferredPush(doc)
-    return
-  }
-  if (pendingConflicts.peek().length > 0) {
-    // A merge is pending; the conflict flow owns the upload.
-    deferredPushDoc = null
-    return
-  }
-
-  const attempt = createRemoteSyncAttempt()
-  await runExclusiveRemoteSync(async () => {
-    if (pendingConflicts.peek().length > 0) return
-    // This flush writes whatever the latest queued document is, not a specific
-    // edit, so it must not bail on a newer write epoch — the whole point is to
-    // converge the server on the newest state once typing pauses.
-
-    try {
-      syncStatus.value = 'syncing'
-      // Pull-before-push still applies to a flush: converge without clobbering
-      // a newer remote (docs §6.4).
-      let headToken: string | null = null
-      try {
-        headToken = await remote.head?.() ?? null
-      } catch { /* proceed with a direct write */ }
-
-      if (headToken && headToken !== getLastSyncHead()) {
-        const result = await pullAndMerge()
-        if (!result.clean) {
-          syncStatus.value = 'synced'
-          deferredPushDoc = null
-          return
-        }
-        const mergedJson = result.mergedJson
-        if (mergedJson) {
-          const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-          if (mergedToken) setSyncHead(mergedToken)
-          setLastSyncedAt(Date.now())
-          skipNextRemotePush.value = true
-          outline.deserialize(mergedJson)
-          syncStatus.value = 'synced'
-          deferredPushDoc = null
-          return
-        }
-      }
-
-      // A flush re-runs the store write — cache and primary (docs §6.4).
-      const token = await retryWithBackoff(() => remote.write(doc))
-      if (token) setSyncHead(token)
-      setLastSyncedAt(Date.now())
-      syncStatus.value = 'synced'
-      deferredPushDoc = null
-    } catch (error) {
-      log('[Persistence] Deferred push failed:', error)
-      handleSyncFailure(error)
-    }
-  })
-}
+// is false until the write debounce elapses) and retried once it stops. That
+// queue and its pull-before-push flow live in remoteSave.ts.
 effect(() => {
   const mode = authMode.value
   if (mode !== 'remote') return
@@ -598,7 +480,7 @@ effect(() => {
   // at all. Subscribing to dirtyWrites makes the effect react to each change so
   // the save timer is armed immediately.
   void outline.dirtyWrites.value
-  const passphraseValue = passphrase.value // subscribe to changes on passphrase
+  const unlocked = sessionUnlocked.value // subscribe to the KeySession lock state
   const fsReady = filesystemReady.value   // subscribe for filesystem mode
   const _memReady = memoryReady.value     // subscribe for memory mode
   const mode = authMode.value
@@ -615,7 +497,7 @@ effect(() => {
     const doWrite = async () => {
       try {
         // Through the seam: live outline -> document -> VMD text -> file.
-        await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+        await fileDataStore!.write(outline.snapshot())
         localSaveFailed.value = false
         log('[Persistence] Saved filesystem doc v' + version)
       } catch (error) {
@@ -646,19 +528,19 @@ effect(() => {
   // Local mode: the encrypted slot store owns the data path (storage seam).
   // The KeySession holds the secret; this branch never handles ciphertext.
   if (mode === 'local') {
-    if (!passphraseValue) {
+    if (!unlocked) {
       activeSave = null
       clearMaxWaitSave()
-      log('No passphrase, skipping encryption')
+      log('Session locked, skipping encryption')
       return
     }
 
     async function doLocalSave(): Promise<boolean> {
       clearMaxWaitSave()
       saveArmed = false
-      const json = outline.serialize() // get latest doc state
+      const doc = outline.snapshot() // get latest doc state
       try {
-        await localDataStore.write(json)
+        await localDataStore.write(doc)
         lastSavedVersion = version
         localSaveFailed.value = false
         // The persist() prompt hangs off the capability, nowhere else.
@@ -689,10 +571,10 @@ effect(() => {
     return () => clearTimeout(timeoutId)
   }
 
-  if (!passphraseValue) {
+  if (!unlocked) {
     activeSave = null
     clearMaxWaitSave()
-    log('No passphrase, skipping encryption')
+    log('Session locked, skipping encryption')
     return
   }
 
@@ -711,106 +593,13 @@ effect(() => {
   async function doSave(): Promise<boolean> {
     clearMaxWaitSave()
     saveArmed = false
-    const remote = remoteDataStore
-    if (!remote) return false
+    if (!getRemoteSaveStore()) return false
     try {
-      const doc = jsonCodec.parse(outline.serialize()) // get latest doc state
+      const doc = outline.snapshot() // get latest doc state
       lastSavedVersion = version
-
-      // A save that was already in flight when the session ended must not push:
-      // signing out / deleting the account locks the KeySession, so the store's
-      // write fails unauthenticated and nothing reaches the server.
-      if (!canStartRemoteSync()) {
-        // Deferring because the user is still typing must not drop the push.
-        log('[Persistence] Push deferred until typing pauses')
-        scheduleDeferredPush(doc)
-        return true
-      }
-
-      const remoteAttempt = createRemoteSyncAttempt()
-      await runExclusiveRemoteSync(async () => {
-        if (isRemoteSyncAttemptStale(remoteAttempt)) {
-          // Superseded by newer typing: queue the latest document instead of
-          // silently abandoning this edit's remote push.
-          scheduleDeferredPush(doc)
-          return
-        }
-
-        // Skip remote push if a merge was just applied (prevents double-push).
-        // The merge path already wrote both copies through the store.
-        if (skipNextRemotePush.peek()) {
-          skipNextRemotePush.value = false
-          log('[Persistence] Skipping remote push after merge apply')
-          return
-        }
-
-        clearDeferredPush()
-        syncStatus.value = 'syncing'
-
-        // Pull-before-push: the primary changed since our last-seen head token?
-        let headToken: string | null = null
-        try {
-          headToken = await remote.head?.() ?? null
-        } catch { /* ignore, proceed with direct write */ }
-
-        if (isRemoteSyncAttemptStale(remoteAttempt)) return
-
-        if (headToken && headToken !== getLastSyncHead()) {
-          try {
-            const result = await pullAndMerge()
-            if (isRemoteSyncAttemptStale(remoteAttempt)) return
-
-            if (!result.clean) {
-              log('[Persistence] Sync blocked by conflicts')
-              syncStatus.value = 'synced'
-              return
-            }
-
-            const mergedJson = result.mergedJson
-            if (mergedJson) {
-              const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-              if (isRemoteSyncAttemptStale(remoteAttempt)) return
-              if (mergedToken) setSyncHead(mergedToken)
-              setLastSyncedAt(Date.now())
-              syncStatus.value = 'synced'
-              // Apply merged doc; flag prevents the triggered save from re-pushing
-              skipNextRemotePush.value = true
-              outline.deserialize(mergedJson)
-            } else {
-              // Remote not newer after all (race) or no data to merge
-              const token = await remote.write(doc)
-              if (token) setSyncHead(token)
-              if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-                setLastSyncedAt(Date.now())
-                syncStatus.value = 'synced'
-              }
-            }
-          } catch (pullErr) {
-            console.error('[Persistence] Pull-merge failed:', pullErr)
-            if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-              handleSyncFailure(pullErr)
-            }
-          }
-          return
-        }
-
-        // Remote not newer — direct push. The write's returned token is
-        // adopted unconditionally: it IS the new head, and the poller must
-        // never mistake this device's own push for a remote change (docs §6.4).
-        try {
-          const token = await retryWithBackoff(() => remote.write(doc))
-          if (token) setSyncHead(token)
-          if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-            setLastSyncedAt(Date.now())
-            syncStatus.value = 'synced'
-          }
-        } catch (syncError) {
-          console.error('[Persistence] Remote sync upload failed after retries:', syncError)
-          if (!isRemoteSyncAttemptStale(remoteAttempt)) {
-            handleSyncFailure(syncError)
-          }
-        }
-      })
+      // Pull-before-push, retries and the typing-time deferral live in
+      // remoteSave.ts; failures there map onto the sync status, not this save.
+      await saveRemoteDocument(doc)
       log('[Persistence] Saved doc v' + version)
       return true
     } catch (error) {
@@ -843,34 +632,64 @@ function parseRemoteUnlockError(error: unknown) {
   return error
 }
 
-async function unlockLocal(code: string) {
+/** Adopts an initial document value (first-time setup from memory).
+ * Guarantees the doc is never blank: returns false when nothing usable was
+ * adopted, so the caller can seed its default. */
+function adoptInitialDoc(initialDoc: OutlineDoc | undefined): boolean {
+  if (!initialDoc) return false
+  try {
+    outline.load(initialDoc)
+    const root = outline.get('root')
+    return !!root && root.children.peek().length > 0
+  } catch {
+    return false
+  }
+}
+
+/** First-time Local setup: activate the KeySession with a fresh salt and seed
+ * the live model. The first write persists it (docs §6.2). */
+function setupLocal(code: string, initialDoc?: OutlineDoc) {
+  assertNewPassphrase(code)
+  outline.reset()
+  // When setting up from a running memory document, adopt it so the user's
+  // notes survive; otherwise the doc is never blank.
+  if (!adoptInitialDoc(initialDoc)) {
+    outline.addChild('root', { text: '' })
+  }
+  authMode.value = 'local'
+  markSessionUnlocked()
+  rememberMode('local')
+  void refreshLocalStorageDurability(false)
+  return true
+}
+
+async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
   const hasData = await localDataStore.exists()
 
   if (!hasData) {
     log('No encrypted data found in localStorage, starting with empty doc')
-    assertNewPassphrase(code)
-    // Adoption: on an empty store, unlock() retains the passphrase with a
-    // fresh salt and the first write persists it (docs §6.2).
-    await localDataStore.unlock(code)
-    outline.reset()
-    outline.addChild('root', { text: '' }) // initialize with one empty node so the doc is never blank
-    authMode.value = 'local'
-    passphrase.value = code
-    rememberMode('local')
-    void refreshLocalStorageDurability(false)
-    return true
+    await localDataStore.unlock!(code)
+    return setupLocal(code, initialDoc)
   }
 
   try {
     // unlock() performs the one-and-only passphrase verification (decryption
-    // is the verifier) and returns the decrypted at-rest text.
-    const result = await localDataStore.unlock(code)
-    if (result.text === null) throw new CorruptEnvelopeError('Local encrypted data is missing.')
-    outline.deserialize(result.text)
+    // is the verifier) in one round-trip (docs §14.7). It returns the at-rest
+    // text, which the codec parses into the document value the orchestration
+    // handles; reads and writes below are doc-level.
+    const result = await localDataStore.unlock!(code)
+    if (!result || result.text === null) {
+      // The slot is occupied but holds no readable record (a value without
+      // the `<salt>|<envelope>` shape reads as "no record"). Match the
+      // pre-seam behaviour: treat it as first-time setup.
+      log('Local data is unreadable, starting with a new document')
+      return setupLocal(code, initialDoc)
+    }
+    outline.load(jsonCodec.parse(result.text))
 
     batch(() => {
       authMode.value = 'local'
-      passphrase.value = code
+      markSessionUnlocked()
       applyHashZoomIfPresent()
     })
 
@@ -887,7 +706,7 @@ async function unlockLocal(code: string) {
   }
 }
 
-async function unlockRemote({ passphrase: code, username, password, trustSession }: { passphrase: string; username?: string; password?: string; trustSession?: boolean }) {
+async function unlockRemote({ passphrase: code, username, password, trustSession, initialDoc }: { passphrase: string; username?: string; password?: string; trustSession?: boolean; initialDoc?: OutlineDoc }) {
   const hasCredentials = !!(username && password)
   if (!trustSession && !hasCredentials) {
     throw new Error('Username, password, and passphrase are required.')
@@ -917,30 +736,37 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // KeySession) and verify against the primary — decryption is the verifier
   // (docs §6.2). unlock is primary-only: an offline Remote reload needs
   // connectivity, exactly as before.
-  remoteDataStore = await buildRemoteStore()
-  setRemoteStore(remoteDataStore)
+  const remote = await buildRemoteStore()
+  setRemoteSaveStore(remote)
 
   // One round-trip: unlock() verifies the passphrase by decrypting the
   // downloaded record and returns its text plus the record's change token
-  // (docs §6.2). Primary-only: an offline Remote reload needs connectivity,
-  // exactly as before.
+  // (docs §4.3/§6.2). The composition passes the primary's result through, so
+  // the orchestration never holds a string-level handle on the server store.
+  // Primary-only: an offline Remote reload needs connectivity, as before.
   let unlockResult: UnlockResult
   try {
-    unlockResult = await remotePrimaryStore!.unlock(code)
+    const result = await remote.unlock?.(code)
+    if (!result) throw new Error('The Remote store did not report an unlocked document.')
+    unlockResult = result
   } catch (error) {
     throw parseRemoteUnlockError(error)
   }
 
   if (!unlockResult.text) {
     // First-time remote setup: no row yet — create the document and push it.
+    // When setting up from a running memory document (the intro tour, with the
+    // user's edits), adopt it instead of the seed doc (docs: storage setup).
     assertNewPassphrase(code)
     outline.reset()
-    outline.addChild('root', { text: 'Hello World' })
-    const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
+    if (!adoptInitialDoc(initialDoc)) {
+      outline.addChild('root', { text: 'Hello World' })
+    }
+    const token = await remote.write(outline.snapshot())
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      passphrase.value = code
+      markSessionUnlocked()
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -949,7 +775,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 
   const doc = jsonCodec.parse(unlockResult.text)
-  outline.deserialize(unlockResult.text)
+  outline.load(doc)
   // Adopt the downloaded record's token as last-seen (docs §8), and mark the
   // sync baseline so the next edit doesn't falsely see remote as newer.
   if (unlockResult.headToken) setSyncHead(unlockResult.headToken)
@@ -958,14 +784,14 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // no upsert at unlock time. Best-effort: a failed cache write surfaces via
   // the save-failed state, not a failed unlock.
   try {
-    await remoteCacheStore!.write(JSON.stringify({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }))
+    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
   } catch (error) {
     console.error('[Persistence] Offline cache priming failed:', error)
     if (error instanceof StoreError && error.code === 'too-large') localSaveFailed.value = true
   }
   batch(() => {
     authMode.value = 'remote'
-    passphrase.value = code
+    markSessionUnlocked()
     applyHashZoomIfPresent()
   })
   rememberMode('remote')
@@ -994,8 +820,8 @@ async function unlockMemory() {
 
   outline.reset()
   if (introText && introText.trim()) {
-    // Memory mode round-trips through jsonCodec: uniform code path,
-    // validation for free (docs §4.6). VMD parsing lives in the codec.
+    // Memory mode round-trips the intro through jsonCodec: validation for
+    // free (docs §4.6); the live outline itself is the store (§14.12).
     const memoryDataStore = codecStore(jsonCodec, memoryStore())
     // The jsonCodec-backed store requires a model version on the document.
     await memoryDataStore.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...vmdCodec.parse(introText) })
@@ -1013,13 +839,12 @@ async function unlockMemory() {
   return true
 }
 
-async function unlockFilesystem() {
-  // Try to reopen the last file silently first
-  let json = await filesystemStorage.tryReopen()
-  if (json === null) {
-    // No saved handle or permission denied — prompt user to open or create
+async function unlockFilesystem(initialDoc?: OutlineDoc) {
+  // Reopen the remembered handle silently, otherwise ask for a file. Handle
+  // acquisition is orchestration; the bytes are the file store's job.
+  if (!(await filesystemStorage.tryReopen())) {
     try {
-      json = await filesystemStorage.open()
+      await filesystemStorage.open()
     } catch (err) {
       if ((err as { name?: string } | null)?.name === 'AbortError') throw new Error('No file selected.')
       throw err
@@ -1028,16 +853,21 @@ async function unlockFilesystem() {
 
   setFileHandle(filesystemStorage.currentHandle())
 
-  if (json && json.trim()) {
+  const doc = await fileDataStore!.read()
+  if (hasDocumentNodes(doc)) {
     outline.reset()
-    loadDocIntoOutline(vmdCodec.parse(json))
+    loadDocIntoOutline(doc)
+    applyHashZoomIfPresent()
+  } else if (adoptInitialDoc(initialDoc)) {
+    // A new empty file chosen from a running memory session: the live document
+    // becomes the file's content (docs: storage setup).
     applyHashZoomIfPresent()
   } else {
     outline.reset()
     outline.addChild('root', { text: '' })
     applyHashZoomIfPresent()
     // Write initial doc with one empty node to file
-    await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+    await fileDataStore!.write(outline.snapshot())
   }
 
   batch(() => {
@@ -1054,33 +884,33 @@ async function unlock(code: string, options: UnlockOptions = {}) {
     return unlockMemory()
   }
   if (mode === 'filesystem') {
-    return unlockFilesystem()
+    return unlockFilesystem(options.initialDoc)
   }
   if (mode === 'remote') {
     return unlockRemote({
       passphrase: code,
       username: options.username || '',
       password: options.password || '',
-      trustSession: !!options.trustSession
+      trustSession: !!options.trustSession,
+      initialDoc: options.initialDoc
     })
   }
-  return unlockLocal(code)
+  return unlockLocal(code, options.initialDoc)
 }
 
 export default {
   wipeDeviceData,
-  hasData: () => !!localEncryptedData.get().data,
-  isLocked: () => !passphrase.value && !filesystemReady.value && !memoryReady.value,
+  isLocked: () => !sessionUnlocked.value && !filesystemReady.value && !memoryReady.value,
   isMemory: () => memoryReady.value,
   hasFilesystem: () => filesystemStorage.isSupported(),
   getLastUsername: () => store.user.get('') || '',
   /**
-   * sec-05: the passphrase string never leaves this module. The only consumer
-   * that legitimately needed it was the biometric straight-flow, which now
-   * calls this instead of reading `getPassphrase()`.
+   * sec-05: the passphrase never leaves KeySession. The only consumer that
+   * legitimately needed it was the biometric straight-flow, which reads the
+   * active credentials here instead of a `getPassphrase()` accessor.
    */
   async enrollBiometrics(userLabel: string | null = null) {
-      const current = passphrase.value
+      const current = keySession.activeCredentials()?.passphrase
       if (!current) {
           throw new Error('Unlock with a passphrase before enabling biometric unlock.')
       }
@@ -1094,6 +924,9 @@ export default {
     rememberMode(mode)
   },
   hasSupabase: () => hasSupabaseClient(),
+  getBackendConfig,
+  setBackendConfig,
+  getBackendKind,
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
@@ -1109,7 +942,7 @@ export default {
     const browserCapabilities = detectBrowserCapabilities()
     const encryptedStorageAvailable = supportsEncryptedStorage(browserCapabilities)
     const browserSupportWarning = describeBrowserSupport(browserCapabilities, encryptedStorageAvailable)
-    const hasLocalData = !!localEncryptedData.get().data
+    const hasLocalData = await localDataStore.exists()
     const hasSupabase = hasSupabaseClient()
     const hasFilesystem = filesystemStorage.isSupported()
     const lastUsername = store.user.get('') || ''
@@ -1230,6 +1063,9 @@ export default {
     pendingEmailConfirmation = !!res?.user && !res?.session
     return res
   },
+  async requestPasswordReset(email: string) {
+    await remoteSync.requestPasswordReset(email.trim())
+  },
   async resetRemoteData(newPassphrase: string, options: { username?: string; password?: string } = {}) {
     const username = (options.username || '').trim()
     const password = options.password || ''
@@ -1247,18 +1083,18 @@ export default {
       throw new Error('Could not validate remote session. Sign in again before resetting data.')
     }
 
-    remoteDataStore = await buildRemoteStore()
-    setRemoteStore(remoteDataStore)
+    const remote = await buildRemoteStore()
+    setRemoteSaveStore(remote)
     // Rotation is the session's job: a fresh salt and the new passphrase become
     // active and the write re-encrypts both copies (docs §6.7).
     keySession.rotate(newPassphrase)
     outline.reset()
     outline.addChild('root', { text: 'Hello World' })
-    const token = await remoteDataStore.write(jsonCodec.parse(outline.serialize()))
+    const token = await remote.write(outline.snapshot())
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      passphrase.value = newPassphrase
+      markSessionUnlocked()
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -1275,22 +1111,22 @@ export default {
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
-    passphrase.value = ''
+    markSessionUnlocked()
     filesystemReady.value = false
     memoryReady.value = false
   },
   async signOut() {
     stopPolling()
-    // Push pending edits while the session and passphrase are still valid, so
-    // signing out cannot silently drop the last change.
+    // Push pending edits while the session is still unlocked, so signing out
+    // cannot silently drop the last change.
     await flushPendingSave()
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
-    // Drop the passphrase before the remaining awaits so an in-flight save cannot
+    // Lock the session before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
-    passphrase.value = ''
+    markSessionUnlocked()
     // Revoke the device-local biometric seal: signing out means this device may no
     // longer recover the passphrase without the user typing it.
     await biometrics.forget().catch(() => { })
@@ -1303,10 +1139,12 @@ export default {
    * Deletes the signed-in user's server-side data, then clears the local session
    * and signs out.
    *
-   * The encrypted `outlines` row is removed through the RLS-scoped DELETE policy.
-   * The `auth.users` record itself is NOT removed: deleting it requires the
-   * service role, which the browser client never holds. Local data is cleared
-   * regardless, so the device cannot resurrect the deleted document.
+   * The encrypted `outlines` row is removed through the RLS/ACL-scoped DELETE
+   * policy. On a backend with self-service account deletion (TrailBase) the auth
+   * record is removed too; Supabase's `auth.users` row needs the service role,
+   * which the browser client never holds, so it survives and the Options copy
+   * says so. Local data is cleared regardless, so the device cannot resurrect
+   * the deleted document.
    */
   async deleteAccount() {
     const user = await remoteSync.getUser()
@@ -1315,15 +1153,24 @@ export default {
     }
 
     // Stop background writes before the row disappears, so an in-flight upload
-    // cannot recreate it after deletion. Clearing the passphrase here (not after
+    // cannot recreate it after deletion. Locking the key session here (not after
     // the awaits) invalidates any save that is already past its timer.
     stopPolling()
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
-    passphrase.value = ''
+    markSessionUnlocked()
 
-    await remoteSync.deleteOutline()
+    await getRemoteSaveStore()?.clear() ?? await remoteSync.deleteOutline()
+
+    // §4.5 step 4: remove the auth record itself when the backend supports
+    // self-service deletion (TrailBase does; Supabase does not — its auth
+    // record survives, and the Options copy says so).
+    try {
+      await remoteSync.deleteUser()
+    } catch (error) {
+      if (!(error instanceof StoreError) || error.code !== 'unsupported') throw error
+    }
 
     // Local cleanup: wipe every device-local slot so nothing survives on a
     // shared device (priv-01) — the capture queue, sync metadata, remembered
@@ -1337,15 +1184,16 @@ export default {
     memoryReady.value = false
   },
   async pickNewFile() {
-    const text = await filesystemStorage.pickNewFile()
+    await filesystemStorage.pickNewFile()
     setFileHandle(filesystemStorage.currentHandle())
-    if (text && text.trim()) {
+    const doc = await fileDataStore!.read()
+    if (hasDocumentNodes(doc)) {
       outline.reset()
-      loadDocIntoOutline(vmdCodec.parse(text))
+      loadDocIntoOutline(doc)
       applyHashZoomIfPresent()
     } else {
       outline.reset()
-      await fileDataStore!.write(jsonCodec.parse(outline.serialize()))
+      await fileDataStore!.write(outline.snapshot())
     }
     rememberMode('filesystem')
   },
@@ -1353,10 +1201,10 @@ export default {
     clearDeferredPush()
     clearPendingSave()
     keySession.lock()
+    markSessionUnlocked()
     localSaveFailed.value = false
     outline.reset()
     authMode.value = 'local'
-    passphrase.value = ''
     filesystemReady.value = false
     memoryReady.value = false
     wipeDeviceData()
@@ -1370,14 +1218,14 @@ export default {
     if (mode === 'memory' || mode === 'filesystem') {
       throw new Error('This mode has no encryption passphrase.')
     }
-    const json = outline.serialize()
+    const doc = outline.snapshot()
 
     if (mode === 'local') {
       // Storage seam: rotation is the session's job -- a fresh salt and the
       // new passphrase become active and the write re-encrypts (docs §6.7).
       keySession.rotate(newPassphrase)
-      await localDataStore.write(json)
-      passphrase.value = newPassphrase
+      await localDataStore.write(doc)
+      markSessionUnlocked()
       return true
     }
 
@@ -1389,15 +1237,14 @@ export default {
       // Rotation is the session's job (docs §6.7): both copies are re-encrypted
       // under the new salt by this write.
       keySession.rotate(newPassphrase)
-      const remote = remoteDataStore ?? await buildRemoteStore()
-      remoteDataStore = remote
-      setRemoteStore(remote)
-      const token = await remote.write(jsonCodec.parse(json))
+      const remote = getRemoteSaveStore() ?? await buildRemoteStore()
+      setRemoteSaveStore(remote)
+      const token = await remote.write(doc)
       if (token) setSyncHead(token)
       setLastSyncedAt(Date.now())
     }
 
-    passphrase.value = newPassphrase
+    markSessionUnlocked()
     return true
   },
   exportVmd() {

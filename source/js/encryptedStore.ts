@@ -10,13 +10,16 @@
 // passphrase: orchestration holds no secrets (Goal 2). Derivation caching
 // lives inside crypto2's multi-entry key cache, so autosave never re-runs the
 // 600k PBKDF2 and alternating salts (local cache vs rotated remote) cost one
-// derivation each, not one per operation (sync-10).
+// derivation each, not one per operation (sync-10). Because that cache is
+// keyed by the passphrase, `lock()` and `rotate()` clear it, so the passphrase
+// a session stops using never outlives it.
 
 import {
     CorruptEnvelopeError,
     UnsupportedBrowserError,
     UnsupportedVersionError,
     WrongPassphraseError,
+    clearKeyCache,
     decrypt,
     encrypt,
     generateSalt
@@ -40,11 +43,13 @@ export interface KeySession {
      * Rotation / first-time setup with a fresh salt: a fresh salt is generated
      * and the new passphrase becomes active. Subsequent writes re-encrypt
      * everything under the new key (docs §6.7); derivation itself is lazy —
-     * crypto2 derives on the next encrypt/decrypt and caches the result.
+     * crypto2 derives on the next encrypt/decrypt and caches the result, after
+     * the cached keys from the previous passphrase are dropped.
      */
     rotate(newPassphrase: string): void
 
-    /** Drop the passphrase and the active salt (lock, sign-out, teardown). */
+    /** Drop the passphrase, the active salt and every cached derived key
+     * (lock, sign-out, teardown). */
     lock(): void
 
     /** Credentials for crypto2 calls; null while locked. */
@@ -65,10 +70,19 @@ export function createKeySession(): KeySession {
         rotate(newPassphrase: string) {
             passphrase = newPassphrase
             salt = generateSalt()
+            // The old passphrase stops being the session's secret here, so its
+            // entries must not linger in the cache keys (docs §4.3 item 6).
+            // Nothing needs the old key afterwards: rotation is followed by a
+            // re-encrypting write under the new salt.
+            clearKeyCache()
         },
         lock() {
             passphrase = null
             salt = null
+            // The key cache is keyed by the plaintext passphrase, so dropping
+            // the passphrase alone would leave it reachable in the Map key
+            // (docs §4.3 item 6). The next unlock derives again.
+            clearKeyCache()
         },
         activeCredentials() {
             return passphrase !== null && salt !== null ? { passphrase, salt } : null

@@ -165,6 +165,36 @@ function slot(key: string) {
     }
 }
 
+export type StoreSlot = ReturnType<typeof slot>
+
+/**
+ * A slot for a provider-owned key that predates the namespaced slots. The
+ * Supabase SDK used to write `sb-<project-ref>-auth-token` directly; the
+ * adapter adopts that value into `supabaseSession` and removes the old key.
+ */
+export function legacySlot(key: string): StoreSlot {
+    return slot(key)
+}
+
+/**
+ * Removes Supabase SDK session keys written directly to localStorage by builds
+ * that predate `store.supabaseSession`. New sessions live in the slot; this
+ * sweep keeps a device wipe complete for browsers that signed in before the
+ * migration (priv-01).
+ */
+export function clearLegacySupabaseSessions(): void {
+    try {
+        const keys: string[] = []
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index)
+            if (key && key.startsWith('sb-') && key.includes('-auth-token')) keys.push(key)
+        }
+        for (const key of keys) legacySlot(key).del()
+    } catch (error) {
+        log('[Storage] Failed to clear legacy Supabase sessions:', error)
+    }
+}
+
 /**
  * Backend configuration slot (storage seam, docs §8): the config moves to
  * `backendconfig`, with a one-time read-through of the legacy
@@ -176,6 +206,12 @@ function backendSlot() {
     return {
         get(fallback: string | null = null): string | null {
             return next.get() ?? legacy.get() ?? fallback
+        },
+        /** The explicit `backendconfig` override only — no legacy read-through.
+         * Server resolution uses this to tell a pinned config apart from the
+         * legacy key and decide whether the same-origin probe may run. */
+        getOverride(): string | null {
+            return next.get()
         },
         set: next.set,
         del: next.del
@@ -191,6 +227,8 @@ export const store = {
     supabase: slot('supabaseconfig'),
     syncTs: slot('vmd_sync_ts'),
     syncHead: slot('vmd_sync_head'),
+    backendSession: slot('vmd_backend_session'),
+    supabaseSession: slot('vmd_supabase_session'),
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
     inboxQueue: slot('vmd_inbox_queue'),

@@ -1,9 +1,11 @@
 # Storage Interface — Design Document
 
-Status: draft (planning; not yet a SPEC change)
-Scope: refactor of persistence/sync internals. **No user-visible behaviour change.**
-Companion: this document precedes the backend adapters work (Supabase → TrailBase
-migration, user-defined backends).
+Status: implemented (rollout through PR 3 shipped; §12 records the original plan).
+Scope: persistence/sync internals, the documented data-06 and sync-01 behaviour
+  fixes, and the TrailBase backend. TrailBase on the serving origin is the
+  default; Supabase remains the static-deployment fallback.
+Companion: `AGENTS.md` describes the shipped module map; §14 records the
+  implementation deviations.
 
 ---
 
@@ -82,7 +84,7 @@ Pain points, each of which the new seam removes:
 | Salt stored differently per mode (row column vs `salt\|` prefix vs absent) | `persistence.ts` / schema |
 | Envelope format knowledge (`v2:<iter>:`, KDF-upgrade-on-save) spread across flows | `persistence.ts` |
 | "Email confirmation required" known only via a code comment | `sync.ts signUp` docstring |
-| Account deletion is half-honest (auth record survives) baked into the product | `persistence.ts deleteAccount` |
+| Account deletion was half-honest (auth record survives) on every backend | `persistence.ts deleteAccount` now branches on `deleteUser` |
 | Merge entangled with Supabase read/write specifics | `sync.ts` / `persistence.ts` |
 
 ---
@@ -100,7 +102,7 @@ tree never meet; serialized text exists only transiently inside codec calls.
 ├──────────────────────────────────────────────────────────────┤
 │ storage.ts contracts — DocStore (public, speaks the model)   │
 │   codecStore(codec, inner): serialization boundary           │
-│     jsonCodec (Local/Remote/Memory at rest), vmdCodec (File) │
+│     jsonCodec (Local/Remote at rest), vmdCodec (File)        │
 │   encrypted(session): crypto boundary — string-level,        │
 │     codec-blind; StringStore above, RawStore below           │
 │   built-ins: memory, file; composed: local, remote           │
@@ -159,8 +161,10 @@ export interface DocStore {
    */
   head?(): Promise<string | null>
 
-  /** Encrypted stores additionally expose the lock lifecycle. */
-  unlock?(passphrase: string): Promise<void>   // throws WrongKeyError
+  /** Encrypted stores additionally expose the lock lifecycle. unlock()
+   *  resolves with what it decrypted (§4.3); decorators pass the result
+   *  through unchanged. */
+  unlock?(passphrase: string): Promise<UnlockResult | void>   // throws StoreError('wrong-key')
   lock?(): Promise<void>
 
   capabilities: StoreCapabilities
@@ -221,7 +225,10 @@ not a boolean here; its presence is the capability, absence-tested like
 
 Backend adapters (localStorage, Supabase, TrailBase, user-defined) implement
 this. They store opaque records; they never see plaintext documents and never
-see the outline model.
+see the outline model. There is no user-facing backend choice: the server is
+TrailBase on the origin serving the app (`trail run --public-dir dist`),
+resolved automatically in the remote flows (override slot → same-origin probe
+→ legacy Supabase read-through → hosted Supabase fallback).
 
 ```ts
 // source/js/storage.ts
@@ -285,7 +292,7 @@ export interface StringStore {
   clear(): Promise<void>
   exists(): Promise<boolean)
   head?(): Promise<string | null>
-  unlock?(passphrase: string): Promise<void>   // throws WrongKeyError
+  unlock?(passphrase: string): Promise<UnlockResult | void>   // throws StoreError('wrong-key')
   lock?(): Promise<void>
   capabilities: StoreCapabilities
 }
@@ -307,7 +314,9 @@ Responsibilities (all currently scattered in persistence flows, now in one place
    (§4.4) *without* burning a derivation, instead of failing silently and
    letting the next push overwrite the rotated remote (fixes sync-01). The cache
    holds 2–4 entries keyed by (salt, iterations), so alternating salts cost one
-   derivation each, not one per operation (fixes sync-10).
+   derivation each, not one per operation (fixes sync-10). The cache is dropped
+   on `lock()` and on `rotate()`, so neither a key nor a passphrase — the cache
+   key contains it — outlives the session that uses it.
 3. **Legacy envelopes** — raw base64 payloads decrypt at 310,000 iterations
    (unchanged); any successful save re-encrypts at current parameters (600k),
    preserving today's upgrade-on-save behaviour.
@@ -316,8 +325,12 @@ Responsibilities (all currently scattered in persistence flows, now in one place
 5. **Biometrics** — `biometrics.ts` seals/unseals the *passphrase*; the unsealed
    passphrase feeds `unlock()` exactly as typed input does. No change.
 6. **Secret retention** — the session passphrase lives **only** inside
-   `KeySession` (memory-only; derived keys are non-extractable; everything is
-   dropped on `lock()`). This replaces today's three retention sites:
+   `KeySession` (memory-only; derived keys are non-extractable; on `lock()` the
+   passphrase, the active salt and crypto2's derived-key cache are all dropped —
+   the cache key embeds the passphrase, so clearing it is part of the invariant —
+   and `rotate()` drops the cache too, so the passphrase a rotation replaces does
+   not linger until the next lock).
+   This replaces today's three retention sites:
    `sync.ts _passphrase`, the `persistence.ts` passphrase signal, and the
    `deferredPushPayload` copy. Orchestration holds no secrets (Goal 2).
 
@@ -348,7 +361,7 @@ export interface KeySession {
 ```ts
 export class StoreError extends Error {
   code: 'wrong-key' | 'remote-rekeyed' | 'unauthenticated' | 'network'
-      | 'not-found' | 'too-large' | 'invalid-document'
+      | 'not-found' | 'invalid-input' | 'too-large' | 'invalid-document'
       | 'corrupt-data' | 'unsupported-runtime' | 'unsupported'
   cause?: unknown   // the original typed error, preserved for UI branching
 }
@@ -366,6 +379,10 @@ orchestration's backoff keys off this); the 16 MiB size check → `too-large`
 (adapters enforce their own bounds, mirroring today's SQL constraints); a
 localStorage quota failure in the local slot → `too-large` as well, surfaced
 instead of swallowed (fixes data-06).
+TrailBase: 401/403 → `unauthenticated`, 404 → `not-found`, every other 4xx
+except 408/429 → `invalid-input` (a malformed email, password-policy rejection,
+conflicting write — retrying the same request cannot succeed), while 408/429
+and 5xx/transport failures → `network` (retryable).
 Codec parse failures after a successful decrypt → `invalid-document` (raised by
 the codec, §4.6). A pulled record whose salt differs from the session's
 `activeSalt` → `remote-rekeyed`: another device rotated the passphrase. It is
@@ -438,7 +455,12 @@ export interface AuthProvider {
 
 - Session/token persistence across reloads is provider-internal. If a provider
   persists tokens in `localStorage`, it must go through a `store` slot in
-  `utils.ts` (Rule 7).
+  `utils.ts` (Rule 7). Both adapters do: TrailBase keeps its tokens in
+  `store.backendSession`; the Supabase adapter passes an `auth.storage` adapter
+  to `createClient` that holds supabase-js's own `sb-<ref>-*` keys as one JSON
+  map in `store.supabaseSession` (so the SDK never writes a bare localStorage
+  key), and it adopts — then deletes — a key an older build wrote directly. The
+  device wipe clears both slots and sweeps any leftover `sb-*-auth-token` key.
 - `getUser()` is the **server-verified** probe (a network round-trip on
   Supabase): boot and session checks use it; the write path must not. The
   Supabase adapter sources its uid from the cached session (§4.2).
@@ -451,12 +473,12 @@ export interface AuthProvider {
   3. `store.clear()` — on an authenticated store this deletes the RLS-scoped
      row. It **must succeed before the device wipe**; if it throws, the flow
      aborts with local data intact (retryable),
-  4. `auth.deleteUser?.()` when present (absent on every planned backend —
-     the Supabase `auth.users` record survives),
+  4. `auth.deleteUser?.()` when present — TrailBase deletes the auth record;
+     the Supabase adapter omits it, so its `auth.users` row survives,
   5. device wipe (every slot, biometric seal, offline shell caches),
   6. `auth.signOut()`.
-  UI messaging is unchanged: the "auth record survives" caveat branches on
-  `deleteUser` presence, exactly as today.
+  UI messaging branches on `deleteUser` presence: TrailBase says the account
+  is deleted, Supabase says the auth record is kept.
 
 ### 4.6 Codecs and merge — library modules, not a layer
 
@@ -467,9 +489,8 @@ export interface DocCodec {
   parse(text: string): OutlineDoc   // validates; throws StoreError('invalid-document')
 }
 
-export const jsonCodec: DocCodec   // wraps outline.serialize/deserialize —
-                                   // the existing Local/Remote/Memory at-rest format
-export const vmdCodec: DocCodec    // wraps outline.ts VMD parser/writer —
+export const jsonCodec: DocCodec   // JSON at-rest format (outline.serialize/deserialize)
+export const vmdCodec: DocCodec    // the single VMD parser/writer, shared with outline.ts —
                                    // File mode, export/import, intro.vmd
 
 /** Lifts a StringStore into a DocStore: read → parse, write → serialize. */
@@ -484,14 +505,20 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
 //             | { kind: 'conflict'; conflicts: NodeConflict[]; partial: OutlineDoc }
 ```
 
-- Backends **choose** a codec; they never write one. Serialization exists in
-  exactly two thin wrappers over `outline.ts`. All future format versioning
-  and migrations live in `docCodec.ts` and nowhere else.
+- Backends **choose** a codec; they never write one. Serialization is owned by
+  exactly these two implementations, and the VMD parser/writer is shared:
+  `outline.getVMD()` / `outline.setRootVMD()` delegate to `docCodec.ts` (the
+  per-node `outline.setVMD` keeps its own backtick-escape editor path). All
+  future format versioning and migrations live in `docCodec.ts` and nowhere
+  else.
 - Zero at-rest migration: Local/Remote keep JSON-in-envelope (the codec choice
   sits below the crypto line, so envelope bytes are unchanged); File keeps
   plain VMD.
 - Composition order keeps the crypto decorator codec-blind (§9.5): e.g.
   `codecStore(jsonCodec, encrypted(slotRaw('vmd_data_enc'), session))`.
+- `codecStore()` returns `unlock()`'s `UnlockResult` unchanged (as does
+  `cached()`); orchestration calls the outermost store and never needs a
+  string-level handle on the inner primary.
 - `merge` is a pure three-way function over two models and a numeric baseline
   (epoch ms): per-node `lastModified` vs baseline distinguishes changed /
   unchanged / deleted; same-field edits conflict. Extracted from the current
@@ -499,34 +526,40 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
   The baseline is orchestration-owned sync state, **not** a store property,
   and must not be conflated with the opaque `head()` token — two clocks, two
   slots (§8, resolved).
-- Memory mode round-trips through `jsonCodec` (uniform code path, validation
-  for free); VMD is no longer involved outside File/export.
+- Memory mode round-trips the intro tour through `jsonCodec` (validation for
+  free); the live outline itself is the Memory store (§14.12). VMD is no longer
+  involved outside File/export.
 
 ### 4.7 `cached()` — the offline-cache decorator
 
 ```ts
 // source/js/cachedStore.ts
-export function cached(primary: StringStore, cache: StringStore): StringStore
+export interface CachedOptions {
+  /** null on success, the error on failure. When present the caller owns the
+   * local-failure surface and a cache error no longer fails the write. */
+  onCacheWrite?(error: unknown | null): void
+}
+export function cached(primary: StringStore, cache: StringStore, options?: CachedOptions): StringStore
 ```
 
 Remote mode is really two stores: the backend (source of truth) and the local
 cache slot (`vmd_data_enc`), which is what makes offline mid-session operation
 (the write tee, cached reads after connectivity loss) and a correct lock
 screen on offline boot (the `exists()` union) work. It does **not** make
-offline *unlock* work — see the `unlock` row. Today that pairing is
-hard-coded across `persistence.ts`; `cached()` makes it a composition. Both
-sides share the one `KeySession` (§4.3), so the two copies always carry the
-same salt and envelope.
+offline *unlock* work — see the `unlock` row. The orchestration builds the
+pairing once (`buildRemoteStore`); `cached()` makes it a composition, and the
+caller holds only the composed store. Both sides share the one `KeySession`
+(§4.3), so the two copies always carry the same salt and envelope.
 
 | Op | Rule | Rationale |
 | --- | --- | --- |
 | `write(doc)` | cache first, then primary; resolve with the primary's token | matches today's local-save-then-remote-push order |
 | primary fails `network` | cache write **stands**; the error propagates | deferral/retry belongs to the orchestration (§6.4); stores do single operations |
-| cache fails (quota) | primary is still attempted, then `too-large` propagates | the save is durable remotely but not locally — today's outcome, minus the silence (fixes data-06) |
+| cache fails (quota) | primary is still attempted; with `onCacheWrite` the failure is reported there and the write resolves with the primary token, without it `too-large` propagates | the save is durable remotely but not locally; Remote's hook drives the toolbar's "not saved locally" state (fixes data-06) |
 | `read()` | primary; on `network` error fall back to cache | mid-session connectivity-loss reads (an already-unlocked session; offline *boot* stops at the primary-only `unlock` row below). The fallback may be stale — a merge against a stale self-copy is a no-op merge |
 | `exists()` | `cache ∥ primary` | offline boot must still show the lock screen |
 | `head()` | primary only; errors → orchestration treats as "no change" | change detection is about the source of truth (today's `checkRemoteNewer` catch) |
-| `unlock(pw)` | **primary only**; a `network` error fails the unlock exactly as today — no cache fallback. A foreign-salt primary → `remote-rekeyed` (§4.3) | behaviour-preserving: today's `unlockRemote` verifies against the **remote** record, and an offline Remote reload needs connectivity. Offline unlock via the cache is a future capability (OQ 8), not a decorator side effect |
+| `unlock(pw)` | **primary only**; resolves with the primary's `UnlockResult`; a `network` error fails the unlock exactly as today — no cache fallback. A foreign-salt primary → `remote-rekeyed` (§4.3) | behaviour-preserving: today's `unlockRemote` verifies against the **remote** record, and an offline Remote reload needs connectivity. The passthrough means the caller never holds the inner string store. Offline unlock via the cache is a future capability (OQ 8), not a decorator side effect |
 | `clear()` | clear both | purge means purge everywhere |
 
 With `write()` taking an `OutlineDoc`, the orchestration's deferred-push queue
@@ -540,11 +573,11 @@ re-run of `store.write(doc)` (Goal 2 becomes literally true).
 
 | Mode | Composition | At-rest shape | Change token (`head`) |
 | --- | --- | --- | --- |
-| Memory | `codecStore(jsonCodec, memoryStore())` | RAM string (JSON) | monotonically increasing counter |
+| Memory | live outline (no store instance; §14.12) | RAM only | n/a |
 | File | `codecStore(vmdCodec, fileStore(handle))` | plain `.vmd` bytes | `file.lastModified` |
 | Local | `codecStore(jsonCodec, encrypted(slotRaw('vmd_data_enc'), session))` | `salt\|v2:600000:…` in slot | content hash of slot |
 | Remote (Supabase) | `codecStore(jsonCodec, cached(encrypted(supabaseRaw(client), session), encrypted(slotRaw('vmd_data_enc'), session)))` + Supabase `AuthProvider` | `outlines` row (`salt`, `data`, `updated_at`) — **unchanged schema**; local cache slot | `updated_at` |
-| Remote (TrailBase, future) | `codecStore(jsonCodec, cached(encrypted(trailbaseRaw(client), session), encrypted(slotRaw('vmd_data_enc'), session)))` + TrailBase `AuthProvider` | `outlines` STRICT table row; local cache slot | `updated_at` |
+| Remote (TrailBase — the default) | `codecStore(jsonCodec, cached(encrypted(trailbaseRaw(config), session), encrypted(slotRaw('vmd_data_enc'), session)))` + TrailBase `AuthProvider` | `outlines` STRICT table row (uuid owner column referencing `_user(id)`); local cache slot | `updated_at` |
 | User-defined (future) | any `RawStore` from the built-in registry | adapter-defined | adapter-defined |
 
 Notes:
@@ -571,9 +604,9 @@ Notes:
   seam isolates it inside `supabaseBackend`. Documented limitation — the fix
   (server-managed stamp via trigger + column privilege revoke, adapter returns
   the server token from `write()`) is deferred and revisited with the
-  sync/data findings follow-up work (§12, §13 OQ 6). TrailBase (PR 3) already
-  assumes server-managed stamps, so the follow-up also makes the two backends
-  consistent.
+  sync/data findings follow-up work (§12, §13 OQ 6). The TrailBase adapter
+  (PR 3) shares the same limitation today — it also accepts a client-supplied
+  `updated_at` — so the follow-up makes the two backends consistent.
 - `docId` is deliberately absent from the contracts. If multi-document support
   is ever wanted, it is added as an optional parameter defaulting to a constant;
   retrofitting later touches only adapters. Deciding now is an Open Question.
@@ -623,8 +656,10 @@ The derived key comes from the session cache — no KDF per save. A legacy 310k
 envelope is transparently re-encrypted at 600k on this write. In Remote mode
 the write goes through `cached()` (§4.7): the cache write is the durable local
 save; a primary `network` failure propagates to the orchestration, which
-defers and retries (§6.4). A cache quota failure surfaces as `too-large`
-(data-06 fix).
+defers and retries (§6.4). A cache quota failure is reported through the
+composition's `onCacheWrite` hook: the remote save completes and the status
+toolbar reports the document as not saved locally until the next successful
+cache write (data-06).
 
 ### 6.4 Remote poll / pull-before-push (Remote mode)
 
@@ -650,6 +685,9 @@ every 60s:  token = remoteStore.head()
 - Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff`,
   `skipNextRemotePush` all stay in the orchestration, keyed off the typed
   `network`/`unauthenticated` errors. Stores do single operations only.
+  `remoteSave.ts` owns the save-side half: the injected store, the
+  pull-before-push cycle, the retry policy and the deferred queue;
+  `persistence.ts` keeps the debounce and session lifecycle.
 - The deferred-push queue holds **documents** (`{ doc, attempt }`), never
   ciphertext/salt/passphrase — a flush re-runs `store.write(doc)`, and the
   epoch-staleness guard (today's `isRemoteSyncAttemptStale`) makes the flush
@@ -696,17 +734,18 @@ prompt instead of silently reverting the rotation (sync-01 fix).
 | `storage.ts` (new) | Contracts: `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, capabilities, `StoreError`, backend registry/factory. **Not** the `store` slots in `utils.ts` — Rule 7's vocabulary is unchanged; the new abstraction owns the capitalized `*Store` filenames (`encryptedStore.ts`, `cachedStore.ts`, `memoryStore.ts`, …), `utils.store` remains the localStorage-slot facade | extracted from `sync.ts` + new |
 | `encryptedStore.ts` (new) | `encrypted()` decorator (string-level, codec-blind), `KeySession` (via `crypto2.ts`) | from `persistence.ts`/`sync.ts` envelope logic |
 | `cachedStore.ts` (new) | `cached()` decorator: write order, offline read fallback, exists-union, quota propagation | from `persistence.ts` local-cache branches |
-| `docCodec.ts` (new) | `DocCodec` contract, `jsonCodec`, `vmdCodec`, `codecStore` lift, parse/validate errors | thin wrappers over `outline.ts` |
+| `docCodec.ts` (new) | `DocCodec` contract, `jsonCodec`, `vmdCodec`, `codecStore` lift, parse/validate errors; owns the VMD parser/writer that `outline.ts` delegates to | codecs are the serialization source of truth |
 | `merge.ts` (new) | pure three-way merge over the model (baseline-aware) | from `sync.ts mergeDocuments` |
 | `memoryStore.ts`, `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters | from `persistence.ts` mode branches |
 | `supabaseBackend.ts` (new) | `RawStore` + `AuthProvider` over `@supabase/supabase-js` (dynamic import preserved) | from `sync.ts` |
 | `sync.ts` (shrinks) | scheduling, poll, backoff, status/conflict signals — no client code | remainder of current `sync.ts` |
-| `persistence.ts` (shrinks) | pure orchestration: boot, unlock UX wiring, autosave wiring, mode switching | remainder of current |
+| `persistence.ts` (shrinks) | pure orchestration: boot, unlock UX wiring, autosave debounce, mode switching, store construction | remainder of current |
+| `remoteSave.ts` (new) | Remote save orchestration: injected store, pull-before-push, retry policy, deferred-push queue | `persistence.ts` `doSave` + deferred queue |
 | `crypto2.ts`, `outline.ts`, `biometrics.ts`, `utils.ts` | unchanged | — |
 
 Circular-dependency rule: adapters import `storage.ts` (contracts only); nothing
-below imports anything above. `persistence.ts` and `sync.ts` sit at the top and
-are the only consumers of `merge` + `DocStore` together.
+below imports anything above. `persistence.ts`, `remoteSave.ts` and `sync.ts`
+sit at the top and are the only consumers of `merge` + `DocStore` together.
 
 Module size rule: each new module is well under the 350–450 line split threshold.
 
@@ -746,7 +785,7 @@ Module size rule: each new module is well under the 350–450 line split thresho
    `outlines.sql` carry over verbatim.
 3. **Test seams.** The `__TEST_HOOKS__` window-supabase seam becomes a gated
    window hook that injects a `RawStore`/`AuthProvider` *factory* for specs.
-   Production builds still compile it out; `tests/e2e-seam.spec.ts` continues to
+   Production builds still compile it out; `tests/e2e/e2e-seam.spec.ts` continues to
    assert both builds behave. The e2e `e2e` binding stays as is.
 4. **User-defined backends — policy.** Supported tiers: (a) config-driven
    presets pointing built-in adapters at user-chosen instances (same trust model
@@ -860,13 +899,18 @@ updates in the same PR as the code. Per Rule 1: if any SPEC line turns out to
 *depend* on the current interleaving (rather than describing observable
 behaviour), stop and raise it rather than rewriting the SPEC to fit the code.
 
-`README.md`: no user-visible change; only if it describes storage mechanics.
-`AGENTS.md`: module map + encryption section updated (§7 table replaces the
+`README.md`: updated for the TrailBase default and the absence of a backend picker.
+`AGENTS.md`: module map, Rule 7, sync and build sections updated (§7 table replaces the
 current sync/persistence description).
 
 ---
 
 ## 12. Rollout
+
+All rows through PR 3 have shipped; row 4 remains optional. The proof column records the
+plan-time expectation. §10's "fixture-only" expectation was superseded by the
+e2e/integration split (`tests/integration/` holds backend-coupled flows); §14 records the
+implementation deviations.
 
 | PR | Content | Proof |
 | --- | --- | --- |
@@ -957,7 +1001,9 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
 2. **`KeySession` is the secret-retention point, not a key cache** (§4.3): Rule 7
    requires all crypto through `crypto2.ts`, whose `encrypt`/`decrypt` take
    `(text, passphrase, salt)` — so the multi-entry (salt, iterations) key cache
-   lives inside crypto2 (bounded LRU, 4 entries; same sync-10 outcome).
+   lives inside crypto2 (bounded LRU, 4 entries; same sync-10 outcome), and
+   `KeySession.lock()` / `rotate()` clear it through `crypto2.clearKeyCache()`
+   so the passphrase its cache keys embed does not outlive the session.
    `keyFor()` is dropped; `activate(passphrase, salt)` / `rotate(newPassphrase)`
    (sync, lazy derivation) / `lock()` remain, plus `activeCredentials()` for
    crypto2 calls.
@@ -978,7 +1024,9 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
    the design's void-returning unlock would force a second raw read for the
    document, which the sync fixtures (one download at unlock) and the real
    server both model as a single round-trip. The encrypted decorator returns
-   what it already decrypted plus the downloaded record's own change token.
+   what it already decrypted plus the downloaded record's own change token;
+   `codecStore()` and `cached()` pass it through, so the orchestration calls
+   the composed store and never keeps a string-level handle on the primary.
 8. **`remote-rekeyed` is verified, not assumed** (§4.4): a foreign salt alone
    does not throw — the decrypt is attempted with the session's passphrase;
    a failure *combined with* a foreign salt maps to `remote-rekeyed`. Rotation
@@ -994,3 +1042,12 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
     primary together), rather than deferring only the primary write. The
     deferred flush lands ~50ms after the typing gate opens, so the local cache
     write is delayed by well under a second in the worst case.
+12. **Memory mode keeps no store instance** (`codecStore(jsonCodec,
+    memoryStore())` is the composition template the other modes follow): the
+    live outline *is* the Memory store. It is already RAM-only, survives no
+    reload (non-goal), and has no unlock lifecycle, so a second codecStore-backed
+    copy would duplicate the document in RAM and re-serialize it on every save
+    for no observable effect. The intro still round-trips through `jsonCodec` on
+    load (validation for free), and `memoryStore()` remains the RAM adapter the
+    contract suite exercises. Local and File compose their DocStores exactly as
+    §5 describes; their read/write paths are doc-level.

@@ -24,8 +24,9 @@ export type StoreErrorCode =
     | 'wrong-key'           // GCM auth failure during unlock — passphrase is wrong
     | 'remote-rekeyed'      // remote salt ≠ session salt — passphrase rotated elsewhere
     | 'unauthenticated'     // no signed-in user, or the store is locked
-    | 'network'             // transport failure — retryable (backoff keys off this)
+    | 'network'             // transport failure or 5xx/408/429 — retryable
     | 'not-found'           // backend reports the record does not exist
+    | 'invalid-input'       // request rejected by validation/policy (4xx) — retrying cannot help
     | 'too-large'           // payload exceeds the backend's size bound (quota, row limit)
     | 'invalid-document'    // codec parse/validate failure
     | 'corrupt-data'        // undecryptable/structurally broken at-rest payload
@@ -109,8 +110,10 @@ export interface DocStore {
      */
     head?(): Promise<string | null>
 
-    /** Encrypted stores additionally expose the lock lifecycle. */
-    unlock?(passphrase: string): Promise<void>   // throws StoreError('wrong-key')
+    /** Encrypted stores additionally expose the lock lifecycle. unlock()
+     * resolves with what it decrypted (§4.3); every decorator passes the
+     * result through unchanged. Throws StoreError('wrong-key'). */
+    unlock?(passphrase: string): Promise<UnlockResult | void>
     lock?(): Promise<void>
 
     capabilities: StoreCapabilities
@@ -185,6 +188,68 @@ export interface RawStore {
 export interface UnlockResult {
     text: string | null
     headToken: string | null
+}
+
+// ── Backend registry (§13 OQ 3, PR 3) ───────────────────────────────────────
+
+/** The sync backends the app can talk to. There is no user-facing choice: the
+ * server is TrailBase on the origin serving the app (`trail run --public-dir
+ * dist`), resolved automatically in the remote flow. 'supabase'/'virgulas'
+ * exist for the legacy hosted Supabase deployment and its existing users.
+ * - 'trailbase' — a TrailBase instance; url '' (the default) = the app's own origin
+ * - 'supabase'  — a Supabase project (url + anon key), for legacy/existing sessions
+ * - 'virgulas'  — the hosted Supabase deployment (the legacy read-through default)
+ */
+export type BackendKind = 'virgulas' | 'supabase' | 'trailbase'
+
+export interface BackendConfig {
+    backend: BackendKind
+    url?: string
+    key?: string
+}
+
+/** The hosted fallback for deployments without TrailBase at their origin (the
+ * current static hosting): the managed Supabase project. When the app itself
+ * is served by TrailBase, the same-origin probe wins and this is never used. */
+export const HOSTED_BACKEND: BackendConfig = {
+    backend: 'virgulas',
+    url: 'https://gcpdascpdrakecpknrtt.supabase.co',
+    key: 'sb_publishable_9Uxo-0GD-21K6mUPQ2FSuw_mDO06TJc'
+}
+
+/** The default backend: TrailBase on the app's own origin. */
+export const DEFAULT_BACKEND: BackendConfig = { backend: 'trailbase', url: '' }
+
+/**
+ * Parses the persisted backend config slot. Backwards compatible with both
+ * legacy shapes: the pre-seam `supabaseconfig` value `{ url, key }` (a custom
+ * Supabase when the url differs from the hosted default, the hosted server
+ * otherwise) and the current `{ backend, url?, key? }`. An empty/absent
+ * TrailBase url means the app's own origin.
+ */
+export function parseBackendConfig(raw: string | null | undefined): BackendConfig {
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object') {
+                if (parsed.backend === 'trailbase' || parsed.backend === 'supabase' || parsed.backend === 'virgulas') {
+                    return {
+                        backend: parsed.backend,
+                        url: typeof parsed.url === 'string' ? parsed.url : (parsed.backend === 'trailbase' ? '' : undefined),
+                        key: typeof parsed.key === 'string' && parsed.key ? parsed.key : undefined
+                    }
+                }
+                // Legacy `{ url, key }` shape (the old supabaseconfig):
+                const url = typeof parsed.url === 'string' ? parsed.url : undefined
+                if (url) {
+                    if (url === HOSTED_BACKEND.url) return { backend: 'virgulas', url: HOSTED_BACKEND.url, key: HOSTED_BACKEND.key }
+                    const key = typeof parsed.key === 'string' ? parsed.key : undefined
+                    return { backend: 'supabase', url, key }
+                }
+            }
+        } catch { /* fall through to the default */ }
+    }
+    return { ...DEFAULT_BACKEND }
 }
 
 // ── AuthProvider — complete auth contract (§4.5) ─────────────────────────────

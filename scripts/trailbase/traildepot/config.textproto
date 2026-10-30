@@ -1,0 +1,28 @@
+# Virgulas local TrailBase configuration (see compose.yml).
+server {
+  application_name: "Virgulas local"
+  site_url: "http://127.0.0.1:8099"
+}
+email {
+  # Mailpit captures the verification emails; open the UI at http://127.0.0.1:8025.
+  smtp_host: "mailpit"
+  smtp_username: "mailpit"
+  smtp_password: "mailpit"
+  smtp_port: 1025
+  smtp_encryption: SMTP_ENCRYPTION_NONE
+  sender_name: "Virgulas local"
+  sender_address: "no-reply@virgulas.local"
+}
+record_apis: [
+  {
+    # One encrypted document row per user (docs/storage-interface.md §4.2).
+    name: "outlines"
+    table_name: "outlines"
+    conflict_resolution: REPLACE
+    acl_authenticated: [CREATE, READ, UPDATE, DELETE]
+    create_access_rule: "_REQ_.user = _USER_.id"
+    read_access_rule: "_ROW_.user = _USER_.id"
+    update_access_rule: "_ROW_.user = _USER_.id"
+    delete_access_rule: "_ROW_.user = _USER_.id"
+  }
+]

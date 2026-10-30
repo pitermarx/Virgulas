@@ -8,15 +8,12 @@ const isCI = !!env.CI;
 const baseURL = env.BASE_URL || 'http://127.0.0.1:3000';
 const useExternalBaseUrl = !!env.BASE_URL;
 
-// These specs mock Supabase through the __TEST_HOOKS__ seam, which production
-// builds compile out. They only run against the locally built test bundle.
-const TEST_HOOK_SPECS = [
-  '**/admin.spec.ts',
-  '**/auth.spec.ts',
-  '**/sync.spec.ts',
-  '**/sync-polling-merge.spec.ts',
-  '**/synctrigger.spec.ts',
-];
+// Integration specs mock the backend through the `window.supabase` seam and
+// read app internals through the `e2e` binding — both compiled out of
+// production builds. They live in `tests/integration/` and only run against
+// the locally built test bundle; the daily production run excludes the whole
+// directory. `tests/e2e/` holds the behavior-driven specs that run everywhere.
+const INTEGRATION_DIR = '**/integration/**';
 
 const parseDotEnv = (raw: string): Record<string, string> => {
   const values: Record<string, string> = {};
@@ -72,7 +69,7 @@ if (!useExternalBaseUrl) {
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.ts',
-  testIgnore: useExternalBaseUrl ? TEST_HOOK_SPECS : undefined,
+  testIgnore: useExternalBaseUrl ? INTEGRATION_DIR : undefined,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,

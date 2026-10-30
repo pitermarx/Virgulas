@@ -399,6 +399,13 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   font-style: italic;
 }
 
+.status-save-failed {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--color-danger);
+}
+
 /* ── Options section heading ── */
 .options-section-heading {
   font-size: 0.75rem;
@@ -659,4 +666,103 @@ a:hover {
 .search-token-inline:focus-visible {
   outline: none;
   box-shadow: var(--focus-halo);
+}
+/* ── Backend picker (Remote mode backend selection) ──────────────────────── */
+
+.backend-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* The wizard's path choices (device vs cloud etc.): full-width option cards
+   with a name and a one-line tradeoff. */
+.wizard-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.wizard-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: var(--space-3) var(--space-3);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition-base);
+}
+
+.wizard-option:hover:not(:disabled) {
+  border-color: var(--color-accent-primary);
+}
+
+.wizard-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.backend-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  transition: var(--transition-base);
+}
+
+.backend-option:hover {
+  border-color: var(--color-accent-primary);
+}
+
+.backend-option.is-active {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 1px var(--color-accent-primary);
+}
+
+.backend-option input[type='radio'] {
+  margin-top: 0.2rem;
+  accent-color: var(--color-accent-primary);
+}
+
+.backend-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.backend-name {
+  font-family: var(--font-base);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.backend-desc {
+  font-family: var(--font-base);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.backend-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin-top: calc(-1 * var(--space-1));
+}
+
+.backend-config .input-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }

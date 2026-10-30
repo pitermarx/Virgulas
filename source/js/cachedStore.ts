@@ -16,21 +16,34 @@
 
 import { StoreError, type StringStore } from './storage.js'
 
-export function cached(primary: StringStore, cache: StringStore): StringStore {
+export interface CachedOptions {
+    /**
+     * Receives every cache write outcome: null on success, the error on
+     * failure. When provided, a cache failure no longer fails the whole write
+     * — the primary still runs and the caller owns the local-failure surface
+     * (data-06: Remote mode reports "not saved locally" while the server copy
+     * is current). Without it the historical contract stands: the primary is
+     * attempted, then the cache error propagates.
+     */
+    onCacheWrite?(error: unknown | null): void
+}
+
+export function cached(primary: StringStore, cache: StringStore, options: CachedOptions = {}): StringStore {
     return {
         async write(text) {
             // Cache first, then primary (today's local-save-then-push order).
             // A cache quota failure does not skip the primary: the save is
-            // durable remotely, then surfaces as too-large instead of being
-            // swallowed (data-06).
+            // durable remotely and the failure is reported separately.
             let cacheError: unknown = null
             try {
                 await cache.write(text)
+                options.onCacheWrite?.(null)
             } catch (error) {
                 cacheError = error
+                options.onCacheWrite?.(error)
             }
             const token = await primary.write(text)
-            if (cacheError) throw cacheError
+            if (cacheError && !options.onCacheWrite) throw cacheError
             return token
         },
 
@@ -67,8 +80,9 @@ export function cached(primary: StringStore, cache: StringStore): StringStore {
 
         async unlock(passphrase) {
             // Primary only: today's unlockRemote verifies against the remote
-            // record, and an offline Remote reload needs connectivity.
-            await primary.unlock?.(passphrase)
+            // record, and an offline Remote reload needs connectivity. The
+            // result passes through so the caller needs no inner handle.
+            return primary.unlock?.(passphrase)
         },
 
         async lock() {
