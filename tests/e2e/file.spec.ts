@@ -156,7 +156,7 @@ test.describe('File mode', () => {
         });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
 
         await page.getByRole('button', { name: 'Unlock' }).click();
@@ -173,7 +173,7 @@ test.describe('File mode', () => {
         });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
 
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
@@ -229,7 +229,7 @@ test.describe('File mode', () => {
         });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 
@@ -265,7 +265,7 @@ test.describe('File mode', () => {
 
         // First load: open the file (saves handle to mock IDB via sessionStorage)
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
@@ -275,7 +275,7 @@ test.describe('File mode', () => {
 
         // Reload: tryReopen() should find the handle in IDB and not call showOpenFilePicker
         await page.reload();
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
@@ -421,7 +421,7 @@ test.describe('File mode', () => {
         await page.addInitScript(() => { localStorage.setItem('vmd_last_mode', 'filesystem'); });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
 
         // Unlock: tryReopen finds the denied handle, falls back to showOpenFilePicker
         await page.getByRole('button', { name: 'Unlock' }).click();
@@ -442,7 +442,7 @@ test.describe('File mode', () => {
         });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.status-mode')).toHaveText('File');
@@ -468,7 +468,7 @@ test.describe('File mode', () => {
         });
 
         await page.goto('/');
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         await page.getByRole('button', { name: 'Unlock' }).click();
         await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
         await expect(page.locator('.status-mode')).toHaveText('File');
@@ -485,7 +485,7 @@ test.describe('File mode', () => {
         expect(rememberedHandle).toBeNull();
 
         await page.reload();
-        await expect(page.locator('#splash')).toBeHidden({ timeout: 5000 });
+        await expect(page.locator('#splash')).toBeHidden();
         // Falls back to the in-memory tour.
         await expect(page.locator('.node-content').first()).toContainText('Welcome to Virgulas');
     });
