@@ -650,7 +650,8 @@ Workflows live in `.github/workflows/`.
 | `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
-| `publish-image` | `main` only | builds the all-in-one image for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/virgulas-trailbase` (`latest`, `main`, `sha-<commit>`, plus the release version), and appends the pull command to the release notes |
+| `validate-image` | pull requests | builds the all-in-one image and boots it with `scripts/trailbase/smoke-image.sh` |
+| `publish-image` | `main` only | builds and boots a native-arch image (`scripts/trailbase/smoke-image.sh`), then builds the all-in-one image for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/virgulas-trailbase` (`latest`, `main`, `sha-<commit>`, plus the release version), and appends the pull command to the release notes |
 | `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
 - `publish-db` must run before `deploy`.
@@ -666,6 +667,10 @@ Workflows live in `.github/workflows/`.
 - The deploy job zips `dist/` contents (no wrapper directory, no maps) into
   `virgulas-<version>.zip` and attaches it to the `v<version>` release when that tag exists.
 - Pull-request workflows do not publish Pages artifacts.
+- Both image jobs boot the built image with `scripts/trailbase/smoke-image.sh` before they pass.
+  A `docker build` alone cannot catch a container that cannot start as the base image's
+  non-root `trailbase` user: a root-owned `/app/traildepot` makes TrailBase exit with
+  `PermissionDenied` before it listens. Keep the smoke test in both jobs.
 
 ### `daily.yml` — production E2E
 

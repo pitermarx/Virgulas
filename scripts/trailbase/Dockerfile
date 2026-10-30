@@ -45,10 +45,20 @@ RUN if [ -n "$APP_VERSION" ]; then \
     fi
 
 FROM trailbase/trailbase:latest
+# The base image runs as the unprivileged `trailbase` user (uid/gid 1000) and
+# owns only the depot root. COPY would land as root, but TrailBase writes into
+# the depot on first start (a `migrations/<db>` state directory and the SQLite
+# data directory), so the copies are handed to that user — a plain COPY leaves
+# it root-owned and the container exits with `PermissionDenied` before it ever
+# listens (issue #105).
+#
 # The outlines schema (migration) + record API with the owner ACL rules
 # (docs/storage-interface.md §4.2).
-COPY --from=build /app/scripts/trailbase/traildepot/config.textproto /app/traildepot/config.textproto
-COPY --from=build /app/scripts/trailbase/traildepot/migrations /app/traildepot/migrations
+COPY --chown=trailbase:trailbase --from=build /app/scripts/trailbase/traildepot/config.textproto /app/traildepot/config.textproto
+COPY --chown=trailbase:trailbase --from=build /app/scripts/trailbase/traildepot/migrations /app/traildepot/migrations
+# The SQLite data directory must exist and belong to that user too, so the named
+# volume compose mounts here inherits its owner instead of coming up root-owned.
+RUN mkdir -p /app/traildepot/data
 # The built app, served by TrailBase on the same origin as the API.
 COPY --from=build /app/dist /public
 CMD ["/app/trail", "--depot", "/app/traildepot", "run", "--public-dir", "/public", "--spa", "--address", "0.0.0.0:4000"]
