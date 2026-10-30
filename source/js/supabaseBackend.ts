@@ -191,7 +191,7 @@ async function cachedSessionUser(client: any): Promise<any | null> {
 // ── RawStore (§4.2) ──────────────────────────────────────────────────────────
 
 export function supabaseRaw(client: any): RawStore {
-    async function withTable<T = any>(fn: (table: any) => Promise<{ data: T; error: any }>): Promise<T> {
+    async function withTable<T = any>(fn: (table: any) => PromiseLike<{ data: T; error: any }>): Promise<T> {
         const { data, error } = await fn(client.from('outlines'))
         if (error) throw mapSupabaseError(error)
         return data
@@ -200,7 +200,8 @@ export function supabaseRaw(client: any): RawStore {
     async function head(): Promise<string | null> {
         try {
             const row = await withTable<any>((t) => t.select('updated_at').single())
-            return row?.updated_at ?? null
+            // The token is always a string, whatever the driver hands back.
+            return row?.updated_at != null ? String(row.updated_at) : null
         } catch (error) {
             if (error instanceof StoreError && error.code === 'not-found') return null
             throw error
@@ -220,7 +221,11 @@ export function supabaseRaw(client: any): RawStore {
             try {
                 const row = await withTable<any>((t) => t.select('salt, data, updated_at').single())
                 if (!row) return null
-                return { data: row.data, salt: row.salt ?? undefined, updatedAt: row.updated_at ?? undefined }
+                return {
+                    data: row.data,
+                    salt: row.salt ?? undefined,
+                    updatedAt: row.updated_at != null ? String(row.updated_at) : undefined
+                }
             } catch (error) {
                 if (error instanceof StoreError && error.code === 'not-found') return null
                 throw error
@@ -236,13 +241,19 @@ export function supabaseRaw(client: any): RawStore {
             // across devices, forgeable by a compromised client. The follow-up
             // moves it server-side; the adapter is the single touch point.
             const updatedAt = record.updatedAt || new Date().toISOString()
-            await withTable((t) => t.upsert(
-                { data: record.data, salt: record.salt, updated_at: updatedAt, user_id: user.id },
-                { onConflict: 'user_id' }
-            ))
-            // The value head() would now report — the poller adopts its own
-            // push from this, so it never re-pulls its own update.
-            return updatedAt
+            const row = await withTable<any>((t) => t
+                .upsert(
+                    { data: record.data, salt: record.salt, updated_at: updatedAt, user_id: user.id },
+                    { onConflict: 'user_id' }
+                )
+                .select('updated_at')
+                .single()
+            )
+            // Return the server's representation, not the client string:
+            // PostgREST serialises timestamptz as `+00:00`, while
+            // `toISOString()` ends in `Z`. The token must be exactly what
+            // head() will report, or the poller re-pulls its own push forever.
+            return row?.updated_at != null ? String(row.updated_at) : await head()
         },
 
         async clearRaw(): Promise<void> {

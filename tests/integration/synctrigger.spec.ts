@@ -19,11 +19,15 @@ const installMock = async (page: Page) => {
       single: async () => state.serverRecord
         ? { data: state.serverRecord, error: null }
         : { data: null, error: { code: 'PGRST116' } },
-      upsert: async (p: any) => {
-        state.upserts.push(Date.now());
-        state.serverRecord = { salt: p.salt, data: p.data, updated_at: p.updated_at };
-        return { error: null };
-      },
+      upsert: (p: any) => ({
+        select: () => ({
+          single: async () => {
+            state.upserts.push(Date.now());
+            state.serverRecord = { salt: p.salt, data: p.data, updated_at: p.updated_at };
+            return { data: { updated_at: p.updated_at }, error: null };
+          }
+        })
+      }),
     };
     const client = {
       auth: {

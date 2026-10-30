@@ -180,6 +180,16 @@ async function authedFetch(config: BackendConfig, path: string, init: RequestIni
 
 // ── RawStore (§4.2) ──────────────────────────────────────────────────────────
 
+/**
+ * Normalises a row's `updated_at` to the string form used by every head token.
+ * The at-rest column is INTEGER, but `RawRecord.updatedAt`, `UnlockResult.headToken`
+ * and `head()` are strings; leaking the number from `readRaw()` would store a
+ * number in `vmd_sync_head` and never compare equal to `head()`'s string.
+ */
+function headToken(updatedAt: unknown): string | null {
+    return updatedAt === null || updatedAt === undefined ? null : String(updatedAt)
+}
+
 /** Lists the signed-in user's own outlines rows (the ACL scopes the list). */
 async function listOwn(config: BackendConfig): Promise<any | null> {
     const response = await authedFetch(config, `/api/records/v1/${RECORD_API}?_limit=1`, { method: 'GET' })
@@ -206,7 +216,7 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
             return {
                 data: record.data,
                 salt: record.salt ?? undefined,
-                updatedAt: record.updated_at ?? undefined
+                updatedAt: headToken(record.updated_at) ?? undefined
             }
         },
 
@@ -238,7 +248,7 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
                 })
                 if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
             }
-            return String(updatedAtMs)
+            return headToken(updatedAtMs)
         },
 
         async clearRaw(): Promise<void> {
@@ -254,9 +264,7 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
 
         async head(): Promise<string | null> {
             const record = await listOwn(config)
-            return record?.updated_at !== undefined && record?.updated_at !== null
-                ? String(record.updated_at)
-                : null
+            return headToken(record?.updated_at)
         }
     }
 }

@@ -146,8 +146,14 @@ async function flushDeferredPush() {
         }
         const mergedJson = result.mergedJson
         if (mergedJson) {
-          const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-          if (mergedToken) setSyncHead(mergedToken)
+          if (result.needsPush) {
+            const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
+            if (mergedToken) setSyncHead(mergedToken)
+          } else if (headToken) {
+            // The remote already has this content; adopt its token without
+            // creating an identical revision.
+            setSyncHead(headToken)
+          }
           setLastSyncedAt(Date.now())
           skipNextRemotePush.value = true
           outline.deserialize(mergedJson)
@@ -237,9 +243,16 @@ export async function saveRemoteDocument(doc: OutlineDoc): Promise<void> {
 
         const mergedJson = result.mergedJson
         if (mergedJson) {
-          const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
-          if (isRemoteSyncAttemptStale(remoteAttempt)) return
-          if (mergedToken) setSyncHead(mergedToken)
+          if (result.needsPush) {
+            const mergedToken = await retryWithBackoff(() => remote.write(jsonCodec.parse(mergedJson)))
+            if (isRemoteSyncAttemptStale(remoteAttempt)) return
+            if (mergedToken) setSyncHead(mergedToken)
+          } else {
+            if (isRemoteSyncAttemptStale(remoteAttempt)) return
+            // The remote already has this content; adopt its token without
+            // creating an identical revision.
+            if (headToken) setSyncHead(headToken)
+          }
           setLastSyncedAt(Date.now())
           syncStatus.value = 'synced'
           // Apply merged doc; flag prevents the triggered save from re-pushing

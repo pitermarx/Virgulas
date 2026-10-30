@@ -54,14 +54,20 @@ const installPollingMockSupabase = async (
                 state.readCalls++;
                 return { data: state.serverRecord, error: null };
             },
-            upsert: async (next: { salt?: string; data: string; updated_at: string }) => {
+            upsert: (next: { salt?: string; data: string; updated_at: string }) => {
                 state.upsertCalls++;
-                state.serverRecord = {
-                    ...state.serverRecord,
-                    ...next,
-                    updated_at: next.updated_at || new Date().toISOString()
+                return {
+                    select: () => ({
+                        single: async () => {
+                            state.serverRecord = {
+                                ...state.serverRecord,
+                                ...next,
+                                updated_at: next.updated_at || new Date().toISOString()
+                            };
+                            return { data: { updated_at: state.serverRecord.updated_at }, error: null };
+                        }
+                    })
                 };
-                return { error: null };
             }
         };
 
@@ -153,6 +159,36 @@ test.describe('Sync polling', () => {
             () => page.evaluate((initial) => (window as any).__mockSupabaseState.getLastUpdateCalls - initial, baseline),
             { timeout: 10000, intervals: [200, 200, 200, 200] }
         ).toBeLessThanOrEqual(1);
+    });
+
+    test('a head change with identical content does not write the document back', async ({ page }) => {
+        await page.goto('/');
+        const payload = await buildEncryptedPayload(page, 'sync-pass');
+
+        await page.evaluate(() => {
+            localStorage.clear();
+            localStorage.setItem('vmd_last_mode', 'local');
+        });
+        await installPollingMockSupabase(page, payload);
+
+        await page.reload();
+        await unlockRemote(page, 'poll@test.com', 'pass', 'sync-pass');
+
+        // The mock advances updated_at on every head() call, so every poll
+        // pulls. The merged document equals the remote, so none of those pulls
+        // may create a new revision.
+        const pollBaseline = await page.evaluate(() => (window as any).__mockSupabaseState.getLastUpdateCalls);
+        const upsertBaseline = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCalls);
+
+        await expect.poll(
+            () => page.evaluate((initial) => (window as any).__mockSupabaseState.getLastUpdateCalls - initial, pollBaseline),
+            { timeout: 10000, intervals: [100] }
+        ).toBeGreaterThanOrEqual(2);
+
+        await expect.poll(
+            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCalls),
+            { timeout: 5000, intervals: [100] }
+        ).toBe(upsertBaseline);
     });
 
     test('polling stops after remote sign-out flow', async ({ page }) => {

@@ -607,6 +607,11 @@ Notes:
   sync/data findings follow-up work (§12, §13 OQ 6). The TrailBase adapter
   (PR 3) shares the same limitation today — it also accepts a client-supplied
   `updated_at` — so the follow-up makes the two backends consistent.
+- `write()` returns the **server's** `updated_at` representation (the upsert
+  selects it back), not the client's `Z`-suffixed string. That keeps the token
+  exactly equal to what a subsequent `head()` reports, so the poller does not
+  mistake its own push for a remote change. The client-clock trust limitation
+  above is unchanged; this only fixes the token round-trip.
 - `docId` is deliberately absent from the contracts. If multi-document support
   is ever wanted, it is added as an optional parameter defaulting to a constant;
   retrofitting later touches only adapters. Deciding now is an Open Question.
@@ -667,8 +672,10 @@ cache write (data-06).
 every 60s:  token = remoteStore.head()
             token ≠ lastSeen → doc = remoteStore.read()
                                 → merge(localDoc, doc, baseline)      // pure (§4.6)
-                                → merged: write local + remote stores
-                                          lastSeen := token returned by write()
+                                → merged: if content ≠ remote, write remote
+                                          apply merged doc locally
+                                          lastSeen := written token, or the
+                                                      observed head without a write
                                 → conflict: blocking modal (unchanged UX)
             lastSeen updated from every successful write's returned token
 ```
@@ -682,6 +689,9 @@ every 60s:  token = remoteStore.head()
   re-pulls its own update. It replaces today's
   `beginRemotePush`/`recordCompletedRemotePush`/`isSupersededOwnRemoteUpdate`
   client-timestamp bookkeeping.
+- A pull whose merged document equals the remote content is applied locally
+  but **not** written back. Without that guard, two open clients would each
+  turn the other's poll into a new remote revision every 60 seconds.
 - Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff`,
   `skipNextRemotePush` all stay in the orchestration, keyed off the typed
   `network`/`unauthenticated` errors. Stores do single operations only.
@@ -934,9 +944,10 @@ Deferred follow-up (not a PR in this plan): **server-managed `updated_at`**
 and **server-default `user_id`** for the Supabase backend — `BEFORE INSERT OR
 UPDATE` trigger (`NEW.updated_at := now()`), `default auth.uid()` on
 `user_id` (the uid leaves the client payload entirely — the fully honest form
-of §4.2's identity rule), optional column-privilege revokes, adapter switches
-to `upsert(…).select()` so `write()` returns the server token, delete the
-remaining client-timestamp push bookkeeping, add clock-skew tests. One shared
+of §4.2's identity rule), optional column-privilege revokes, delete the
+remaining client-timestamp push bookkeeping, add clock-skew tests. (The
+adapter's token half — `upsert(…).select('updated_at')` so `write()` returns
+the server token — is already in place.) One shared
 migration for both columns. Requires a schema change (Rule 4:
 `supabase/schemas/outlines.sql` + generated migration) and new skew behaviour,
 so it deliberately does **not** ride inside PR 2d's "existing e2e green"

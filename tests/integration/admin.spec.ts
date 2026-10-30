@@ -36,10 +36,14 @@ const installMockSupabase = async (
         state.serverRecord
           ? { data: state.serverRecord, error: null }
           : { data: null, error: { code: 'PGRST116' } },
-      upsert: async (payload: { salt: string; data: string; updated_at: string }) => {
-        state.serverRecord = { salt: payload.salt, data: payload.data, updated_at: payload.updated_at };
-        return { error: null };
-      },
+      upsert: (payload: { salt: string; data: string; updated_at: string }) => ({
+        select: () => ({
+          single: async () => {
+            state.serverRecord = { salt: payload.salt, data: payload.data, updated_at: payload.updated_at };
+            return { data: { updated_at: payload.updated_at }, error: null };
+          }
+        })
+      }),
       delete: () => {
         const chain = {
           eq: async (column: string, value: string) => {
