@@ -1,5 +1,5 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
-const FONTS_CACHE = 'virgulas-fonts-v6'
+const FONTS_CACHE = 'virgulas-fonts-v7'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
 const APP_CACHE = 'virgulas-app-v160'
 

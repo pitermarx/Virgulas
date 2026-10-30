@@ -7,10 +7,10 @@
  * Groups mirror the *_SHELL arrays in source/sw.js — update both together
  * when adding or removing files from a pre-cached shell.
  */
-import { createHash } from 'node:crypto'
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { join, resolve, relative } from 'node:path'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hashGroup } from './sw-cache.ts'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -37,32 +37,6 @@ async function exists(p) {
     try { await stat(p); return true } catch { return false }
 }
 
-async function collectFiles(p) {
-    const s = await stat(p)
-    if (s.isFile()) return [p]
-    const entries = (await readdir(p)).sort()
-    const results = []
-    for (const entry of entries) {
-        results.push(...(await collectFiles(join(p, entry))))
-    }
-    return results
-}
-
-async function hashGroup(paths) {
-    const hash = createHash('sha256')
-    const files = []
-    for (const p of paths) {
-        if (await exists(p)) {
-            files.push(...(await collectFiles(p)))
-        }
-    }
-    for (const file of files.sort()) {
-        hash.update(relative(ROOT, file).replace(/\\/g, '/'))
-        hash.update(await readFile(file))
-    }
-    return hash.digest('hex').slice(0, 16)
-}
-
 async function main() {
     // The Docker image build has no pre-registered service worker to bust; a
     // partial source tree would fail the hashing.
@@ -76,7 +50,7 @@ async function main() {
 
     const current = {}
     for (const [key, paths] of Object.entries(GROUPS)) {
-        current[key] = await hashGroup(paths)
+        current[key] = await hashGroup(ROOT, paths)
     }
 
     let sw = await readFile(SW_PATH, 'utf8')
