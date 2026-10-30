@@ -1,6 +1,27 @@
-# Keep the build context small; the image builds the app itself.
-*
-!package.json
-!bun.lock
-!source
-!scripts
+# Docker build context for scripts/trailbase/Dockerfile.
+#
+# The build only needs package.json, bun.lock, scripts/ and source/. The
+# traildepot exclusions keep a developer's local runtime state out of the image:
+# scripts/trailbase/compose.yml bind-mounts ./traildepot into the dev server,
+# which writes per-database migration state and the SQLite files there, and the
+# image COPYs the depot from the build context.
+
+.git
+.alta
+node_modules
+dist
+test-results
+playwright-report
+.env
+
+# Local TrailBase runtime state (see scripts/trailbase/traildepot/.gitignore).
+scripts/trailbase/traildepot/data
+scripts/trailbase/traildepot/wasm
+scripts/trailbase/traildepot/uploads
+scripts/trailbase/traildepot/backups
+scripts/trailbase/traildepot/secrets
+scripts/trailbase/traildepot/scripts
+scripts/trailbase/traildepot/migrations/main
+scripts/trailbase/traildepot/metadata.textproto
+scripts/trailbase/traildepot/trailbase.d.ts
+scripts/trailbase/traildepot/trailbase.js

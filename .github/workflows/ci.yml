@@ -303,6 +303,12 @@ jobs:
             -t virgulas-trailbase:pr \
             .
 
+      # A build-only check misses runtime failures such as a root-owned depot
+      # (issue #105): the image runs as the non-root `trailbase` user and must
+      # actually boot and start listening.
+      - name: Smoke-test the image
+        run: bash scripts/trailbase/smoke-image.sh virgulas-trailbase:pr
+
   # The all-in-one image: Virgulas served by TrailBase from the same origin.
   # Every main push refreshes latest/main/sha; a release adds its version tag.
   publish-image:
@@ -344,6 +350,19 @@ jobs:
             TAGS+=(--tag "$IMAGE:$VERSION")
             BUILD_VERSION="$VERSION"
           fi
+
+          # Load a native-arch image and boot it before publishing to every
+          # platform: a build alone does not prove the container can run as its
+          # own unprivileged user (issue #105). The multi-arch build below
+          # reuses these layers from the BuildKit cache.
+          docker buildx build \
+            --file scripts/trailbase/Dockerfile \
+            --platform linux/amd64 \
+            --build-arg APP_VERSION="$BUILD_VERSION" \
+            --tag virgulas-trailbase:smoke \
+            --load \
+            .
+          bash scripts/trailbase/smoke-image.sh virgulas-trailbase:smoke
 
           docker buildx build \
             --file scripts/trailbase/Dockerfile \
