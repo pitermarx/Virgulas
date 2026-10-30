@@ -199,8 +199,8 @@ docker compose -f compose.vps.yml up -d
 You need:
 
 - a DNS name pointing at the VPS, with ports 80/443 open (Caddy obtains the certificate);
-- a transactional SMTP account — TrailBase sends account-verification email, and sign-up cannot
-  complete without it;
+- a transactional SMTP account for email verification and password reset — or, for a single-user
+  instance, verify the account through the TrailBase admin UI instead (see below);
 - `site_url` and `VIRGULAS_DOMAIN` set to the same public HTTPS origin;
 - the `virgulas_data` volume backed up; it contains the TrailBase SQLite data.
 
@@ -211,6 +211,24 @@ first boot:
 ```bash
 docker compose -f compose.vps.yml logs -f virgulas
 ```
+
+### Single-user setup without SMTP
+
+TrailBase has no "disable email verification" setting, but its admin UI can verify an account
+manually. For one user:
+
+1. Leave the `email { ... }` block out of `traildepot/config.textproto` (or leave it without a
+   working SMTP provider).
+2. Sign up in Virgulas. Registration inserts the account before trying to send the verification
+   email, so the request may report a "failed to send email" error/424 while the account already
+   exists.
+3. Get the admin credentials from the container logs (the command above).
+4. Open `https://your-domain/_/admin/`, sign in, find the user under **Users**, and mark the
+   account **verified**.
+5. Sign in to Virgulas with the account email and password.
+
+Without SMTP, **Forgot password?** cannot send a reset email; keep the account credentials safe.
+Configure SMTP for a public instance or for multiple users.
 
 For a Cloudflare-proxied domain, issue the certificate with the DNS record set to DNS-only, or use
 a Cloudflare origin certificate/DNS challenge; the default HTTP challenge needs direct port 80

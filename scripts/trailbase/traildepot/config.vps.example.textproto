@@ -10,6 +10,9 @@ server {
   site_url: "https://notes.example.com"
 }
 
+# For a single-user instance this whole email block can be omitted; sign up,
+# then mark the account verified in the TrailBase admin UI at /_/admin/.
+# Email is needed for multi-user sign-up and password resets.
 email {
   smtp_host: "smtp.example.com"
   smtp_username: "smtp-user"
