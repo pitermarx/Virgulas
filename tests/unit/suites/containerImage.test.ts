@@ -54,4 +54,22 @@ describe('All-in-one image boots as its own user', () => {
     assert(smoke.includes('Listening on http'), 'the smoke script must wait for the listening line')
     assert(smoke.includes('State.Running'), 'the smoke script must fail fast when the container exits')
   })
+
+  it('keeps local TrailBase runtime state out of the build context', () => {
+    const patterns = read('.dockerignore')
+      .split('\n')
+      .map((line) => line.trim())
+    for (const path of [
+      'scripts/trailbase/traildepot/data',
+      'scripts/trailbase/traildepot/wasm',
+      'scripts/trailbase/traildepot/uploads',
+      'scripts/trailbase/traildepot/backups',
+      'scripts/trailbase/traildepot/secrets',
+      'scripts/trailbase/traildepot/scripts',
+      'scripts/trailbase/traildepot/migrations/main',
+      'scripts/trailbase/traildepot/metadata.textproto',
+    ]) {
+      assert(patterns.includes(path), `.dockerignore must exclude ${path} (dev bind-mount runtime state)`)
+    }
+  })
 })
