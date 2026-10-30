@@ -35,12 +35,16 @@ const installMock = async (page: Page, seed?: { salt: string; data: string }) =>
         if (columns === 'updated_at') return { data: { updated_at: state.serverRecord.updated_at }, error: null };
         return { data: state.serverRecord, error: null };
       },
-      upsert: async (p: any) => {
-        // Keep the whole payload so tests can assert identity binding.
-        state.upserts.push({ ...p });
-        state.serverRecord = { salt: p.salt, data: p.data, updated_at: p.updated_at };
-        return { error: null };
-      }
+      upsert: (p: any) => ({
+        select: () => ({
+          single: async () => {
+            // Keep the whole payload so tests can assert identity binding.
+            state.upserts.push({ ...p });
+            state.serverRecord = { salt: p.salt, data: p.data, updated_at: p.updated_at };
+            return { data: { updated_at: p.updated_at }, error: null };
+          }
+        })
+      })
     };
 
     const client = {

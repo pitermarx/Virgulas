@@ -32,19 +32,25 @@ const installFailingMockSupabase = async (
                     (window as any).__mockSupabaseState.serverRecord
                         ? { data: (window as any).__mockSupabaseState.serverRecord, error: null }
                         : { data: null, error: { code: 'PGRST116' } },
-                upsert: async (payload: { salt: string; data: string; updated_at: string }) => {
+                upsert: (payload: { salt: string; data: string; updated_at: string }) => {
                     (window as any).__mockSupabaseState.upsertCallCount++;
                     const callNo = (window as any).__mockSupabaseState.upsertCallCount;
                     const shouldFail = alwaysFailUpsert || (failUpsertTimes != null && callNo <= failUpsertTimes);
-                    if (shouldFail) {
-                        return { error: { message: 'mock network error', code: '503' } };
-                    }
-                    (window as any).__mockSupabaseState.serverRecord = {
-                        salt: payload.salt,
-                        data: payload.data,
-                        updated_at: payload.updated_at
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                if (shouldFail) {
+                                    return { data: null, error: { message: 'mock network error', code: '503' } };
+                                }
+                                (window as any).__mockSupabaseState.serverRecord = {
+                                    salt: payload.salt,
+                                    data: payload.data,
+                                    updated_at: payload.updated_at
+                                };
+                                return { data: { updated_at: payload.updated_at }, error: null };
+                            }
+                        })
                     };
-                    return { error: null };
                 }
             };
 
@@ -226,12 +232,18 @@ test.describe('Sync status indicator', () => {
             const queryBuilder = {
                 select: () => queryBuilder, eq: () => queryBuilder,
                 single: async () => ({ data: (window as any).__mockSupabaseState.serverRecord, error: null }),
-                upsert: async (payload: any) => {
+                upsert: (payload: any) => {
                     (window as any).__mockSupabaseState.upsertCallCount++;
-                    // Long delay so Playwright can reliably observe the 'syncing' DOM state
-                    await new Promise<void>(r => setTimeout(r, 3000));
-                    (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
-                    return { error: null };
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                // Long delay so Playwright can reliably observe the 'syncing' DOM state
+                                await new Promise<void>(r => setTimeout(r, 3000));
+                                (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
+                                return { data: { updated_at: payload.updated_at }, error: null };
+                            }
+                        })
+                    };
                 }
             };
             const client = {
@@ -306,14 +318,20 @@ test.describe('Sync status indicator', () => {
                 select: () => queryBuilder,
                 eq: () => queryBuilder,
                 single: async () => ({ data: (window as any).__mockSupabaseState.serverRecord, error: null }),
-                upsert: async (payload: any) => {
+                upsert: (payload: any) => {
                     (window as any).__mockSupabaseState.upsertCallCount++;
                     const callNo = (window as any).__mockSupabaseState.upsertCallCount;
-                    if (callNo === 1) {
-                        await new Promise<void>(r => setTimeout(r, 2500));
-                    }
-                    (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
-                    return { error: null };
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                if (callNo === 1) {
+                                    await new Promise<void>(r => setTimeout(r, 2500));
+                                }
+                                (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
+                                return { data: { updated_at: payload.updated_at }, error: null };
+                            }
+                        })
+                    };
                 }
             };
             const client = {
@@ -385,10 +403,16 @@ test.describe('Sync status indicator', () => {
                     state.singleCallCount++;
                     return { data: state.serverRecord, error: null };
                 },
-                upsert: async (payload: any) => {
+                upsert: (payload: any) => {
                     state.upsertCallCount++;
-                    state.serverRecord = { ...payload, updated_at: payload.updated_at };
-                    return { error: null };
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                state.serverRecord = { ...payload, updated_at: payload.updated_at };
+                                return { data: { updated_at: payload.updated_at }, error: null };
+                            }
+                        })
+                    };
                 }
             };
             const client = {
@@ -523,13 +547,19 @@ test.describe('Sync retry behaviour', () => {
             const queryBuilder = {
                 select: () => queryBuilder, eq: () => queryBuilder,
                 single: async () => ({ data: state.serverRecord, error: null }),
-                upsert: async (p: any) => {
+                upsert: (p: any) => {
                     state.upsertCallCount++;
-                    if ((window as any).__shouldUpsertFail) {
-                        return { error: { message: 'network error', code: '503' } };
-                    }
-                    state.serverRecord = { ...p, updated_at: p.updated_at };
-                    return { error: null };
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                if ((window as any).__shouldUpsertFail) {
+                                    return { data: null, error: { message: 'network error', code: '503' } };
+                                }
+                                state.serverRecord = { ...p, updated_at: p.updated_at };
+                                return { data: { updated_at: p.updated_at }, error: null };
+                            }
+                        })
+                    };
                 }
             };
             const client = {
@@ -693,10 +723,16 @@ const installMockWithRemoteUpdate = async (
                     const record = callCount === 1 ? localRecord : remoteRecord;
                     return { data: record, error: null };
                 },
-                upsert: async (p: any) => {
+                upsert: (p: any) => {
                     (window as any).__mockSupabaseState.upsertCallCount++;
-                    (window as any).__mockSupabaseState.serverRecord = { ...p, updated_at: p.updated_at };
-                    return { error: null };
+                    return {
+                        select: () => ({
+                            single: async () => {
+                                (window as any).__mockSupabaseState.serverRecord = { ...p, updated_at: p.updated_at };
+                                return { data: { updated_at: p.updated_at }, error: null };
+                            }
+                        })
+                    };
                 }
             };
             const client = {

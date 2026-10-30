@@ -17,6 +17,14 @@ const readSource = (relative: string) =>
 
 // ─── fake client ─────────────────────────────────────────────────────────────
 
+/** PostgREST serialises `timestamptz` as `...+00:00`, never the client's `...Z`. */
+function serializeTimestamp(iso: string | undefined): string | undefined {
+    if (!iso) return iso
+    const parsed = new Date(iso)
+    if (Number.isNaN(parsed.getTime())) return iso
+    return parsed.toISOString().replace('Z', '+00:00')
+}
+
 interface FakeOptions {
     row?: { salt?: string | null; data?: string; updated_at?: string } | null
     tableError?: any                  // returned by every from('outlines') call
@@ -76,11 +84,23 @@ function fakeSupabaseClient(options: FakeOptions = {}) {
                         return { data: options.row === undefined ? null : options.row, error: null }
                     }
                 }),
-                upsert: async (payload: any, opts: any) => {
+                upsert: (payload: any, opts: any) => {
                     calls.push(`upsert:${JSON.stringify(opts)}`)
-                    if (options.tableError) return { data: null, error: options.tableError }
-                    options.row = { ...payload }
-                    return { data: payload, error: null }
+                    return {
+                        // supabase-js chains the representation read onto the
+                        // upsert; the fake must expose the same shape or the
+                        // adapter's server-token path is never exercised.
+                        select: (columns: string) => {
+                            calls.push(`select:${columns}`)
+                            return {
+                                single: async () => {
+                                    if (options.tableError) return { data: null, error: options.tableError }
+                                    options.row = { ...payload, updated_at: serializeTimestamp(payload.updated_at) }
+                                    return { data: options.row, error: null }
+                                }
+                            }
+                        }
+                    }
                 },
                 delete: () => ({
                     eq: async (column: string, value: any) => {
@@ -140,14 +160,12 @@ describe('supabaseRaw — write path', () => {
   it('writeRaw sources the uid from the cached session, never auth.getUser()', async () => {
       const { client, getUserCallCount } = fakeSupabaseClient()
       const raw = supabaseRaw(client)
-      const token = await raw.writeRaw({ data: 'envelope', salt: 'salt-x' })
+      const token = await raw.writeRaw({ data: 'envelope', salt: 'salt-x', updatedAt: '2024-06-01T00:00:00Z' })
 
       assertEqual(getUserCallCount(), 0, 'auth.getUser is never called on the write path (§4.2)')
-      assertEqual((client.calls.at(-1)), 'upsert:{"onConflict":"user_id"}', 'RLS-scoped upsert')
-      assertEqual(raw.readRaw !== undefined, true, 'shape')
-      const row: any = { data: 'envelope', salt: 'salt-x', user_id: 'user-1', updated_at: token }
-      assert(!!token, 'write resolves with a token')
-      assertEqual(typeof token, 'string', 'token is the stamp')
+      assert(client.calls.includes('upsert:{"onConflict":"user_id"}'), 'RLS-scoped upsert')
+      assert(client.calls.includes('select:updated_at'), 'server token read back in the same request')
+      assertEqual(token, '2024-06-01T00:00:00.000+00:00', 'token is the server representation, not the client ISO string')
   })
 
   it('writeRaw resolves with the token head() reports (self-push ping-pong guard)', async () => {
@@ -155,6 +173,8 @@ describe('supabaseRaw — write path', () => {
       const raw = supabaseRaw(client)
       const token = await raw.writeRaw({ data: 'envelope', salt: 'salt-x' })
       assertEqual(await raw.head!(), token, 'head equals the write token')
+      assert(token?.endsWith('+00:00'), 'token uses the server timestamp form')
+      assert(!token?.endsWith('Z'), 'token is not the client toISOString form')
   })
 
   it('writeRaw without a signed-in session throws unauthenticated', async () => {

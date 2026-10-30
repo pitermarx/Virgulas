@@ -271,14 +271,20 @@ describe('trailbaseRaw — records', () => {
 
   it('writeRaw creates when no row exists (user supplied, ACL-verified) and updates when it does', async () => {
       seedSession()
+      let stored: { updated_at: number } | null = null
       const fetcher = fakeFetch([
           (call) => {
               if (call.url.endsWith('/api/records/v1/outlines?_limit=1')) {
-                  return { status: 200, json: { records: [] } }   // no row yet
+                  return {
+                      status: 200,
+                      json: { records: stored ? [{ id: 42, data: 'the envelope', salt: 'salt-x', ...stored }] : [] }
+                  }
               }
               if (call.url.endsWith('/api/records/v1/outlines') && call.method === 'POST') {
                   assertEqual(call.body.user, 'user-1', 'owner supplied (ACL verifies against the JWT)')
                   assertEqual(call.body.data, 'the envelope', 'data sent')
+                  assertEqual(typeof call.body.updated_at, 'number', 'INTEGER column stores epoch ms')
+                  stored = { updated_at: call.body.updated_at }
                   return { status: 200, json: { ids: [42] } }
               }
               return null
@@ -288,6 +294,7 @@ describe('trailbaseRaw — records', () => {
           const raw = trailbaseRaw(CONFIG)
           const token = await raw.writeRaw({ data: 'the envelope', salt: 'salt-x' })
           assert(typeof token === 'string' && token.length > 0, 'write resolves with the client stamp')
+          assertEqual(await raw.head!(), token, 'head equals the write token')
       } finally {
           fetcher.restore()
           store.backendSession.del()
@@ -297,14 +304,16 @@ describe('trailbaseRaw — records', () => {
   it('writeRaw patches the existing row (upsert semantics, no read-before-write by the consumer)', async () => {
       seedSession()
       let patched = false
+      const stored = { updated_at: 1761000000000 }
       const fetcher = fakeFetch([
           (call) => {
               if (call.url.endsWith('/api/records/v1/outlines?_limit=1')) {
-                  return { status: 200, json: { records: [{ id: 42, data: 'old', salt: 's', updated_at: 'old-stamp' }] } }
+                  return { status: 200, json: { records: [{ id: 42, data: 'old', salt: 's', ...stored }] } }
               }
               if (call.url.endsWith('/api/records/v1/outlines/42') && call.method === 'PATCH') {
                   patched = true
                   assertEqual(call.body.data, 'new envelope', 'patch body')
+                  stored.updated_at = call.body.updated_at
                   return { status: 200, json: { record: { id: 42 } } }
               }
               return null
@@ -315,6 +324,7 @@ describe('trailbaseRaw — records', () => {
           const token = await raw.writeRaw({ data: 'new envelope', salt: 's' })
           assert(patched, 'PATCH issued to the existing row id')
           assert(typeof token === 'string', 'token resolved')
+          assertEqual(await raw.head!(), token, 'head equals the write token')
       } finally {
           fetcher.restore()
           store.backendSession.del()
@@ -336,6 +346,24 @@ describe('trailbaseRaw — records', () => {
           assertEqual(record?.updatedAt, 'stamp-1', 'updatedAt mapped')
           assertEqual(await raw.head!(), 'stamp-1', 'head = the row stamp')
           assertEqual(await raw.exists(), true, 'exists')
+      } finally {
+          fetcher.restore()
+          store.backendSession.del()
+      }
+  })
+
+  it('readRaw normalises the INTEGER updated_at to the string head()/unlock use', async () => {
+      seedSession()
+      const fetcher = fakeFetch([
+          (call) => call.url.endsWith('/api/records/v1/outlines?_limit=1')
+              ? { status: 200, json: { records: [{ id: 7, data: 'envelope-bytes', salt: 'salt-9', updated_at: 1761000000000 }] } }
+              : null
+      ])
+      try {
+          const raw = trailbaseRaw(CONFIG)
+          const record = await raw.readRaw()
+          assertEqual(record?.updatedAt, '1761000000000', 'readRaw exposes a string token')
+          assertEqual(await raw.head!(), record?.updatedAt, 'head matches the unlock token')
       } finally {
           fetcher.restore()
           store.backendSession.del()

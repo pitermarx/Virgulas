@@ -28,14 +28,18 @@ const installMockSupabase = async (page: Page, options?: {
       single: async () => (window as any).__mockSupabaseState.serverRecord
         ? { data: (window as any).__mockSupabaseState.serverRecord, error: null }
         : { data: null, error: { code: 'PGRST116' } },
-      upsert: async (payload: { salt: string; data: string; updated_at: string }) => {
-        (window as any).__mockSupabaseState.serverRecord = {
-          salt: payload.salt,
-          data: payload.data,
-          updated_at: payload.updated_at
-        };
-        return { error: null };
-      }
+      upsert: (payload: { salt: string; data: string; updated_at: string }) => ({
+        select: () => ({
+          single: async () => {
+            (window as any).__mockSupabaseState.serverRecord = {
+              salt: payload.salt,
+              data: payload.data,
+              updated_at: payload.updated_at
+            };
+            return { data: { updated_at: payload.updated_at }, error: null };
+          }
+        })
+      })
     };
 
     const client = {

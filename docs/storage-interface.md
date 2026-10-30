@@ -607,6 +607,11 @@ Notes:
   sync/data findings follow-up work (§12, §13 OQ 6). The TrailBase adapter
   (PR 3) shares the same limitation today — it also accepts a client-supplied
   `updated_at` — so the follow-up makes the two backends consistent.
+- `write()` returns the **server's** `updated_at` representation (the upsert
+  selects it back), not the client's `Z`-suffixed string. That keeps the token
+  exactly equal to what a subsequent `head()` reports, so the poller does not
+  mistake its own push for a remote change. The client-clock trust limitation
+  above is unchanged; this only fixes the token round-trip.
 - `docId` is deliberately absent from the contracts. If multi-document support
   is ever wanted, it is added as an optional parameter defaulting to a constant;
   retrofitting later touches only adapters. Deciding now is an Open Question.
@@ -934,9 +939,10 @@ Deferred follow-up (not a PR in this plan): **server-managed `updated_at`**
 and **server-default `user_id`** for the Supabase backend — `BEFORE INSERT OR
 UPDATE` trigger (`NEW.updated_at := now()`), `default auth.uid()` on
 `user_id` (the uid leaves the client payload entirely — the fully honest form
-of §4.2's identity rule), optional column-privilege revokes, adapter switches
-to `upsert(…).select()` so `write()` returns the server token, delete the
-remaining client-timestamp push bookkeeping, add clock-skew tests. One shared
+of §4.2's identity rule), optional column-privilege revokes, delete the
+remaining client-timestamp push bookkeeping, add clock-skew tests. (The
+adapter's token half — `upsert(…).select('updated_at')` so `write()` returns
+the server token — is already in place.) One shared
 migration for both columns. Requires a schema change (Rule 4:
 `supabase/schemas/outlines.sql` + generated migration) and new skew behaviour,
 so it deliberately does **not** ride inside PR 2d's "existing e2e green"

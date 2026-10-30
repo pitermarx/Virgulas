@@ -54,14 +54,20 @@ const installPollingMockSupabase = async (
                 state.readCalls++;
                 return { data: state.serverRecord, error: null };
             },
-            upsert: async (next: { salt?: string; data: string; updated_at: string }) => {
+            upsert: (next: { salt?: string; data: string; updated_at: string }) => {
                 state.upsertCalls++;
-                state.serverRecord = {
-                    ...state.serverRecord,
-                    ...next,
-                    updated_at: next.updated_at || new Date().toISOString()
+                return {
+                    select: () => ({
+                        single: async () => {
+                            state.serverRecord = {
+                                ...state.serverRecord,
+                                ...next,
+                                updated_at: next.updated_at || new Date().toISOString()
+                            };
+                            return { data: { updated_at: state.serverRecord.updated_at }, error: null };
+                        }
+                    })
                 };
-                return { error: null };
             }
         };
 
