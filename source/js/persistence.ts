@@ -33,7 +33,6 @@ import {
   setLastSyncedAt,
   noteLocalWriteActivity,
   allowImmediateRemoteSync,
-  hasSupabaseClient,
   backend
 } from './sync.js'
 import { cached } from './cachedStore.js'
@@ -923,7 +922,6 @@ export default {
   setPreferredMode(mode: string | null) {
     rememberMode(mode)
   },
-  hasSupabase: () => hasSupabaseClient(),
   getBackendConfig,
   setBackendConfig,
   getBackendKind,
@@ -943,7 +941,6 @@ export default {
     const encryptedStorageAvailable = supportsEncryptedStorage(browserCapabilities)
     const browserSupportWarning = describeBrowserSupport(browserCapabilities, encryptedStorageAvailable)
     const hasLocalData = await localDataStore.exists()
-    const hasSupabase = hasSupabaseClient()
     const hasFilesystem = filesystemStorage.isSupported()
     const lastUsername = store.user.get('') || ''
     const preferredMode = normalizeMode(store.mode.get(null))
@@ -958,7 +955,7 @@ export default {
       ? await filesystemStorage.hasSavedHandle()
       : false
 
-    if (encryptedStorageAvailable && hasSupabase && preferredMode === 'remote') {
+    if (encryptedStorageAvailable && preferredMode === 'remote') {
       try {
         user = await remoteSync.getUser()
         if (user) {
@@ -972,7 +969,6 @@ export default {
 
     const bootstrapBase = {
       hasLocalData,
-      hasSupabase,
       hasFilesystem,
       hasSavedFileHandle,
       lastUsername,
@@ -1032,7 +1028,7 @@ export default {
     }
 
     if (preferredMode === 'remote') {
-      if (hasSupabase && user && hasRemoteData) {
+      if (user && hasRemoteData) {
         return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
       }
       return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
