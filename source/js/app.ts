@@ -29,7 +29,6 @@ if (savedTheme) {
 const authMode = signal<PersistenceMode>('local');
 const authScenario = signal('empty-local');
 const authHasLocalData = signal(false);
-const authHasSupabase = signal(false);
 const authHasFilesystem = signal(false);
 const authHasEncryptedStorage = signal(true);
 const browserSupportWarning = signal('');
@@ -454,7 +453,6 @@ async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
   authMode.value = bootstrap.mode as PersistenceMode;
   authScenario.value = bootstrap.scenario;
   authHasLocalData.value = bootstrap.hasLocalData;
-  authHasSupabase.value = bootstrap.hasSupabase;
   authHasFilesystem.value = bootstrap.hasFilesystem || false;
   authHasEncryptedStorage.value = bootstrap.encryptedStorageAvailable;
   browserSupportWarning.value = bootstrap.browserSupportWarning;
@@ -608,11 +606,6 @@ async function submitUnlock(e: any) {
 
     if (!passphrase.value.trim()) {
       unlockError.value = 'Passphrase cannot be empty.';
-      return;
-    }
-
-    if (authMode.value === 'remote' && !authHasSupabase.value) {
-      unlockError.value = 'Remote mode is unavailable because sync is not configured.';
       return;
     }
 

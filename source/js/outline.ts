@@ -30,17 +30,6 @@ export interface NodeInput {
     lastModified?: number
 }
 
-export interface NodeSnapshot {
-    id: string
-    parentId: string | null
-    text: string
-    description: string
-    children: string[]
-    open: boolean
-    done: DoneState
-    lastModified: number
-}
-
 export interface NodeUpdate {
     text?: string
     description?: string

@@ -137,15 +137,6 @@ export const remoteSync = {
     resolveBackend: async () => backend()
 }
 
-/**
- * Whether a Supabase client can be used at all. This is a build capability (the
- * chunk ships with the app and is fetched on demand), not a runtime check;
- * whether to *use* it is decided by the persisted mode in persistence.ts.
- */
-export function hasSupabaseClient(): boolean {
-    return true
-}
-
 // ── Sync status + conflict signals ───────────────────────────────────────────
 
 export const syncStatus = signal<'synced' | 'syncing' | 'error' | 'offline'>('synced')
