@@ -1,5 +1,6 @@
 import { describe, it } from 'bun:test'
-import { mergeDocuments } from '../../../source/js/sync.js'
+import { mergeDocuments, resolveConflicts, setRemoteStore, pendingConflicts, pendingMergedDoc } from '../../../source/js/sync.js'
+import outline from '../../../source/js/outline.js'
 import { assert, assertEqual } from '../testing.js'
 
 // ─── harness ──────────────────────────────────────────────────────────────────
@@ -220,4 +221,48 @@ describe("mergeDocuments — special cases", () => {
       assert(merged.find(n => n.id === 'n1') !== undefined, "Locally-modified n1 present")
       assert(merged.find(n => n.id === 'n2') !== undefined, "Remotely-modified n2 present")
   })
+})
+describe('resolveConflicts applies every conflict field (data-02)', () => {
+
+    it('applies a chosen task state and reparents the node, keeping both parents true', async () => {
+        outline.reset()
+        let writes = 0
+        setRemoteStore({
+            async read() { return null },
+            async write() { writes += 1; return 'token' },
+            async clear() { },
+            async exists() { return true },
+            async head() { return null },
+            async unlock() { },
+            async lock() { },
+            capabilities: { durable: 'always', encrypted: false, authenticated: false, changeDetection: true, available: true }
+        })
+        pendingMergedDoc.value = {
+            modelVersion: 'v1',
+            dataVersion: 1,
+            nodes: [
+                { id: 'root', parentId: null, text: '', children: ['a', 'b'], lastModified: 0 },
+                { id: 'a', parentId: 'root', text: 'A', children: ['n1'], lastModified: 0 },
+                { id: 'b', parentId: 'root', text: 'B', children: [], lastModified: 0 },
+                { id: 'n1', parentId: 'a', text: 'N', children: [], lastModified: 0, done: false }
+            ]
+        }
+        pendingConflicts.value = [
+            { nodeId: 'n1', nodeText: 'N', field: 'done', localValue: false, remoteValue: true },
+            { nodeId: 'n1', nodeText: 'N', field: 'parentId', localValue: 'a', remoteValue: 'b' }
+        ]
+
+        await resolveConflicts([
+            { nodeId: 'n1', field: 'done', chosenSide: 'remote' },
+            { nodeId: 'n1', field: 'parentId', chosenSide: 'remote' }
+        ])
+
+        const n1 = outline.get('n1')!.peek()
+        assertEqual(n1.done, true, 'the chosen task state is applied')
+        assertEqual(n1.parentId, 'b', 'the chosen parent is applied')
+        assertEqual(outline.get('a')!.peek().children.includes('n1'), false, 'the old parent no longer lists it')
+        assertEqual(outline.get('b')!.peek().children.includes('n1'), true, 'the new parent lists it')
+        assertEqual(writes, 1, 'the merged document was pushed once')
+        setRemoteStore(null)
+    })
 })

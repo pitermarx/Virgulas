@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals'
 import outline from './outline.js'
 import { log, store } from './utils.js'
-import { documentsEquivalent, merge, mergeDocuments } from './merge.js'
+import { CONFLICT_FIELDS, documentsEquivalent, merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
@@ -319,6 +319,25 @@ export async function pullAndMerge(): Promise<PullAndMergeResult> {
  * Apply conflict resolutions, push merged doc, and clear conflict state.
  * @param {Array<{ nodeId: string, field: string, chosenSide: 'local' | 'remote' }>} resolutions
  */
+/**
+ * Apply a chosen parent to a node inside the conflict document, keeping both
+ * parents' children arrays true (data-02: a resolved move must not leave the
+ * node listed under its old parent).
+ */
+function reparent(nodes: OutlineNode[], node: OutlineNode, nextParentId: string | null) {
+    const previousParentId = node.parentId ?? null
+    if (previousParentId === nextParentId) return
+    const previousParent = nodes.find(candidate => candidate.id === previousParentId)
+    if (previousParent) {
+        previousParent.children = (previousParent.children ?? []).filter(id => id !== node.id)
+    }
+    const nextParent = nodes.find(candidate => candidate.id === nextParentId)
+    if (nextParent && !(nextParent.children ?? []).includes(node.id)) {
+        nextParent.children = [...(nextParent.children ?? []), node.id]
+    }
+    node.parentId = nextParentId
+}
+
 export async function resolveConflicts(resolutions: ConflictResolution[]) {
     const doc = pendingMergedDoc.peek()
     if (!doc) return
@@ -337,19 +356,23 @@ export async function resolveConflicts(resolutions: ConflictResolution[]) {
         conflictValues.set(`${c.nodeId}::${c.field}`, { local: c.localValue, remote: c.remoteValue })
     }
 
-    // Apply chosen values to the merged nodes
-    const updatedNodes = doc.nodes.map(node => {
-        let updated = { ...node }
-        for (const field of ['text', 'description', 'children']) {
+    // Apply chosen values to the merged nodes. Every field merge can flag is
+    // applied here (CONFLICT_FIELDS), so resolving one always has an effect.
+    const updatedNodes = doc.nodes.map(node => ({ ...node, children: [...(node.children ?? [])] }))
+    for (const node of updatedNodes) {
+        for (const field of CONFLICT_FIELDS) {
             const key = `${node.id}::${field}`
             const side = choiceMap.get(key)
-            if (side) {
-                const vals = conflictValues.get(key)
-                if (vals) updated[field] = vals[side]
+            if (!side) continue
+            const vals = conflictValues.get(key)
+            if (!vals) continue
+            if (field === 'parentId') {
+                reparent(updatedNodes, node, vals[side] ?? null)
+            } else {
+                ;(node as Record<string, unknown>)[field] = vals[side]
             }
         }
-        return updated
-    })
+    }
 
     const mergedObj: OutlineDoc = { ...doc, nodes: updatedNodes }
 

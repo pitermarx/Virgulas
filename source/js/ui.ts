@@ -897,10 +897,24 @@ export function ConflictModal() {
                 ${ids.map(id => html`<li>${nodeMap.get(id)?.text || id}</li>`)}
             </ul>`
         }
+        if (field === 'done') {
+            return html`<div class="conflict-scalar">${value === true ? 'Done' : 'Pending'}</div>`
+        }
+        if (field === 'parentId') {
+            const doc = pendingMergedDoc.peek()
+            const parent = doc?.nodes.find(n => n.id === value)
+            return html`<div class="conflict-scalar">${value ? (parent?.text || value) : 'Top level'}</div>`
+        }
         return html`<textarea class="conflict-value-textarea" readonly rows="4">${value}</textarea>`
     }
 
-    const fieldLabels: Record<string, string> = { text: 'Text', description: 'Description', children: 'Children' }
+    const fieldLabels: Record<string, string> = {
+        text: 'Text',
+        description: 'Description',
+        children: 'Children',
+        done: 'Task state',
+        parentId: 'Parent'
+    }
 
     return html`<div class="modal-overlay conflict-overlay">
         <div class="modal-dialog conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title">

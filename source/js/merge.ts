@@ -22,6 +22,15 @@ export interface NodeConflict {
     remoteValue: any
 }
 
+/**
+ * The fields a both-sides change can conflict on. Shared with sync's conflict
+ * application, so a field cannot be reported to the user and then silently
+ * ignored when the resolution is applied (data-02).
+ */
+export const CONFLICT_FIELDS = ['text', 'description', 'children', 'done', 'parentId'] as const
+
+export type ConflictField = typeof CONFLICT_FIELDS[number]
+
 export type MergeResult =
     | { kind: 'merged'; doc: OutlineDoc }
     | { kind: 'conflict'; conflicts: NodeConflict[]; partial: OutlineDoc }
@@ -108,6 +117,32 @@ export function mergeDocuments(localNodes: OutlineNode[], remoteNodes: OutlineNo
                     field: 'description',
                     localValue: local.description || '',
                     remoteValue: remote.description || ''
+                })
+            }
+
+            // done (task state): null and undefined both mean "not a task"
+            const localDone = local.done ?? null
+            const remoteDone = remote.done ?? null
+            if (localDone !== remoteDone) {
+                conflicts.push({
+                    nodeId: id,
+                    nodeText: local.text || remote.text || '',
+                    field: 'done',
+                    localValue: localDone,
+                    remoteValue: remoteDone
+                })
+            }
+
+            // parentId (a move): a different parent is a real conflict
+            const localParentId = local.parentId ?? null
+            const remoteParentId = remote.parentId ?? null
+            if (localParentId !== remoteParentId) {
+                conflicts.push({
+                    nodeId: id,
+                    nodeText: local.text || remote.text || '',
+                    field: 'parentId',
+                    localValue: localParentId,
+                    remoteValue: remoteParentId
                 })
             }
 

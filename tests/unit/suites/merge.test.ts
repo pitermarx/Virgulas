@@ -4,7 +4,7 @@ import { describe, it } from 'bun:test'
 // (it now re-exports the extracted function); this suite covers the
 // document-level merge() contract: the merged/conflict result shape,
 // metadata carry-over, baseline semantics, and pureness.
-import { documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
+import { CONFLICT_FIELDS, documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
 import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
 import { assert, assertEqual } from '../testing.js'
 
@@ -227,6 +227,54 @@ describe('merge — pureness', () => {
       } finally {
           if (original) Object.defineProperty(globalThis, 'localStorage', original)
           else delete (globalThis as any).localStorage
+      }
+  })
+})
+describe('merge - done and parentId conflicts (data-02)', () => {
+
+  it('a task state changed on both sides conflicts instead of being dropped', () => {
+      const local = doc([node({ id: 'n1', done: true, lastModified: T1 })])
+      const remote = doc([node({ id: 'n1', done: false, lastModified: T2 })])
+
+      const result = mergeDocuments(local.nodes, remote.nodes, SYNCED_AT)
+
+      const conflict = result.conflicts.find(c => c.field === 'done')
+      assert(conflict, 'the differing task states conflict')
+      assertEqual(conflict!.localValue, true, 'local state')
+      assertEqual(conflict!.remoteValue, false, 'remote state')
+  })
+
+  it('a missing done and a null done are the same value', () => {
+      const local = doc([node({ id: 'n1', lastModified: T1 })])
+      const remote = doc([node({ id: 'n1', done: null, lastModified: T2 })])
+
+      const result = mergeDocuments(local.nodes, remote.nodes, SYNCED_AT)
+
+      assertEqual(result.conflicts.length, 0, 'no conflict for "not a task" vs "not a task"')
+  })
+
+  it('a parent changed on both sides conflicts', () => {
+      const local = doc([node({ id: 'n1', parentId: 'root', lastModified: T1 })])
+      const remote = doc([node({ id: 'n1', parentId: 'elsewhere', lastModified: T2 })])
+
+      const result = mergeDocuments(local.nodes, remote.nodes, SYNCED_AT)
+
+      const conflict = result.conflicts.find(c => c.field === 'parentId')
+      assert(conflict, 'the differing parents conflict')
+      assertEqual(conflict!.localValue, 'root', 'local parent')
+      assertEqual(conflict!.remoteValue, 'elsewhere', 'remote parent')
+  })
+
+  it('every field the merge can flag is one the conflict application knows', () => {
+      const local = doc([node({ id: 'n1', text: 'local', done: true, parentId: 'root', lastModified: T1 })])
+      const remote = doc([node({ id: 'n1', text: 'remote', done: false, parentId: 'other', lastModified: T2 })])
+      const result = mergeDocuments(local.nodes, remote.nodes, SYNCED_AT)
+      assert(result.conflicts.length >= 3, 'text, done and parentId all differ')
+      for (const conflict of result.conflicts) {
+          assert(
+              (CONFLICT_FIELDS as readonly string[]).includes(conflict.field),
+              conflict.field + ' must be in CONFLICT_FIELDS'
+          )
       }
   })
 })
