@@ -58,6 +58,30 @@ jobs:
       - name: Validate Conventional Commit headers
         run: node scripts/check-conventional-commits.mjs --range "${{ steps.range.outputs.range }}"
 
+  unit:
+    name: Unit Tests and Typecheck
+    needs: commit-policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run unit tests
+        run: bun run test:unit
+        env:
+          CI: true
+
   test:
     name: E2E Tests (shard ${{ matrix.shard }}/3)
     needs: commit-policy
@@ -74,6 +98,23 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
+
+      # The Bun install cache and the Playwright browser download are the two
+      # slow, repeatable parts of each shard (ci-01). Both are keyed on the
+      # lockfile, which changes only when a dependency does.
+      - name: Cache Bun install
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-cache-${{ runner.os }}-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: playwright-${{ runner.os }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -155,11 +196,6 @@ jobs:
           done
           echo "::error::Local Supabase failed to start after 3 attempts."
           exit 1
-
-      - name: Run unit tests
-        run: bun run test:unit
-        env:
-          CI: true
 
       - name: Run E2E tests (shard ${{ matrix.shard }}/3)
         run: bun run test:e2e -- --shard=${{ matrix.shard }}/3
