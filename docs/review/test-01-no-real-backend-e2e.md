@@ -16,7 +16,7 @@ The Playwright config refuses to start without local Supabase credentials, and C
 
 ## Suggested fix
 
-Add a small real-backend suite that runs against the production-shaped bundle (see ci-03) and local Supabase: sign up, sign in, upload, second context pulls, RLS denies another user's row, the 16 MiB constraint rejects, delete-account works. Keep mocks only for failure injection, and move the mock into one shared fixture in `tests/test.ts`. If the real suite is not added, stop starting Supabase in CI.
+Add a small real-backend suite that runs against the production-shaped bundle (the `production-bundle` job; ci-03) and local Supabase: sign up, sign in, upload, second context pulls, RLS denies another user's row, the 16 MiB constraint rejects, delete-account works. Keep mocks only for failure injection, and move the mock into one shared fixture in `tests/test.ts`. If the real suite is not added, stop starting Supabase in CI.
 
 ## Tests
 
@@ -28,7 +28,7 @@ The new suite is the test.
 - **Phase:** [1 — Safety net and baselines](README.md#phase-1)
 - **Size:** L
 - **Do these first:** —
-- **Unblocks:** [ci-03](ci-03-tests-not-run-against-production-bundle.md), [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md)
+- **Unblocks:** [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
 - **Related:** [struct-02](struct-02-duplicated-remote-push-logic.md)

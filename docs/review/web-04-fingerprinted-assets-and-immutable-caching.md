@@ -34,7 +34,7 @@ Build test: output names include a hash and `index.html` references them; unit t
 
 - **Phase:** [8 — Delivery, platform and housekeeping](README.md#phase-8)
 - **Size:** M
-- **Do these first:** [ci-03](ci-03-tests-not-run-against-production-bundle.md)
+- **Do these first:** —
 - **Unblocks:** [perf-05](perf-05-sw-stale-chunk-after-deploy.md)
 - **Its decision changes how these are built:** [perf-07](perf-07-sw-font-precache.md)
 - **Shaped by:** —

@@ -653,6 +653,7 @@ Workflows live in `.github/workflows/`.
 | `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
 | `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts |
+| `production-bundle` | every push/PR | builds the deploy bundle (`--no-sourcemap`, test hooks off), refuses a source map, and runs the behaviour specs that need no test seam against it; a failure blocks `deploy` |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
 | `validate-image` | pull requests | builds the all-in-one image and boots it with `scripts/trailbase/smoke-image.sh` |

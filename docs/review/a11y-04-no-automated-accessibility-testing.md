@@ -30,4 +30,4 @@ The new specs are the tests.
 - **Unblocks:** [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
-- **Related:** [a11y-03](a11y-03-sync-indicator-contrast.md)
+- **Related:** —

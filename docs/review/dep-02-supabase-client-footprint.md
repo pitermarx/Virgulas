@@ -30,4 +30,4 @@ The existing sync and auth specs through the `__TEST_HOOKS__` seam, plus a real-
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md)
-- **Related:** [dep-01](dep-01-no-supply-chain-checks.md)
+- **Related:** —
