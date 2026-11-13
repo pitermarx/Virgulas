@@ -200,6 +200,8 @@ test.describe('storage seam — remote flows', () => {
     await page.reload();
     await unlockRemote(page, 'pass-123456');
 
+    const upsertsBeforeRotation = await page.evaluate(() => (window as any).__mock.upserts.length);
+
     // Rotate on "another device": the row now carries a foreign salt and a
     // document encrypted under a different passphrase.
     await page.evaluate(async () => {
@@ -214,9 +216,9 @@ test.describe('storage seam — remote flows', () => {
     await expect(page.getByRole('heading', { name: /Unlock Virgulas/i })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText(/changed on another device/i)).toBeVisible();
 
-    // ...and no push followed the failed pull (docs §4.4: never followed by a push).
-    const count = await page.evaluate(() => (window as any).__mock.upserts.length);
-    await page.waitForTimeout(500);
-    expect(await page.evaluate(() => (window as any).__mock.upserts.length)).toBe(count);
+    // ...and no push followed the failed pull (docs §4.4: never followed by a
+    // push). The locked screen is the end of the pull cycle, so a push issued
+    // by that cycle would already be recorded — no observation window needed.
+    expect(await page.evaluate(() => (window as any).__mock.upserts.length)).toBe(upsertsBeforeRotation);
   });
 });

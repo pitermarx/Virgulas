@@ -25,7 +25,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | --- | --- | --- | --- |
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
-| [1](#phase-1) | Safety net and baselines | 6 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
+| [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 10 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
@@ -106,14 +106,14 @@ These change how later items are implemented. Record each in the SPEC or an ADR 
 | D4 | Encryption envelope v3 | Bundle in one version bump: AAD (user id, revision, header), iteration bounds, KDF parameters, revision inside the payload. | One `v3` that adds AAD and a revision and clamps iterations; keep `v2` decrypt and upgrade on next save. | Phase 5 | [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-07](sec-07-pbkdf2-vs-memory-hard-kdf.md), [sec-14](sec-14-change-passphrase-without-reauth.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
 | D5 | Local storage backend | A. localStorage only. B. IndexedDB for ciphertext and snapshots, small metadata stays in localStorage. | B, because history, workspaces and quota all need it. | Phase 5 | [dur-03](dur-03-no-versioned-backups.md), [dur-04](dur-04-destructive-actions-without-safety-net.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | D6 | Inbound content policy | Anything arriving by link or paste: query-string documents, remote images, shared capture payloads. | Never write on a GET without a click; link-loaded documents open read-only in Memory mode; remote images load on click. Capture writes are already click-confirmed. | Settled (sec-01), Phase 6 (sec-08) | [sec-08](sec-08-remote-image-tracking.md), [roadmap-07](roadmap-07-load-vmd-from-query-string.md) |
-| D7 | Asset pipeline and cache ownership | Hashed file names and a manifest-driven service worker, with caching headers set at Cloudflare. | Adopt it; it also removes the hand-kept shell list and the cache bump script. | Phase 8 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md), [perf-05](perf-05-sw-stale-chunk-after-deploy.md), [perf-07](perf-07-sw-font-precache.md), [ci-03](ci-03-tests-not-run-against-production-bundle.md), [web-05](web-05-small-cleanups.md), [sec-09](sec-09-csp-unsafe-inline-styles.md) |
+| D7 | Asset pipeline and cache ownership | Hashed file names and a manifest-driven service worker, with caching headers set at Cloudflare. | Adopt it; it also removes the hand-kept shell list and the cache bump script. | Phase 8 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md), [perf-05](perf-05-sw-stale-chunk-after-deploy.md), [perf-07](perf-07-sw-font-precache.md), [web-05](web-05-small-cleanups.md), [sec-09](sec-09-csp-unsafe-inline-styles.md) |
 | D8 | Supported browsers | Publish a support floor and feature-detect what is required, or keep the implicit current floor. | Publish the floor (the last two versions of each engine, at least the versions that provide the APIs the encrypted modes require, such as Web Crypto and WebAuthn). | Phase 8 | [compat-02](compat-02-file-mode-chromium-only.md) |
 Items that have two halves, a quick part now and a bigger part after a decision:
 - [sync-07](sync-07-full-document-transfer-and-double-download.md): drop the duplicate startup download in Phase 3; the protocol change is D2.
 - [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md): hosted settings in Phase 0B; backend options are D3.
 - [dur-04](dur-04-destructive-actions-without-safety-net.md): confirmations and "download a backup first" in Phase 3; automatic snapshots wait for [dur-03](dur-03-no-versioned-backups.md).
 - [perf-05](perf-05-sw-stale-chunk-after-deploy.md): a manual precache of the chunk is a possible stopgap; the real fix is [web-04](web-04-fingerprinted-assets-and-immutable-caching.md).
-- [data-02](data-02-merge-drops-done-and-parentid.md), [data-04](data-04-orphan-nodes-after-conflict-resolution.md): cheap stopgaps in Phase 3 that D1 may make obsolete. Keep them small.
+- [data-04](data-04-orphan-nodes-after-conflict-resolution.md): a cheap stopgap in Phase 3 that D1 may make obsolete. Keep it small.
 
 <a id="phase-0a"></a>
 
@@ -151,12 +151,10 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [test-01](test-01-no-real-backend-e2e.md) — No end-to-end test talks to a real Supabase | L | Medium | — | [ci-03](ci-03-tests-not-run-against-production-bundle.md), [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
-| 2 | [ci-03](ci-03-tests-not-run-against-production-bundle.md) — Tests do not run against the production bundle before deploy | M | Medium | [test-01](test-01-no-real-backend-e2e.md) | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) |
-| 3 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) — No automated accessibility testing | M | Low | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) |
-| 4 | [test-03](test-03-timing-sensitive-infrastructure.md) — Test infrastructure is timing-sensitive and masks flakes | M | Low | — | — |
-| 5 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md) |
-| 6 | [web-03](web-03-core-web-vitals-measurement.md) — Core Web Vitals measurement | S | — | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [growth-01](growth-01-publicity-and-monetisation.md), [web-05](web-05-small-cleanups.md) |
+| 1 | [test-01](test-01-no-real-backend-e2e.md) — No end-to-end test talks to a real Supabase | L | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
+| 2 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) — No automated accessibility testing | M | Low | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) |
+| 3 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md) |
+| 4 | [web-03](web-03-core-web-vitals-measurement.md) — Core Web Vitals measurement | S | — | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [growth-01](growth-01-publicity-and-monetisation.md), [web-05](web-05-small-cleanups.md) |
 
 <a id="phase-2"></a>
 
@@ -168,7 +166,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-02](struct-02-duplicated-remote-push-logic.md) — The remote push and merge logic exists in four copies | L | High | [test-02](test-02-invariant-and-coverage-gaps.md) | [roadmap-01](roadmap-01-queued-background-sync.md), [struct-01](struct-01-oversized-modules.md), [struct-03](struct-03-minor-duplications.md), [struct-05](struct-05-any-typing-and-unchecked-scripts.md), [sync-03](sync-03-no-backoff-on-failing-pull.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [sync-05](sync-05-last-synced-at-stamped-after-upload.md), [sync-07](sync-07-full-document-transfer-and-double-download.md), [sync-09](sync-09-retry-and-polling-hygiene.md) |
+| 1 | [struct-02](struct-02-duplicated-remote-push-logic.md) — The remote push and merge logic exists in four copies | L | High | — | [roadmap-01](roadmap-01-queued-background-sync.md), [struct-01](struct-01-oversized-modules.md), [struct-03](struct-03-minor-duplications.md), [struct-05](struct-05-any-typing-and-unchecked-scripts.md), [sync-03](sync-03-no-backoff-on-failing-pull.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [sync-05](sync-05-last-synced-at-stamped-after-upload.md), [sync-07](sync-07-full-document-transfer-and-double-download.md), [sync-09](sync-09-retry-and-polling-hygiene.md) |
 | 2 | [struct-03](struct-03-minor-duplications.md) — Smaller duplications | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
 | 3 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
 
@@ -217,7 +215,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [data-05](data-05-denormalized-parent-children-no-tombstones.md) **SPEC** — Denormalized tree and no tombstones | L | Medium | [test-02](test-02-invariant-and-coverage-gaps.md) | [roadmap-03](roadmap-03-node-linking.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md) |
+| 1 | [data-05](data-05-denormalized-parent-children-no-tombstones.md) **SPEC** — Denormalized tree and no tombstones | L | Medium | — | [roadmap-03](roadmap-03-node-linking.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md) |
 | 2 | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) — Upsert has no compare-and-swap, so concurrent devices can overwrite each other | L | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md), [test-01](test-01-no-real-backend-e2e.md) | [dur-03](dur-03-no-versioned-backups.md), [roadmap-01](roadmap-01-queued-background-sync.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md) |
 | 3 | [dur-03](dur-03-no-versioned-backups.md) **SPEC** — No versioned backups or snapshots | L | Medium | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | 4 | [sync-06](sync-06-disjoint-field-edits-conflict.md) **SPEC** — Edits to different fields of the same node conflict | L | Medium | [data-05](data-05-denormalized-parent-children-no-tombstones.md) | [ux-03](ux-03-conflict-resolution-granularity.md) |
@@ -274,7 +272,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | 4 | [perf-07](perf-07-sw-font-precache.md) — The service worker precaches every font subset on install | S | Low | — | — |
 | 5 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) — Loose typing and unchecked scripts | M | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
 | 6 | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) — Monitoring, a status page and CSP violation reporting | M | — | [scale-03](scale-03-backend-availability-monitoring.md) | — |
-| 7 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) — Fingerprinted assets and immutable caching | M | — | [ci-03](ci-03-tests-not-run-against-production-bundle.md) | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) |
+| 7 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) — Fingerprinted assets and immutable caching | M | — | — | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) |
 | 8 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) — Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | S | Medium | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) | — |
 | 9 | [web-05](web-05-small-cleanups.md) — Small website cleanups | M | — | [web-03](web-03-core-web-vitals-measurement.md) | — |
 
@@ -406,13 +404,11 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [test-01](test-01-no-real-backend-e2e.md) | No end-to-end test talks to a real Supabase | [1](#phase-1) | L | Medium |
-| [test-03](test-03-timing-sensitive-infrastructure.md) | Test infrastructure is timing-sensitive and masks flakes | [1](#phase-1) | M | Low |
 
 ### CI
 
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
-| [ci-03](ci-03-tests-not-run-against-production-bundle.md) | Tests do not run against the production bundle before deploy | [1](#phase-1) | M | Medium |
 
 ### Dependencies
 

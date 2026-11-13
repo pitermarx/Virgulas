@@ -129,14 +129,18 @@ test.describe('remote sync is triggered by edits', () => {
 
     const before = await page.evaluate(() => (window as any).__mock.upserts.length);
 
-    // Type continuously for ~8s without pausing long enough for the debounce.
+    // Type continuously for ~8s of app time without pausing long enough for the
+    // debounce. The fake clock moves app time forward deterministically, so the
+    // test does not depend on how loaded the machine is.
+    await page.clock.install();
     await page.locator('.node-text-md').first().click();
     const input = page.locator('.node-content input').first();
     for (let i = 0; i < 40; i++) {
       await input.press('End');
       await input.type('z');
-      await page.waitForTimeout(200);
+      await page.clock.fastForward(200);
     }
+    await page.clock.fastForward(1000);
 
     await expect
       .poll(() => page.evaluate(() => (window as any).__mock.upserts.length), { timeout: 10000 })

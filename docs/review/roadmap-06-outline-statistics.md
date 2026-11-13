@@ -32,4 +32,4 @@ The existing `getStats` unit tests; a Playwright test for the Options section.
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
-- **Related:** [meta-01](meta-01-recurrence-edge-cases.md), [struct-04](struct-04-dead-and-test-only-code.md)
+- **Related:** —

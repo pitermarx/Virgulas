@@ -34,8 +34,8 @@ Property-style unit tests on `mergeDocuments`: merge is commutative and idempote
 
 - **Phase:** [5 — Sync and data model v2](README.md#phase-5)
 - **Size:** L · needs a SPEC.vmd decision first (Rule 1)
-- **Do these first:** [test-02](test-02-invariant-and-coverage-gaps.md)
+- **Do these first:** —
 - **Unblocks:** [roadmap-03](roadmap-03-node-linking.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md)
-- **Its decision changes how these are built:** [data-02](data-02-merge-drops-done-and-parentid.md), [data-04](data-04-orphan-nodes-after-conflict-resolution.md), [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-03](roadmap-03-node-linking.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md), [ux-03](ux-03-conflict-resolution-granularity.md)
+- **Its decision changes how these are built:** [data-04](data-04-orphan-nodes-after-conflict-resolution.md), [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-03](roadmap-03-node-linking.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md), [ux-03](ux-03-conflict-resolution-granularity.md)
 - **Shaped by:** —
 - **Related:** —
