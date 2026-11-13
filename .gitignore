@@ -5,5 +5,5 @@ dist/
 .env
 source/index.html.bak
 
-# temporary docs/review while i review
-docs/review/
+# detail of the security items that must not be public while open
+docs/review/private/

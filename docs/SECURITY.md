@@ -55,6 +55,41 @@ but users often reuse.)
 email confirmation, raise the minimum length, require mixed character classes, and
 enable secure password change (re-authentication).
 
+Open sign-up is also a cost risk: with no captcha and no email confirmation, throwaway
+accounts can be scripted with the public publishable key and each can store up to the row
+limit on the project's bill.
+
+---
+
+### Ciphertext is not bound to its context (no AAD)
+
+**Evidence:** `source/js/crypto2.ts` — AES-GCM is called without additional authenticated
+data. The envelope header (the iteration count), the `user_id` and a document revision are
+not authenticated.
+
+**Impact:** the server cannot forge content, but it can swap the iteration-count header
+(bounded by the accepted range, so a bounded denial of service), replay an older ciphertext
+and move a row between accounts that share a passphrase and salt.
+
+**Remediation:** a `v3` envelope that passes `user_id || revision || header` as AAD, with
+`v2` still decrypting and upgrading on the next save. It needs the revision from the
+anti-rollback work above.
+
+---
+
+### No idle auto-lock, and session tokens in localStorage
+
+**Evidence:** the derived key and the passphrase stay in memory until the tab closes or the
+user locks; the Supabase access and refresh tokens are in plaintext `localStorage`; the
+auth inactivity timeout in `supabase/config.toml` is commented out.
+
+**Impact:** an unattended unlocked tab exposes the whole document, and a same-origin script
+can read the refresh token and keep access to the row until sign-out.
+
+**Remediation:** an idle lock with a passphrase prompt, and a session storage that a
+same-origin script cannot read for the lifetime of the session (the constraint is the
+Supabase client's default persistence).
+
 ---
 
 ### CI and process hardening
