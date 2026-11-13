@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 
 const env = ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env) ?? {};
@@ -51,6 +52,24 @@ const readSupabaseStatusEnv = (): Record<string, string> => {
 };
 
 if (!useExternalBaseUrl) {
+  // Credentials are only needed by the specs that reach a backend. A run
+  // limited to the behaviour specs under `tests/e2e/` (a shell, memory or file
+  // check; the production-bundle job) never touches Supabase, so it must not
+  // demand a stack it will not use. Anything broader keeps the fail-fast: a
+  // missing stack there would otherwise surface as confusing unlock errors.
+  const cliArgs = ((globalThis as { process?: { argv?: string[] } }).process?.argv ?? []).slice(2);
+  const positional = cliArgs
+    .filter(arg => !arg.startsWith('-') && arg !== 'test')
+    .map(arg => arg.replace(/\\/g, '/'));
+  const grepRequested = cliArgs.some(arg => arg === '-g' || arg.startsWith('--grep'));
+  // Worker processes re-evaluate this config with their own (shorter) argv, so
+  // only the main process decides; if the main one let the run through, the
+  // workers must follow.
+  const inWorker = !!env.TEST_WORKER_INDEX;
+  const needsCredentials =
+    !inWorker &&
+    (grepRequested || positional.length === 0 || !positional.every(arg => arg.startsWith('tests/e2e/')));
+
   const envPath = path.resolve(import.meta.dirname, '.env');
   const dotenv = existsSync(envPath) ? parseDotEnv(readFileSync(envPath, 'utf8')) : {};
   const statusEnv = readSupabaseStatusEnv();
@@ -58,12 +77,14 @@ if (!useExternalBaseUrl) {
   const url = dotenv.SUPABASE_URL || env.SUPABASE_URL || statusEnv.SUPABASE_URL || statusEnv.API_URL;
   const key = dotenv.SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || statusEnv.SUPABASE_ANON_KEY || statusEnv.ANON_KEY;
   if (!url || !key) {
-    throw new Error(
-      'Missing local Supabase credentials for Playwright. Run "bun run db:start" and ensure ".env" exists or "bunx supabase status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY.'
-    );
+    if (needsCredentials) {
+      throw new Error(
+        'Missing local Supabase credentials for Playwright. Run "bun run db:start" and ensure ".env" exists or "bunx supabase status -o env" returns SUPABASE_URL and SUPABASE_ANON_KEY. Only the specs that reach a backend need them: a run limited to tests/e2e/ works without.'
+      );
+    }
+  } else {
+    env.PLAYWRIGHT_SUPABASE_CONFIG = JSON.stringify({ url, key });
   }
-
-  env.PLAYWRIGHT_SUPABASE_CONFIG = JSON.stringify({ url, key });
 }
 
 export default defineConfig({
@@ -82,10 +103,17 @@ export default defineConfig({
     timeout: isCI ? 15_000 : 10_000,
   },
   timeout: 60_000,
-  workers: 5,
-  reporter: [
-    ['html', { open: 'never' }],
-  ],
+  // Scale with the machine instead of a fixed five: the shards already divide
+  // the work in CI, where the count only has to fit the runner's cores; a big
+  // developer box no longer runs five at a time.
+  workers: isCI
+    ? Math.max(1, Math.min(4, availableParallelism()))
+    : Math.max(1, Math.min(availableParallelism() - 1, 8)),
+  reporter: isCI
+    // The JSON report feeds scripts/flaky-report.ts, which names retried tests
+    // in the job summary and fails the job on main when one needed a retry.
+    ? [['html', { open: 'never' }], ['json', { outputFile: 'test-results/report.json' }]]
+    : [['html', { open: 'never' }]],
   use: {
     baseURL,
     trace: 'on-first-retry',

@@ -25,7 +25,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | --- | --- | --- | --- |
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
-| [1](#phase-1) | Safety net and baselines | 5 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
+| [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 10 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
@@ -153,9 +153,8 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- | --- |
 | 1 | [test-01](test-01-no-real-backend-e2e.md) — No end-to-end test talks to a real Supabase | L | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
 | 2 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) — No automated accessibility testing | M | Low | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) |
-| 3 | [test-03](test-03-timing-sensitive-infrastructure.md) — Test infrastructure is timing-sensitive and masks flakes | M | Low | — | — |
-| 4 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md) |
-| 5 | [web-03](web-03-core-web-vitals-measurement.md) — Core Web Vitals measurement | S | — | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [growth-01](growth-01-publicity-and-monetisation.md), [web-05](web-05-small-cleanups.md) |
+| 3 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md) |
+| 4 | [web-03](web-03-core-web-vitals-measurement.md) — Core Web Vitals measurement | S | — | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [growth-01](growth-01-publicity-and-monetisation.md), [web-05](web-05-small-cleanups.md) |
 
 <a id="phase-2"></a>
 
@@ -405,7 +404,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [test-01](test-01-no-real-backend-e2e.md) | No end-to-end test talks to a real Supabase | [1](#phase-1) | L | Medium |
-| [test-03](test-03-timing-sensitive-infrastructure.md) | Test infrastructure is timing-sensitive and masks flakes | [1](#phase-1) | M | Low |
 
 ### CI
 

@@ -611,11 +611,20 @@ bun run typecheck                # tsc app config + test config
 
 - `playwright.config.ts` starts the app automatically via `bun run dev` (build + static server) —
   no separate server step.
-- Local runs require Supabase credentials: `.env`, or a running local Supabase reachable via
-  `bunx supabase status -o env`. The config fails fast when neither is available.
+- Local runs that reach a backend require Supabase credentials: `.env`, or a running local
+  Supabase reachable via `bunx supabase status -o env`. The config fails fast when neither is
+  available, unless every selected file is under `tests/e2e/` — a shell, memory or file check
+  runs without a Supabase stack.
 - The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
+- `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 4 per CI shard.
+- Never pace a spec with `page.waitForTimeout`: await the observable condition instead
+  (`expect.poll`, a web-first assertion, or `page.clock` when timing itself is the property).
+- CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`
+  lists the tests that passed only on a retry in the job summary and exits non-zero with
+  `--strict`, which the `test` job passes on `main` — a green run there must pass on the first
+  attempt.
 - CI shards the suite across three jobs with `--shard=<i>/3`.
 - Every workflow pins Bun to one exact version (`bun-version` in each job); bump it in a pull request
   that runs the full suite, never to `latest`.
@@ -652,7 +661,7 @@ Workflows live in `.github/workflows/`.
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
 | `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
-| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts |
+| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts and names retried tests in the job summary (fatal on `main`) |
 | `production-bundle` | every push/PR | builds the deploy bundle (`--no-sourcemap`, test hooks off), refuses a source map, and runs the behaviour specs that need no test seam against it; a failure blocks `deploy` |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |

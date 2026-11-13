@@ -273,8 +273,9 @@ test.describe('Sync status indicator', () => {
 
         // Wait for the debounce to fire and upload to start
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 10000 });
-        // Then wait for upload to complete (3 s delay in mock + buffer)
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 6000 });
+        // Then wait for the upload to complete (3 s delay in the mock). Leave
+        // the timeout to the suite default: 6 s was too tight on a loaded machine.
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced');
     });
 
     test('debounces rapid edits into one final remote upload', async ({ page }) => {
@@ -289,8 +290,10 @@ test.describe('Sync status indicator', () => {
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
+        // Two edits in quick succession: the second lands before the write
+        // debounce fires, so only the final text may be uploaded. No sleep
+        // between them — a fixed wait is what made this flaky under load.
         await editFirstNode(page, 'First Draft');
-        await page.waitForTimeout(500);
         await updateFirstNodeViaModel(page, 'Final Draft');
 
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
@@ -444,9 +447,10 @@ test.describe('Sync status indicator', () => {
         await page.reload();
         await unlockRemote(page, 'user@test.com', 'pass', passphrase);
 
+        // Four edits back to back stay inside the write debounce; no upload may
+        // start while the edits keep coming.
         for (const text of ['Typing 1', 'Typing 2', 'Typing 3', 'Typing 4']) {
             await updateFirstNodeViaModel(page, text);
-            await page.waitForTimeout(250);
         }
 
         const duringTypingUploads = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
@@ -841,7 +845,7 @@ test.describe('Pull-before-push', () => {
         await editFirstNode(page, 'Local Version');
 
         // Conflict modal should appear (local and remote both changed n1 after last sync)
-        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
+        await expect(page.locator('.conflict-overlay')).toBeVisible();
     });
 });
 
@@ -866,7 +870,7 @@ test.describe('Conflict resolution modal', () => {
         await editFirstNode(page, localText);
 
         // Wait for modal
-        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
+        await expect(page.locator('.conflict-overlay')).toBeVisible();
         return passphrase;
     }
 
@@ -981,7 +985,7 @@ test.describe('Conflict resolution modal', () => {
         await page.locator('[data-node-id="n1"] .node-text-md').click();
         await page.locator('[data-node-id="n1"] input').press('Enter');
 
-        await expect(page.locator('.conflict-overlay')).toBeVisible({ timeout: 6000 });
+        await expect(page.locator('.conflict-overlay')).toBeVisible();
         await expect(page.locator('.conflict-field-label')).toHaveText(/children/i);
 
         await page.locator('.conflict-keep-btn').nth(1).click(); // Keep remote

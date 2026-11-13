@@ -222,6 +222,12 @@ jobs:
         env:
           CI: true
 
+      # test-03: name the tests that only passed on a retry, and refuse them on
+      # main, where a green run is expected on the first attempt.
+      - name: Report retried tests
+        if: always()
+        run: bun scripts/flaky-report.ts test-results/report.json ${{ github.ref == 'refs/heads/main' && '--strict' || '' }}
+
       - name: Stop local Supabase
         if: always()
         run: bun run db:stop

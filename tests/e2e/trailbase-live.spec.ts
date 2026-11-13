@@ -34,6 +34,13 @@ async function openCloudCredentials(page: Page) {
     await expect(page.getByLabel('Email')).toBeVisible({ timeout: 15000 });
 }
 
+/** The Mailpit messages addressed to `email`, newest first. */
+async function mailpitMessages(page: Page, email: string): Promise<any[]> {
+    const body = await (await page.request.get(`${MAILPIT}/api/v1/messages`)).json();
+    return (body.messages ?? []).filter((m: any) =>
+        (m.To ?? []).some((t: any) => String(t.Address) === email));
+}
+
 /** Registers and verifies an account via Mailpit, like a real user. */
 async function registerAndVerify(page: Page, email: string, password: string) {
     await page.getByLabel('Email').fill(email);
@@ -41,11 +48,12 @@ async function registerAndVerify(page: Page, email: string, password: string) {
     await page.getByRole('button', { name: 'Sign up' }).click();
     await expect(page.getByText(/Sign-up submitted/)).toBeVisible({ timeout: 15000 });
 
-    await page.waitForTimeout(2000);
-    const messagesJson = await (await page.request.get(`${MAILPIT}/api/v1/messages`)).json();
-    const msg = (messagesJson.messages ?? []).find((m: any) =>
-        (m.To ?? []).some((t: any) => String(t.Address) === email));
-    expect(msg).toBeTruthy();
+    // Delivery is asynchronous; wait for the message instead of guessing how
+    // long it takes to arrive.
+    await expect
+        .poll(async () => (await mailpitMessages(page, email)).length, { timeout: 15000 })
+        .toBeGreaterThan(0);
+    const msg = (await mailpitMessages(page, email))[0];
     const full = await (await page.request.get(`${MAILPIT}/api/v1/message/${msg.ID}`)).json();
     const verifyUrl = (full.Text as string).match(/https?:\/\/\S*verify_email\/confirm\/\S+/)?.[0]!;
     expect(verifyUrl).toBeTruthy();
@@ -82,11 +90,13 @@ test('forgot password sends a reset email for a real account', async ({ page }) 
     await expect(page.getByText(new RegExp(`Password reset email sent to ${email}`))).toBeVisible({ timeout: 15000 });
 
     // Mailpit confirms the reset email actually left the server.
-    await page.waitForTimeout(2000);
-    const messagesJson = await (await page.request.get(`${MAILPIT}/api/v1/messages`)).json();
-    const msgs = (messagesJson.messages ?? []).filter((m: any) =>
-        (m.To ?? []).some((t: any) => String(t.Address) === email));
-    expect(msgs.length, 'verification AND reset emails arrived').toBeGreaterThanOrEqual(2);
+    await expect
+        .poll(async () => (await mailpitMessages(page, email)).length, {
+            timeout: 15000,
+            message: 'verification AND reset emails arrived',
+        })
+        .toBeGreaterThanOrEqual(2);
+    const msgs = await mailpitMessages(page, email);
     const full = await (await page.request.get(`${MAILPIT}/api/v1/message/${msgs[0].ID}`)).json();
     expect(full.Text as string).toMatch(/password/i);
 });
