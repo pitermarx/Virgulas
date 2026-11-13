@@ -24,7 +24,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | Phase | Name | Items | Done when |
 | --- | --- | --- | --- |
 | [0A](#phase-0a) | Quick wins (code) | 1 | Each item merged with its test; no dependency on other items. |
-| [0B](#phase-0b) | Quick wins (operations and CI) | 6 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
+| [0B](#phase-0b) | Quick wins (operations and CI) | 5 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 7 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 11 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
@@ -141,8 +141,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | 2 | [scale-03](scale-03-backend-availability-monitoring.md) — The backend can pause or fail without anyone noticing | S | Medium | — | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) |
 | 3 | [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md) **SPEC** — Hosted Supabase auth configuration, and configurable backends | M | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | 4 | [ci-01](ci-01-duplicated-setup-per-shard.md) — Each CI shard repeats the same setup | S | Low | — | — |
-| 5 | [ci-02](ci-02-unpinned-bun.md) — CI uses `bun-version: latest` | S | Low | — | — |
-| 6 | [dep-01](dep-01-no-supply-chain-checks.md) — No vulnerability, provenance or code-scanning checks in CI | S | Low | — | — |
+| 5 | [dep-01](dep-01-no-supply-chain-checks.md) — No vulnerability, provenance or code-scanning checks in CI | S | Low | — | — |
 
 <a id="phase-1"></a>
 
@@ -420,7 +419,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [ci-01](ci-01-duplicated-setup-per-shard.md) | Each CI shard repeats the same setup | [0B](#phase-0b) | S | Low |
-| [ci-02](ci-02-unpinned-bun.md) | CI uses `bun-version: latest` | [0B](#phase-0b) | S | Low |
 | [ci-03](ci-03-tests-not-run-against-production-bundle.md) | Tests do not run against the production bundle before deploy | [1](#phase-1) | M | Medium |
 
 ### Dependencies
