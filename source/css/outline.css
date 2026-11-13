@@ -416,13 +416,28 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   margin: 0 0 var(--space-2) 0;
 }
 
-/* ── Sync status dot ── */
-.sync-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  display: inline-block;
+/* ── Sync status indicator ──
+   The colour alone is not the cue (WCAG 1.4.11, and red/green readers): each
+   state has its own glyph, and wide layouts show the state word too. */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   flex-shrink: 0;
+}
+
+.sync-indicator svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.sync-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
 }
 
 /* ── Links ── */

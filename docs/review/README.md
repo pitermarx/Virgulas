@@ -23,7 +23,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 
 | Phase | Name | Items | Done when |
 | --- | --- | --- | --- |
-| [0A](#phase-0a) | Quick wins (code) | 4 | Each item merged with its test; no dependency on other items. |
+| [0A](#phase-0a) | Quick wins (code) | 3 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 6 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 7 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
@@ -125,10 +125,9 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [a11y-03](a11y-03-sync-indicator-contrast.md) — The sync indicator is low-contrast and colour-coded | S | Low | — | — |
-| 2 | [meta-01](meta-01-recurrence-edge-cases.md) — Recurrence edge cases, and overdue state that does not refresh | S | Low | — | — |
-| 3 | [perf-03](perf-03-save-effect-reads-ciphertext.md) — The save effect reads the whole ciphertext from localStorage on every keystroke | S | Low | — | — |
-| 4 | [struct-04](struct-04-dead-and-test-only-code.md) — Dead and test-only code | S | Low | — | — |
+| 1 | [meta-01](meta-01-recurrence-edge-cases.md) — Recurrence edge cases, and overdue state that does not refresh | S | Low | — | — |
+| 2 | [perf-03](perf-03-save-effect-reads-ciphertext.md) — The save effect reads the whole ciphertext from localStorage on every keystroke | S | Low | — | — |
+| 3 | [struct-04](struct-04-dead-and-test-only-code.md) — Dead and test-only code | S | Low | — | — |
 
 <a id="phase-0b"></a>
 
@@ -391,7 +390,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- |
 | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) | The outline has no tree semantics, and several controls are pointer-only | [7](#phase-7) | L | Medium |
 | [a11y-02](a11y-02-dialog-focus-management.md) | Dialog focus management is incomplete; the conflict dialog is not inert | [3](#phase-3) | M | Medium |
-| [a11y-03](a11y-03-sync-indicator-contrast.md) | The sync indicator is low-contrast and colour-coded | [0A](#phase-0a) | S | Low |
 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) | No automated accessibility testing | [1](#phase-1) | M | Low |
 
 ### UX
