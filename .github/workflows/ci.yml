@@ -82,6 +82,26 @@ jobs:
         env:
           CI: true
 
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Every advisory is a release blocker here; the lockfile is the only
+      # input, so a fix is a dependency bump (dep-01).
+      - name: Audit dependencies
+        run: bun audit
+
   test:
     name: E2E Tests (shard ${{ matrix.shard }}/3)
     needs: commit-policy
@@ -441,6 +461,7 @@ jobs:
       contents: write
       pages: write
       id-token: write
+      attestations: write
       pull-requests: read
     environment:
       name: github-pages
@@ -521,6 +542,12 @@ jobs:
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
           echo "Packaged $(du -h "$ARCHIVE" | cut -f1) into $ARCHIVE"
           unzip -l "$ARCHIVE"
+
+      - name: Attest the release archive
+        if: needs.release.outputs.release_tag != ''
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
 
       - name: Attach archive to the release
         if: needs.release.outputs.release_tag != ''

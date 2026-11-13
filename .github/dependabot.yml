@@ -10,11 +10,24 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # A release has to be published for a few days before it is adopted: a
+    # malicious or broken publish is usually caught in that window (dep-01).
+    cooldown:
+      default-days: 3
     groups:
       npm-minor-patch:
         update-types:
           - "minor"
           - "patch"
+        # Runtime dependencies that end up in the bundle get their own PR, so a
+        # routine batch cannot carry a change to what users run unexamined.
+        exclude-patterns:
+          - "preact"
+          - "@preact/signals"
+          - "htm"
+          - "marked"
+          - "dompurify"
+          - "@supabase/supabase-js"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -26,6 +39,8 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 3
     groups:
       gh-actions-minor-patch:
         update-types:
