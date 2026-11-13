@@ -650,7 +650,8 @@ Workflows live in `.github/workflows/`.
 | Job | When | What |
 | --- | --- | --- |
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
-| `test` | every push/PR | runs `bun run test:unit` and E2E sharded across 3 jobs; uploads Playwright results artifacts |
+| `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
+| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
 | `validate-image` | pull requests | builds the all-in-one image and boots it with `scripts/trailbase/smoke-image.sh` |
