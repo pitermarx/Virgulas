@@ -23,7 +23,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 
 | Phase | Name | Items | Done when |
 | --- | --- | --- | --- |
-| [0A](#phase-0a) | Quick wins (code) | 3 | Each item merged with its test; no dependency on other items. |
+| [0A](#phase-0a) | Quick wins (code) | 2 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 6 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 7 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
@@ -126,8 +126,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [meta-01](meta-01-recurrence-edge-cases.md) — Recurrence edge cases, and overdue state that does not refresh | S | Low | — | — |
-| 2 | [perf-03](perf-03-save-effect-reads-ciphertext.md) — The save effect reads the whole ciphertext from localStorage on every keystroke | S | Low | — | — |
-| 3 | [struct-04](struct-04-dead-and-test-only-code.md) — Dead and test-only code | S | Low | — | — |
+| 2 | [struct-04](struct-04-dead-and-test-only-code.md) — Dead and test-only code | S | Low | — | — |
 
 <a id="phase-0b"></a>
 
@@ -378,7 +377,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- |
 | [perf-01](perf-01-grouped-tasks-per-keystroke.md) | Task selectors rescan the whole outline on every keystroke | [7](#phase-7) | M | Medium |
 | [perf-02](perf-02-subtree-rerender-no-render-cache.md) | Editing a node re-renders its whole visible subtree, and markdown has no render cache | [7](#phase-7) | L | Medium |
-| [perf-03](perf-03-save-effect-reads-ciphertext.md) | The save effect reads the whole ciphertext from localStorage on every keystroke | [0A](#phase-0a) | S | Low |
 | [perf-04](perf-04-per-node-memory-footprint.md) | Per-node memory footprint | [7](#phase-7) | S | Low |
 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) | Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | [8](#phase-8) | S | Medium |
 | [perf-07](perf-07-sw-font-precache.md) | The service worker precaches every font subset on install | [8](#phase-8) | S | Low |

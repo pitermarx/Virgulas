@@ -72,6 +72,25 @@ async function withDerivationCount(fn: (count: () => number) => Promise<void>): 
 
 describe('encrypted() — lifecycle', () => {
 
+  it('a write takes the salt from the session, never from the stored ciphertext (perf-03)', async () => {
+      const base = fakeRaw()
+      let reads = 0
+      const raw: RawStore = {
+          ...base,
+          async readRaw() {
+              reads += 1
+              return base.readRaw()
+          }
+      }
+      const store = encrypted(raw, createKeySession())
+      await store.unlock(PASS)
+      reads = 0
+      await store.write('first save')
+      await store.write('second save')
+      assertEqual(reads, 0, 'saves must not read the ciphertext just to find the salt')
+      assertEqual(base.writes.length, 2, 'both writes reached the adapter')
+  })
+
   it('first-time setup adopts the passphrase with a fresh salt; write/read round-trips', async () => {
       const raw = fakeRaw()
       const store = encrypted(raw, createKeySession())
