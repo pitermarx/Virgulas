@@ -13,6 +13,19 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 
 const DEV_CSP_HTML = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co https://um.vps.pitermarx.com http://127.0.0.1:* http://localhost:*; object-src 'none'">`
 
+/**
+ * The connect-src sources of a policy, as whole tokens. Parsing the directive
+ * instead of substring-checking the URL keeps the assertion exact and keeps
+ * CodeQL's incomplete-URL-substring rule out of the tests.
+ */
+function connectSrcTokens(csp: string): string[] {
+    const directive = csp
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith('connect-src'))
+    return directive ? directive.split(/\s+/).slice(1) : []
+}
+
 
 describe('CSP build helper — resolveSupabaseOrigin', () => {
 
@@ -61,8 +74,9 @@ describe('CSP build helper — tightenConnectSrc', () => {
       assert(!out.includes('localhost'), 'no localhost')
       assert(!out.includes('127.0.0.1'), 'no loopback')
       assert(!out.includes('*.supabase.co'), 'no wildcard')
-      assert(out.includes('https://real.supabase.co'), 'pinned origin present')
-      assert(out.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
+      const sources = connectSrcTokens(out)
+      assert(sources.includes('https://real.supabase.co'), 'pinned origin present')
+      assert(sources.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
       assert(out.includes("'self'"), 'self kept')
   })
 
@@ -108,7 +122,8 @@ describe('CSP production wiring', () => {
       const out = tightenConnectSrc(html, origin)
       assert(!out.includes('localhost') && !out.includes('127.0.0.1'), 'no local sources in production CSP')
       assert(!out.includes('*.supabase.co'), 'no wildcard in production CSP')
-      assert(out.includes(origin), 'pinned origin present')
-      assert(out.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
+      const sources = connectSrcTokens(out)
+      assert(sources.includes(origin), 'pinned origin present')
+      assert(sources.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
   })
 })
