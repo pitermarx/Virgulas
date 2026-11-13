@@ -27,9 +27,10 @@
   --color-overlay: rgba(20, 18, 14, 0.45);
   --color-success: #2e7d32;
   --color-error: #d32f2f;
-  --color-synced: #4caf50;
-  --color-syncing: #f39c12;
-  --color-offline: #7f8c8d;
+  /* 3:1 against --color-background (WCAG 1.4.11); the glyph, not the hue, is the cue */
+  --color-synced: #2e7d32;
+  --color-syncing: #b26a00;
+  --color-offline: #66757a;
 
   /* Typography */
   --font-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -79,7 +80,7 @@
     --color-border-subtle: #2e2c2a;
     --color-text-primary: #ede9e3;
     --color-text-muted: #9b9790;
-    --color-text-faint: #8a867e;
+    --color-text-faint: #94908a;
     --color-accent-primary: #5c8ed6;
     --color-accent-soft: #1c2c46;
     --color-hover-surface: #2e2c28;
@@ -107,7 +108,7 @@
   --color-border-subtle: #2e2c2a;
   --color-text-primary: #ede9e3;
   --color-text-muted: #9b9790;
-  --color-text-faint: #8a867e;
+  --color-text-faint: #94908a;
   --color-accent-primary: #5c8ed6;
   --color-accent-soft: #1c2c46;
   --color-hover-surface: #2e2c28;
@@ -243,8 +244,8 @@ textarea {
     outline: 2px solid Highlight;
   }
 
-  .sync-dot {
-    border: 1px solid CanvasText;
+  .sync-indicator {
+    color: CanvasText;
   }
 }
 

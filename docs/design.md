@@ -33,9 +33,9 @@ Use semantic tokens instead of hardcoded colors.
 - Overlay (`--color-overlay`): `rgba(20, 18, 14, 0.45)`
 - Success (`--color-success`): `#2e7d32`
 - Error (`--color-error`): `#d32f2f`
-- Synced (`--color-synced`): `#4caf50`
-- Syncing (`--color-syncing`): `#f39c12`
-- Offline (`--color-offline`): `#7f8c8d`
+- Synced (`--color-synced`): `#2e7d32`
+- Syncing (`--color-syncing`): `#b26a00`
+- Offline (`--color-offline`): `#66757a`
 - Tag chip (`--color-tag-chip-bg` / `--color-tag-chip-text`): `#e4f2d8` / `#2d6a2f`
 - Mention chip (`--color-mention-chip-bg` / `--color-mention-chip-text`): `#efe6f8` / `#6b3fa0`
 - Due chip (`--color-due-chip-bg` / `--color-due-chip-text`): `#fdf0d5` / `#8a5a00`
@@ -51,7 +51,7 @@ Applies to `[data-theme="dark"]`, and to the OS dark preference when no explicit
 - Border subtle (`--color-border-subtle`): `#2e2c2a`
 - Text primary (`--color-text-primary`): `#ede9e3`
 - Text muted (`--color-text-muted`): `#9b9790`
-- Text faint (`--color-text-faint`): `#8a867e`
+- Text faint (`--color-text-faint`): `#94908a`
 - Accent primary (`--color-accent-primary`): `#5c8ed6`
 - Accent soft (`--color-accent-soft`): `#1c2c46`
 - Hover surface (`--color-hover-surface`): `#2e2c28`
@@ -64,7 +64,8 @@ Applies to `[data-theme="dark"]`, and to the OS dark preference when no explicit
 - Mention chip: `#2d2440` / `#b794f4`
 - Due chip: `#3a2f1a` / `#e8b84b`
 - Recurrence chip: `#183833` / `#5fcbb8`
-- `--color-success`, `--color-error`, `--color-synced`, `--color-syncing`, and `--color-offline` are shared with the light theme.
+- `--color-success`, `--color-error`, `--color-synced`, `--color-syncing`, and `--color-offline` are shared with the light theme; the three sync colours reach 3:1 on both backgrounds.
+- The sync indicator is never colour alone: each state has its own glyph (check, cycle, up arrow, exclamation, struck-through cloud), and wide layouts show the state word next to it.
 
 ## 3. Typography
 
