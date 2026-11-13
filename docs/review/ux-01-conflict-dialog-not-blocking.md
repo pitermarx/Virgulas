@@ -17,7 +17,7 @@ The conflict dialog is an overlay, but the outline behind it stays interactive (
 
 ## Suggested fix
 
-Make the app inert while conflicts are pending (a11y-02) and ignore the global keydown handler then. Because a merge snapshot can still go stale (for example a poll lands first), have `resolveConflicts` re-merge against the current local document instead of replacing it.
+The app is now inert while conflicts are pending (a11y-02); make the global keydown handler ignore the outline in that state too. Because a merge snapshot can still go stale (for example a poll lands first), have `resolveConflicts` re-merge against the current local document instead of replacing it.
 
 ## Tests
 
@@ -28,7 +28,7 @@ Playwright: with a conflict open, typing in the outline is blocked; unit test th
 
 - **Phase:** [3 — Stop data loss and fix sync on the current model](README.md#phase-3)
 - **Size:** S
-- **Do these first:** [a11y-02](a11y-02-dialog-focus-management.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

@@ -1,7 +1,7 @@
 import { html, render } from 'htm/preact';
-import { signal, effect } from '@preact/signals';
+import { signal, effect, computed } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
-import { optionsOpen } from './shortcuts.js';
+import { optionsOpen, tasksPanelOpen } from './shortcuts.js';
 import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import type { BackendKind } from './storage.js';
 import type { OutlineDoc } from './docCodec.js';
@@ -15,6 +15,7 @@ import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
 import { pendingConflicts, mergeDocuments } from './sync.js';
 import { currentSearchMatchId, getFirstClosedParent } from './search.js';
 import { startTodayTicker } from './tasks.js';
+import { bindDialogFocus } from './dialogs.js';
 
 // Splash lifecycle. `appReady` flips once the initial auth state and the
 // webfont are ready; `splashDismissed` removes the node once its fade-out ends.
@@ -136,6 +137,20 @@ function closeQuickCapture() {
   quickCaptureText.value = '';
   pendingCaptureIntent.value = null;
 }
+
+// a11y-02: every dialog takes focus, keeps Tab inside when it is modal, and
+// hands focus back to its opener. The conflict dialog is blocking, so it has no
+// Escape path; the tasks panel is a region, not a modal, so it does not trap.
+const conflictDialogOpen = computed(() => pendingConflicts.value.length > 0);
+bindDialogFocus(optionsOpen, { labelId: 'options-title', onEscape: () => { optionsOpen.value = false; } });
+bindDialogFocus(quickCaptureOpen, {
+  labelId: 'quick-capture-title',
+  onEscape: closeQuickCapture,
+  // The textarea is the reason the dialog exists; focus it, not Close.
+  initial: () => document.querySelector<HTMLElement>('#quick-capture-input'),
+});
+bindDialogFocus(conflictDialogOpen, { labelId: 'conflict-title' });
+bindDialogFocus(tasksPanelOpen, { labelId: 'tasks-panel-title', trap: false });
 
 function submitQuickCapture(e: any) {
   e.preventDefault();
@@ -1552,7 +1567,7 @@ const Splash = () => {
     <div class="app-shell">
       <div class=${`main-view ${isLocked || wizardOverlay.value ? 'is-locked' : ''}`}>
         <main class="main-content" id="main-content" tabindex="-1"
-          inert=${optionsOpen.value || quickCaptureOpen.value || undefined}>
+          inert=${optionsOpen.value || quickCaptureOpen.value || pendingConflicts.value.length > 0 || undefined}>
           <${MainToolbar} banner=${html`
             ${!isLocked && browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
             ${!isLocked && persistence.getMode() === 'local' && persistence.localStoragePersistenceNotice.value && html`

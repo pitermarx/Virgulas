@@ -7,6 +7,7 @@ import { log, isMobile, store, appVersion } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen } from './shortcuts.js';
 import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './sync.js';
+import { openDialogFocus } from './dialogs.js';
 import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
 import { formatDueDate, daysUntilDue } from './meta.js';
 
@@ -566,9 +567,9 @@ export function TasksPanel() {
     function close() { tasksPanelOpen.value = false }
 
     return html`<div class="tasks-panel-backdrop" onClick=${close}>
-        <div class="tasks-panel" onClick=${(e: any) => e.stopPropagation()}>
+        <div class="tasks-panel" role="region" aria-labelledby="tasks-panel-title" tabIndex=${-1} onClick=${(e: any) => e.stopPropagation()}>
             <div class="tasks-panel-header">
-                <span class="tasks-panel-title">Tasks</span>
+                <span class="tasks-panel-title" id="tasks-panel-title">Tasks</span>
                 <button class="tasks-panel-close" onClick=${close} aria-label="Close tasks panel">×</button>
             </div>
             <div class="tasks-panel-body">

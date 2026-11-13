@@ -22,4 +22,4 @@ the item is closed; `docs/SECURITY.md` carries the public summary of the open se
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
-- **Related:** [a11y-02](a11y-02-dialog-focus-management.md), [sec-14](sec-14-change-passphrase-without-reauth.md)
+- **Related:** [sec-14](sec-14-change-passphrase-without-reauth.md)

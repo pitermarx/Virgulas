@@ -31,7 +31,7 @@ Playwright `getByRole('tree')` and `treeitem` assertions plus the axe checks fro
 
 - **Phase:** [7 — Outline UI: performance and accessibility](README.md#phase-7)
 - **Size:** L
-- **Do these first:** [a11y-02](a11y-02-dialog-focus-management.md), [a11y-04](a11y-04-no-automated-accessibility-testing.md)
+- **Do these first:** [a11y-04](a11y-04-no-automated-accessibility-testing.md)
 - **Unblocks:** [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

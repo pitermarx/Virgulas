@@ -27,7 +27,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
-| [3](#phase-3) | Stop data loss and fix sync on the current model | 9 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
+| [3](#phase-3) | Stop data loss and fix sync on the current model | 8 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
 | [5](#phase-5) | Sync and data model v2 | 7 | Rollback is detected, concurrent writers cannot overwrite each other, history exists, and conflicts only appear for real same-field edits. |
 | [6](#phase-6) | Security, privacy and compliance hardening | 7 | Privacy page matches behaviour; erasure is self-service; CSP tightened with reporting. |
@@ -77,7 +77,7 @@ flowchart LR
   data05 --> ux02
   sec10["sec-10 single parse"] --> web01["web-01 Trusted Types"]
   sec10 --> perf02["perf-02 render cost"]
-  a11y02["a11y-02 dialogs"] --> a11y01["a11y-01 tree semantics"]
+  a11y01["a11y-01 tree semantics"]
   a11y04["a11y-04 axe baseline"] --> a11y01
   perf08["perf-08 baseline"] --> perf01["perf-01 task index"]
   perf01 --> rm04["roadmap-04 autocomplete"]
@@ -180,10 +180,9 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [dur-01](dur-01-multi-tab-overwrites.md) — Two tabs overwrite each other's edits | M | High | [struct-07](struct-07-module-level-mutable-state.md) | — |
-| 2 | [a11y-02](a11y-02-dialog-focus-management.md) — Dialog focus management is incomplete; the conflict dialog is not inert | M | Medium | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [ux-01](ux-01-conflict-dialog-not-blocking.md) |
 | 2 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
 | 3 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 4 | [ux-01](ux-01-conflict-dialog-not-blocking.md) — Edits made behind the conflict dialog are overwritten | S | Medium | [a11y-02](a11y-02-dialog-focus-management.md) | — |
+| 4 | [ux-01](ux-01-conflict-dialog-not-blocking.md) — Edits made behind the conflict dialog are overwritten | S | Medium | — | — |
 | 5 | [dur-04](dur-04-destructive-actions-without-safety-net.md) — Destructive actions have no safety net | S | Low | — | — |
 | 6 | [err-03](err-03-sync-errors-without-detail.md) — Sync errors carry no detail, retry action or diagnostics | M | Low | — | [roadmap-01](roadmap-01-queued-background-sync.md) |
 | 7 | [sync-05](sync-05-last-synced-at-stamped-after-upload.md) — `lastSyncedAt` is stamped after the upload, hiding edits made during it | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
@@ -249,7 +248,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) — The outline has no tree semantics, and several controls are pointer-only | L | Medium | [a11y-02](a11y-02-dialog-focus-management.md), [a11y-04](a11y-04-no-automated-accessibility-testing.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) |
+| 1 | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) — The outline has no tree semantics, and several controls are pointer-only | L | Medium | [a11y-04](a11y-04-no-automated-accessibility-testing.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) |
 | 2 | [perf-01](perf-01-grouped-tasks-per-keystroke.md) — Task selectors rescan the whole outline on every keystroke | M | Medium | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [roadmap-03](roadmap-03-node-linking.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) |
 | 3 | [perf-02](perf-02-subtree-rerender-no-render-cache.md) — Editing a node re-renders its whole visible subtree, and markdown has no render cache | L | Medium | [perf-08](perf-08-document-size-limits-and-old-devices.md), [sec-10](sec-10-markdown-sanitizer-roundtrip.md) | — |
 | 4 | [perf-04](perf-04-per-node-memory-footprint.md) — Per-node memory footprint | S | Low | [perf-08](perf-08-document-size-limits-and-old-devices.md) | — |
@@ -375,7 +374,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) | The outline has no tree semantics, and several controls are pointer-only | [7](#phase-7) | L | Medium |
-| [a11y-02](a11y-02-dialog-focus-management.md) | Dialog focus management is incomplete; the conflict dialog is not inert | [3](#phase-3) | M | Medium |
 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) | No automated accessibility testing | [1](#phase-1) | M | Low |
 
 ### UX

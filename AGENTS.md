@@ -487,6 +487,10 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   `due:` / `rec:` metadata parsing and formatting.
 - `tasks.ts`:
   Grouped task selectors (pending/scheduled/done) and breadcrumbs.
+- `dialogs.ts`:
+  The focus contract every dialog shares (a11y-02): focus moves in on open, Tab is trapped
+  while a dialog is modal, focus returns to the opener on close, and Escape only closes a
+  dismissible dialog. Bound to each dialog's open signal.
 - `inbox.ts`:
   Quick-capture queue and Inbox node reconciliation.
 - `biometrics.ts`:

@@ -887,6 +887,38 @@ test.describe('Conflict resolution modal', () => {
         await expect(page.locator('.conflict-value-textarea').last()).toContainText('My remote text');
     });
 
+    test('the conflict dialog is blocking: it owns focus, keeps Tab inside, and ignores Escape (a11y-02)', async ({ page }) => {
+        await setupConflict(page, 'Blocked A', 'Blocked B');
+        const dialog = page.getByRole('dialog', { name: /Sync conflict|conflict/i });
+        await expect(dialog).toBeVisible();
+
+        // Focus moved into the dialog on its own.
+        await expect
+            .poll(() => page.evaluate(() => !!document.activeElement?.closest('.conflict-dialog')))
+            .toBe(true);
+
+        // The outline behind it is inert, so it cannot be reached or typed into.
+        expect(
+            await page.evaluate(() => {
+                const main = document.getElementById('main-content') as HTMLElement & { inert?: boolean };
+                return main.hasAttribute('inert') || main.inert === true;
+            }),
+            'the outline is inert behind the conflict dialog'
+        ).toBe(true);
+
+        // Tab and Shift+Tab cycle inside it.
+        for (const key of ['Tab', 'Tab', 'Shift+Tab']) {
+            await page.keyboard.press(key);
+            await expect
+                .poll(() => page.evaluate(() => !!document.activeElement?.closest('.conflict-dialog')), key + ' stays inside')
+                .toBe(true);
+        }
+
+        // Escape must not dismiss a blocking dialog.
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeVisible();
+    });
+
     test('"Apply" is disabled until all conflicts are resolved', async ({ page }) => {
         await setupConflict(page, 'A', 'B');
 
