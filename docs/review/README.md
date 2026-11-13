@@ -23,7 +23,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 
 | Phase | Name | Items | Done when |
 | --- | --- | --- | --- |
-| [0A](#phase-0a) | Quick wins (code) | 1 | Each item merged with its test; no dependency on other items. |
+| [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 5 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 7 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
@@ -125,7 +125,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [meta-01](meta-01-recurrence-edge-cases.md) — Recurrence edge cases, and overdue state that does not refresh | S | Low | — | — |
+| — | All Phase 0A items are closed. | — | — | — | — |
 
 <a id="phase-0b"></a>
 
@@ -440,11 +440,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- |
 | [i18n-01](i18n-01-english-only-and-layout-dependent-shortcuts.md) | English-only UI, hard-coded locale and layout-dependent shortcuts | [8](#phase-8) | M | Low |
 
-### Task metadata
-
-| Item | Title | Phase | Size | Severity |
-| --- | --- | --- | --- | --- |
-| [meta-01](meta-01-recurrence-edge-cases.md) | Recurrence edge cases, and overdue state that does not refresh | [0A](#phase-0a) | S | Low |
 
 ### Scale, cost and availability
 

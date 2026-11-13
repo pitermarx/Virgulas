@@ -1,9 +1,33 @@
 import { describe, it, beforeEach } from 'bun:test'
 import outline from '../../../source/js/outline.js'
-import { groupedTasks, hasOverdueTasks, pendingTaskCount } from '../../../source/js/tasks.js'
+import { groupedTasks, hasOverdueTasks, pendingTaskCount, msUntilNextMidnight, startTodayTicker, todayTick } from '../../../source/js/tasks.js'
 import { assert, assertEqual } from '../testing.js'
 
 beforeEach(() => outline.reset())
+
+describe('midnight refresh (meta-01)', () => {
+  it('the timer targets the next local midnight', () => {
+      const lateEvening = new Date(2026, 11, 31, 23, 59, 0)
+      const delay = msUntilNextMidnight(lateEvening)
+      assert(delay >= 60_000 && delay <= 61_000, `one minute to midnight, got ${delay}ms`)
+  })
+
+  it('a tab that becomes visible again re-classifies without an edit', () => {
+      const stop = startTodayTicker()
+      const before = todayTick.peek()
+      document.dispatchEvent(new Event('visibilitychange'))
+      assert(todayTick.peek() > before, 'visibilitychange must bump the tick')
+      stop()
+  })
+
+  it('stopping the ticker removes its listener', () => {
+      const stop = startTodayTicker()
+      stop()
+      const before = todayTick.peek()
+      document.dispatchEvent(new Event('visibilitychange'))
+      assertEqual(todayTick.peek(), before, 'no tick after cleanup')
+  })
+})
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
