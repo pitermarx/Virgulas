@@ -1,6 +1,48 @@
-import { computed } from '@preact/signals'
+import { computed, signal } from '@preact/signals'
 import outline, { type DoneState } from './outline.js'
 import { parseMeta, isOverdue, isFutureDue } from './meta.js'
+
+/**
+ * Bumped at local midnight and whenever the tab becomes visible again. The task
+ * selectors subscribe to it, so a tab left open across midnight re-classifies
+ * overdue and scheduled items without waiting for an edit (meta-01).
+ */
+export const todayTick = signal(0)
+
+let todayTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Delay until the next local midnight, plus a small grace so the date has turned. */
+export function msUntilNextMidnight(now: Date = new Date()): number {
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    return Math.max(1_000, next.getTime() - now.getTime() + 50)
+}
+
+/** Start the midnight ticker; returns a stop function. */
+export function startTodayTicker(): () => void {
+    stopTodayTicker()
+    const arm = () => {
+        todayTimer = setTimeout(() => {
+            todayTick.value += 1
+            arm()
+        }, msUntilNextMidnight())
+    }
+    arm()
+    const onVisible = () => {
+        if (document.visibilityState === 'visible') todayTick.value += 1
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+        stopTodayTicker()
+        document.removeEventListener('visibilitychange', onVisible)
+    }
+}
+
+function stopTodayTicker() {
+    if (todayTimer !== null) {
+        clearTimeout(todayTimer)
+        todayTimer = null
+    }
+}
 
 export interface TaskItem {
     id: string
@@ -59,6 +101,8 @@ export const groupedTasks = computed(() => {
     // (often 0) inside a batch, which would otherwise leave this computed stale.
     void outline.structureVersion.value
     void outline.dirtyWrites.value
+    // Re-classify at midnight and when the tab returns to the foreground.
+    void todayTick.value
     const zoomId = outline.zoomId.value
 
     const tasks = outline.getAllTasks().filter(node => isWithinZoom(node.peek().id, zoomId))

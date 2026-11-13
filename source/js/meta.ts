@@ -127,10 +127,20 @@ function parseDate(str: string): Date | null {
     return date
 }
 
+/**
+ * Upper bound for a `rec:` count (meta-01). Beyond it the next due date would
+ * leave the four-digit years the format allows, so the value is treated as "no
+ * recurrence" and the task completes normally instead of losing its date.
+ */
+export const MAX_RECURRENCE_COUNT = 999
+
 function parseRecurrence(recStr: string): { count: number; unit: string } | null {
     const match = META_REGISTRY.rec.exec(String(recStr || ''))
     if (!match) return null
     const count = match[0].slice(0, -1) ? parseInt(match[0].slice(0, -1), 10) : 1
+    // `rec:0d` would "advance" to the same day forever, and a count past the
+    // bound overflows the date; both are invalid recurrences.
+    if (!Number.isFinite(count) || count < 1 || count > MAX_RECURRENCE_COUNT) return null
     return { count, unit: match[1] }
 }
 
@@ -143,6 +153,13 @@ function formatDateISO(date: Date): string {
     const m = String(date.getMonth() + 1).padStart(2, '0')
     const d = String(date.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
+}
+
+/** The formatted date, or null when it leaves the four-digit years due: allows. */
+function formatKnownDate(date: Date): string | null {
+    const year = date.getFullYear()
+    if (!Number.isFinite(year) || year < 1000 || year > 9999) return null
+    return formatDateISO(date)
 }
 
 /**
@@ -164,8 +181,8 @@ export function advanceDueDate(dueStr: string, recStr: string): string | null {
     let month = due.getMonth()
     const day = due.getDate()
 
-    if (rec.unit === 'd') return formatDateISO(new Date(year, month, day + rec.count))
-    if (rec.unit === 'w') return formatDateISO(new Date(year, month, day + rec.count * 7))
+    if (rec.unit === 'd') return formatKnownDate(new Date(year, month, day + rec.count))
+    if (rec.unit === 'w') return formatKnownDate(new Date(year, month, day + rec.count * 7))
 
     if (rec.unit === 'm') {
         month += rec.count
@@ -174,7 +191,7 @@ export function advanceDueDate(dueStr: string, recStr: string): string | null {
     } else {
         year += rec.count
     }
-    return formatDateISO(new Date(year, month, Math.min(day, daysInMonth(year, month))))
+    return formatKnownDate(new Date(year, month, Math.min(day, daysInMonth(year, month))))
 }
 
 /**

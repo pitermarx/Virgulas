@@ -224,6 +224,20 @@ describe("advanceDueDate", () => {
   it("returns null for invalid rec string", () => {
       assertEqual(advanceDueDate('2026-08-05', '1x'), null, "invalid rec should return null")
   })
+
+  it("treats a zero count as no recurrence, so the task can complete (meta-01)", () => {
+      assertEqual(advanceDueDate('2026-08-05', '0d'), null, "rec:0d would never move")
+      assertEqual(advanceDueDate('2026-08-05', '0w'), null, "rec:0w would never move")
+      assertEqual(advanceDueDate('2026-08-05', '0m'), null, "rec:0m would never move")
+      assertEqual(advanceDueDate('2026-08-05', '0y'), null, "rec:0y would never move")
+  })
+
+  it("rejects counts past the bound instead of producing an unparseable date (meta-01)", () => {
+      assertEqual(advanceDueDate('2026-08-05', '99999999d'), null, "huge day counts would be NaN")
+      assertEqual(advanceDueDate('2026-08-05', '9999y'), null, "huge year counts would leave four-digit years")
+      assertEqual(advanceDueDate('2026-08-05', '1000d'), null, "the bound is 999")
+      assertEqual(advanceDueDate('2026-08-05', '999d'), '2029-04-30', "the bound itself still advances")
+  })
 })
 
 describe("isFutureDue", () => {

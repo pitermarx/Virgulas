@@ -14,6 +14,7 @@ import inbox, { type CaptureIntent } from './inbox.js';
 import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
 import { pendingConflicts, mergeDocuments } from './sync.js';
 import { currentSearchMatchId, getFirstClosedParent } from './search.js';
+import { startTodayTicker } from './tasks.js';
 
 // Splash lifecycle. `appReady` flips once the initial auth state and the
 // webfont are ready; `splashDismissed` removes the node once its fade-out ends.
@@ -222,6 +223,7 @@ function handOverToUnlockScreen() {
 function startAuthBootstrap(options: { forceLockScreen?: boolean } = {}) {
   void (async () => {
     try {
+      startTodayTicker();
       await initAuthState(options);
     } catch (error) {
       console.error('Failed to initialise app state', error);

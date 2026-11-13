@@ -360,6 +360,8 @@
       - A task can carry a recurrence interval via the `rec:<n><unit>` metadata key, where `<unit>` is
         `y` (years), `m` (months), `w` (weeks), or `d` (days), and `<n>` is an optional repeat count
         that defaults to 1 when omitted (e.g. `rec:1m`, `rec:2w`, `rec:d`)
+        `<n>` must be an integer from 1 to 999. A zero or larger count is not a recurrence: the task
+        completes normally instead of advancing, so `rec:0d` cannot trap a task in pending forever
         Example: `- [ ] Pay rent due:2026-08-28 rec:1m`
       - `rec:` only has an effect on a task that also carries a `due:` date. Without a due date it is
         stored and round-trips normally, but does nothing
@@ -373,6 +375,8 @@
       - A panel listing every task node within the current zoom, grouped into Pending, Scheduled,
         and Done sections. Tasks outside the zoomed subtree are not shown
       - Pending: tasks with no due date, or a due date that is today or in the past (including overdue)
+      - Pending, Scheduled and overdue classification refreshes at local midnight and whenever the
+        tab becomes visible again, without waiting for an edit
       - Scheduled: tasks with a due date strictly in the future
         A day-window filter (3d / 7d / 30d / All, default 3d) limits how far ahead Scheduled shows,
         to hide distant recurring tasks; a hint shows how many are hidden beyond the current window
