@@ -651,7 +651,6 @@ Workflows live in `.github/workflows/`.
 | --- | --- | --- |
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
 | `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
-| `dependency-review` | pull requests | `actions/dependency-review-action`, failing on a high-severity addition |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
 | `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
@@ -660,6 +659,10 @@ Workflows live in `.github/workflows/`.
 | `publish-image` | `main` only | builds and boots a native-arch image (`scripts/trailbase/smoke-image.sh`), then builds the all-in-one image for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/virgulas-trailbase` (`latest`, `main`, `sha-<commit>`, plus the release version), and appends the pull command to the release notes |
 | `deploy` | `main` only | builds `dist/` with the resolved version, uploads the Pages artifact, applies the Cloudflare edge headers (`cf:headers`, fails the deploy if it cannot), purges Cloudflare |
 
+- Dependency review (`actions/dependency-review-action`) is deliberately absent: this
+  repository's dependency-graph API answers 404, so the action cannot run. `bun audit` covers
+  known advisories and CodeQL covers the code; if the dependency graph is enabled later, the job
+  can come back.
 - `publish-db` must run before `deploy`.
 - The `test` job starts local Supabase on host ports below the Linux ephemeral range
   (32768-60999), then retries the start up to three times, stopping the half-started stack
