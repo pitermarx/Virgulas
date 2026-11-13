@@ -409,8 +409,9 @@ scheduling, merge triggering, and the `remoteSync` auth facade — Rule 7.
   app is open in Remote mode, and defers to active local edits.
 - Pull-before-push: the remote `outlines.updated_at` is compared with `vmd_sync_ts`; a newer remote
   is fetched and merged before the local write is uploaded.
-- Merge is per node using `lastModified` timestamps. Same-node different-field edits auto-merge;
-  same-field conflicts open a blocking modal.
+- Merge is per node using `lastModified` timestamps. A node changed on only one side is taken
+  from that side; a node changed on both sides is compared field by field, and a differing value
+  opens a blocking modal.
 - `@supabase/supabase-js` is imported dynamically from `supabaseBackend.ts` and emitted as a
   separate chunk so TrailBase, Local, Memory and File users never download it. Do not turn that
   into a static import.
