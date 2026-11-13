@@ -24,7 +24,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | Phase | Name | Items | Done when |
 | --- | --- | --- | --- |
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
-| [0B](#phase-0b) | Quick wins (operations and CI) | 4 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
+| [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 7 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 11 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
@@ -140,7 +140,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | 1 | [scale-01](scale-01-open-signup-storage-abuse.md) — Open sign-up with no captcha lets anyone store data at your cost | S | Medium | — | [growth-01](growth-01-publicity-and-monetisation.md) |
 | 2 | [scale-03](scale-03-backend-availability-monitoring.md) — The backend can pause or fail without anyone noticing | S | Medium | — | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) |
 | 3 | [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md) **SPEC** — Hosted Supabase auth configuration, and configurable backends | M | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
-| 4 | [dep-01](dep-01-no-supply-chain-checks.md) — No vulnerability, provenance or code-scanning checks in CI | S | Low | — | — |
 
 <a id="phase-1"></a>
 
@@ -423,7 +422,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
-| [dep-01](dep-01-no-supply-chain-checks.md) | No vulnerability, provenance or code-scanning checks in CI | [0B](#phase-0b) | S | Low |
 | [dep-02](dep-02-supabase-client-footprint.md) | The Supabase client chunk carries unused clients | [4](#phase-4) | M | Low |
 
 ### Browser compatibility

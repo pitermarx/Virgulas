@@ -650,6 +650,8 @@ Workflows live in `.github/workflows/`.
 | Job | When | What |
 | --- | --- | --- |
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
+| `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
+| `dependency-review` | pull requests | `actions/dependency-review-action`, failing on a high-severity addition |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
 | `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
@@ -675,6 +677,11 @@ Workflows live in `.github/workflows/`.
   A `docker build` alone cannot catch a container that cannot start as the base image's
   non-root `trailbase` user: a root-owned `/app/traildepot` makes TrailBase exit with
   `PermissionDenied` before it listens. Keep the smoke test in both jobs.
+
+### `codeql.yml` — code scanning
+
+Runs CodeQL for JavaScript/TypeScript (security-extended queries) on pushes and pull requests to
+`main`, and weekly. Alerts surface under the repository's Security tab.
 
 ### `daily.yml` — production E2E
 

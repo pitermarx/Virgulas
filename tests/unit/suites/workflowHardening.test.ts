@@ -51,6 +51,14 @@ describe('Workflow action pinning', () => {
       assertEqual(versions.size, 1, `all workflows must pin the same Bun version (found ${[...versions].join(', ')})`)
   })
 
+  it('CI audits dependencies, reviews dependency changes and scans the code (dep-01)', () => {
+      const ci = read('.github/workflows/ci.yml')
+      assert(/run: bun audit/.test(ci), 'ci.yml must run bun audit')
+      assert(ci.includes('actions/dependency-review-action@'), 'pull requests must review dependency changes')
+      const codeql = read('.github/workflows/codeql.yml')
+      assert(codeql.includes('github/codeql-action/analyze@'), 'CodeQL must analyze the code')
+  })
+
   it('the workflows are discovered (the guard is not vacuous)', () => {
       assert(workflowFiles.length >= 2, `expected ci.yml and daily.yml, found ${workflowFiles.join(', ')}`)
   })
