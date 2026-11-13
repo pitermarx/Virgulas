@@ -38,6 +38,19 @@ describe('Workflow action pinning', () => {
       }
   })
 
+  it('every workflow pins an exact Bun version, and they agree (ci-02)', () => {
+      const versions = new Set<string>()
+      for (const file of workflowFiles) {
+          const text = read(path.join('.github/workflows', file))
+          assert(!/bun-version:\s*latest/.test(text), `${file} must not use bun-version: latest`)
+          for (const match of text.matchAll(/bun-version:\s*(\S+)/g)) {
+              assert(/^\d+\.\d+\.\d+$/.test(match[1]), `${file}: bun-version "${match[1]}" must be an exact x.y.z`)
+              versions.add(match[1])
+          }
+      }
+      assertEqual(versions.size, 1, `all workflows must pin the same Bun version (found ${[...versions].join(', ')})`)
+  })
+
   it('the workflows are discovered (the guard is not vacuous)', () => {
       assert(workflowFiles.length >= 2, `expected ci.yml and daily.yml, found ${workflowFiles.join(', ')}`)
   })

@@ -617,6 +617,8 @@ bun run typecheck                # tsc app config + test config
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
 - CI shards the suite across three jobs with `--shard=<i>/3`.
+- Every workflow pins Bun to one exact version (`bun-version` in each job); bump it in a pull request
+  that runs the full suite, never to `latest`.
 - Specs import app singletons from the built bundle (`/js/app.js`) so they observe the same module
   instances as the running app. The singletons are published through a single gated `e2e` binding
   (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
