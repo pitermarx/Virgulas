@@ -386,11 +386,22 @@ export async function resolveConflicts(resolutions: ConflictResolution[]) {
 
 let _pollingInterval: ReturnType<typeof setInterval> | null = null
 
+/**
+ * Background poll interval. `window.__syncPollIntervalMs` is a Playwright seam:
+ * it is read only in the test bundle (struct-06), so a same-origin script
+ * cannot make the poll hammer the server in production.
+ */
+export function resolvePollIntervalMs(): number {
+    if (typeof __TEST_HOOKS__ !== 'undefined' && __TEST_HOOKS__ && typeof window !== 'undefined') {
+        const override = window.__syncPollIntervalMs
+        if (typeof override === 'number' && Number.isFinite(override) && override >= 1) return override
+    }
+    return 60_000
+}
+
 export function startPolling() {
     stopPolling()
-    const pollIntervalMs = typeof window !== 'undefined' && window.__syncPollIntervalMs
-        ? window.__syncPollIntervalMs
-        : 60_000
+    const pollIntervalMs = resolvePollIntervalMs()
     _pollingInterval = setInterval(() => {
         const attempt = createRemoteSyncAttempt()
         // Don't stack pulls while conflicts are pending

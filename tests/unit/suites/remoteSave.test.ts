@@ -65,12 +65,16 @@ beforeEach(() => {
     setSyncHead(null)
     setLastSyncedAt(0)
     skipNextRemotePush.value = false
+    // The retry seam is read only in a test bundle (struct-06); this unit run
+    // plays that part so the backoff stays at milliseconds.
+    Object.assign(globalThis, { __TEST_HOOKS__: true })
     window.__retryBaseMs = 1
 })
 
 afterEach(() => {
     clearDeferredPush()
     setRemoteSaveStore(null)
+    delete (globalThis as any).__TEST_HOOKS__
     window.__retryBaseMs = undefined
     outline.dirtyDebounceTimeout = 800
     syncStatus.value = 'synced'

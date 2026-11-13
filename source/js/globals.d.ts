@@ -25,11 +25,11 @@ declare global {
          * same-origin script cannot substitute the Supabase client in production.
          */
         supabase?: { createClient: typeof createClient }
-        /** Test hook: overrides the retry backoff base (ms). */
+        /** Test hook: overrides the retry backoff base (ms). Read only behind __TEST_HOOKS__. */
         __retryBaseMs?: number
         /** Test hook exposing the unlock call counter. */
         __unlockCallCount?: number
-        /** Test hook: overrides the sync poll interval (ms). */
+        /** Test hook: overrides the sync poll interval (ms). Read only behind __TEST_HOOKS__. */
         __syncPollIntervalMs?: number
         /** File System Access API (Chromium). */
         showOpenFilePicker?: (options?: {
