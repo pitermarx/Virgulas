@@ -49,13 +49,26 @@ export function getRemoteSaveStore(): DocStore | null {
 // ── Retry policy (docs §6.4) ────────────────────────────────────────────────
 
 /**
+ * Retry base delay. `window.__retryBaseMs` is a Playwright seam: it is read
+ * only in the test bundle (struct-06), so a same-origin script cannot zero the
+ * backoff in production and hammer the server with retries.
+ */
+export function resolveRetryBaseMs(): number {
+  if (typeof __TEST_HOOKS__ !== 'undefined' && __TEST_HOOKS__ && typeof window !== 'undefined') {
+    const override = window.__retryBaseMs
+    if (typeof override === 'number' && Number.isFinite(override) && override >= 1) return override
+  }
+  return 500
+}
+
+/**
  * Retries only the typed failures a retry can fix: transport/5xx (`network`)
  * and a session that is temporarily missing (`unauthenticated`). Everything
  * else — a rotated remote, an oversized document, rejected input — throws
  * immediately, because the same request cannot succeed on retry.
  */
 async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  const baseMs = (typeof window !== 'undefined' && window.__retryBaseMs) ? window.__retryBaseMs : 500
+  const baseMs = resolveRetryBaseMs()
   for (let i = 0; i <= maxRetries; i++) {
     try {
       return await fn()
