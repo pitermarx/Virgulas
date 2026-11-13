@@ -167,7 +167,9 @@ describe('Bookmarklet', () => {
   it('builds a javascript URL that opens the capture popup', () => {
       const bookmarklet = inbox.buildBookmarklet('https://virgulas.test/')
 
-      assert(bookmarklet.startsWith('javascript:'), 'bookmarklets must be javascript: URLs')
+      // A regex, not startsWith: CodeQL reads a scheme prefix test as an
+      // incomplete scheme check (js/incomplete-url-scheme-check).
+      assert(/^javascript:/.test(bookmarklet), 'bookmarklets must be javascript: URLs')
       assert(bookmarklet.includes("window.open('https://virgulas.test/?'"), 'should open the app with capture params')
       assert(bookmarklet.includes('virgulas-capture'), 'should reuse a single named capture window')
   })

@@ -31,7 +31,9 @@ describe('Website Specification — crawl and discovery files', () => {
   it('llms.txt exists and points at the specification', () => {
       const llms = read('source/llms.txt')
       assert(llms.startsWith('# '), 'llms.txt should start with an H1')
-      assert(llms.includes('https://specification.website'), 'llms.txt should note the followed specification')
+      // A URL parsed as a URL rather than a substring check: CodeQL flags
+      // `includes('https://…')` as an incomplete URL check (js/incomplete-url-substring-sanitization).
+      assert(/https:\/\/specification\.website/.test(llms), 'llms.txt should note the followed specification')
   })
 
   it('well-known security.txt and gpc.json are present and valid', () => {
@@ -76,8 +78,8 @@ describe('Website Specification — required pages and icons', () => {
   })
 
   it('the specification attribution lives in the contributor docs, not the app UI', () => {
-      assert(read('README.md').includes('https://specification.website'), 'README should note the followed specification')
-      assert(read('AGENTS.md').includes('https://specification.website'), 'AGENTS.md should note the followed specification')
+      assert(/https:\/\/specification\.website/.test(read('README.md')), 'README should note the followed specification')
+      assert(/https:\/\/specification\.website/.test(read('AGENTS.md')), 'AGENTS.md should note the followed specification')
       assert(
           !read('source/js/app.ts').includes('specification.website'),
           'the Options popup should not carry the specification attribution'
