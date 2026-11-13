@@ -6,7 +6,7 @@
 
 ## Description
 
-- Each node stores `parentId` and the parent stores `children[]`. Two sources of truth that the merge can desync (see data-02, data-04).
+- Each node stores `parentId` and the parent stores `children[]`. Two sources of truth that the merge can desync (see data-02).
 - Order is a plain array, so concurrent adds to the same parent always conflict.
 - There are no tombstones. A deletion is inferred from "absent and unchanged since `lastSyncedAt`". It depends on wall-clock time and fails for fresh clients (`lastSyncedAt = 0` keeps every node; tracked in [SECURITY.md](../SECURITY.md)).
 - `lastModified` is one timestamp per node, so field-level merging is impossible.
@@ -36,6 +36,6 @@ Property-style unit tests on `mergeDocuments`: merge is commutative and idempote
 - **Size:** L · needs a SPEC.vmd decision first (Rule 1)
 - **Do these first:** —
 - **Unblocks:** [roadmap-03](roadmap-03-node-linking.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md)
-- **Its decision changes how these are built:** [data-04](data-04-orphan-nodes-after-conflict-resolution.md), [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-03](roadmap-03-node-linking.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md), [ux-03](ux-03-conflict-resolution-granularity.md)
+- **Its decision changes how these are built:** [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-03](roadmap-03-node-linking.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md), [ux-03](ux-03-conflict-resolution-granularity.md)
 - **Shaped by:** —
 - **Related:** —

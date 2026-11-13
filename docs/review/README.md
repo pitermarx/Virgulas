@@ -27,7 +27,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
 | [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
-| [3](#phase-3) | Stop data loss and fix sync on the current model | 10 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
+| [3](#phase-3) | Stop data loss and fix sync on the current model | 9 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
 | [5](#phase-5) | Sync and data model v2 | 7 | Rollback is detected, concurrent writers cannot overwrite each other, history exists, and conflicts only appear for real same-field edits. |
 | [6](#phase-6) | Security, privacy and compliance hardening | 7 | Privacy page matches behaviour; erasure is self-service; CSP tightened with reporting. |
@@ -113,7 +113,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 - [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md): hosted settings in Phase 0B; backend options are D3.
 - [dur-04](dur-04-destructive-actions-without-safety-net.md): confirmations and "download a backup first" in Phase 3; automatic snapshots wait for [dur-03](dur-03-no-versioned-backups.md).
 - [perf-05](perf-05-sw-stale-chunk-after-deploy.md): a manual precache of the chunk is a possible stopgap; the real fix is [web-04](web-04-fingerprinted-assets-and-immutable-caching.md).
-- [data-04](data-04-orphan-nodes-after-conflict-resolution.md): a cheap stopgap in Phase 3 that D1 may make obsolete. Keep it small.
 
 <a id="phase-0a"></a>
 
@@ -182,14 +181,13 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- | --- |
 | 1 | [dur-01](dur-01-multi-tab-overwrites.md) — Two tabs overwrite each other's edits | M | High | [struct-07](struct-07-module-level-mutable-state.md) | — |
 | 2 | [a11y-02](a11y-02-dialog-focus-management.md) — Dialog focus management is incomplete; the conflict dialog is not inert | M | Medium | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [ux-01](ux-01-conflict-dialog-not-blocking.md) |
-| 3 | [data-04](data-04-orphan-nodes-after-conflict-resolution.md) — Resolving a `children` conflict can orphan nodes | S | Medium | — | — |
-| 4 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 5 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 6 | [ux-01](ux-01-conflict-dialog-not-blocking.md) — Edits made behind the conflict dialog are overwritten | S | Medium | [a11y-02](a11y-02-dialog-focus-management.md) | — |
-| 7 | [dur-04](dur-04-destructive-actions-without-safety-net.md) — Destructive actions have no safety net | S | Low | — | — |
-| 8 | [err-03](err-03-sync-errors-without-detail.md) — Sync errors carry no detail, retry action or diagnostics | M | Low | — | [roadmap-01](roadmap-01-queued-background-sync.md) |
-| 9 | [sync-05](sync-05-last-synced-at-stamped-after-upload.md) — `lastSyncedAt` is stamped after the upload, hiding edits made during it | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 10 | [sync-09](sync-09-retry-and-polling-hygiene.md) — Retry and polling hygiene | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | [scale-02](scale-02-transfer-cost-model.md) |
+| 2 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
+| 3 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
+| 4 | [ux-01](ux-01-conflict-dialog-not-blocking.md) — Edits made behind the conflict dialog are overwritten | S | Medium | [a11y-02](a11y-02-dialog-focus-management.md) | — |
+| 5 | [dur-04](dur-04-destructive-actions-without-safety-net.md) — Destructive actions have no safety net | S | Low | — | — |
+| 6 | [err-03](err-03-sync-errors-without-detail.md) — Sync errors carry no detail, retry action or diagnostics | M | Low | — | [roadmap-01](roadmap-01-queued-background-sync.md) |
+| 7 | [sync-05](sync-05-last-synced-at-stamped-after-upload.md) — `lastSyncedAt` is stamped after the upload, hiding edits made during it | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
+| 8 | [sync-09](sync-09-retry-and-polling-hygiene.md) — Retry and polling hygiene | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | [scale-02](scale-02-transfer-cost-model.md) |
 
 <a id="phase-4"></a>
 
@@ -314,7 +312,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
-| [data-04](data-04-orphan-nodes-after-conflict-resolution.md) | Resolving a `children` conflict can orphan nodes | [3](#phase-3) | S | Medium |
 | [data-05](data-05-denormalized-parent-children-no-tombstones.md) | Denormalized tree and no tombstones | [5](#phase-5) | L | Medium |
 
 ### Remote sync

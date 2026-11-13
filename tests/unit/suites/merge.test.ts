@@ -4,7 +4,7 @@ import { describe, it } from 'bun:test'
 // (it now re-exports the extracted function); this suite covers the
 // document-level merge() contract: the merged/conflict result shape,
 // metadata carry-over, baseline semantics, and pureness.
-import { CONFLICT_FIELDS, documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
+import { CONFLICT_FIELDS, attachMissingChildren, documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
 import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
 import { assert, assertEqual } from '../testing.js'
 
@@ -263,6 +263,65 @@ describe('merge - done and parentId conflicts (data-02)', () => {
       assert(conflict, 'the differing parents conflict')
       assertEqual(conflict!.localValue, 'root', 'local parent')
       assertEqual(conflict!.remoteValue, 'elsewhere', 'remote parent')
+  })
+
+  it('a `children` resolution keeps the losing side\'s nodes reachable, whichever side wins (data-04)', () => {
+      // A resolution takes one side\'s whole array. Nodes that exist in the
+      // document under the same parent but only the other side listed must not
+      // be left behind: they would stay invisible, still serialized and uploaded.
+      const localChildren = ['a', 'b']
+      const remoteChildren = ['a', 'c']
+      for (const chosen of [localChildren, remoteChildren]) {
+          const nodes = [
+              node({ id: 'root', text: '', parentId: null, children: ['p'] }),
+              node({ id: 'p', children: [...chosen] }),
+              node({ id: 'a', parentId: 'p' }),
+              node({ id: 'b', parentId: 'p' }),
+              node({ id: 'c', parentId: 'p' }),
+          ]
+          const repaired = attachMissingChildren(nodes)
+          const parent = repaired.find(candidate => candidate.id === 'p')!
+          assertEqual(parent.children?.[0], chosen[0], 'the chosen side keeps its order first')
+          assertEqual(parent.children?.length, 3, 'every child is listed once: ' + chosen.join(','))
+
+          // Every node is reachable from the root again.
+          const byId = new Map(repaired.map(candidate => [candidate.id, candidate]))
+          const reachable = new Set<string>()
+          const visit = (id: string) => {
+              if (reachable.has(id)) return
+              reachable.add(id)
+              for (const childId of byId.get(id)?.children ?? []) visit(childId)
+          }
+          visit('root')
+          for (const candidate of repaired) assert(reachable.has(candidate.id), candidate.id + ' must be reachable')
+      }
+  })
+
+  it('leaves a consistent document untouched, and is idempotent', () => {
+      const nodes = [
+          node({ id: 'root', text: '', parentId: null, children: ['p'] }),
+          node({ id: 'p', children: ['a'] }),
+          node({ id: 'a', parentId: 'p' }),
+      ]
+      const repaired = attachMissingChildren(nodes)
+      assert(repaired === nodes, 'no change means the same array comes back')
+      const twice = attachMissingChildren(attachMissingChildren([
+          node({ id: 'root', text: '', parentId: null, children: ['p'] }),
+          node({ id: 'p', children: [] }),
+          node({ id: 'a', parentId: 'p' }),
+      ]))
+      const parent = twice.find(candidate => candidate.id === 'p')!
+      assertEqual(parent.children?.join(','), 'a', 'a second pass adds nothing')
+  })
+
+  it('does not invent a parent for a node whose parent is gone, nor for itself', () => {
+      const nodes = [
+          node({ id: 'root', text: '', parentId: null, children: [] }),
+          node({ id: 'orphan', parentId: 'deleted-parent' }),
+          node({ id: 'self', parentId: 'self' }),
+      ]
+      const repaired = attachMissingChildren(nodes)
+      assert(repaired === nodes, 'nothing is reachable to append to')
   })
 
   it('every field the merge can flag is one the conflict application knows', () => {

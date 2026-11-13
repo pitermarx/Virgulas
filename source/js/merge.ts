@@ -207,6 +207,37 @@ export function merge(local: OutlineDoc, remote: OutlineDoc, baseline: number): 
  * Unknown fields are still compared, so future document data cannot be
  * silently skipped.
  */
+/**
+ * Re-attaches nodes a `children` conflict resolution left unreachable (data-04).
+ *
+ * A `children` conflict is resolved by taking one side's whole array, so a node
+ * that only the losing side listed keeps its `parentId` but is absent from the
+ * parent's `children`: invisible in the outline, never reachable, still
+ * serialized and uploaded. Append every such node to its parent's array (in
+ * document order). Nodes whose parent is missing are left alone — inventing a
+ * parent would hide a real document problem instead of repairing this one.
+ */
+export function attachMissingChildren(nodes: OutlineNode[]): OutlineNode[] {
+    const byId = new Map(nodes.map(node => [node.id, node]))
+    const additions = new Map<string, string[]>()
+    for (const node of nodes) {
+        const parentId = node.parentId ?? null
+        if (parentId === null || parentId === node.id) continue
+        const parent = byId.get(parentId)
+        if (!parent) continue
+        if ((parent.children ?? []).includes(node.id)) continue
+        const extra = additions.get(parentId) ?? []
+        extra.push(node.id)
+        additions.set(parentId, extra)
+    }
+    if (additions.size === 0) return nodes
+    return nodes.map(node => {
+        const extra = additions.get(node.id)
+        if (!extra) return node
+        return { ...node, children: [...(node.children ?? []), ...extra] }
+    })
+}
+
 export function documentsEquivalent(a: OutlineDoc, b: OutlineDoc): boolean {
     return canonicalDocument(a) === canonicalDocument(b)
 }
