@@ -26,6 +26,11 @@ function connectSrcTokens(csp: string): string[] {
     return directive ? directive.split(/\s+/).slice(1) : []
 }
 
+/** Whole-token match: equality, not a substring check, so a lookalike host cannot pass. */
+function hasSource(csp: string, source: string): boolean {
+    return connectSrcTokens(csp).some((token) => token === source)
+}
+
 
 describe('CSP build helper — resolveSupabaseOrigin', () => {
 
@@ -74,9 +79,8 @@ describe('CSP build helper — tightenConnectSrc', () => {
       assert(!out.includes('localhost'), 'no localhost')
       assert(!out.includes('127.0.0.1'), 'no loopback')
       assert(!out.includes('*.supabase.co'), 'no wildcard')
-      const sources = connectSrcTokens(out)
-      assert(sources.includes('https://real.supabase.co'), 'pinned origin present')
-      assert(sources.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
+      assert(hasSource(out, 'https://real.supabase.co'), 'pinned origin present')
+      assert(hasSource(out, 'https://um.vps.pitermarx.com'), 'analytics collector kept')
       assert(out.includes("'self'"), 'self kept')
   })
 
@@ -122,8 +126,7 @@ describe('CSP production wiring', () => {
       const out = tightenConnectSrc(html, origin)
       assert(!out.includes('localhost') && !out.includes('127.0.0.1'), 'no local sources in production CSP')
       assert(!out.includes('*.supabase.co'), 'no wildcard in production CSP')
-      const sources = connectSrcTokens(out)
-      assert(sources.includes(origin), 'pinned origin present')
-      assert(sources.includes('https://um.vps.pitermarx.com'), 'analytics collector kept')
+      assert(hasSource(out, origin), 'pinned origin present')
+      assert(hasSource(out, 'https://um.vps.pitermarx.com'), 'analytics collector kept')
   })
 })
