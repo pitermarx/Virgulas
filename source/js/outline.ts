@@ -489,12 +489,31 @@ function outlineFactory() {
             })] as const)
 
         reset()
-        const rootChildren = validNodes.find(n => n.id === rootNodeId)?.children ?? []
-        const rootChildIds = new Set(rootChildren)
-        map.get(rootNodeId)!.children.value = [
-            ...rootChildren,
+        // The root is recreated by reset(), not restored like the other nodes,
+        // which dropped its timestamp and broke load-then-save identity
+        // (test-02). Rebuild it from the stored node when there is one.
+        const storedRoot = validNodes.find(n => n.id === rootNodeId)
+        const rootChildIds = new Set(storedRoot?.children ?? [])
+        const rootChildren = [
+            ...(storedRoot?.children ?? []),
             ...validNodes.filter(n => n.parentId === rootNodeId && !rootChildIds.has(n.id)).map(n => n.id),
         ]
+        const placeholderRoot = map.get(rootNodeId)!
+        if (storedRoot) {
+            placeholderRoot[Symbol.dispose]()
+            map.set(rootNodeId, new NodeModel({
+                id: rootNodeId,
+                parentId: null,
+                text: storedRoot.text,
+                description: storedRoot.description,
+                children: rootChildren,
+                open: storedRoot.open,
+                lastModified: storedRoot.lastModified || 0,
+                done: storedRoot.done ?? null,
+            }))
+        } else {
+            placeholderRoot.children.value = rootChildren
+        }
 
         for (const [id, node] of restoredNodes) map.set(id, node)
         if (previousZoomId !== rootNodeId && map.has(previousZoomId)) {
