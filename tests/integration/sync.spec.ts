@@ -919,6 +919,28 @@ test.describe('Conflict resolution modal', () => {
         await expect(dialog).toBeVisible();
     });
 
+    test('the outline shortcuts do not run behind the blocking dialog (ux-01)', async ({ page }) => {
+        await setupConflict(page, 'Behind A', 'Behind B');
+        await expect(page.locator('.conflict-overlay')).toBeVisible();
+
+        const readDoc = () => page.evaluate(async () => (await import('/js/app.js' as string)).e2e.outline.serialize());
+        const before = await readDoc();
+        const focusedBefore = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('.node-focused')).map(node => node.getAttribute('data-node-id')).join(','));
+
+        // ArrowDown moves the outline focus, and Enter would add a node: neither
+        // may reach the outline behind the dialog.
+        for (const key of ['ArrowDown', 'ArrowDown', 'Enter', 'Tab', 'Backspace', 'Escape']) {
+            await page.keyboard.press(key);
+        }
+
+        const focusedAfter = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('.node-focused')).map(node => node.getAttribute('data-node-id')).join(','));
+        expect(focusedAfter, 'the outline selection does not move').toBe(focusedBefore);
+        expect(await readDoc(), 'nothing behind the dialog edits the document').toBe(before);
+        await expect(page.locator('.conflict-overlay')).toBeVisible();
+    });
+
     test('"Apply" is disabled until all conflicts are resolved', async ({ page }) => {
         await setupConflict(page, 'A', 'B');
 

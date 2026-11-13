@@ -851,7 +851,14 @@ if (typeof window !== 'undefined') {
     window.addEventListener('hashchange', syncZoomFromHash)
 }
 
-document.onkeydown = keydown(focus)
+// ux-01: the SPEC says the app cannot be used until every conflict is resolved.
+// The conflict dialog is blocking, so the outline's global shortcuts must not
+// act behind it (the dialog has its own handler for the keys it consumes).
+const outlineKeydown = keydown(focus)
+document.onkeydown = (event: KeyboardEvent) => {
+    if (pendingConflicts.peek().length > 0) return
+    outlineKeydown(event)
+}
 
 export function ConflictModal() {
     const conflicts = pendingConflicts.value
