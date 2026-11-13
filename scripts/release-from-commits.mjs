@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -24,9 +24,13 @@ function run(command, args, options = {}) {
     return result.stdout
 }
 
-function resolveNotesPath() {
+async function resolveNotesPath() {
     const baseDir = process.env.RUNNER_TEMP || process.env.TEMP || process.env.TMPDIR || tmpdir()
-    return join(baseDir, 'virgulas-release-notes.md')
+    // A fresh private directory instead of a fixed name in the shared temp dir:
+    // a predictable path can be pre-created or symlinked (CodeQL
+    // js/insecure-temporary-file), even on a hosted runner.
+    const dir = await mkdtemp(join(baseDir, 'virgulas-release-'))
+    return join(dir, 'notes.md')
 }
 
 function toOutput(key, value) {
@@ -201,7 +205,7 @@ function tagExists(tag) {
 }
 
 async function main() {
-    const notesPath = resolveNotesPath()
+    const notesPath = await resolveNotesPath()
     const pkg = JSON.parse(await readFile(PACKAGE_JSON_PATH, 'utf8'))
     const packageVersion = pkg.version
     const latestTag = latestSemverTag()
@@ -247,7 +251,7 @@ async function main() {
 }
 
 main().catch(async (error) => {
-    const notesPath = resolveNotesPath()
+    const notesPath = await resolveNotesPath()
     console.error(error?.message || error)
     toOutput('release_needed', 'false')
     toOutput('release_created', 'false')
