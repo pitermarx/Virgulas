@@ -924,18 +924,37 @@ test.describe('Conflict resolution modal', () => {
         await expect(page.locator('.conflict-overlay')).toBeVisible();
 
         const readDoc = () => page.evaluate(async () => (await import('/js/app.js' as string)).e2e.outline.serialize());
-        const before = await readDoc();
-        const focusedBefore = await page.evaluate(() =>
+        const readFocusedNodes = () => page.evaluate(() =>
             Array.from(document.querySelectorAll('.node-focused')).map(node => node.getAttribute('data-node-id')).join(','));
 
-        // ArrowDown moves the outline focus, and Enter would add a node: neither
-        // may reach the outline behind the dialog.
-        for (const key of ['ArrowDown', 'ArrowDown', 'Enter', 'Tab', 'Backspace', 'Escape']) {
+        // The keys must arrive once the dialog owns focus and the app has finished
+        // reacting to the blur: opening the dialog blurs the outline's input, and
+        // the app clears the focused node 75 ms later (ui.ts, scheduleBlurClear).
+        // Snapshotting before that settle compared a focused node with the cleared
+        // one — a race that failed on a slow WebKit worker, not a shortcut leak.
+        await expect
+            .poll(() => page.evaluate(() => !!document.activeElement?.closest('.conflict-dialog')),
+                { message: 'the dialog owns focus before the keys are sent' })
+            .toBe(true);
+        await expect
+            .poll(readFocusedNodes, { message: 'the outline focus behind the dialog has settled' })
+            .toBe('');
+
+        const before = await readDoc();
+        const focusedBefore = await readFocusedNodes();
+
+        // Keys the outline would act on must not reach it: ArrowDown moves the
+        // outline focus and Enter would add a node. Tab and Escape belong to the
+        // dialog. Backspace is left out: while the dialog is open it is
+        // unhandled, so WebKit applies the browser default and navigates back,
+        // which takes the document out from under the assertions below (the
+        // outline cannot delete text either way — the dialog owns focus and the
+        // outline behind it is inert).
+        for (const key of ['ArrowDown', 'ArrowDown', 'Enter', 'Tab', 'Escape']) {
             await page.keyboard.press(key);
         }
 
-        const focusedAfter = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('.node-focused')).map(node => node.getAttribute('data-node-id')).join(','));
+        const focusedAfter = await readFocusedNodes();
         expect(focusedAfter, 'the outline selection does not move').toBe(focusedBefore);
         expect(await readDoc(), 'nothing behind the dialog edits the document').toBe(before);
         await expect(page.locator('.conflict-overlay')).toBeVisible();
