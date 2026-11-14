@@ -135,6 +135,29 @@ test.describe('Keyboard', () => {
     await expect(page.locator('[data-node-id="1.1"]')).toBeVisible();
   });
 
+  test('Backspace with nothing focused does not leave the app', async ({ page }) => {
+    await setupDoc(page, {
+      id: 'root',
+      text: 'Root',
+      children: [
+        { id: '1', text: 'Node 1', children: [] }
+      ]
+    });
+
+    const urlBefore = page.url();
+    // Nothing focused: no outline edit consumes the key.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await expect(page.locator('.node-content input')).toHaveCount(0);
+
+    await page.keyboard.press('Backspace');
+
+    // WebKit treats an unhandled Backspace as browser history navigation, which
+    // would take the whole document (and a Memory-mode outline) away.
+    expect(page.url(), 'the browser did not navigate away').toBe(urlBefore);
+    await expect(page.locator('#main-content')).toBeVisible();
+    await expect(page.locator('.node-content')).toHaveCount(1);
+  });
+
   test('Arrow keys navigate nodes', async ({ page }) => {
     // Setup: Root -> Node 1 -> Node 2
     // Create Node 2 via Enter

@@ -4,7 +4,7 @@ import outline from "./outline.js"
 import persistence, { localSaveFailed } from './persistence.js';
 import { renderInlineMarkdown, renderBlockMarkdown } from './markdown.js';
 import { log, isMobile, store, appVersion } from './utils.js';
-import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen } from './shortcuts.js';
+import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen, suppressUnhandledBackspace } from './shortcuts.js';
 import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './sync.js';
 import { openDialogFocus } from './dialogs.js';
@@ -856,7 +856,13 @@ if (typeof window !== 'undefined') {
 // act behind it (the dialog has its own handler for the keys it consumes).
 const outlineKeydown = keydown(focus)
 document.onkeydown = (event: KeyboardEvent) => {
-    if (pendingConflicts.peek().length > 0) return
+    if (pendingConflicts.peek().length > 0) {
+        // Blocking means the browser's defaults stay out too: WebKit turns an
+        // unhandled Backspace into a history navigation, which would leave the
+        // app while the user is still answering the conflict.
+        suppressUnhandledBackspace(event)
+        return
+    }
     outlineKeydown(event)
 }
 
