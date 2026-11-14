@@ -511,7 +511,17 @@ function splashFadeMs(): number {
 }
 
 /**
- * Schedule the splash removal once, when the app becomes ready.
+ * Arm the splash removal for the fade that is about to run.
+ *
+ * Called when the app becomes ready, so a browser that never starts or never
+ * reports the fade still drops the node, and again from the splash's first
+ * `transitionrun`. The second call is what makes the deadline correct:
+ * `appReady` flips before Preact re-renders and the browser recalculates style,
+ * so on a busy main thread the fade can start hundreds of milliseconds later,
+ * and a timer armed at readiness would remove the node while it is still
+ * fading — removing a transitioning node at that instant also swallows the
+ * transition's own `transitionend`. Re-arming restarts the fade + grace window
+ * from the frame the fade actually starts.
  *
  * This deliberately runs outside a component effect. The removal is the
  * readiness gate the user (and the e2e suite) waits on, so it must not depend
@@ -524,7 +534,8 @@ function splashFadeMs(): number {
  * become visible or usable.
  */
 function scheduleSplashDismissal() {
-  if (splashDismissed.value || splashFallbackTimer !== null) return;
+  if (splashDismissed.value) return;
+  if (splashFallbackTimer !== null) clearTimeout(splashFallbackTimer);
   splashFallbackTimer = setTimeout(dismissSplash, splashFadeMs() + SPLASH_FADE_GRACE_MS);
 }
 
@@ -1538,7 +1549,8 @@ const Splash = () => {
   let isLocked = false;
 
   // `transitionend` is the normal path to removal; `scheduleSplashDismissal`
-  // is the safety net, armed when `appReady` flips (see startAuthBootstrap).
+  // is the safety net. It is armed when `appReady` flips (see
+  // startAuthBootstrap) and re-armed on the fade's first frame below.
 
   if (ready) {
     isLocked = persistence.isLocked();
@@ -1555,6 +1567,11 @@ const Splash = () => {
       <div
         id="splash"
         class=${ready ? 'hidden' : ''}
+        onTransitionRun=${(event: TransitionEvent) => {
+        // The fade's first frame: measure the removal deadline from here, not
+        // from the moment `appReady` flipped (scheduleSplashDismissal).
+        if (event.propertyName === 'opacity' && event.target === event.currentTarget) scheduleSplashDismissal();
+      }}
         onTransitionEnd=${(event: TransitionEvent) => {
         if (event.propertyName === 'opacity' && event.target === event.currentTarget) dismissSplash();
       }}
