@@ -438,12 +438,34 @@ function handleKeyDown(e: any, focus: EditorFocus) {
     }
 }
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false
+    const tag = target.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+        (target as HTMLElement).isContentEditable
+}
+
+/**
+ * Keep an unhandled Backspace from acting as browser history navigation.
+ *
+ * The SPEC reaches zoom history with `Alt+←`, and a Backspace the app does not
+ * use keeps its browser default — which in WebKit is "go back". Pressing it with
+ * nothing focused, or while a blocking dialog owns the keyboard, therefore left
+ * the app and lost a Memory-mode document. Handled keys already prevent their
+ * default; text fields keep theirs so normal character deletion works.
+ */
+export function suppressUnhandledBackspace(event: KeyboardEvent): void {
+    if (event.key === 'Backspace' && !isTextEntryTarget(event.target)) event.preventDefault()
+}
+
 export function keydown(focus: EditorFocus) {
     return function keydownHandler(e: any) {
         if (handleKeyDown(e, focus)) {
             e.preventDefault()
             e.stopPropagation()
+            return
         }
+        suppressUnhandledBackspace(e)
     }
 }
 

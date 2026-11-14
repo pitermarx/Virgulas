@@ -942,17 +942,19 @@ test.describe('Conflict resolution modal', () => {
 
         const before = await readDoc();
         const focusedBefore = await readFocusedNodes();
+        const urlBefore = page.url();
 
         // Keys the outline would act on must not reach it: ArrowDown moves the
-        // outline focus and Enter would add a node. Tab and Escape belong to the
-        // dialog. Backspace is left out: while the dialog is open it is
-        // unhandled, so WebKit applies the browser default and navigates back,
-        // which takes the document out from under the assertions below (the
-        // outline cannot delete text either way — the dialog owns focus and the
-        // outline behind it is inert).
-        for (const key of ['ArrowDown', 'ArrowDown', 'Enter', 'Tab', 'Escape']) {
+        // outline focus, Enter would add a node and Backspace would delete an
+        // empty one. Tab and Escape belong to the dialog.
+        for (const key of ['ArrowDown', 'ArrowDown', 'Enter', 'Tab', 'Backspace', 'Escape']) {
             await page.keyboard.press(key);
         }
+
+        // Backspace must not reach the browser either: WebKit turns an unhandled
+        // one into a history navigation, which would leave the app from here.
+        expect(page.url(), 'the browser did not navigate away').toBe(urlBefore);
+        expect(await page.locator('#main-content').count(), 'the app is still on the page').toBe(1);
 
         const focusedAfter = await readFocusedNodes();
         expect(focusedAfter, 'the outline selection does not move').toBe(focusedBefore);
