@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals'
 import outline from './outline.js'
 import { log, store } from './utils.js'
-import { CONFLICT_FIELDS, documentsEquivalent, merge, mergeDocuments } from './merge.js'
+import { CONFLICT_FIELDS, attachMissingChildren, documentsEquivalent, merge, mergeDocuments } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
 import type { OutlineDoc, OutlineNode } from './docCodec.js'
@@ -374,7 +374,9 @@ export async function resolveConflicts(resolutions: ConflictResolution[]) {
         }
     }
 
-    const mergedObj: OutlineDoc = { ...doc, nodes: updatedNodes }
+    // data-04: a `children` conflict takes one whole array, so a node only the
+    // losing side listed would be left in the document but unreachable.
+    const mergedObj: OutlineDoc = { ...doc, nodes: attachMissingChildren(updatedNodes) }
 
     try {
         syncStatus.value = 'syncing'
