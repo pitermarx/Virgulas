@@ -471,10 +471,9 @@ test.describe('Authentication', () => {
     await expect(page.getByLabel('Account password')).toHaveCount(0);
     await expect(page.getByLabel('Encryption passphrase')).toBeVisible();
 
-    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    // Through the shared helper: its own fill+click raced the sheet re-rendering
+    // as the session probe settled, and a swallowed click left the app locked.
+    await unlockApp(page, 'remote-passphrase');
     await expect(page.locator('.node-content').first()).toContainText('From Server');
   });
 

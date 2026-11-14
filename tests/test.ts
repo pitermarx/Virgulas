@@ -146,12 +146,26 @@ export async function submitUnlock(
     await unlock.click();
 }
 
+/**
+ * Fill the lock screen passphrase and submit, then wait for the app to render.
+ *
+ * Unlock is a key derivation + decrypt, and the lock sheet also re-renders while
+ * the boot probes settle, so a submit can be swallowed and the crypto can take
+ * seconds on a contended CI runner. Retry the submit until the app renders, with
+ * an explicit budget rather than the suite default: two WebKit integration tests
+ * needed a retry on 2026-11-14 for exactly this.
+ */
 export async function unlockApp(
     page: import('@playwright/test').Page,
     passphrase = 'password'
 ) {
-    await submitUnlock(page, passphrase);
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    const rendered = page.locator('body[data-main-view="rendered"]');
+    await expect(async () => {
+        // A submit that did land still counts when the render was slow.
+        if (await rendered.count() > 0) return;
+        await submitUnlock(page, passphrase);
+        await expect(rendered, 'the app renders after the unlock').toHaveCount(1, { timeout: 20_000 });
+    }).toPass({ timeout: 60_000 });
 }
 
 /**
