@@ -5,26 +5,26 @@ import { test, expect, type Page } from '../test';
  * fades on the same DOM node it later removes (a node remounted with `hidden`
  * already applied would emit no transition events at all).
  *
- * Only the start is recorded. The app removes the node on `transitionend`, but
- * its fallback timer is armed when the app becomes ready — before the fade's
- * first frame — so on a busy main thread the removal can land on the instant
- * the fade ends, and then neither `transitionend` nor `transitioncancel` is
- * delivered. That is the documented fallback, not a failed fade, so the test
- * asserts what it protects: the fade started on this node, and this node is the
- * one that was removed.
+ * The completion is recorded too: the app arms its removal fallback from the
+ * fade's first frame (`scheduleSplashDismissal` in app.ts), so the fade always
+ * finishes before the node can be dropped — but the `visibility` step that ends
+ * it lands on the same instant (base.css), and the engine may report that as a
+ * cancellation of the opacity transition instead of an end.
  */
 const trackSplashTransitions = (page: Page) =>
   page.addInitScript(() => {
-    const state: { started: boolean; runNode: Element | null } = { started: false, runNode: null };
+    const state: { events: string[]; runNode: Element | null } = { events: [], runNode: null };
     (window as any).__splash = state;
-    document.addEventListener('transitionrun', (event) => {
-      const transition = event as TransitionEvent;
-      const target = transition.target as Element | null;
-      if (transition.propertyName !== 'opacity' || target?.id !== 'splash') return;
-      state.started = true;
-      // The node the fade started on: the removal below must be that node.
-      if (!state.runNode) state.runNode = target;
-    }, true);
+    for (const type of ['transitionrun', 'transitionend', 'transitioncancel']) {
+      document.addEventListener(type, (event) => {
+        const transition = event as TransitionEvent;
+        const target = transition.target as Element | null;
+        if (transition.propertyName !== 'opacity' || target?.id !== 'splash') return;
+        // The node the fade started on: the removal below must be that node.
+        if (type === 'transitionrun' && !state.runNode) state.runNode = target;
+        state.events.push(type);
+      }, true);
+    }
   });
 
 test('app shell and splash screen mount correctly', async ({ page }) => {
@@ -45,6 +45,33 @@ test('app shell and splash screen mount correctly', async ({ page }) => {
 test('splash fades out on the same node, then is removed', async ({ page }) => {
   await trackSplashTransitions(page);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // The removal fallback is armed when the app becomes ready, and the fade only
+  // starts once the render after that flip applies `hidden`. On a busy main
+  // thread that gap can be hundreds of milliseconds; hold the render for 600 ms
+  // to reproduce it, because that is the condition that turned main red on
+  // 2026-11-14 (the fallback then dropped the node mid-fade and no completion
+  // event arrived). The fade must still finish before the node is dropped.
+  //
+  // `data-main-view` is already set by the bootstrap; the render sets it again
+  // just before it diffs the splash's class, which is where the frame is spent.
+  await page.addInitScript(() => {
+    const setAttribute = Element.prototype.setAttribute;
+    let delayed = false;
+    Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
+      if (
+        !delayed &&
+        name === 'data-main-view' &&
+        this === document.body &&
+        document.body.getAttribute('data-main-view') === 'rendered'
+      ) {
+        delayed = true;
+        const until = Date.now() + 600;
+        while (Date.now() < until) { /* a frame the boot spends on other work */ }
+      }
+      return setAttribute.call(this, name, value);
+    };
+  });
 
   // Hold the memory-mode bootstrap until the browser has computed the visible
   // splash style. Otherwise a fast boot can apply `hidden` before the first
@@ -81,9 +108,9 @@ test('splash fades out on the same node, then is removed', async ({ page }) => {
   await expect(page.locator('#splash')).toHaveCount(0);
 
   const observed = await page.evaluate(() => {
-    const state = (window as any).__splash as { started: boolean; runNode: Element | null };
+    const state = (window as any).__splash as { events: string[]; runNode: Element | null };
     return {
-      started: state.started,
+      events: state.events,
       hadRunNode: state.runNode !== null,
       runNodeStillConnected: state.runNode?.isConnected === true
     };
@@ -92,7 +119,16 @@ test('splash fades out on the same node, then is removed', async ({ page }) => {
   // The fade starts on the splash itself. A node remounted with `hidden`
   // already applied emits nothing, and so does a fade that is switched off
   // (reduced motion, or `transition: none`).
-  expect(observed.started, 'the splash opacity transition did not start').toBe(true);
+  expect(observed.events, 'the splash opacity transition did not start').toContain('transitionrun');
+
+  // The fade then finishes before the removal can drop the node: the fallback
+  // deadline is measured from the frame the fade starts, not from the moment the
+  // app became ready. Either the transition ends, or the `visibility` step that
+  // lands on the same instant cancels it.
+  expect(
+    observed.events.some(type => type === 'transitionend' || type === 'transitioncancel'),
+    'the splash opacity transition neither ended nor was cancelled'
+  ).toBe(true);
 
   // The node that faded is the node that was removed, not a remount.
   expect(observed.hadRunNode, 'no splash node started a fade').toBe(true);
