@@ -4,19 +4,27 @@ import { test, expect, type Page } from '../test';
  * Record opacity transitions on #splash. Used to prove the splash actually
  * fades on the same DOM node it later removes (a node remounted with `hidden`
  * already applied would emit no transition events at all).
+ *
+ * Only the start is recorded. The app removes the node on `transitionend`, but
+ * its fallback timer is armed when the app becomes ready — before the fade's
+ * first frame — so on a busy main thread the removal can land on the instant
+ * the fade ends, and then neither `transitionend` nor `transitioncancel` is
+ * delivered. That is the documented fallback, not a failed fade, so the test
+ * asserts what it protects: the fade started on this node, and this node is the
+ * one that was removed.
  */
 const trackSplashTransitions = (page: Page) =>
   page.addInitScript(() => {
-    (window as any).__splashTransitions = [];
-    for (const type of ['transitionrun', 'transitionend']) {
-      document.addEventListener(type, (event) => {
-        const transition = event as TransitionEvent;
-        const target = transition.target as Element | null;
-        if (transition.propertyName === 'opacity' && target?.id === 'splash') {
-          (window as any).__splashTransitions.push(type);
-        }
-      }, true);
-    }
+    const state: { started: boolean; runNode: Element | null } = { started: false, runNode: null };
+    (window as any).__splash = state;
+    document.addEventListener('transitionrun', (event) => {
+      const transition = event as TransitionEvent;
+      const target = transition.target as Element | null;
+      if (transition.propertyName !== 'opacity' || target?.id !== 'splash') return;
+      state.started = true;
+      // The node the fade started on: the removal below must be that node.
+      if (!state.runNode) state.runNode = target;
+    }, true);
   });
 
 test('app shell and splash screen mount correctly', async ({ page }) => {
@@ -72,9 +80,23 @@ test('splash fades out on the same node, then is removed', async ({ page }) => {
 
   await expect(page.locator('#splash')).toHaveCount(0);
 
-  const transitions = await page.evaluate(() => (window as any).__splashTransitions as string[]);
-  expect(transitions).toContain('transitionrun');
-  expect(transitions).toContain('transitionend');
+  const observed = await page.evaluate(() => {
+    const state = (window as any).__splash as { started: boolean; runNode: Element | null };
+    return {
+      started: state.started,
+      hadRunNode: state.runNode !== null,
+      runNodeStillConnected: state.runNode?.isConnected === true
+    };
+  });
+
+  // The fade starts on the splash itself. A node remounted with `hidden`
+  // already applied emits nothing, and so does a fade that is switched off
+  // (reduced motion, or `transition: none`).
+  expect(observed.started, 'the splash opacity transition did not start').toBe(true);
+
+  // The node that faded is the node that was removed, not a remount.
+  expect(observed.hadRunNode, 'no splash node started a fade').toBe(true);
+  expect(observed.runNodeStillConnected, 'the node that faded is the node that was removed').toBe(false);
 
   // The app is already rendered underneath while the splash fades, so it is
   // interactive before the splash node is finally dropped.
