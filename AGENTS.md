@@ -446,7 +446,9 @@ options) are not protected by the hash and are changed with a normal review.
 Use this as the default responsibility split. Keep files focused and avoid mixing concerns.
 
 - `app.ts`:
-  App bootstrap, lock screen/auth flow, top-level render tree, modal orchestration.
+  App bootstrap, splash lifecycle, top-level render tree, modal orchestration.
+  Mounts `LockScreen` and `OptionsModal`; the auth and Options state live in
+  those modules, so this file only owns what composes them.
 - `ui.ts`:
   Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, tasks panel, debug panels).
 - `search.ts`:
@@ -477,11 +479,16 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Pure-`fetch` RawStore + AuthProvider for TrailBase (the same-origin default): register/sign-in/reset/logout/delete, one 401 → refresh → retry, and `outlines` row CRUD.
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
-- `session.ts`:
-  The lock/session state shared by the lock screen, the storage wizard and the
-  Options modal (auth mode re-exported from `persistence.ts`, scenario, step,
-  user, busy/errors, account info) plus the boot helpers (`initAuthState`, the
-  locked background intro, memory-after-wipe). One copy of each signal.
+- `lockScreen.ts`:
+  The lock screen: the storage wizard, the unlock/sign-up/reset flows and the
+  `LockScreen`/`SecureStoragePrompt` components. Its auth state (scenario, step,
+  user, busy/errors) lives here, not in the app shell; `app.ts` mounts the
+  component and asks `isWizardOverlayOpen()`, and `options.ts` reaches the same
+  state through `lockNow` / `resetSessionState` / `resetMemoryDocument`.
+- `options.ts`:
+  The Options modal and its private state (account info, backend deletion
+  capability, busy flag, the admin form fields). Binds its own dialog focus and
+  calls the lock screen's API for lock/purge; persistence owns mode and storage.
 - `persistence.ts`:
   Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The debounce itself lives in `savePipeline.ts`.
 - `syncEngine.ts`:

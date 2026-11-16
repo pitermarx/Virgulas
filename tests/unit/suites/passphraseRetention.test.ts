@@ -62,7 +62,7 @@ describe('passphrase retention', () => {
   })
 
   it('the lock screen drops its form copy after a successful unlock', () => {
-      const src = read('source/js/app.ts')
+      const src = read('source/js/lockScreen.ts')
       assert(
           !/passphrase\.value\s*=\s*recovered/.test(src),
           'biometric unlock must not mirror the recovered passphrase into the form'

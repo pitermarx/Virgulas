@@ -755,6 +755,15 @@ export default {
     // residue. Best-effort, so the synchronous purge need not await it.
     void clearAppCaches()
   },
+  /**
+   * Land in memory mode after a wipe. Clear Cache Storage last and await it, so
+   * a purge really leaves no app-owned cache behind.
+   */
+  async bootMemoryAfterWipe() {
+    await unlock('', { mode: 'memory' })
+    rememberMode('memory')
+    await clearAppCaches()
+  },
   async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
     store.user.set(email.trim())
