@@ -504,7 +504,10 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   The autosave pipeline: per-mode debounced writes, the 3 s maximum wait, the
   teardown flush, and the saved-version bookkeeping. Constructed by
   `persistence.ts` with the live stores, so it holds timers only — no
-  ciphertext, keys or backend specifics.
+  ciphertext, keys or backend specifics. A document loaded from a store (or
+  written explicitly at setup/rotation) is marked saved, so an unlock never
+  re-encrypts and re-uploads what it just read; a legacy envelope is upgraded
+  by the next normal save, as the SPEC says.
 - `tasks.ts`:
   Grouped task selectors (`groupedTasks`, panel-only) and the cheap status
   counts (`taskStats`) the always-mounted toolbar reads.
@@ -634,6 +637,8 @@ bun run typecheck                # tsc app config + test config
 - Suites are native `bun:test` files (`describe`/`it`/`beforeEach`) in `tests/unit/suites/*.test.ts`;
   `bun test tests/unit` discovers them automatically — no registration step.
 - `tests/unit/testing.ts` provides the shared `assert`/`assertEqual`/`assertNotEqual` helpers.
+- `tests/unit/indexedDbFake.ts` is the shared in-memory IndexedDB for the suites that
+  exercise `idb.ts` and the biometric seal.
 - `tests/unit/suites/csp.test.ts` and `staticPath.test.ts` cover build/server helpers rather than
   browser modules; keep that pattern when adding tooling tests.
 

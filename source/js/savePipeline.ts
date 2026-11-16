@@ -38,6 +38,8 @@ export interface SavePipeline {
     flush: () => Promise<boolean>
     /** Cancel the debounced save outright (teardown). */
     clear: () => void
+    /** The document was just read from (or written to) a store: nothing to save yet. */
+    markSaved: () => void
 }
 
 export function createSavePipeline(deps: SavePipelineDeps): SavePipeline {
@@ -80,6 +82,18 @@ export function createSavePipeline(deps: SavePipelineDeps): SavePipeline {
         clear()
         deps.allowImmediateSync()
         return save()
+    }
+
+    /**
+     * A load from the store (or an explicit write) is not an edit: record the
+     * current version as saved and drop the timer the load's effect just armed.
+     * Without this, every unlock re-encrypted and re-uploaded the document it
+     * had only just read.
+     */
+    function markSaved() {
+        lastSavedVersion = outline.version.peek()
+        saveArmed = false
+        clear()
     }
 
     function arm(save: () => Promise<boolean>) {
@@ -189,5 +203,5 @@ export function createSavePipeline(deps: SavePipelineDeps): SavePipeline {
         }
     }
 
-    return { install, flush, clear }
+    return { install, flush, clear, markSaved }
 }
