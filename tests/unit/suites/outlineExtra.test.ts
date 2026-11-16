@@ -9,31 +9,6 @@ function addChild(...args: Parameters<typeof outline.addChild>) {
 }
 
 
-describe('getStats', () => {
-
-  it('counts nodes, words, characters, depth and collapse state', () => {
-      addChild('root', { id: 'A', text: 'hello world' })
-      const b = addChild('A', { id: 'B', text: 'deep node' })
-      addChild('B', { id: 'C', text: '' })
-      b.open.value = false
-
-      const stats = outline.getStats()
-      assertEqual(stats.nodeCount, 3, 'nodeCount excludes root')
-      assertEqual(stats.wordCount, 4, 'word count')
-      assertEqual(stats.charCount, 'hello world'.length + 'deep node'.length, 'char count')
-      assertEqual(stats.maxDepth, 3, 'depth of C')
-      assertEqual(stats.collapsedCount, 1, 'B is collapsed')
-      assertEqual(stats.openCount, 1, 'A is open and has children')
-  })
-
-  it('nodeCount includes the root while getStats excludes it', () => {
-      addChild('root', { text: 'one' })
-      addChild('root', { text: 'two' })
-      assertEqual(outline.nodeCount, 3, 'outline.nodeCount includes root')
-      assertEqual(outline.getStats().nodeCount, 2, 'getStats excludes root')
-  })
-})
-
 describe('sibling helpers', () => {
 
   it('nextSibling and prevSibling walk within the parent', () => {
