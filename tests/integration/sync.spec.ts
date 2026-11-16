@@ -3,7 +3,8 @@ import {
     expect,
     type Page,
     encryptMockDoc,
-    installMockSupabase,    unlockRemote,
+    installMockSupabase,
+    unlockRemote,
     editFirstNodeText,
     setFirstNodeTextViaModel,
     remoteFirstNodeText
@@ -132,7 +133,6 @@ test.describe('Sync status indicator', () => {
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', passphrase);
         // The unlock itself arms one save; settle it so it cannot pollute the count.
-        await settleUnlockSave(page);
         const baseline = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
 
         // Two edits in quick succession: the second lands before the write
@@ -231,7 +231,6 @@ test.describe('Sync retry behaviour', () => {
         await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
         // Let the save the unlock arms finish, then start the failure script so
         // only this edit's uploads are counted.
-        await settleUnlockSave(page);
         const baselineCalls = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
         await page.evaluate((failTimes) => { (window as any).__mockSupabase.failUpsertTimes = failTimes; }, FAIL_TIMES);
 
@@ -267,7 +266,6 @@ test.describe('Sync retry behaviour', () => {
 
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
-        await settleUnlockSave(page);
         const baselineCalls = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
         await page.evaluate(() => { (window as any).__mockSupabase.failUpserts = true; });
 
@@ -446,17 +444,6 @@ const buildChildrenConflictPayload = async (
 };
 
 /**
- * Wait for the save the unlock itself arms. Any later publish is then the only
- * remote change the next edit can merge against, so a conflict is deterministic
- * instead of racing that first save.
- */
-const settleUnlockSave = (page: Page) =>
-    expect.poll(
-        () => page.evaluate(() => (window as any).__mockSupabase.upsertCallCount),
-        { timeout: 10000, intervals: [100] }
-    ).toBeGreaterThan(0);
-
-/**
  * Boot with `payload` on the server, and hand back a call that replaces the row
  * with `remotePayload` — another device publishing while this one is open.
  * Publishing after unlock is what makes the next save see a changed head.
@@ -518,7 +505,6 @@ test.describe('Pull-before-push', () => {
 
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', passphrase);
-        await settleUnlockSave(page);
         await publishRemote();
 
         // Zoom into n1 and edit it. Sync merge-apply should not reset zoom to root.
@@ -556,7 +542,6 @@ test.describe('Pull-before-push', () => {
 
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', passphrase);
-        await settleUnlockSave(page);
         await publishRemote();
 
         // Edit the local node via UI - this sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
@@ -583,7 +568,6 @@ test.describe('Conflict resolution modal', () => {
         const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', passphrase);
-        await settleUnlockSave(page);
         await publishRemote();
 
         // Edit the local node via UI — sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
@@ -760,7 +744,6 @@ test.describe('Conflict resolution modal', () => {
         const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
         await page.reload();
         await unlockSync(page, 'user@test.com', 'pass', passphrase);
-        await settleUnlockSave(page);
         await publishRemote();
 
         // Add a local child to change `children` on the same parent before sync.

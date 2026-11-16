@@ -155,10 +155,15 @@ test.describe('Quick capture inbox', () => {
     // Type the new name instead of using fill(). Firefox only emits `change`
     // (which is what Preact's onChange listens for) on blur when the value was
     // changed by real user input, so a programmatic fill() intermittently
-    // skips the commit and the rename is silently lost.
-    await inboxNameField.click();
-    await inboxNameField.selectText();
-    await inboxNameField.pressSequentially('Captured');
+    // skips the commit and the rename is silently lost. The dialog can also
+    // re-take focus while the Options sheet settles, swallowing the keystrokes
+    // (seen as "Inboxd" under load), so verify the typed value and retry.
+    await expect(async () => {
+      await inboxNameField.click();
+      await inboxNameField.selectText();
+      await inboxNameField.pressSequentially('Captured');
+      await expect(inboxNameField).toHaveValue('Captured', { timeout: 1000 });
+    }).toPass({ timeout: 10000 });
     await inboxNameField.press('Tab');
     // The rename is only committed on blur; wait for the write to land before
     // navigating away so a slow commit cannot surface as a confusing failure

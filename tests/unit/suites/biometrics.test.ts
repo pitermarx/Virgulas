@@ -1,71 +1,7 @@
 import { describe, it } from 'bun:test'
 import { biometrics } from '../../../source/js/biometrics.js'
-import { resetIdbConnections } from '../../../source/js/idb.js'
 import { assertEqual } from '../testing.js'
-
-// ─── Minimal in-memory IndexedDB (happy-dom does not provide one) ─────────────
-
-class FakeRequest<T> {
-    onsuccess: (() => void) | null = null
-    onerror: (() => void) | null = null
-    onupgradeneeded: (() => void) | null = null
-    error: unknown = null
-    constructor(public result: T) { }
-}
-
-class FakeObjectStore {
-    data = new Map<string, unknown>()
-    get(key: string) {
-        const req = new FakeRequest<unknown>(this.data.get(key))
-        queueMicrotask(() => req.onsuccess?.())
-        return req
-    }
-    put(value: unknown, key: string) {
-        this.data.set(key, value)
-        return new FakeRequest<undefined>(undefined)
-    }
-    delete(key: string) {
-        this.data.delete(key)
-        return new FakeRequest<undefined>(undefined)
-    }
-}
-
-class FakeTransaction {
-    oncomplete: (() => void) | null = null
-    onerror: (() => void) | null = null
-    constructor(private db: FakeDB) {
-        queueMicrotask(() => queueMicrotask(() => this.oncomplete?.()))
-    }
-    objectStore(_name: string) { return this.db.store }
-}
-
-class FakeDB {
-    store = new FakeObjectStore()
-    createObjectStore(_name: string) { return this.store }
-    transaction(_name: string, _mode: string) { return new FakeTransaction(this) }
-}
-
-function installFakeIndexedDB() {
-    // A fresh fake replaces the global; drop the cached connections so the next
-    // call opens the new one.
-    resetIdbConnections()
-    const databases = new Map<string, FakeDB>()
-        ; (globalThis as any).indexedDB = {
-            open(name: string) {
-                let db = databases.get(name)
-                if (!db) {
-                    db = new FakeDB()
-                    databases.set(name, db)
-                }
-                const req = new FakeRequest(db)
-                queueMicrotask(() => {
-                    req.onupgradeneeded?.()
-                    req.onsuccess?.()
-                })
-                return req
-            }
-        }
-}
+import { installFakeIndexedDB } from '../indexedDbFake.js'
 
 // ─── WebAuthn / crypto stubs ─────────────────────────────────────────────────
 
