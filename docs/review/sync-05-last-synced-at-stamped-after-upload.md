@@ -10,7 +10,8 @@ After a push, the code calls `setLastSyncedAt(Date.now())`. An edit made while t
 
 ## Evidence
 
-- [source/js/persistence.ts](../../source/js/persistence.ts) (`flushDeferredPush`, `doSave`)
+- [source/js/persistence.ts](../../source/js/persistence.ts) (the Remote save edge)
+- [source/js/syncEngine.ts](../../source/js/syncEngine.ts) (`syncOnce`)
 - [source/js/sync.ts](../../source/js/sync.ts) (`resolveConflicts`)
 
 ## Suggested fix

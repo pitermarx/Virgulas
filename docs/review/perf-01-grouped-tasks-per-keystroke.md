@@ -3,6 +3,11 @@
 - **Severity:** Medium
 - **Confidence:** code-read; costs measured on a 20k-node probe (`getAllTasks` about 4 ms before the rest of the work)
 - **Spec impact:** none
+- **Status:** partly fixed. The toolbar now reads `taskStats` (open count + overdue
+  flag) instead of `groupedTasks`, so a keystroke with the panel closed no longer
+  pays for breadcrumbs, per-task meta parsing and the sorts: measured 58.6 ms →
+  13.7 ms per keystroke on a 20k-node document. The per-keystroke scan itself
+  remains; the incremental task index in the suggested fix is still open.
 
 ## Description
 

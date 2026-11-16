@@ -467,6 +467,10 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
 - `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
   Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+- `fileHandles.ts`:
+  The File System Access handle cache (pick, reopen, clear), backed by `idb.ts`. File mode's `isSupported()` gate lives here.
+- `idb.ts`:
+  The one IndexedDB key-value implementation, used by `fileHandles.ts` and the biometric seal. Caches open connections; `resetIdbConnections()` is the test seam.
 - `supabaseBackend.ts`:
   Supabase RawStore + AuthProvider over `@supabase/supabase-js` (dynamic import preserved, `__TEST_HOOKS__` seam): row CRUD, `updated_at` head token, cached-session uid on the write path, PGRST116/401/transport error mapping (provider messages preserved), and the auth contract (deleteUser absent by design).
 - `trailbaseBackend.ts`:
@@ -474,23 +478,45 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the save debounce, the session lifecycle and the store construction; hands the composed remote store to `remoteSave.ts`.
-- `remoteSave.ts`:
-  Remote save orchestration: the injected composed store (also handed to `sync.ts`), pull-before-push on save, the retry policy (only `network`/`unauthenticated` retry), and the deferred-push queue that retries an edit skipped while typing. Holds documents, never ciphertext or keys.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The debounce itself lives in `savePipeline.ts`.
+- `syncEngine.ts`:
+  The remote sync engine: the single `syncOnce` pull-before-push step, the
+  injected composed DocStore, the head-token probe, the retry policy, the
+  `vmd_sync_head`/`vmd_sync_ts` clocks, the typing gate, the status and conflict
+  signals, and conflict resolution. Every caller decides *when* to sync; the
+  *how* lives here only.
 - `sync.ts`:
-  Remote sync scheduling: backend resolution, the background poll (head-token change detection against `vmd_sync_head`), typing-gate/epoch bookkeeping, backoff, status/conflict signals, and the thin `remoteSync` auth facade over the resolved backend. No client code, no row payloads, no secrets — pulls and pushes go through the injected remote DocStore; the merge algorithm lives in `merge.ts` (`mergeDocuments` is re-exported for the e2e seam).
+  Remote sync scheduling: backend resolution, the background poll (60 s, via
+  `syncOnce`), and the thin `remoteSync` auth facade over the resolved backend.
+  No client code, no row payloads, no secrets, no merge.
 - `crypto2.ts`:
   Cryptographic primitives and key derivation (Web Crypto only).
 - `markdown.ts`:
-  Inline markdown rendering and sanitisation.
+  Inline and block markdown rendering and sanitisation, with a bounded render
+  cache keyed by (text, decorateMeta, renderer) so unchanged nodes do not re-run
+  marked + DOMPurify on every outline update.
 - `meta.ts`:
   `due:` / `rec:` metadata parsing and formatting.
+- `durability.ts`:
+  Local-storage durability state: the persistent/best-effort signal, the
+  dismissible reminder, and the once-per-session `persist()` request.
+- `savePipeline.ts`:
+  The autosave pipeline: per-mode debounced writes, the 3 s maximum wait, the
+  teardown flush, and the saved-version bookkeeping. Constructed by
+  `persistence.ts` with the live stores, so it holds timers only — no
+  ciphertext, keys or backend specifics.
 - `tasks.ts`:
-  Grouped task selectors (pending/scheduled/done) and breadcrumbs.
+  Grouped task selectors (`groupedTasks`, panel-only) and the cheap status
+  counts (`taskStats`) the always-mounted toolbar reads.
 - `dialogs.ts`:
   The focus contract every dialog shares (a11y-02): focus moves in on open, Tab is trapped
   while a dialog is modal, focus returns to the opener on close, and Escape only closes a
   dismissible dialog. Bound to each dialog's open signal.
+- `capture.ts`:
+  Quick capture: URL/share-target parsing, the confirmation prompt (untrusted
+  input is written to the queue only on "Add", sec-01), the device-local queue
+  and the Inbox reconciliation. `app.ts` injects the post-confirmation boot and
+  asks it once per cold boot whether this visit is capture-only.
 - `inbox.ts`:
   Quick-capture queue and Inbox node reconciliation.
 - `biometrics.ts`:
@@ -637,6 +663,14 @@ bun run typecheck                # tsc app config + test config
   (sec-05): specs read `(await import('/js/app.js')).e2e`. In production the binding is empty, so
   no same-origin module can reach the singletons or the old passphrase accessor; `tests/e2e/e2e-seam.spec.ts`
   asserts both builds behave.
+- Backend-coupled specs share one mock: `installMockSupabase(page, options)` in `tests/test.ts`
+  (user, download record, auth errors, upsert failures/delays, advancing head, poll speed-up) and
+  `encryptMockDoc(doc, passphrase)` for a runner-side record. Never copy a mock client into a spec;
+  add an option when a scenario needs one, and keep genuinely bespoke mocks (a runtime failure flag)
+  local with a comment.
+- Behaviour specs are **journeys**: one test drives a related group of assertions through the UI.
+  The case-by-case matrix belongs in the unit suites; do not add one E2E test per CSS state or per
+  pure-function branch.
 
 ### Test seams
 

@@ -3,6 +3,10 @@
 - **Severity:** Medium
 - **Confidence:** code-read (not benchmarked in a browser)
 - **Spec impact:** none
+- **Status:** partly fixed. `markdown.ts` now memoises inline and block renders
+  (bounded, keyed by text + `decorateMeta` + renderer), so a re-render of an
+  unchanged node no longer re-runs marked + DOMPurify + the two DOM walks.
+  The subtree re-render itself is still open.
 
 ## Description
 
