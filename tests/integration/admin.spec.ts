@@ -1,6 +1,10 @@
-import { test, expect, type Page, setupDoc, unlockApp, submitUnlock } from '../test';
+import { test, expect, type Page, setupDoc, unlockApp, submitUnlock, encryptMockDoc, installMockSupabase } from '../test';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** Encrypt a document for a mock server row (runner-side, no page load). */
+const createEncryptedPayload = (_page: Page, passphrase: string, doc: Record<string, unknown>) =>
+  encryptMockDoc(doc as { nodes: unknown[] }, passphrase);
 
 const openOptions = async (page: Page) => {
   await page.getByRole('button', { name: 'Options' }).click();
@@ -10,113 +14,6 @@ const openOptions = async (page: Page) => {
 const closeOptions = async (page: Page) => {
   await page.getByRole('button', { name: 'Close' }).click();
   await expect(page.getByRole('heading', { name: 'Options' })).toHaveCount(0);
-};
-
-/** Mock Supabase client that also supports account `updateUser` calls. */
-const installMockSupabase = async (
-  page: Page,
-  options: { userEmail?: string; downloadData?: { salt: string; data: string } | null; confirmRequired?: boolean } = {}
-) => {
-  await page.addInitScript(({ userEmail, downloadData, confirmRequired }) => {
-    const state: any = {
-      serverRecord: downloadData ? { ...downloadData, updated_at: new Date().toISOString() } : null,
-      updateCalls: [] as Array<Record<string, string>>,
-      deleteCalls: [] as Array<Record<string, string>>
-    };
-    (window as any).__mockSupabaseState = state;
-
-    const session: { user: { id: string; email: string } | null } = {
-      user: userEmail ? { id: 'user-1', email: userEmail } : null
-    };
-
-    const queryBuilder = {
-      select: () => queryBuilder,
-      eq: () => queryBuilder,
-      single: async () =>
-        state.serverRecord
-          ? { data: state.serverRecord, error: null }
-          : { data: null, error: { code: 'PGRST116' } },
-      upsert: (payload: { salt: string; data: string; updated_at: string }) => ({
-        select: () => ({
-          single: async () => {
-            state.serverRecord = { salt: payload.salt, data: payload.data, updated_at: payload.updated_at };
-            return { data: { updated_at: payload.updated_at }, error: null };
-          }
-        })
-      }),
-      delete: () => {
-        const chain = {
-          eq: async (column: string, value: string) => {
-            state.deleteCalls.push({ [column]: value });
-            state.serverRecord = null;
-            return { data: null, error: null };
-          }
-        };
-        return chain;
-      }
-    };
-
-    const client = {
-      auth: {
-        signInWithPassword: async ({ email }: { email: string }) => {
-          session.user = { id: 'user-1', email };
-          return { data: { user: session.user }, error: null };
-        },
-        signUp: async ({ email }: { email: string }) => {
-          // When the project requires confirmation, Supabase returns a user but no
-          // session; `confirmRequired` makes the mock reproduce that.
-          if (confirmRequired) {
-            session.user = null;
-            return { data: { user: { id: 'user-1', email }, session: null }, error: null };
-          }
-          session.user = { id: 'user-1', email };
-          return { data: { user: session.user, session: { access_token: 't' } }, error: null };
-        },
-        signOut: async () => {
-          session.user = null;
-          return { error: null };
-        },
-        getSession: async () => ({ data: { session: session.user ? { user: session.user } : null }, error: null }),
-        getUser: async () => ({ data: { user: session.user }, error: null }),
-        updateUser: async (payload: Record<string, string>) => {
-          state.updateCalls.push(payload);
-          return { data: { user: session.user }, error: null };
-        }
-      },
-      from: () => queryBuilder
-    };
-
-    Object.defineProperty(window, 'supabase', {
-      configurable: true,
-      get: () => ({ createClient: () => client }),
-      set: () => { }
-    });
-
-    localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
-  }, options);
-};
-
-const createEncryptedPayload = async (page: Page, passphrase: string, doc: Record<string, unknown>) => {
-  return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = (await import('/js/app.js' as string)).e2e;
-    const outline = (await import('/js/app.js' as string)).e2e.outline;
-    outline.reset();
-    const load = (children: any[], parentId: string) => {
-      for (const child of children || []) {
-        outline.addChild(parentId, { id: child.id, text: child.text });
-        load(child.children || [], child.id);
-      }
-    };
-    load(doc.children || [], 'root');
-    const json = outline.serialize();
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-    const salt = btoa(String.fromCharCode(...saltBytes));
-    return { salt, data: await encrypt(json, passphrase, salt) };
-  }, { passphrase, doc });
-};
-
-const unlockRemote = async (page: Page, passphrase: string) => {
-  await unlockApp(page, passphrase);
 };
 
 /** Stubs WebAuthn so `biometrics.enroll()` can run against real IndexedDB. */
@@ -287,7 +184,7 @@ test.describe('Admin / Options modal', () => {
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
-    await unlockRemote(page, 'remote-pass');
+    await unlockApp(page, 'remote-pass');
 
     await openOptions(page);
     await page.getByRole('button', { name: 'Change email' }).click();
@@ -295,7 +192,7 @@ test.describe('Admin / Options modal', () => {
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Email updated. Confirm the change from the new address if required.')).toBeVisible();
 
-    const calls = await page.evaluate(() => (window as any).__mockSupabaseState.updateCalls);
+    const calls = await page.evaluate(() => (window as any).__mockSupabase.updateCalls);
     expect(calls).toContainEqual({ email: 'new@virgulas.com' });
   });
 
@@ -312,7 +209,7 @@ test.describe('Admin / Options modal', () => {
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
-    await unlockRemote(page, 'remote-pass');
+    await unlockApp(page, 'remote-pass');
 
     await openOptions(page);
     await page.getByRole('button', { name: 'Change password' }).click();
@@ -320,7 +217,7 @@ test.describe('Admin / Options modal', () => {
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Account password updated.')).toBeVisible();
 
-    const calls = await page.evaluate(() => (window as any).__mockSupabaseState.updateCalls);
+    const calls = await page.evaluate(() => (window as any).__mockSupabase.updateCalls);
     expect(calls).toContainEqual({ password: 'brand-new-password' });
   });
 
@@ -339,7 +236,7 @@ test.describe('Admin / Options modal', () => {
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
-    await unlockRemote(page, 'remote-pass');
+    await unlockApp(page, 'remote-pass');
 
     await openOptions(page);
     await page.getByRole('button', { name: 'Enable on this device' }).click();
@@ -414,7 +311,7 @@ test.describe('Admin / Options modal', () => {
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
-    await unlockRemote(page, 'remote-pass');
+    await unlockApp(page, 'remote-pass');
 
     await openOptions(page);
     // Supabase cannot delete `auth.users` with the browser client, so the copy
@@ -426,7 +323,7 @@ test.describe('Admin / Options modal', () => {
     // Lands in memory mode after deletion.
     await expect(page.locator('.status-memory-badge')).toBeVisible({ timeout: 5000 });
 
-    const state = await page.evaluate(() => (window as any).__mockSupabaseState);
+    const state = await page.evaluate(() => (window as any).__mockSupabase);
     expect(state.deleteCalls).toContainEqual({ user_id: 'user-1' });
     expect(state.serverRecord).toBeNull();
     // Local ciphertext and remembered mode are cleared, so the device cannot
@@ -485,7 +382,7 @@ test.describe('Admin / Options modal', () => {
     });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
-    await unlockRemote(page, 'remote-pass');
+    await unlockApp(page, 'remote-pass');
 
     // Edit, then sign out immediately — inside the autosave debounce.
     const node = page.locator('.node-content').first();
@@ -502,7 +399,7 @@ test.describe('Admin / Options modal', () => {
 
     // The server must hold the edited document, not the pre-edit snapshot. Sign-out
     // clears the local ciphertext, so decrypt the pushed payload to prove it.
-    const state = await page.evaluate(() => (window as any).__mockSupabaseState);
+    const state = await page.evaluate(() => (window as any).__mockSupabase);
     expect(state.serverRecord).not.toBeNull();
     expect(state.serverRecord.data).not.toBe(remoteDoc.data);
 
