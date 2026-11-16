@@ -112,13 +112,22 @@ describe('syncOnce — no work', () => {
     it('skips while the typing gate is closed', async () => {
         const fake = fakeStore()
         setRemoteStore(fake.store)
-        noteLocalWriteActivity()
+        // `dirtyDebounceTimeout` is global model state; another suite may have
+        // shortened it. Pin a gate that cannot expire inside this test, even
+        // when the runner deschedules the process between the calls.
+        const savedDebounce = outline.dirtyDebounceTimeout
+        outline.dirtyDebounceTimeout = 60_000
+        try {
+            noteLocalWriteActivity()
 
-        const outcome = await syncOnce({ doc: LOCAL, attempt: createRemoteSyncAttempt() })
+            const outcome = await syncOnce({ doc: LOCAL, attempt: createRemoteSyncAttempt() })
 
-        assertEqual((outcome as any).reason, 'typing', 'deferred, not pushed')
-        assertEqual(fake.writes.length, 0, 'nothing reaches the server')
-        assertEqual(fake.headCalls(), 0, 'not even a head probe')
+            assertEqual((outcome as any).reason, 'typing', 'deferred, not pushed')
+            assertEqual(fake.writes.length, 0, 'nothing reaches the server')
+            assertEqual(fake.headCalls(), 0, 'not even a head probe')
+        } finally {
+            outline.dirtyDebounceTimeout = savedDebounce
+        }
     })
 
     it('skips an attempt superseded by a newer local write', async () => {
