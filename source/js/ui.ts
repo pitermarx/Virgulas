@@ -197,7 +197,10 @@ function isSwipeBlockedTarget(target: any) {
 }
 
 function NodeDesc({ node }: any) {
-    const { description, id } = node.value // subscribe to changes on node
+    // Read only the signals this component uses. `node.value` subscribes to all
+    // of them, so a text edit would re-render every visible descendant.
+    const id = node.id
+    const description = node.description.value
     const focusDesc = (e: any) => {
         if (handleInteractiveMarkdownClick(e)) return
         requestNodeFocus(id, 'description')
@@ -256,7 +259,11 @@ function NodeDesc({ node }: any) {
 }
 
 function NodeText({ node }: any) {
-    const { text, id, done } = node.value // subscribe to changes on node
+    // Only text/done: `node.value` would subscribe to every field and make a
+    // sibling's edit re-render this node (and, through Node, its subtree).
+    const id = node.id
+    const text = node.text.value
+    const done = node.done.value
     if (focusId.value === id && focusType.value === 'text') {
         const rawPrefix = done === true ? '[x] ' : done === false ? '[ ] ' : ''
         function onBlur() {
@@ -297,7 +304,12 @@ function NodeText({ node }: any) {
 }
 
 function NodeBody({ node }: any) {
-    const { id, children, open, done } = node.value // subscribe to changes on node
+    // Structure and task state only; text and description belong to NodeText
+    // and NodeDesc, so editing them must not re-render the body.
+    const id = node.id
+    const children = node.children.value
+    const open = node.open.value
+    const done = node.done.value
     const hasChildren = children.length > 0
     const isFocused = focusId.value === id
     const isSelected = selectedIds.value.includes(id)
@@ -420,7 +432,11 @@ function NodeBody({ node }: any) {
 }
 
 function Node({ node, indent = 0 }: any) {
-    const { id, children, open } = node.value // subscribe to changes on node
+    // Structure only. Reading `node.value` here subscribed the parent to every
+    // field, so typing in one node re-created its whole visible subtree.
+    const id = node.id
+    const children = node.children.value
+    const open = node.open.value
     const fontSize = indent === 0 ? `var(--text-size-root)` : `var(--text-size-level-${Math.min(indent, 2)})`;
 
     function toggleOpenIfOnlyClickedThisElement(e: any) {
