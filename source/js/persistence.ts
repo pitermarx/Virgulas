@@ -224,7 +224,8 @@ export const remoteRekeyedNotice = signal(false)
 effect(() => {
   if (!remoteRekeyed.value) return
   remoteRekeyed.value = false
-  stopPolling()  clearPendingSave()
+  stopPolling()
+  clearPendingSave()
   keySession.lock()
   markSessionUnlocked()
   teardownRemoteStore()
@@ -387,6 +388,7 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
 
     rememberMode('local')
     void refreshLocalStorageDurability(true)
+    savePipeline.markSaved()
 
     return true
   }
@@ -463,6 +465,8 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     rememberMode('remote')
     setLastSyncedAt(Date.now())
     startPolling()
+    // The explicit first write is the save; no timer needs to repeat it.
+    savePipeline.markSaved()
     return true
   }
 
@@ -489,6 +493,8 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   rememberMode('remote')
   setLastSyncedAt(Date.now())
   startPolling()
+  // The document came from the server; there is nothing new to write.
+  savePipeline.markSaved()
   return true
 }
 
@@ -546,13 +552,16 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
   setFileHandle(fileHandleStore.currentHandle())
 
   const doc = await fileDataStore!.read()
+  let fileHasContent = false
   if (hasDocumentNodes(doc)) {
     outline.reset()
     loadDocIntoOutline(doc)
     applyHashZoomIfPresent()
+    fileHasContent = true
   } else if (adoptInitialDoc(initialDoc)) {
     // A new empty file chosen from a running memory session: the live document
-    // becomes the file's content (docs: storage setup).
+    // becomes the file's content (docs: storage setup). The save pipeline
+    // writes it, so it is not marked saved here.
     applyHashZoomIfPresent()
   } else {
     outline.reset()
@@ -560,6 +569,7 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
     applyHashZoomIfPresent()
     // Write initial doc with one empty node to file
     await fileDataStore!.write(outline.snapshot())
+    fileHasContent = true
   }
 
   batch(() => {
@@ -567,6 +577,9 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
     filesystemReady.value = true
   })
   rememberMode('filesystem')
+  // Only the branches that already wrote the file are saved; the adopted memory
+  // document still has to reach the file.
+  if (fileHasContent) savePipeline.markSaved()
   return true
 }
 
@@ -788,6 +801,7 @@ export default {
     rememberMode('remote')
     setLastSyncedAt(Date.now())
     startPolling()
+    savePipeline.markSaved()
     return true
   },
   syncStatus,
@@ -795,7 +809,8 @@ export default {
     // Flush pending work (local write; remote push if a remote session is active)
     // before dropping the key, so locking cannot lose the most recent edit.
     await flushPendingSave()
-    stopPolling()    clearPendingSave()
+    stopPolling()
+    clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
     markSessionUnlocked()
@@ -806,7 +821,8 @@ export default {
     stopPolling()
     // Push pending edits while the session is still unlocked, so signing out
     // cannot silently drop the last change.
-    await flushPendingSave()    clearPendingSave()
+    await flushPendingSave()
+    clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
     // Lock the session before the remaining awaits so an in-flight save cannot
@@ -840,7 +856,8 @@ export default {
     // Stop background writes before the row disappears, so an in-flight upload
     // cannot recreate it after deletion. Locking the key session here (not after
     // the awaits) invalidates any save that is already past its timer.
-    stopPolling()    clearPendingSave()
+    stopPolling()
+    clearPendingSave()
     keySession.lock()
     markSessionUnlocked()
 
@@ -873,14 +890,17 @@ export default {
     if (hasDocumentNodes(doc)) {
       outline.reset()
       loadDocIntoOutline(doc)
+      savePipeline.markSaved()
       applyHashZoomIfPresent()
     } else {
       outline.reset()
       await fileDataStore!.write(outline.snapshot())
+      savePipeline.markSaved()
     }
     rememberMode('filesystem')
   },
-  reset() {    clearPendingSave()
+  reset() {
+    clearPendingSave()
     keySession.lock()
     markSessionUnlocked()
     localSaveFailed.value = false
@@ -906,6 +926,7 @@ export default {
       // new passphrase become active and the write re-encrypts (docs §6.7).
       keySession.rotate(newPassphrase)
       await localDataStore.write(doc)
+      savePipeline.markSaved()
       markSessionUnlocked()
       return true
     }
@@ -922,6 +943,7 @@ export default {
       setRemoteStore(remote)
       const token = await remote.write(doc)
       if (token) setSyncHead(token)
+      savePipeline.markSaved()
       setLastSyncedAt(Date.now())
     }
 

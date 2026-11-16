@@ -83,7 +83,6 @@ test.describe('Sync polling', () => {
     test('pauses while conflicts are pending and resumes after resolution', async ({ page }) => {
         await bootRemote(page);
         await expect.poll(() => headCalls(page), { timeout: 10000, intervals: [100] }).toBeGreaterThan(0);
-        const baseline = await headCalls(page);
 
         await page.evaluate(async () => {
             const { pendingConflicts } = (await import('/js/app.js' as string)).e2e;
@@ -95,7 +94,9 @@ test.describe('Sync polling', () => {
                 remoteValue: 'Remote Value'
             }];
         });
-
+        // A poll already in flight when the conflict was published may still
+        // probe once; measure from after the publish.
+        const baseline = await headCalls(page);
         await expect.poll(
             () => headCalls(page).then(count => count - baseline),
             { timeout: 3000, intervals: [120, 120, 120, 120] }

@@ -83,7 +83,6 @@ const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 });
  * (TrailBase). Supabase keeps it — deleting `auth.users` needs the service
  * role — so the Options copy and the confirmation say which one happens. */
 const accountDeletesUser = signal(false);
-const adminBusy = signal(false);
 const adminError = signal('');
 const adminMessage = signal('');
 const newEmail = signal('');
@@ -194,7 +193,7 @@ if (typeof window !== 'undefined' && biometrics.isSupported()) {
 async function runAdminAction(action: () => Promise<unknown>, successMessage: string) {
   adminError.value = '';
   adminMessage.value = '';
-  adminBusy.value = true;
+  isBusy.value = true;
   try {
     await action();
     adminMessage.value = successMessage;
@@ -202,7 +201,7 @@ async function runAdminAction(action: () => Promise<unknown>, successMessage: st
   } catch (error) {
     adminError.value = String((error as { message?: string } | null)?.message || 'Something went wrong.');
   } finally {
-    adminBusy.value = false;
+    isBusy.value = false;
   }
 }
 
@@ -1189,7 +1188,7 @@ const OptionsModal = () => {
                       <input id="admin-email" type="email" value=${newEmail.value}
                         onInput=${(e: any) => newEmail.value = e.target.value}
                         class="input-field" placeholder="New email" autocomplete="email" />
-                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="submit" class="btn btn-secondary" disabled=${isBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
         : html`<div class="admin-inline-row">
@@ -1206,7 +1205,7 @@ const OptionsModal = () => {
                       <input id="admin-password" type="password" value=${newPassword.value}
                         onInput=${(e: any) => newPassword.value = e.target.value}
                         class="input-field" placeholder="New password" autocomplete="new-password" />
-                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="submit" class="btn btn-secondary" disabled=${isBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
         : html`<div class="admin-inline-row">
@@ -1224,7 +1223,7 @@ const OptionsModal = () => {
                       <input id="admin-passphrase" type="password" value=${newPassphrase.value}
                         onInput=${(e: any) => newPassphrase.value = e.target.value}
                         class="input-field" placeholder="New passphrase" autocomplete="new-password" />
-                      <button type="submit" class="btn btn-secondary" disabled=${adminBusy.value}>Save</button>
+                      <button type="submit" class="btn btn-secondary" disabled=${isBusy.value}>Save</button>
                       <button type="button" class="btn btn-secondary" onClick=${() => editingOption.value = null}>Cancel</button>
                     </form>`
         : html`<div class="admin-inline-row">
@@ -1253,10 +1252,10 @@ const OptionsModal = () => {
               ${biometrics.isSupported() && html`
                 <div class="options-row">
                   ${!bioEnrolled.value && html`
-                    <button class="btn btn-secondary" onClick=${enrollBiometric} disabled=${adminBusy.value}>Enable on this device</button>
+                    <button class="btn btn-secondary" onClick=${enrollBiometric} disabled=${isBusy.value}>Enable on this device</button>
                   `}
                   ${bioEnrolled.value && html`
-                    <button class="btn btn-secondary" onClick=${forgetBiometric} disabled=${adminBusy.value}>Forget this device</button>
+                    <button class="btn btn-secondary" onClick=${forgetBiometric} disabled=${isBusy.value}>Forget this device</button>
                   `}
                 </div>
               `}

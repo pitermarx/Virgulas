@@ -661,11 +661,17 @@ edit → debounce → activeStore.write(doc)   // codec+crypto below; + remote s
 The derived key comes from the session cache — no KDF per save. A legacy 310k
 envelope is transparently re-encrypted at 600k on this write. In Remote mode
 the write goes through `cached()` (§4.7): the cache write is the durable local
-save; a primary `network` failure propagates to the orchestration, which
-defers and retries (§6.4). A cache quota failure is reported through the
-composition's `onCacheWrite` hook: the remote save completes and the status
-toolbar reports the document as not saved locally until the next successful
-cache write (data-06).
+save, and the network push waits for the typing gate; the next save retries it
+(§6.4). A cache quota failure is reported through the composition's
+`onCacheWrite` hook: the remote save completes and the status toolbar reports
+the document as not saved locally until the next successful cache write
+(data-06).
+
+An unlock is not a save. The document was just read from the store, so the
+pipeline marks it saved instead of arming a write: unlocking does not
+re-encrypt or re-upload the document it only just decrypted. A legacy
+envelope therefore upgrades on the next real save, which is what the SPEC
+promises ("a normal save re-encrypts").
 
 ### 6.4 Remote poll / pull-before-push (Remote mode)
 

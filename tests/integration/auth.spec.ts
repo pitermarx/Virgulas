@@ -1,4 +1,4 @@
-import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp, encryptMockDoc, installMockSupabase, openStorageWizard } from '../test';
+import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp, encryptMockDoc, installMockSupabase, openStorageWizard, editFirstNodeText } from '../test';
 
 /** Encrypt a document for a mock server record (runner-side, no page load). */
 const remoteRecord = (passphrase: string, doc: Record<string, unknown>) =>
@@ -140,7 +140,7 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
   });
 
-  test('upgrades a legacy envelope to the current KDF parameters on unlock', async ({ page }) => {
+  test('upgrades a legacy envelope to the current KDF parameters on the next save', async ({ page }) => {
     await page.goto('/');
 
     // Seed a pre-v2 payload: raw base64 at the legacy 310k iterations.
@@ -164,7 +164,11 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.node-content').first()).toContainText('Legacy doc');
 
-    // The debounced save re-encrypts with the current parameters.
+    // SPEC: a normal save re-encrypts a legacy envelope. Unlock itself no
+    // longer writes (the document was just read), so the upgrade rides on the
+    // next edit.
+    await editFirstNodeText(page, 'Legacy doc edited');
+    await page.locator('body').click();
     await expect.poll(
       async () => page.evaluate(() => localStorage.getItem('vmd_data_enc')),
       { timeout: 8000 }
@@ -384,7 +388,7 @@ test.describe('Authentication', () => {
     expect(stateAfterSwitch.hasLocalData).toBe(false);
   });
 
-  test('remote "Sign out" can be dismissed from Options', async ({ page }) => {
+  test('remote "Sign out" asks first: dismissing keeps the session, confirming returns to memory mode', async ({ page }) => {
     await page.goto('/');
 
     const remoteDoc = await remoteRecord('remote-passphrase', {
@@ -405,6 +409,7 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-mode')).toHaveText('Remote');
 
+    // Dismissing the confirmation leaves the session untouched.
     await page.getByRole('button', { name: 'Options' }).click();
     page.once('dialog', (dialog) => {
       expect(dialog.message()).toBe('Clear browser session and sign out? Your remote data on the server is unaffected.');
@@ -415,29 +420,8 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
     await expect(page.locator('.status-mode')).toHaveText('Remote');
     await expect(page.locator('.status-user')).toHaveText('valid@virgulas.com');
-  });
 
-  test('remote "Sign out" confirms and returns to memory mode', async ({ page }) => {
-    await page.goto('/');
-
-    const remoteDoc = await remoteRecord('remote-passphrase', {
-      id: 'root',
-      text: 'Remote Root',
-      children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
-    });
-
-    await page.evaluate(() => {
-      localStorage.clear();
-      localStorage.setItem('vmd_last_mode', 'remote');
-    });
-    await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
-    await page.reload();
-
-    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-
-    await page.getByRole('button', { name: 'Options' }).click();
+    // Confirming it lands in the in-memory demo and clears this device.
     page.once('dialog', (dialog) => {
       expect(dialog.message()).toBe('Clear browser session and sign out? Your remote data on the server is unaffected.');
       dialog.accept();

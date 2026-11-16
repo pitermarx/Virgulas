@@ -25,7 +25,8 @@ test.describe('Zoom', () => {
     await expect(nodes).toHaveCount(3);
 
     const parent = nodes.nth(0);
-    const child = nodes.nth(1);
+    const child = nodes.nth(1);
+
     await expect(parent).toContainText('Parent');
     await expect(child).toContainText('Child');
 

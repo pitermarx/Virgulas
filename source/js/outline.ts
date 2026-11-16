@@ -541,51 +541,40 @@ function outlineFactory() {
         dirtyWrites.value = dirtyWrites.peek() + 1
     }
 
-    function moveUp(node: Node, parent: Node | undefined) {
+    /**
+     * Move a node among its siblings, or out to the grandparent when it is
+     * already at the requested edge. `up` lands before the old parent, `down`
+     * after it.
+     */
+    function moveToSiblingEdge(node: Node, parent: Node | undefined, direction: 'up' | 'down') {
         if (!parent) {
             log('Node has no parent, cannot move')
             return
         }
-        const index = parent.children.peek().indexOf(node.id)
-        if (index > 0) {
-            parent.move(node.id, 'up')
-        } else {
-            // try to move to grandparent level
-            const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
-            if (grandParent) {
-                parent.removeChild(node.id) // Remove from current parent
-                const parentIndex = grandParent.children.peek().indexOf(parent.id)
-                grandParent.addChild(node.id, parentIndex) // Add to grandparent before the parent
-                node.update({ parentId: grandParent.id }) // Update parentId of the moved node
-            } else {
-                log('Parent has no grandparent, cannot move up')
-                return
-            }
+        const siblings = parent.children.peek()
+        const index = siblings.indexOf(node.id)
+        const atEdge = direction === 'up' ? index === 0 : index === siblings.length - 1
+        if (!atEdge) {
+            parent.move(node.id, direction)
+            return
         }
+        const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
+        if (!grandParent) {
+            log(`Parent has no grandparent, cannot move ${direction}`)
+            return
+        }
+        parent.removeChild(node.id)
+        const parentIndex = grandParent.children.peek().indexOf(parent.id)
+        grandParent.addChild(node.id, direction === 'up' ? parentIndex : parentIndex + 1)
+        node.update({ parentId: grandParent.id })
+    }
+
+    function moveUp(node: Node, parent: Node | undefined) {
+        moveToSiblingEdge(node, parent, 'up')
     }
 
     function moveDown(node: Node, parent: Node | undefined) {
-        if (!parent) {
-            log('Node has no parent, cannot move')
-            return
-        }
-        const ch = parent.children.peek()
-        const index = ch.indexOf(node.id)
-        if (index < ch.length - 1) {
-            parent.move(node.id, 'down')
-        } else {
-            // try to move to grandparent level
-            const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
-            if (grandParent) {
-                parent.removeChild(node.id) // Remove from current parent
-                const parentIndex = grandParent.children.peek().indexOf(parent.id)
-                grandParent.addChild(node.id, parentIndex + 1) // Add to grandparent after the parent
-                node.update({ parentId: grandParent.id }) // Update parentId of the moved node
-            } else {
-                log('Parent has no grandparent, cannot move down')
-                return
-            }
-        }
+        moveToSiblingEdge(node, parent, 'down')
     }
 
     function indent(node: Node, parent: Node | undefined) {

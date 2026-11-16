@@ -3,10 +3,12 @@
 - **Severity:** Medium
 - **Confidence:** code-read (not benchmarked in a browser)
 - **Spec impact:** none
-- **Status:** partly fixed. `markdown.ts` now memoises inline and block renders
-  (bounded, keyed by text + `decorateMeta` + renderer), so a re-render of an
-  unchanged node no longer re-runs marked + DOMPurify + the two DOM walks.
-  The subtree re-render itself is still open.
+- **Status:** partly fixed. The node components read only the signals they use,
+  so a text edit no longer re-renders the visible subtree: measured **4.63 ms →
+  0.64 ms per edit** with a 2,000-child open subtree (Chromium, local). Markdown
+  renders are memoised (bounded, keyed by text + `decorateMeta` + renderer), so a
+  re-render of an unchanged node no longer re-runs marked + DOMPurify. Still
+  open: virtualisation and the per-node memory footprint.
 
 ## Description
 
