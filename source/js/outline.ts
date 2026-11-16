@@ -38,15 +38,6 @@ export interface NodeUpdate {
     done?: DoneState
 }
 
-export interface OutlineStats {
-    wordCount: number
-    charCount: number
-    maxDepth: number
-    collapsedCount: number
-    openCount: number
-    nodeCount: number
-}
-
 export interface SearchMatch {
     id: string
     text: string
@@ -899,38 +890,6 @@ function outlineFactory() {
 
         get nodeCount() {
             return map.size
-        },
-
-        getStats() {
-            let wordCount = 0
-            let charCount = 0
-            let maxDepth = 0
-            let collapsedCount = 0
-            let openCount = 0
-
-            function visit(id: string, depth: number) {
-                const node = map.get(id)
-                if (!node) return
-                const peek = node.peek()
-                if (id !== 'root') {
-                    const text = peek.text || ''
-                    charCount += text.length
-                    if (text.trim()) {
-                        wordCount += text.trim().split(/\s+/).length
-                    }
-                    if (depth > maxDepth) maxDepth = depth
-                    if (peek.children.length > 0) {
-                        if (peek.open) openCount++
-                        else collapsedCount++
-                    }
-                }
-                for (const childId of peek.children) {
-                    visit(childId, depth + 1)
-                }
-            }
-            visit('root', 0)
-
-            return { wordCount, charCount, maxDepth, collapsedCount, openCount, nodeCount: map.size - 1 }
         },
 
         // search operations

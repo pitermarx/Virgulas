@@ -10,10 +10,10 @@ export interface InboxEntry {
 }
 
 export const DEFAULT_INBOX_NODE_NAME = 'Inbox'
-export const INBOX_QUEUE_STORAGE_KEY = 'vmd_inbox_queue'
-export const MAX_QUEUE_ITEMS = 500
-export const MAX_ITEM_LENGTH = 10000
-export const MAX_NODE_NAME_LENGTH = 100
+const INBOX_QUEUE_STORAGE_KEY = 'vmd_inbox_queue'
+const MAX_QUEUE_ITEMS = 500
+const MAX_ITEM_LENGTH = 10000
+const MAX_NODE_NAME_LENGTH = 100
 
 /** Parameters used by the PWA share target (see source/site.webmanifest). */
 export const SHARE_TARGET_KEYS = ['title', 'text', 'url'] as const

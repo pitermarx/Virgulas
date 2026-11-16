@@ -15,7 +15,8 @@ const readSchema = () => readFileSync(path.join(ROOT, 'supabase/schemas/outlines
 const readSupabaseBackend = () => readFileSync(path.join(ROOT, 'source/js/supabaseBackend.ts'), 'utf8')
 
 const readPersistence = () => readFileSync(path.join(ROOT, 'source/js/persistence.ts'), 'utf8')
-const readApp = () => readFileSync(path.join(ROOT, 'source/js/app.ts'), 'utf8')
+const readLockScreen = () => readFileSync(path.join(ROOT, 'source/js/lockScreen.ts'), 'utf8')
+const readOptions = () => readFileSync(path.join(ROOT, 'source/js/options.ts'), 'utf8')
 
 describe('Account deletion wiring', () => {
 
@@ -57,7 +58,7 @@ describe('Email-confirmation sign-up', () => {
   })
 
   it('the lock screen surfaces a confirmation message instead of a generic failure', () => {
-      const src = readApp()
+      const src = readLockScreen()
       assert(/remote-email-unconfirmed/.test(src), 'a dedicated scenario must exist')
       assert(/confirm your email address/i.test(src), 'the message must tell the user to confirm')
   })
@@ -66,7 +67,7 @@ describe('Email-confirmation sign-up', () => {
 describe('Options footer and account controls', () => {
 
   it('the source repository is a link in the version footer, not a button', () => {
-      const src = readApp()
+      const src = readOptions()
       assert(
           !/Source repository/.test(src),
           'the standalone Source repository button must be removed'
@@ -83,7 +84,7 @@ describe('Options footer and account controls', () => {
   })
 
   it('the delete account action is offered only in Remote mode', () => {
-      const src = readApp()
+      const src = readOptions()
       assert(/handleDeleteAccount/.test(src), 'the handler must exist')
       assert(
           /\$\{isRemote && html`[\s\S]*?Delete account[\s\S]*?`\}/.test(src),
@@ -92,7 +93,7 @@ describe('Options footer and account controls', () => {
   })
 
   it('the delete account copy follows the backend deletion capability', () => {
-      const src = readApp()
+      const src = readOptions()
       assert(
           /remoteSync\.hasDeleteUser\(\)/.test(src),
           'Options must ask the resolved backend whether it deletes the auth record'

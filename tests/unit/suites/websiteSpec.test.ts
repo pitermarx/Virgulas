@@ -81,7 +81,8 @@ describe('Website Specification — required pages and icons', () => {
       assert(/https:\/\/specification\.website/.test(read('README.md')), 'README should note the followed specification')
       assert(/https:\/\/specification\.website/.test(read('AGENTS.md')), 'AGENTS.md should note the followed specification')
       assert(
-          !read('source/js/app.ts').includes('specification.website'),
+          !read('source/js/app.ts').includes('specification.website') &&
+          !read('source/js/options.ts').includes('specification.website'),
           'the Options popup should not carry the specification attribution'
       )
       assert(
@@ -160,7 +161,7 @@ describe('Website Specification — document head foundations', () => {
 describe('Website Specification — accessibility contract', () => {
 
   it('form errors are announced and associated with their input', () => {
-      const app = read('source/js/app.ts')
+      const app = read('source/js/lockScreen.ts')
       assert(app.includes('id="auth-unlock-error" role="alert"'), 'unlock error needs an id and role="alert"')
       assert(app.includes("'auth-unlock-error'"), 'the passphrase input must reference the error')
       assert(app.includes('aria-invalid='), 'invalid inputs must be marked with aria-invalid')

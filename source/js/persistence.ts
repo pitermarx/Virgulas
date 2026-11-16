@@ -54,7 +54,7 @@ import { cached } from './cachedStore.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
-export interface UnlockOptions {
+interface UnlockOptions {
   mode?: PersistenceMode
   username?: string
   password?: string
@@ -276,7 +276,7 @@ function applyHashZoomIfPresent() {
   }
 }
 
-const authMode = signal<PersistenceMode>('local')
+export const authMode = signal<PersistenceMode>('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
 // Set when a sign-up succeeded but produced no session because the project
@@ -302,7 +302,7 @@ savePipeline.install()
 const flushPendingSave = savePipeline.flush
 const clearPendingSave = savePipeline.clear
 
-export class RemoteDataDecryptError extends Error {
+class RemoteDataDecryptError extends Error {
   constructor() {
     super('Authenticated, but the remote data could not be decrypted with this passphrase.')
     this.name = 'RemoteDataDecryptError'
@@ -755,6 +755,15 @@ export default {
     // residue. Best-effort, so the synchronous purge need not await it.
     void clearAppCaches()
   },
+  /**
+   * Land in memory mode after a wipe. Clear Cache Storage last and await it, so
+   * a purge really leaves no app-owned cache behind.
+   */
+  async bootMemoryAfterWipe() {
+    await unlock('', { mode: 'memory' })
+    rememberMode('memory')
+    await clearAppCaches()
+  },
   async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
     store.user.set(email.trim())
@@ -825,12 +834,14 @@ export default {
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
+    // Revoke the device-local biometric seal before the app can look locked:
+    // the lock screen auto-unlocks with biometrics as soon as `isLocked()` is
+    // true, and a seal that is still readable would resurrect the session being
+    // torn down (it finished after the memory boot and reset the mode).
+    await biometrics.forget().catch(() => { })
     // Lock the session before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
     markSessionUnlocked()
-    // Revoke the device-local biometric seal: signing out means this device may no
-    // longer recover the passphrase without the user typing it.
-    await biometrics.forget().catch(() => { })
     await remoteSync.signOut()
     authMode.value = 'remote'
     filesystemReady.value = false
@@ -859,6 +870,9 @@ export default {
     stopPolling()
     clearPendingSave()
     keySession.lock()
+    // Same ordering as signOut: the seal must be gone before the app reports a
+    // locked session, or the biometric auto-unlock resurrects the deleted one.
+    await biometrics.forget().catch(() => { })
     markSessionUnlocked()
 
     await getRemoteStore()?.clear() ?? await remoteSync.deleteOutline()

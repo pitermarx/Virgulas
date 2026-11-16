@@ -96,10 +96,6 @@ export function getRemoteStore(): DocStore | null {
     return remoteStore
 }
 
-export function hasRemoteStore(): boolean {
-    return remoteStore !== null
-}
-
 function requireRemoteStore(): DocStore {
     if (!remoteStore) throw new StoreError('unauthenticated', 'No remote session is active.')
     return remoteStore

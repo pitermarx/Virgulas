@@ -68,14 +68,6 @@ export function parseMeta(text: string): { meta: MetaMap; text: string } {
  * @param {Record<string, string>} meta
  * @returns {string}
  */
-export function formatMeta(text: string, meta: MetaMap): string {
-    const parts = [String(text || '')]
-    for (const [key, value] of Object.entries(meta)) {
-        parts.push(`${key}:${value}`)
-    }
-    return parts.filter(Boolean).join(' ')
-}
-
 export function isValidDueDate(dueStr: string): boolean {
     return parseDate(dueStr) !== null
 }
@@ -132,7 +124,7 @@ function parseDate(str: string): Date | null {
  * leave the four-digit years the format allows, so the value is treated as "no
  * recurrence" and the task completes normally instead of losing its date.
  */
-export const MAX_RECURRENCE_COUNT = 999
+const MAX_RECURRENCE_COUNT = 999
 
 function parseRecurrence(recStr: string): { count: number; unit: string } | null {
     const match = META_REGISTRY.rec.exec(String(recStr || ''))

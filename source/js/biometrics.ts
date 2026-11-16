@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals'
 import { detectBrowserCapabilities } from './utils.js'
 import { idbStore } from './idb.js'
 
@@ -23,6 +24,9 @@ const KEY_AES = 'aes-key'
 const KEY_WRAPPED = 'wrapped-passphrase'
 
 const store = idbStore(IDB_NAME, IDB_STORE)
+
+/** Whether this device holds a sealed passphrase (reactive mirror of the store). */
+const enrolled = signal(false)
 
 const b64 = {
   encode(buf: any) {
@@ -66,6 +70,8 @@ async function unwrapPassphrase(wrapped: string, key: CryptoKey) {
 }
 
 export const biometrics = {
+  /** The device's seal state, so the lock screen and Options read one signal. */
+  enrolled,
   isSupported: () => {
     if (typeof window === 'undefined') return false
     const capabilities = detectBrowserCapabilities()
@@ -78,8 +84,10 @@ export const biometrics = {
 
   async hasEnrolled() {
     try {
-      return !!(await store.get(KEY_CREDENTIAL))
+      enrolled.value = !!(await store.get(KEY_CREDENTIAL))
+      return enrolled.value
     } catch {
+      enrolled.value = false
       return false
     }
   },
@@ -119,6 +127,7 @@ export const biometrics = {
     await store.put(KEY_CREDENTIAL, storedCredential)
     await store.put(KEY_AES, aesKey)
     await store.put(KEY_WRAPPED, wrapped)
+    enrolled.value = true
 
     return true
   },
@@ -154,5 +163,6 @@ export const biometrics = {
     await store.delete(KEY_CREDENTIAL)
     await store.delete(KEY_AES)
     await store.delete(KEY_WRAPPED)
+    enrolled.value = false
   }
 }

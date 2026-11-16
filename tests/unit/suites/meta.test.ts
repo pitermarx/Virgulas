@@ -1,5 +1,5 @@
 import { describe, it } from 'bun:test'
-import { parseMeta, formatMeta, isOverdue, formatDueDate, advanceDueDate, isFutureDue, daysUntilDue } from '../../../source/js/meta.js'
+import { parseMeta, isOverdue, formatDueDate, advanceDueDate, isFutureDue, daysUntilDue } from '../../../source/js/meta.js'
 import { assert, assertEqual } from '../testing.js'
 
 // ─── harness ──────────────────────────────────────────────────────────────────
@@ -97,25 +97,6 @@ describe("parseMeta", () => {
       const { meta, text } = parseMeta("Task due:2026-08-05 due:2026-08-06 due:2026-08-07")
       assertEqual(meta.due, '2026-08-07', "last due should win")
       assertEqual(text, 'Task', "all due tokens removed")
-  })
-})
-
-describe("formatMeta", () => {
-
-  it("formatMeta appends due to text", () => {
-      const result = formatMeta("Buy milk", { due: '2026-08-05' })
-      assertEqual(result, "Buy milk due:2026-08-05", "due should be appended")
-  })
-
-  it("formatMeta with empty meta returns text unchanged", () => {
-      const result = formatMeta("Buy milk", {})
-      assertEqual(result, "Buy milk", "text should be unchanged")
-  })
-
-  it("formatMeta round-trips with parseMeta", () => {
-      const original = "Buy milk due:2026-08-05"
-      const { meta, text } = parseMeta(original)
-      assertEqual(formatMeta(text, meta), original, "round-trip should reproduce original")
   })
 })
 
