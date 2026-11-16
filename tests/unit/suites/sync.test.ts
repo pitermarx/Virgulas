@@ -1,5 +1,6 @@
 import { describe, it } from 'bun:test'
-import { mergeDocuments, resolveConflicts, setRemoteStore, pendingConflicts, pendingMergedDoc } from '../../../source/js/sync.js'
+import { mergeDocuments } from '../../../source/js/merge.js'
+import { resolveConflicts, setRemoteStore, pendingConflicts, pendingMergedDoc } from '../../../source/js/syncEngine.js'
 import outline from '../../../source/js/outline.js'
 import { assert, assertEqual } from '../testing.js'
 

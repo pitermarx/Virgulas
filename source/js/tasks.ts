@@ -158,10 +158,36 @@ export const groupedTasks = computed(() => {
     return groups
 })
 
+// Counts for the always-mounted status toolbar. Deliberately separate from
+// `groupedTasks`: the toolbar must not pay for breadcrumbs, meta parsing per
+// task and two sorts on every keystroke while the tasks panel is closed.
+export interface TaskStats {
+    /** Open (not done) tasks — pending plus scheduled. */
+    open: number
+    overdue: boolean
+}
+
+export const taskStats = computed<TaskStats>(() => {
+    void outline.structureVersion.value
+    void outline.dirtyWrites.value
+    void todayTick.value
+
+    let open = 0
+    let overdue = false
+    for (const node of outline.getAllTasks()) {
+        const peek = node.peek()
+        if (peek.done === true) continue
+        open++
+        if (!overdue && peek.text.includes('due:')) {
+            const due = parseMeta(peek.text).meta.due
+            if (due && isOverdue(due)) overdue = true
+        }
+    }
+    return { open, overdue }
+})
+
 // Count of open tasks (pending + scheduled)
-export const pendingTaskCount = computed(() => groupedTasks.value.pending.length + groupedTasks.value.scheduled.length)
+export const pendingTaskCount = computed(() => taskStats.value.open)
 
 // True when any pending task is overdue
-export const hasOverdueTasks = computed(() =>
-    groupedTasks.value.pending.some(item => item.overdue === true)
-)
+export const hasOverdueTasks = computed(() => taskStats.value.overdue)

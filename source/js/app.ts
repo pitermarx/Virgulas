@@ -2,17 +2,27 @@ import { html, render } from 'htm/preact';
 import { signal, effect, computed } from '@preact/signals';
 import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from "./ui.js";
 import { optionsOpen, tasksPanelOpen } from './shortcuts.js';
-import persistence, { RemoteDataDecryptError, remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
-import type { BackendKind } from './storage.js';
+import persistence, { remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import type { OutlineDoc } from './docCodec.js';
 import { biometrics } from './biometrics.js';
 import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
 import { appVersion, clearAppCaches, store } from './utils.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
-import inbox, { type CaptureIntent } from './inbox.js';
+import inbox from './inbox.js';
 import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
-import { pendingConflicts, mergeDocuments } from './sync.js';
+import { pendingConflicts } from './syncEngine.js';
+import { mergeDocuments } from './merge.js';
+import {
+  captureOnly,
+  consumeQuickCaptureUrl,
+  inboxNodeName,
+  initCapture,
+  quickCaptureOpen,
+  QuickCapturePrompt,
+  QuickCaptureToast,
+  startCaptureIfRequested
+} from './capture.js';
 import { currentSearchMatchId, getFirstClosedParent } from './search.js';
 import { startTodayTicker } from './tasks.js';
 import { bindDialogFocus } from './dialogs.js';
@@ -31,7 +41,6 @@ if (savedTheme) {
 const authMode = signal<PersistenceMode>('local');
 const authScenario = signal('empty-local');
 const authHasLocalData = signal(false);
-const authHasFilesystem = signal(false);
 const authHasEncryptedStorage = signal(true);
 const browserSupportWarning = signal('');
 const username = signal('');
@@ -81,154 +90,23 @@ const newEmail = signal('');
 const newPassword = signal('');
 const newPassphrase = signal('');
 const editingOption = signal<'email' | 'password' | 'passphrase' | null>(null);
-const inboxNodeName = signal(inbox.getNodeName());
-const quickCaptureOpen = signal(false);
-const quickCaptureText = signal('');
-const quickCaptureNotice = signal('');
-/**
- * The capture request awaiting confirmation. A URL is untrusted input, so the
- * payload is held here and only ever written to the queue when the user clicks
- * "Add" in the prompt (sec-01). Carries the description for share targets.
- */
-const pendingCaptureIntent = signal<CaptureIntent | null>(null);
 const bookmarkletCopied = signal(false);
-let quickCaptureNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 let bookmarkletCopiedTimer: ReturnType<typeof setTimeout> | null = null;
-
-function announceQuickCapture(message: string) {
-  quickCaptureNotice.value = message;
-  if (quickCaptureNoticeTimer !== null) {
-    clearTimeout(quickCaptureNoticeTimer);
-  }
-  quickCaptureNoticeTimer = setTimeout(() => {
-    quickCaptureNotice.value = '';
-    quickCaptureNoticeTimer = null;
-  }, 5000);
-}
-
-function reconcileInbox() {
-  if (persistence.isLocked() || persistence.isMemory()) return 0;
-  const imported = inbox.reconcile();
-  if (imported > 0) {
-    announceQuickCapture(`Added ${imported} item${imported === 1 ? '' : 's'} to ${inbox.getNodeName()}.`);
-  }
-  return imported;
-}
-
-function enqueueIncomingCapture(text: string, description = '') {
-  if (!inbox.enqueue(text, description)) {
-    announceQuickCapture('Quick capture could not be saved on this device.');
-    return false;
-  }
-
-  const imported = reconcileInbox();
-  if (imported === 0) {
-    announceQuickCapture(
-      persistence.isLocked() || persistence.isMemory()
-        ? `Saved to the ${inbox.getNodeName()} queue. Unlock secure storage to file it.`
-        : `Saved to the ${inbox.getNodeName()} queue.`
-    );
-  }
-  return true;
-}
-
-function closeQuickCapture() {
-  quickCaptureOpen.value = false;
-  quickCaptureText.value = '';
-  pendingCaptureIntent.value = null;
-}
 
 // a11y-02: every dialog takes focus, keeps Tab inside when it is modal, and
 // hands focus back to its opener. The conflict dialog is blocking, so it has no
 // Escape path; the tasks panel is a region, not a modal, so it does not trap.
 const conflictDialogOpen = computed(() => pendingConflicts.value.length > 0);
 bindDialogFocus(optionsOpen, { labelId: 'options-title', onEscape: () => { optionsOpen.value = false; } });
-bindDialogFocus(quickCaptureOpen, {
-  labelId: 'quick-capture-title',
-  onEscape: closeQuickCapture,
-  // The textarea is the reason the dialog exists; focus it, not Close.
-  initial: () => document.querySelector<HTMLElement>('#quick-capture-input'),
-});
 bindDialogFocus(conflictDialogOpen, { labelId: 'conflict-title' });
 bindDialogFocus(tasksPanelOpen, { labelId: 'tasks-panel-title', trap: false });
 
-function submitQuickCapture(e: any) {
-  e.preventDefault();
-  if (!quickCaptureText.value.trim()) {
-    announceQuickCapture('Enter some text before adding it.');
-    return;
-  }
-
-  if (captureOnly.value) {
-    // Confirmed: this is the only place a URL-borne capture is written to the
-    // queue. A capture visit never booted the app, so hand over to the normal
-    // boot here, which lands on the unlock screen.
-    if (!inbox.enqueue(
-      quickCaptureText.value,
-      pendingCaptureIntent.value?.description ?? ''
-    )) {
-      announceQuickCapture('Quick capture could not be saved on this device.');
-      return;
-    }
-    closeQuickCapture();
-    handOverToUnlockScreen();
-    return;
-  }
-
-  if (enqueueIncomingCapture(quickCaptureText.value)) {
-    closeQuickCapture();
-  }
-}
-
-/** Remove the capture parameters so a reload or re-share does not queue twice. */
-function stripCaptureParams(): string {
-  const url = new URL(window.location.href);
-  ['quick-add', 'quick-capture', ...inbox.SHARE_TARGET_KEYS].forEach(key => url.searchParams.delete(key));
-  const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`;
-  window.history.replaceState(null, '', cleanUrl || '/');
-  return cleanUrl || '/';
-}
-
-/**
- * Handle capture URLs that arrive while the app is already running (a share
- * target re-entry, or a history navigation). Cold loads never reach here: they
- * are handled by the capture fast-path before the app boots.
- */
-function consumeQuickCaptureUrl() {
-  if (typeof window === 'undefined') return;
-
-  const intent = inbox.parseCaptureUrl(new URL(window.location.href));
-  if (!intent) return;
-
-  // sec-01: even a share arriving while the app runs is untrusted input, so it
-  // only pre-fills the prompt. The queue write happens when the user confirms.
-  pendingCaptureIntent.value = intent;
-  if (intent.kind === 'prefill') quickCaptureText.value = intent.text;
-  quickCaptureOpen.value = true;
-
-  stripCaptureParams();
-}
-
-// Decide the capture fast-path before anything boots. A capture URL is
-// untrusted input (sec-01), so it never writes to the queue by itself: the
-// visit only renders the confirmation prompt, and the queue write happens when
-// the user clicks "Add". Until then auth bootstrap, key derivation, decryption
-// and biometric unlock are all deliberately skipped.
-const initialCaptureIntent = typeof window === 'undefined'
-  ? null
-  : inbox.parseCaptureUrl(new URL(window.location.href));
-const captureOnly = signal(initialCaptureIntent !== null);
-
-/**
- * Boot the real app from a confirmed capture visit. The capture surface is
- * replaced by the splash, auth bootstrap runs, and the user lands on the
- * unlock screen — from where they can reconcile the queue, or navigate away.
- */
 function handOverToUnlockScreen() {
   captureOnly.value = false;
   render(html`<${Splash} />`, document.getElementById('app')!);
   startAuthBootstrap({ forceLockScreen: true });
 }
+initCapture(handOverToUnlockScreen);
 
 /**
  * Auth bootstrap for a normal visit or the post-confirmation handover. Kept
@@ -253,15 +131,6 @@ function startAuthBootstrap(options: { forceLockScreen?: boolean } = {}) {
  * Capture-only boot: ask for confirmation, then write nothing yet. The pending
  * intent is held so the share-target description survives into the queue entry.
  */
-function startCaptureOnly(intent: CaptureIntent) {
-  pendingCaptureIntent.value = intent;
-  if (intent.kind === 'prefill') quickCaptureText.value = intent.text;
-  quickCaptureOpen.value = true;
-
-  stripCaptureParams();
-  render(html`<${CaptureSurface} />`, document.getElementById('app')!);
-}
-
 function captureAppUrl() {
   if (typeof window === 'undefined') return '/';
   return `${window.location.origin}${window.location.pathname}`;
@@ -287,15 +156,6 @@ async function handleBookmarkletClick(event: any) {
 }
 
 // Reconcile a queue that was captured while the app was locked as soon as a
-// persisted document becomes available. Memory mode deliberately leaves the
-// queue untouched for a later secure-storage unlock.
-effect(() => {
-  const locked = persistence.isLocked();
-  const mode = persistence.getMode();
-  if (locked || mode === 'memory') return;
-  reconcileInbox();
-});
-
 // sync-01 (docs §4.4): the device locked itself because a pull met a remote
 // rotated on another device. Prompt for the new passphrase on the lock screen.
 effect(() => {
@@ -470,7 +330,6 @@ async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
   authMode.value = bootstrap.mode as PersistenceMode;
   authScenario.value = bootstrap.scenario;
   authHasLocalData.value = bootstrap.hasLocalData;
-  authHasFilesystem.value = bootstrap.hasFilesystem || false;
   authHasEncryptedStorage.value = bootstrap.encryptedStorageAvailable;
   browserSupportWarning.value = bootstrap.browserSupportWarning;
   username.value = bootstrap.lastUsername || '';
@@ -1169,62 +1028,6 @@ const LockScreen = () => {
   `;
 };
 
-const CaptureSurface = () => html`
-  <div class="capture-only">
-    ${quickCaptureOpen.value && html`<${QuickCapturePrompt} />`}
-    <${QuickCaptureToast} />
-  </div>`;
-
-const QuickCapturePrompt = () => {
-  if (!quickCaptureOpen.value) return null;
-
-  const locked = persistence.isLocked() || persistence.isMemory();
-  return html`
-    <div class="modal-overlay quick-capture-overlay"
-      onClick=${(e: any) => { if (e.target === e.currentTarget) closeQuickCapture(); }}>
-      <div class="modal-dialog quick-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-capture-title">
-        <div class="modal-header">
-          <h2 class="modal-title" id="quick-capture-title">Quick capture</h2>
-          <button class="modal-close" type="button" onClick=${closeQuickCapture} aria-label="Close">×</button>
-        </div>
-        <form onSubmit=${submitQuickCapture}>
-          <label class="input-label" for="quick-capture-input">Add to ${inboxNodeName.value}</label>
-          <textarea
-            id="quick-capture-input"
-            class="input-field quick-capture-input"
-            rows="4"
-            value=${quickCaptureText.value}
-            onInput=${(e: any) => quickCaptureText.value = e.currentTarget.value}
-            onKeyDown=${(e: any) => {
-      if (e.key === 'Escape') {
-        closeQuickCapture();
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    }}
-            ref=${(el: any) => {
-      if (el && document.activeElement !== el) el.focus();
-    }}
-            placeholder="What do you want to remember?"
-          ></textarea>
-          <p class="admin-hint">
-            ${locked
-      ? `This stays on this device and will be filed after you unlock secure storage.`
-      : `This will be added to your ${inboxNodeName.value} node.`}
-          </p>
-          <div class="options-row quick-capture-actions">
-            <button type="button" class="btn btn-secondary" onClick=${closeQuickCapture}>Cancel</button>
-            <button type="submit" class="btn btn-primary">Add to ${inboxNodeName.value}</button>
-          </div>
-        </form>
-      </div>
-    </div>`;
-};
-
-const QuickCaptureToast = () => quickCaptureNotice.value
-  ? html`<div class="quick-capture-toast" role="status">${quickCaptureNotice.value}</div>`
-  : null;
-
 const SecureStoragePrompt = () => {
   if (persistence.isLocked() || !persistence.isMemory() || !authHasEncryptedStorage.value) return null;
 
@@ -1611,9 +1414,7 @@ const Splash = () => {
   `;
 };
 
-if (captureOnly.value && initialCaptureIntent) {
-  startCaptureOnly(initialCaptureIntent);
-} else {
+if (!startCaptureIfRequested()) {
   render(html`<${Splash} />`, document.getElementById('app')!);
   consumeQuickCaptureUrl();
   if (typeof window !== 'undefined') {

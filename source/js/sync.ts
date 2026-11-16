@@ -1,39 +1,22 @@
+// Remote sync scheduling: which backend the deployment talks to, the auth
+// facade the UI calls, and the background poll.
+//
+// The pull-before-push step itself lives in syncEngine.ts; the save debounce
+// and the deferred push live in remoteSave.ts. This module only decides *when*
+// to run a step and over which backend.
+
 import { signal } from '@preact/signals'
-import outline from './outline.js'
-import { log, store } from './utils.js'
-import { CONFLICT_FIELDS, attachMissingChildren, documentsEquivalent, merge, mergeDocuments } from './merge.js'
-import type { NodeConflict } from './merge.js'
-import { jsonCodec } from './docCodec.js'
-import type { OutlineDoc, OutlineNode } from './docCodec.js'
-import { HOSTED_BACKEND, parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type DocStore, type RawStore } from './storage.js'
+import { store } from './utils.js'
+import { HOSTED_BACKEND, parseBackendConfig, StoreError, type AuthProvider, type BackendConfig, type RawStore } from './storage.js'
 import { ensureSupabaseClient, supabaseAuth, supabaseRaw } from './supabaseBackend.js'
 import { sameOriginTrailbase, trailbaseAuth, trailbaseRaw } from './trailbaseBackend.js'
-
-// Re-exported for the app/e2e seam and the unit suite: the merge algorithm
-// itself lives in merge.ts (storage seam PR 1).
-export { mergeDocuments }
-
-// Type aliases kept for the existing import surface (app.ts, ui.ts, specs).
-export type SyncNode = OutlineNode
-export type SyncConflict = NodeConflict
-export type MergedDoc = OutlineDoc
-
-export interface RemoteSyncAttempt {
-    epoch: number
-    startedAt: number
-}
-
-export interface ConflictResolution {
-    nodeId: string
-    field: string
-    chosenSide: 'local' | 'remote'
-}
+import { createRemoteSyncAttempt, syncOnce } from './syncEngine.js'
 
 // ── Backend facade ───────────────────────────────────────────────────────────
 //
 // Client code lives in supabaseBackend.ts (docs/storage-interface.md §7): this
-// module keeps only scheduling, polling, backoff and status/conflict signals.
-// remoteSync is a thin auth/data facade over the backend adapters — no client
+// module keeps only backend resolution, scheduling and the auth facade.
+// `remoteSync` is a thin proxy over the backend adapters — no client
 // construction, no error-code mapping, no row payloads.
 
 /**
@@ -137,268 +120,7 @@ export const remoteSync = {
     resolveBackend: async () => backend()
 }
 
-// ── Sync status + conflict signals ───────────────────────────────────────────
-
-export const syncStatus = signal<'synced' | 'syncing' | 'error' | 'offline'>('synced')
-export const pendingConflicts = signal<SyncConflict[]>([])
-export const pendingMergedDoc = signal<MergedDoc | null>(null)
-export const pendingConflictResolutions = signal<Map<string, 'local' | 'remote'>>(new Map())
-
-// Coordination flag: set to true before calling outline.deserialize from within
-// sync/poll handlers so the persistence effect skips a redundant remote push.
-export const skipNextRemotePush = signal(false)
-
-// sync-01 (docs §4.4): a pull met a remote rotated on another device. The
-// session locks and prompts for the new passphrase instead of the next local
-// push silently reverting the rotation.
-export const remoteRekeyed = signal(false)
-
-const localWriteEpoch = signal(0)
-const remoteSyncNotBefore = signal(0)
-let remoteSyncQueue: Promise<any> = Promise.resolve()
-
-// ── Remote store injection (docs §6.4) ───────────────────────────────────────
-//
-// The orchestration (persistence.ts constructs it, remoteSave.ts owns saves)
-// injects the cached() composition here; every pull and push goes through the
-// store, which owns the codec and the crypto. Secrets never transit this module.
-
-let _remoteStore: DocStore | null = null
-
-export function setRemoteStore(store: DocStore | null) {
-    _remoteStore = store
-}
-
-function requireRemoteStore(): DocStore {
-    if (!_remoteStore) throw new StoreError('unauthenticated', 'No remote session is active.')
-    return _remoteStore
-}
-
-// ── Head-token helpers (docs §8) ─────────────────────────────────────────────
-//
-// The opaque head() change token lives in vmd_sync_head; the numeric merge
-// baseline stays in vmd_sync_ts. Two clocks, two slots — the token is never
-// parsed as a timestamp.
-
-export function getLastSyncHead(): string | null {
-    return store.syncHead.get(null)
-}
-
-export function setSyncHead(token: string | null) {
-    if (token) store.syncHead.set(token)
-    else store.syncHead.del()
-}
-
-export function noteLocalWriteActivity(now = Date.now()) {
-    localWriteEpoch.value = localWriteEpoch.peek() + 1
-    remoteSyncNotBefore.value = Math.max(
-        remoteSyncNotBefore.peek(),
-        now + outline.dirtyDebounceTimeout
-    )
-}
-
-export function createRemoteSyncAttempt(): RemoteSyncAttempt {
-    return { epoch: localWriteEpoch.peek(), startedAt: 0 }
-}
-
-export function canStartRemoteSync(now = Date.now()) {
-    return now >= remoteSyncNotBefore.peek()
-}
-
-/**
- * Open the typing gate so the next push runs immediately. Teardown paths (lock,
- * sign-out) call this: the user has stopped typing and the session is about to
- * end, so a pending edit must be uploaded now rather than deferred past it.
- */
-export function allowImmediateRemoteSync() {
-    remoteSyncNotBefore.value = 0
-}
-
-/**
- * Milliseconds until a deferred remote push may run (0 when it can run now).
- * Used to reschedule a push that was skipped because the user is still typing,
- * instead of dropping it until the next unrelated save.
- */
-export function remoteSyncRetryDelay(now = Date.now()) {
-    return Math.max(0, remoteSyncNotBefore.peek() - now)
-}
-
-export function isRemoteSyncAttemptStale(attempt: RemoteSyncAttempt | null, now = Date.now()) {
-    if (!attempt) return true
-    return attempt.epoch !== localWriteEpoch.peek() || now < remoteSyncNotBefore.peek()
-}
-
-export function runExclusiveRemoteSync<T>(work: () => Promise<T>): Promise<T> {
-    const run = remoteSyncQueue.then(work, work)
-    remoteSyncQueue = run.catch(() => { })
-    return run
-}
-
-// ── lastSyncedAt helpers (the merge baseline clock) ──────────────────────────
-
-export function getLastSyncedAt() {
-    return parseInt(store.syncTs.get('0') || '0') || 0
-}
-
-export function setLastSyncedAt(ts: number) {
-    store.syncTs.set(String(ts))
-}
-
-// ── Typed-failure helper ─────────────────────────────────────────────────────
-
-/**
- * Maps a failed sync step onto the status/notice surfaces. Returns true when
- * the failure was handled here (the caller must not proceed with a push —
- * in particular a remote-rekeyed pull is never followed by an upload).
- */
-export function handleSyncFailure(error: unknown): boolean {
-    if (error instanceof StoreError && error.code === 'remote-rekeyed') {
-        // sync-01: never swallowed, never followed by a push.
-        remoteRekeyed.value = true
-        syncStatus.value = 'error'
-        return true
-    }
-    log('[Sync] sync step failed:', error)
-    syncStatus.value = navigator.onLine === false ? 'offline' : 'error'
-    return true
-}
-
-// ── Pull-before-push ─────────────────────────────────────────────────────────
-
-export interface PullAndMergeResult {
-    clean: boolean
-    mergedJson: string | null
-    /**
-     * True when the merged document differs from the remote copy. When false,
-     * the remote already holds this content: callers must apply the document
-     * locally and adopt the observed head token without writing it back. A
-     * write-back here would create a new revision, which makes every other
-     * client pull again and write it back in turn.
-     */
-    needsPush: boolean
-}
-
-/**
- * Fetches the remote document through the store and merges it with the local
- * doc. Does NOT push and does NOT apply to the live outline. When clean,
- * mergedJson is the merged document JSON (or null if no remote document was
- * read); needsPush says whether that document differs from the remote copy.
- * When !clean, pendingConflicts and pendingMergedDoc are set.
- *
- * Decryption happens inside the store's session; a remote rotated on another
- * device surfaces as a remote-rekeyed StoreError — deliberately NOT swallowed
- * into a clean result (that was the sync-01 silent-overwrite bug).
- */
-export async function pullAndMerge(): Promise<PullAndMergeResult> {
-    const remote = requireRemoteStore()
-
-    const remoteDoc = await remote.read()
-    if (!remoteDoc) {
-        return { clean: true, mergedJson: null, needsPush: true }
-    }
-
-    const localDoc = jsonCodec.parse(outline.serialize())
-    const lastSyncedAt = getLastSyncedAt()
-    const result = merge(localDoc, remoteDoc, lastSyncedAt)
-
-    if (result.kind === 'conflict') {
-        pendingConflicts.value = result.conflicts
-        pendingMergedDoc.value = result.partial
-        pendingConflictResolutions.value = new Map()
-        return { clean: false, mergedJson: null, needsPush: false }
-    }
-
-    return {
-        clean: true,
-        mergedJson: jsonCodec.serialize(result.doc),
-        needsPush: !documentsEquivalent(result.doc, remoteDoc)
-    }
-}
-
-/**
- * Apply conflict resolutions, push merged doc, and clear conflict state.
- * @param {Array<{ nodeId: string, field: string, chosenSide: 'local' | 'remote' }>} resolutions
- */
-/**
- * Apply a chosen parent to a node inside the conflict document, keeping both
- * parents' children arrays true (data-02: a resolved move must not leave the
- * node listed under its old parent).
- */
-function reparent(nodes: OutlineNode[], node: OutlineNode, nextParentId: string | null) {
-    const previousParentId = node.parentId ?? null
-    if (previousParentId === nextParentId) return
-    const previousParent = nodes.find(candidate => candidate.id === previousParentId)
-    if (previousParent) {
-        previousParent.children = (previousParent.children ?? []).filter(id => id !== node.id)
-    }
-    const nextParent = nodes.find(candidate => candidate.id === nextParentId)
-    if (nextParent && !(nextParent.children ?? []).includes(node.id)) {
-        nextParent.children = [...(nextParent.children ?? []), node.id]
-    }
-    node.parentId = nextParentId
-}
-
-export async function resolveConflicts(resolutions: ConflictResolution[]) {
-    const doc = pendingMergedDoc.peek()
-    if (!doc) return
-
-    const remote = requireRemoteStore()
-
-    // Build a map of chosen values per nodeId::field
-    const choiceMap = new Map<string, 'local' | 'remote'>()
-    for (const res of resolutions) {
-        choiceMap.set(`${res.nodeId}::${res.field}`, res.chosenSide)
-    }
-
-    // Conflict values for lookup
-    const conflictValues = new Map()
-    for (const c of pendingConflicts.peek()) {
-        conflictValues.set(`${c.nodeId}::${c.field}`, { local: c.localValue, remote: c.remoteValue })
-    }
-
-    // Apply chosen values to the merged nodes. Every field merge can flag is
-    // applied here (CONFLICT_FIELDS), so resolving one always has an effect.
-    const updatedNodes = doc.nodes.map(node => ({ ...node, children: [...(node.children ?? [])] }))
-    for (const node of updatedNodes) {
-        for (const field of CONFLICT_FIELDS) {
-            const key = `${node.id}::${field}`
-            const side = choiceMap.get(key)
-            if (!side) continue
-            const vals = conflictValues.get(key)
-            if (!vals) continue
-            if (field === 'parentId') {
-                reparent(updatedNodes, node, vals[side] ?? null)
-            } else {
-                ;(node as Record<string, unknown>)[field] = vals[side]
-            }
-        }
-    }
-
-    // data-04: a `children` conflict takes one whole array, so a node only the
-    // losing side listed would be left in the document but unreachable.
-    const mergedObj: OutlineDoc = { ...doc, nodes: attachMissingChildren(updatedNodes) }
-
-    try {
-        syncStatus.value = 'syncing'
-        const token = await remote.write(mergedObj)
-        if (token) setSyncHead(token)
-        setLastSyncedAt(Date.now())
-        syncStatus.value = 'synced'
-    } catch (err) {
-        log('[Sync] resolveConflicts push failed:', err)
-        handleSyncFailure(err)
-    }
-
-    // Apply merged doc locally; set flag so persistence effect skips the re-push
-    skipNextRemotePush.value = true
-    outline.deserialize(jsonCodec.serialize(mergedObj))
-
-    pendingConflicts.value = []
-    pendingMergedDoc.value = null
-    pendingConflictResolutions.value = new Map()
-}
-
-// ── Background polling ────────────────────────────────────────────────────────
+// ── Background polling (docs §6.4) ───────────────────────────────────────────
 
 let _pollingInterval: ReturnType<typeof setInterval> | null = null
 
@@ -415,75 +137,13 @@ export function resolvePollIntervalMs(): number {
     return 60_000
 }
 
+/** The poll only decides when to look; `syncOnce` decides what a look means
+ * (unchanged head, a merge, a pending conflict, or still typing). */
 export function startPolling() {
     stopPolling()
-    const pollIntervalMs = resolvePollIntervalMs()
     _pollingInterval = setInterval(() => {
-        const attempt = createRemoteSyncAttempt()
-        // Don't stack pulls while conflicts are pending
-        if (pendingConflicts.peek().length > 0) return
-
-        if (!canStartRemoteSync() || isRemoteSyncAttemptStale(attempt)) return
-
-        void runExclusiveRemoteSync(async () => {
-            if (pendingConflicts.peek().length > 0) return
-            if (!canStartRemoteSync() || isRemoteSyncAttemptStale(attempt)) return
-
-            try {
-                const remote = requireRemoteStore()
-
-                // Change detection is the opaque head token, compared for
-                // inequality only. head() errors are treated as "no change".
-                let token: string | null = null
-                try {
-                    token = await remote.head?.() ?? null
-                } catch {
-                    return
-                }
-                if (!token || token === getLastSyncHead()) return
-                if (isRemoteSyncAttemptStale(attempt)) return
-
-                log('[Sync] Polling detected remote update, pulling...')
-
-                syncStatus.value = 'syncing'
-                const result = await pullAndMerge()
-                if (isRemoteSyncAttemptStale(attempt)) return
-
-                if (!result.clean) {
-                    syncStatus.value = 'synced'
-                    return
-                }
-
-                if (result.mergedJson) {
-                    if (result.needsPush) {
-                        const mergedDoc = jsonCodec.parse(result.mergedJson)
-                        // Push the merged doc; write() resolves with the new head
-                        // token, which the poller adopts so it never re-pulls its
-                        // own update.
-                        const newToken = await remote.write(mergedDoc)
-                        if (isRemoteSyncAttemptStale(attempt)) return
-                        if (newToken) setSyncHead(newToken)
-                    } else {
-                        if (isRemoteSyncAttemptStale(attempt)) return
-                        // The remote already has this content. Adopt the token
-                        // we just observed instead of writing an identical
-                        // document, which would only make other clients pull.
-                        setSyncHead(token)
-                    }
-                    setLastSyncedAt(Date.now())
-                    // Apply locally; flag prevents persistence effect re-push
-                    skipNextRemotePush.value = true
-                    outline.deserialize(result.mergedJson)
-                }
-
-                syncStatus.value = 'synced'
-            } catch (err) {
-                if (isRemoteSyncAttemptStale(attempt)) return
-                log('[Sync] Poll pull failed:', err)
-                handleSyncFailure(err)
-            }
-        })
-    }, pollIntervalMs)
+        void syncOnce({ attempt: createRemoteSyncAttempt() })
+    }, resolvePollIntervalMs())
 }
 
 export function stopPolling() {

@@ -268,11 +268,37 @@ function finalizeMarkdown(rawHtml: string, decorateMeta: boolean) {
     return decorateMeta ? decorateMetaChips(decorated) : decorated
 }
 
+// ── Render cache ─────────────────────────────────────────────────────────────
+//
+// Node text and descriptions re-render on every outline update, and marked +
+// DOMPurify + two DOM walks are the expensive part of that. The output is a
+// pure function of (text, decorateMeta, renderer), so remember it. Bounded:
+// the app holds one document, and clearing the whole map is cheaper and more
+// predictable than an LRU list.
+const RENDER_CACHE_LIMIT = 1000
+const renderCache = new Map<string, string>()
+
+/** Cleared by tests that assert renderer behaviour rather than caching. */
+export function clearMarkdownRenderCache() {
+    renderCache.clear()
+}
+
+function cachedRender(kind: 'inline' | 'block', text: string, decorateMeta: boolean, render: () => string): string {
+    const key = `${kind}\u0000${decorateMeta ? '1' : '0'}\u0000${text}`
+    const cached = renderCache.get(key)
+    if (cached !== undefined) return cached
+    const html = render()
+    if (renderCache.size >= RENDER_CACHE_LIMIT) renderCache.clear()
+    renderCache.set(key, html)
+    return html
+}
+
 // Inline renderer: used for single-line node text and the two-line description
 // preview. Block markers are intentionally not interpreted here.
 export function renderInlineMarkdown(text: string, { decorateMeta = false }: { decorateMeta?: boolean } = {}) {
     if (!text) return ''
-    return finalizeMarkdown(markdown.parseInline(normalizeMarkdownAliases(text)) as string, decorateMeta)
+    return cachedRender('inline', text, decorateMeta, () =>
+        finalizeMarkdown(markdown.parseInline(normalizeMarkdownAliases(text)) as string, decorateMeta))
 }
 
 // Block renderer: used when a description is shown in full (the zoomed node).
@@ -280,5 +306,6 @@ export function renderInlineMarkdown(text: string, { decorateMeta = false }: { d
 // render as a normal markdown document.
 export function renderBlockMarkdown(text: string, { decorateMeta = false }: { decorateMeta?: boolean } = {}) {
     if (!text) return ''
-    return finalizeMarkdown(markdown.parse(normalizeMarkdownAliases(text)) as string, decorateMeta)
+    return cachedRender('block', text, decorateMeta, () =>
+        finalizeMarkdown(markdown.parse(normalizeMarkdownAliases(text)) as string, decorateMeta))
 }

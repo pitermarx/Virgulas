@@ -1,4 +1,5 @@
 import { detectBrowserCapabilities } from './utils.js'
+import { idbStore } from './idb.js'
 
 // Biometric (WebAuthn) unlock for Virgulas.
 //
@@ -21,43 +22,7 @@ const KEY_CREDENTIAL = 'credential'
 const KEY_AES = 'aes-key'
 const KEY_WRAPPED = 'wrapped-passphrase'
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function kvGet(key: string): Promise<any> {
-  const db = await openDB()
-  return new Promise<any>((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly')
-    const req = tx.objectStore(IDB_STORE).get(key)
-    req.onsuccess = () => resolve(req.result ?? null)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function kvSet(key: string, value: any): Promise<void> {
-  const db = await openDB()
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite')
-    tx.objectStore(IDB_STORE).put(value, key)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-}
-
-async function kvDelete(key: string): Promise<void> {
-  const db = await openDB()
-  return new Promise<void>((resolve) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite')
-    tx.objectStore(IDB_STORE).delete(key)
-    tx.oncomplete = () => resolve()
-  })
-}
+const store = idbStore(IDB_NAME, IDB_STORE)
 
 const b64 = {
   encode(buf: any) {
@@ -113,7 +78,7 @@ export const biometrics = {
 
   async hasEnrolled() {
     try {
-      return !!(await kvGet(KEY_CREDENTIAL))
+      return !!(await store.get(KEY_CREDENTIAL))
     } catch {
       return false
     }
@@ -151,9 +116,9 @@ export const biometrics = {
     const wrapped = await wrapPassphrase(passphrase, aesKey)
 
     // 3. Persist
-    await kvSet(KEY_CREDENTIAL, storedCredential)
-    await kvSet(KEY_AES, aesKey)
-    await kvSet(KEY_WRAPPED, wrapped)
+    await store.put(KEY_CREDENTIAL, storedCredential)
+    await store.put(KEY_AES, aesKey)
+    await store.put(KEY_WRAPPED, wrapped)
 
     return true
   },
@@ -161,7 +126,7 @@ export const biometrics = {
   async unlock() {
     if (!this.isSupported()) return null
     try {
-      const credential = await kvGet(KEY_CREDENTIAL)
+      const credential = await store.get<any>(KEY_CREDENTIAL)
       if (!credential) return null
 
       const challenge = window.crypto.getRandomValues(new Uint8Array(32))
@@ -175,8 +140,8 @@ export const biometrics = {
       })
       if (!assertion) return null
 
-      const aesKey = await kvGet(KEY_AES)
-      const wrapped = await kvGet(KEY_WRAPPED)
+      const aesKey = await store.get<CryptoKey>(KEY_AES)
+      const wrapped = await store.get<string>(KEY_WRAPPED)
       if (!aesKey || !wrapped) return null
 
       return await unwrapPassphrase(wrapped, aesKey)
@@ -186,8 +151,8 @@ export const biometrics = {
   },
 
   async forget() {
-    await kvDelete(KEY_CREDENTIAL)
-    await kvDelete(KEY_AES)
-    await kvDelete(KEY_WRAPPED)
+    await store.delete(KEY_CREDENTIAL)
+    await store.delete(KEY_AES)
+    await store.delete(KEY_WRAPPED)
   }
 }

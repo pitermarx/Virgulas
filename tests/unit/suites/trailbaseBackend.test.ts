@@ -19,11 +19,6 @@ interface FetchCall {
     authHeader?: string
 }
 
-interface FakeRoute {
-    // Returns the response; when a function, receives the parsed request body.
-    respond: (body: any, call: FetchCall) => { status: number; json?: any; text?: string } | { status: number; json?: any; text?: string }[]
-}
-
 type FakeResponse = { status: number; json?: any; text?: string }
 
 function fakeFetch(routes: Array<(call: FetchCall) => FakeResponse | null> = []) {
@@ -70,8 +65,6 @@ async function expectStoreError(fn: () => Promise<unknown>, code: string, label:
     assertEqual(threw.code, code, `${label}: code`)
     return threw
 }
-
-const JSON_OK = { status: 200, json: { ok: true } }
 
 // ─── auth ────────────────────────────────────────────────────────────────────
 

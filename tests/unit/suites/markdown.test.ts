@@ -1,10 +1,11 @@
 import { describe, it } from 'bun:test'
 import {
+    clearMarkdownRenderCache,
     renderBlockMarkdown,
     renderInlineMarkdown,
     SANITIZE_OPTIONS
 } from '../../../source/js/markdown.js'
-import { assert } from '../testing.js'
+import { assert, assertEqual } from '../testing.js'
 
 // ─── harness ──────────────────────────────────────────────────────────────────
 
@@ -192,4 +193,16 @@ describe("renderInlineMarkdown — sanitizer hardening", () => {
       assert(!html.includes('onerror'), "no event handler")
       assert(!html.includes('javascript:'), "no javascript scheme")
   })
+})
+describe('render cache', () => {
+    it('is transparent: same input, same HTML, decorateMeta kept apart', () => {
+        clearMarkdownRenderCache()
+        const plain = renderInlineMarkdown('Buy milk due:2026-08-05')
+        const decorated = renderInlineMarkdown('Buy milk due:2026-08-05', { decorateMeta: true })
+        assert(!plain.includes('due-date'), 'no chips without decorateMeta')
+        assert(decorated.includes('due-date'), 'chips with decorateMeta')
+        assertEqual(renderInlineMarkdown('Buy milk due:2026-08-05'), plain, 'inline cache hit keeps the output')
+        assertEqual(renderInlineMarkdown('Buy milk due:2026-08-05', { decorateMeta: true }), decorated, 'keyed by decorateMeta')
+        assertEqual(renderBlockMarkdown('# Title'), renderBlockMarkdown('# Title'), 'block cache hit keeps the output')
+    })
 })

@@ -7,7 +7,7 @@
         "dev": "bun scripts/build-bun.mjs source dist --local && bun scripts/serve-bun.mjs dist",
         "dev:test": "bun scripts/build-bun.mjs source dist --test-hooks --local && bun scripts/serve-bun.mjs dist",
         "build": "bun scripts/build-bun.mjs source dist --no-sourcemap",
-        "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+        "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters && tsc -p tsconfig.test.json --noEmit --noUnusedLocals --noUnusedParameters",
         "test": "bun run test:unit && bun run test:e2e",
         "test:unit": "bun test tests/unit",
         "test:e2e": "bunx playwright test",

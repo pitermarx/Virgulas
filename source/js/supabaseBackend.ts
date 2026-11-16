@@ -109,7 +109,7 @@ function adoptLegacyAuthSession(url: string, storage: SupabaseAuthStorage) {
 
 /** Options passed to `createClient`: the bundled client and the test seam both
  * go through this, so the auth session always lands in the store slot. */
-export function supabaseClientOptions(storage: SupabaseAuthStorage = supabaseAuthStorage()) {
+function supabaseClientOptions(storage: SupabaseAuthStorage = supabaseAuthStorage()) {
     return {
         realtime: { enabled: false },
         auth: { storage }

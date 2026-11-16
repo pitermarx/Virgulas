@@ -12,7 +12,6 @@ import { assert } from '../testing.js'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
 const readSchema = () => readFileSync(path.join(ROOT, 'supabase/schemas/outlines.sql'), 'utf8')
-const readSync = () => readFileSync(path.join(ROOT, 'source/js/sync.ts'), 'utf8')
 const readSupabaseBackend = () => readFileSync(path.join(ROOT, 'source/js/supabaseBackend.ts'), 'utf8')
 
 const readPersistence = () => readFileSync(path.join(ROOT, 'source/js/persistence.ts'), 'utf8')

@@ -3,7 +3,7 @@
 // production (it could otherwise hammer the backend in a loop).
 import { describe, it, afterEach } from 'bun:test'
 import { assert, assertEqual } from '../testing.js'
-import { resolveRetryBaseMs } from '../../../source/js/remoteSave.js'
+import { resolveRetryBaseMs } from '../../../source/js/syncEngine.js'
 import { resolvePollIntervalMs } from '../../../source/js/sync.js'
 
 afterEach(() => {

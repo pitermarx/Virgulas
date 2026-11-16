@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'bun:test'
 import outline from '../../../source/js/outline.js'
-import { groupedTasks, hasOverdueTasks, pendingTaskCount, msUntilNextMidnight, startTodayTicker, todayTick } from '../../../source/js/tasks.js'
+import { groupedTasks, hasOverdueTasks, pendingTaskCount, taskStats, msUntilNextMidnight, startTodayTicker, todayTick } from '../../../source/js/tasks.js'
 import { assert, assertEqual } from '../testing.js'
 
 beforeEach(() => outline.reset())
@@ -243,4 +243,22 @@ describe("groupedTasks — zoom scoping", () => {
       outline.zoomIn('ta')
       assertEqual(groupedTasks.value.pending.length, 1, "zoomed task node itself is included")
   })
+})
+describe('taskStats — status toolbar counts', () => {
+    it('counts open tasks and overdue without building the grouped panel list', () => {
+        setupDoc(
+            node('t1', 'Pending', { done: false }),
+            node('t2', 'Done', { done: true }),
+            node('t3', `Overdue due:${daysFromNow(-2)}`, { done: false }),
+            node('t4', `Later due:${daysFromNow(5)}`, { done: false })
+        )
+
+        const groups = groupedTasks.value
+        assertEqual(taskStats.value.open, 3, 'three open tasks')
+        assertEqual(taskStats.value.open, groups.pending.length + groups.scheduled.length, 'the badge matches the panel totals')
+        assertEqual(taskStats.value.overdue, true, 'the overdue task is flagged')
+        assertEqual(taskStats.value.overdue, groups.pending.some(item => item.overdue === true), 'the flag matches the panel')
+        assertEqual(pendingTaskCount.value, 3, 'the toolbar count follows the stats')
+        assertEqual(hasOverdueTasks.value, true, 'the toolbar flag follows the stats')
+    })
 })

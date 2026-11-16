@@ -20,7 +20,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(',')
 
 /** The focusable controls inside a dialog, in tab order, skipping hidden ones. */
-export function focusablesIn(root: HTMLElement): HTMLElement[] {
+function focusablesIn(root: HTMLElement): HTMLElement[] {
     return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
         .filter(element => !element.hasAttribute('inert') && element.getClientRects().length > 0)
 }
@@ -38,7 +38,7 @@ export interface DialogFocusOptions {
  * Moves focus into `dialog`, keeps Tab inside it and restores focus to the
  * opener. Returns the cleanup to run when the dialog closes.
  */
-export function openDialogFocus(dialog: HTMLElement, options: DialogFocusOptions = {}): () => void {
+function openDialogFocus(dialog: HTMLElement, options: DialogFocusOptions = {}): () => void {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const trap = options.trap !== false
 

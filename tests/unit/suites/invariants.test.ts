@@ -11,10 +11,6 @@ beforeEach(() => outline.reset())
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-function childIds(id: string): string[] {
-    return outline.get(id)?.peek().children ?? []
-}
-
 /** Every node reachable from the root exactly once, and every parent link true. */
 function assertTreeInvariants(label: string) {
     const doc = outline.snapshot()

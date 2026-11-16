@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals'
 import outline from "./outline.js"
-import { searchQuery, searchResults, searchResultIndex, getFirstClosedParent, resetSearchNavigation } from './search.js'
-import { log, store, isMobile } from './utils.js';
+import { searchResults, searchResultIndex, getFirstClosedParent, resetSearchNavigation } from './search.js'
+import { log, store } from './utils.js';
 
 export const tasksPanelOpen = signal(false)
 export const optionsOpen = signal(false)
