@@ -5,9 +5,40 @@ import { optionsOpen, tasksPanelOpen } from './shortcuts.js';
 import persistence, { remoteRekeyedNotice, type PersistenceMode } from './persistence.js';
 import type { OutlineDoc } from './docCodec.js';
 import { biometrics } from './biometrics.js';
-import { remoteSync, remoteResetAvailable, backendKind, backendUrl } from './sync.js';
+import { remoteSync, remoteResetAvailable } from './sync.js';
 import outline, { CorruptDocumentError } from './outline.js';
-import { appVersion, clearAppCaches, store } from './utils.js';
+import { appVersion, store } from './utils.js';
+import {
+  authMode,
+  authScenario,
+  authHasLocalData,
+  authHasEncryptedStorage,
+  browserSupportWarning,
+  username,
+  password,
+  passphrase,
+  unlockError,
+  unlockMessage,
+  canResetRemoteData,
+  canResetLocalData,
+  isBusy,
+  wizardStep,
+  wizardOverlay,
+  authUser,
+  authStep,
+  remotePasswordStage,
+  bioEnrolled,
+  autoBioAttempted,
+  accountInfo,
+  accountDeletesUser,
+  serverLabel,
+  isRemoteSessionValid,
+  isLocalCreate,
+  loadLockedBackgroundIntro,
+  getIntroText,
+  initAuthState,
+  bootMemoryAfterWipe
+} from './session.js';
 import { CorruptEnvelopeError, DEFAULT_ITERATIONS, WrongPassphraseError } from './crypto2.js';
 import inbox from './inbox.js';
 import { encrypt, decrypt, randomId, generateSalt } from './crypto2.js';
@@ -38,51 +69,6 @@ if (savedTheme) {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }
 
-const authMode = signal<PersistenceMode>('local');
-const authScenario = signal('empty-local');
-const authHasLocalData = signal(false);
-const authHasEncryptedStorage = signal(true);
-const browserSupportWarning = signal('');
-const username = signal('');
-const password = signal('');
-const passphrase = signal('');
-const unlockError = signal('');
-const unlockMessage = signal('');
-const canResetRemoteData = signal(false);
-// There is no user-facing backend choice (docs: server resolution): the sync
-// server is TrailBase on the origin serving the app, resolved automatically
-// in the remote flow. The credentials form names the resolved server.
-const canResetLocalData = signal(false);
-const isBusy = signal(false);
-// The choose-mode sheet is a wizard: path first (device vs cloud), then the
-// concrete local storage choice. The cloud path goes straight to the
-// credentials form — the server resolves itself.
-const wizardStep = signal<'storage' | 'local'>('storage');
-// The banner opens the wizard OVER the live memory session: nothing is
-// locked or captured until the user commits to a storage mode. Only then is
-// the running document staged and the session locked for setup.
-const wizardOverlay = signal(false);
-
-/** Names the resolved sync server for the credentials form: the app's own
- * origin when it is served by TrailBase, the hosted cloud otherwise. */
-const serverLabel = (): string => {
-  if (backendKind() !== 'trailbase') return 'the Virgulas cloud';
-  if (!backendUrl()) return 'this server';
-  try { return new URL(backendUrl()).host } catch { return backendUrl() }
-};
-const authUser = signal<any>(null);
-const authStep = signal('unlock');
-// Remote unlock staging: when true, email+password were collected and we await the passphrase
-const remotePasswordStage = signal(false);
-
-// ── Account / options modal state ────────────────────────────────────────────
-const bioEnrolled = signal(false);
-const autoBioAttempted = signal(false);
-const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 });
-/** True when the resolved Remote backend can delete the auth record itself
- * (TrailBase). Supabase keeps it — deleting `auth.users` needs the service
- * role — so the Options copy and the confirmation say which one happens. */
-const accountDeletesUser = signal(false);
 const adminError = signal('');
 const adminMessage = signal('');
 const newEmail = signal('');
@@ -297,54 +283,7 @@ function handleInboxNodeNameChange(e: any) {
   inboxNodeName.value = inbox.setNodeName(e.currentTarget.value);
 }
 
-const isRemoteSessionValid = () => authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value;
-const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value;
-
 let stagedMemoryDoc: OutlineDoc | null = null;
-let cachedIntroText: string | null = null;
-
-async function getIntroText() {
-  if (cachedIntroText !== null) return cachedIntroText;
-  try {
-    const resp = await fetch('/intro.vmd');
-    cachedIntroText = resp.ok ? await resp.text() : '';
-  } catch {
-    cachedIntroText = '';
-  }
-  return cachedIntroText;
-}
-
-async function loadLockedBackgroundIntro() {
-  const introText = await getIntroText();
-  outline.reset();
-  if (introText && introText.trim()) {
-    outline.setRootVMD(introText);
-  } else {
-    outline.addChild('root', { text: '' });
-  }
-}
-
-async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
-  const bootstrap = await persistence.getAuthBootstrap(options);
-  authMode.value = bootstrap.mode as PersistenceMode;
-  authScenario.value = bootstrap.scenario;
-  authHasLocalData.value = bootstrap.hasLocalData;
-  authHasEncryptedStorage.value = bootstrap.encryptedStorageAvailable;
-  browserSupportWarning.value = bootstrap.browserSupportWarning;
-  username.value = bootstrap.lastUsername || '';
-  authUser.value = bootstrap.user || null;
-
-  // Memory mode: skip the lock screen entirely
-  if (bootstrap.mode === 'memory') {
-    await persistence.unlock('', { mode: 'memory' });
-    document.body.setAttribute('data-main-view', 'rendered');
-    return;
-  }
-
-  if (persistence.isLocked()) {
-    await loadLockedBackgroundIntro();
-  }
-}
 
 // Fallback when the splash's computed transition can't be read. Mirrors
 // `--splash-fade` in base.css.
@@ -1084,12 +1023,6 @@ const OptionsModal = () => {
   // let the service worker recreate the app cache that the wipe just cleared.
   // Clear Cache Storage last and await it, so a purge really leaves no
   // app-owned cache behind.
-  async function bootMemoryAfterWipe() {
-    await persistence.unlock('', { mode: 'memory' });
-    persistence.setPreferredMode('memory');
-    await clearAppCaches();
-  }
-
   async function handleDeleteAccount() {
     const confirmed = confirm(
       accountDeletesUser.value

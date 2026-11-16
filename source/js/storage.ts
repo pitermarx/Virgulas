@@ -218,7 +218,7 @@ export const HOSTED_BACKEND: BackendConfig = {
 }
 
 /** The default backend: TrailBase on the app's own origin. */
-export const DEFAULT_BACKEND: BackendConfig = { backend: 'trailbase', url: '' }
+const DEFAULT_BACKEND: BackendConfig = { backend: 'trailbase', url: '' }
 
 /**
  * Parses the persisted backend config slot. Backwards compatible with both

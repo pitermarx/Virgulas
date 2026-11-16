@@ -477,6 +477,11 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   Pure-`fetch` RawStore + AuthProvider for TrailBase (the same-origin default): register/sign-in/reset/logout/delete, one 401 → refresh → retry, and `outlines` row CRUD.
 - `cachedStore.ts`:
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
+- `session.ts`:
+  The lock/session state shared by the lock screen, the storage wizard and the
+  Options modal (auth mode re-exported from `persistence.ts`, scenario, step,
+  user, busy/errors, account info) plus the boot helpers (`initAuthState`, the
+  locked background intro, memory-after-wipe). One copy of each signal.
 - `persistence.ts`:
   Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The debounce itself lives in `savePipeline.ts`.
 - `syncEngine.ts`:

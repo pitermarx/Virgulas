@@ -54,7 +54,7 @@ import { cached } from './cachedStore.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
-export interface UnlockOptions {
+interface UnlockOptions {
   mode?: PersistenceMode
   username?: string
   password?: string
@@ -276,7 +276,7 @@ function applyHashZoomIfPresent() {
   }
 }
 
-const authMode = signal<PersistenceMode>('local')
+export const authMode = signal<PersistenceMode>('local')
 const filesystemReady = signal(false)
 const memoryReady = signal(false)
 // Set when a sign-up succeeded but produced no session because the project
@@ -302,7 +302,7 @@ savePipeline.install()
 const flushPendingSave = savePipeline.flush
 const clearPendingSave = savePipeline.clear
 
-export class RemoteDataDecryptError extends Error {
+class RemoteDataDecryptError extends Error {
   constructor() {
     super('Authenticated, but the remote data could not be decrypted with this passphrase.')
     this.name = 'RemoteDataDecryptError'

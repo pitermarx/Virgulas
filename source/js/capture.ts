@@ -13,15 +13,15 @@ import persistence from './persistence.js'
 import { bindDialogFocus } from './dialogs.js'
 
 export const quickCaptureOpen = signal(false)
-export const quickCaptureText = signal('')
-export const quickCaptureNotice = signal('')
+const quickCaptureText = signal('')
+const quickCaptureNotice = signal('')
 export const inboxNodeName = signal(inbox.getNodeName())
 
 /**
  * The capture request awaiting confirmation. Held here so the share-target
  * description survives into the queue entry; never written on arrival.
  */
-export const pendingCaptureIntent = signal<CaptureIntent | null>(null)
+const pendingCaptureIntent = signal<CaptureIntent | null>(null)
 
 // Decide the capture fast-path at module load: a capture URL is untrusted, so it
 // renders only the confirmation prompt (no auth bootstrap, KDF, decryption or
@@ -40,7 +40,7 @@ export function initCapture(handOver: () => void) {
 
 let quickCaptureNoticeTimer: ReturnType<typeof setTimeout> | null = null
 
-export function announceQuickCapture(message: string) {
+function announceQuickCapture(message: string) {
   quickCaptureNotice.value = message
   if (quickCaptureNoticeTimer !== null) clearTimeout(quickCaptureNoticeTimer)
   quickCaptureNoticeTimer = setTimeout(() => {
@@ -49,7 +49,7 @@ export function announceQuickCapture(message: string) {
   }, 5000)
 }
 
-export function reconcileInbox() {
+function reconcileInbox() {
   if (persistence.isLocked() || persistence.isMemory()) return 0
   const imported = inbox.reconcile()
   if (imported > 0) {
@@ -73,7 +73,7 @@ function enqueueIncomingCapture(text: string, description = '') {
   return true
 }
 
-export function closeQuickCapture() {
+function closeQuickCapture() {
   quickCaptureOpen.value = false
   quickCaptureText.value = ''
   pendingCaptureIntent.value = null
@@ -157,7 +157,7 @@ bindDialogFocus(quickCaptureOpen, {
   initial: () => document.querySelector<HTMLElement>('#quick-capture-input'),
 })
 
-export const CaptureSurface = () => html`
+const CaptureSurface = () => html`
   <div class="capture-only">
     ${quickCaptureOpen.value && html`<${QuickCapturePrompt} />`}
     <${QuickCaptureToast} />

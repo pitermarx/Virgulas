@@ -27,7 +27,7 @@ import { legacySlot, store, type StoreSlot } from './utils.js'
 type ClientFactory = (url: string, key: string, options?: any) => any
 
 /** The subset of the Web Storage API supabase-js uses for the auth session. */
-export interface SupabaseAuthStorage {
+interface SupabaseAuthStorage {
     getItem(key: string): string | null
     setItem(key: string, value: string): void
     removeItem(key: string): void
