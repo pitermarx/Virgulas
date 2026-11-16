@@ -95,4 +95,24 @@ describe('passphrase retention', () => {
           'submitResetRemoteData must clear the form copy on success'
       )
   })
+
+  it('revokes the device seal before the app can look locked', () => {
+      // The seal is the passphrase. Teardown locks the session, and the lock
+      // screen auto-unlocks with biometrics as soon as `isLocked()` is true; a
+      // seal that is still readable would resurrect the session being torn down
+      // (it finished after the memory boot and reset the mode to Remote).
+      const src = read('source/js/persistence.ts')
+      const teardowns = [
+          ['signOut', src.slice(src.indexOf('async signOut()'), src.indexOf('async deleteAccount()'))],
+          ['deleteAccount', src.slice(src.indexOf('async deleteAccount()'), src.indexOf('async pickNewFile()'))]
+      ] as const
+
+      for (const [name, body] of teardowns) {
+          const forget = body.indexOf('biometrics.forget()')
+          const lock = body.indexOf('markSessionUnlocked()')
+          assert(forget > -1, `${name} must revoke the device seal`)
+          assert(lock > -1, `${name} must lock the session`)
+          assert(forget < lock, `${name} must revoke the seal before reporting a locked session`)
+      }
+  })
 })

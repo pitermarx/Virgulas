@@ -834,12 +834,14 @@ export default {
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
+    // Revoke the device-local biometric seal before the app can look locked:
+    // the lock screen auto-unlocks with biometrics as soon as `isLocked()` is
+    // true, and a seal that is still readable would resurrect the session being
+    // torn down (it finished after the memory boot and reset the mode).
+    await biometrics.forget().catch(() => { })
     // Lock the session before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
     markSessionUnlocked()
-    // Revoke the device-local biometric seal: signing out means this device may no
-    // longer recover the passphrase without the user typing it.
-    await biometrics.forget().catch(() => { })
     await remoteSync.signOut()
     authMode.value = 'remote'
     filesystemReady.value = false
@@ -868,6 +870,9 @@ export default {
     stopPolling()
     clearPendingSave()
     keySession.lock()
+    // Same ordering as signOut: the seal must be gone before the app reports a
+    // locked session, or the biometric auto-unlock resurrects the deleted one.
+    await biometrics.forget().catch(() => { })
     markSessionUnlocked()
 
     await getRemoteStore()?.clear() ?? await remoteSync.deleteOutline()
