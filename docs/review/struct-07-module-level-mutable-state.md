@@ -3,10 +3,16 @@
 - **Severity:** Low
 - **Confidence:** code-read
 - **Spec impact:** none
+- **Status:** largely addressed. The save timers (`lastTimeoutId`, `maxWaitTimer`,
+  `pendingSave`, `activeSave`, `saveArmed`, `lastSavedVersion`) now live inside
+  one `createSavePipeline()` closure, and the deferred-push timer/payload pair is
+  gone entirely (the save edge writes the local copy on every save). What remains
+  is the engine's `remoteSyncQueue`, the `skipNextRemotePush` marker (consumed at
+  a single boundary) and the store handles.
 
 ## Description
 
-Timers and flags live as module variables: `lastTimeoutId`, `maxWaitTimer`, `pendingSave`, `activeSave`, `saveArmed`, `lastSavedVersion`, `deferredPushTimer`, `deferredPushPayload`, plus `_passphrase`, `_salt`, `lastCompletedRemotePush`, `remoteSyncQueue` and the cross-module `skipNextRemotePush` flag in `sync.ts`. Teardown paths (lock, sign-out, delete account, reset) must each remember to clear the right subset; the code carries comments about bugs that came from missing one.
+Timers and flags used to live as module variables: `lastTimeoutId`, `maxWaitTimer`, `pendingSave`, `activeSave`, `saveArmed`, `lastSavedVersion`, `deferredPushTimer`, `deferredPushPayload`, plus `_passphrase`, `_salt`, `lastCompletedRemotePush`, `remoteSyncQueue` and the cross-module `skipNextRemotePush` flag in `sync.ts`. Teardown paths (lock, sign-out, delete account, reset) must each remember to clear the right subset; the code carries comments about bugs that came from missing one.
 
 ## Evidence
 

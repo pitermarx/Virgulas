@@ -1,4 +1,4 @@
-import { signal, effect, createModel, type Signal } from "@preact/signals"
+import { signal, effect, createModel } from "@preact/signals"
 import { randomId, UnsupportedVersionError } from "./crypto2.js"
 import { CorruptDocumentError, MODEL_VERSION } from './model.js'
 import { parseVmdNodeLine, parseVmdTree, vmdNodeId, writeVmd, type OutlineDoc } from './docCodec.js'

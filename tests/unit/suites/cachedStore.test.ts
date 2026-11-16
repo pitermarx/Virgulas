@@ -7,7 +7,6 @@ import { describe, it } from 'bun:test'
 
 import { cached } from '../../../source/js/cachedStore.js'
 import { encrypted, createKeySession } from '../../../source/js/encryptedStore.js'
-import { slotRaw } from '../../../source/js/localStore.js'
 import { StoreError, type RawRecord, type RawStore, type StringStore } from '../../../source/js/storage.js'
 import { assert, assertEqual } from '../testing.js'
 
@@ -45,7 +44,7 @@ function fakeStringStore(label: string, log: string[], options: FakeStringOption
             log.push(`${label}:head`)
             return value === null ? null : `${label}-token`
         },
-        async unlock(passphrase: string) {
+        async unlock() {
             log.push(`${label}:unlock`)
             return { text: value, headToken: value === null ? null : `${label}-token` }
         },

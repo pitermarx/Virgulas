@@ -332,7 +332,9 @@ Responsibilities (all currently scattered in persistence flows, now in one place
    not linger until the next lock).
    This replaces today's three retention sites:
    `sync.ts _passphrase`, the `persistence.ts` passphrase signal, and the
-   `deferredPushPayload` copy. Orchestration holds no secrets (Goal 2).
+   old deferred-payload copy (the queue is gone: the durable local write happens
+   on every save, so nothing needs to be held for a later flush).
+   Orchestration holds no secrets (Goal 2).
 
 `KeySession` is internal to the crypto layer:
 
@@ -562,10 +564,9 @@ caller holds only the composed store. Both sides share the one `KeySession`
 | `unlock(pw)` | **primary only**; resolves with the primary's `UnlockResult`; a `network` error fails the unlock exactly as today — no cache fallback. A foreign-salt primary → `remote-rekeyed` (§4.3) | behaviour-preserving: today's `unlockRemote` verifies against the **remote** record, and an offline Remote reload needs connectivity. The passthrough means the caller never holds the inner string store. Offline unlock via the cache is a future capability (OQ 8), not a decorator side effect |
 | `clear()` | clear both | purge means purge everywhere |
 
-With `write()` taking an `OutlineDoc`, the orchestration's deferred-push queue
-holds **documents, not ciphertext**: `deferredPushPayload`'s
-`{ encrypted, salt, passphrase }` triple disappears, and a flush is just a
-re-run of `store.write(doc)` (Goal 2 becomes literally true).
+With `write()` taking an `OutlineDoc`, the save edge holds **documents, not
+ciphertext**: the old `{ encrypted, salt, passphrase }` triple is gone, and a
+Remote save is just `store.write(doc)` behind the sync engine (Goal 2).
 
 ---
 
@@ -692,16 +693,17 @@ every 60s:  token = remoteStore.head()
 - A pull whose merged document equals the remote content is applied locally
   but **not** written back. Without that guard, two open clients would each
   turn the other's poll into a new remote revision every 60 seconds.
-- Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff`,
-  `skipNextRemotePush` all stay in the orchestration, keyed off the typed
+- Scheduling, queueing, `remoteSyncNotBefore` backoff, `retryWithBackoff` and
+  the merge marker all stay in the orchestration, keyed off the typed
   `network`/`unauthenticated` errors. Stores do single operations only.
-  `remoteSave.ts` owns the save-side half: the injected store, the
-  pull-before-push cycle, the retry policy and the deferred queue;
-  `persistence.ts` keeps the debounce and session lifecycle.
-- The deferred-push queue holds **documents** (`{ doc, attempt }`), never
-  ciphertext/salt/passphrase — a flush re-runs `store.write(doc)`, and the
-  epoch-staleness guard (today's `isRemoteSyncAttemptStale`) makes the flush
-  write the latest document rather than a stale snapshot.
+  `syncEngine.ts` owns the one step: the injected store, the head probe, the
+  pull-before-push cycle, the retry policy, the clocks and the conflict
+  hand-off. `sync.ts` only schedules the poll and resolves the backend.
+- The Remote save edge (`persistence.ts`) keeps the durable local copy first:
+  while the user is typing, only the network push waits, and the next save
+  retries it. That is why there is no push queue any more: an edit is written
+  locally on every save (the 3 s maximum wait included), so it is never held
+  only in memory.
 - The poll defers to active local edits — unchanged.
 
 ### 6.5 Account deletion, purge, export/import
@@ -748,16 +750,19 @@ prompt instead of silently reverting the rotation (sync-01 fix).
 | `merge.ts` (new) | pure three-way merge over the model (baseline-aware) | from `sync.ts mergeDocuments` |
 | `memoryStore.ts`, `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters | from `persistence.ts` mode branches |
 | `supabaseBackend.ts` (new) | `RawStore` + `AuthProvider` over `@supabase/supabase-js` (dynamic import preserved) | from `sync.ts` |
-| `sync.ts` (shrinks) | scheduling, poll, backoff, status/conflict signals — no client code | remainder of current `sync.ts` |
-| `persistence.ts` (shrinks) | pure orchestration: boot, unlock UX wiring, autosave debounce, mode switching, store construction | remainder of current |
-| `remoteSave.ts` (new) | Remote save orchestration: injected store, pull-before-push, retry policy, deferred-push queue | `persistence.ts` `doSave` + deferred queue |
+| `syncEngine.ts` (new) | The single `syncOnce` pull-before-push step: injected store, head probe, merge hand-off, retry policy, `vmd_sync_head`/`vmd_sync_ts` clocks, typing gate, status/conflict signals, conflict resolution | from `sync.ts` |
+| `sync.ts` (shrinks) | Backend resolution, the `remoteSync` auth facade, the 60s poll schedule — no client code, no sync step | remainder of current `sync.ts` |
+| `persistence.ts` | orchestration: boot, unlock UX wiring, mode switching, store construction, and the Remote save edge (durable local copy first, network through `syncOnce`) | remainder of current |
+| `savePipeline.ts` (new) | the autosave pipeline: per-mode debounce, maximum wait, teardown flush, saved-version bookkeeping | `persistence.ts` save effect |
 | `crypto2.ts`, `outline.ts`, `biometrics.ts`, `utils.ts` | unchanged | — |
 
 Circular-dependency rule: adapters import `storage.ts` (contracts only); nothing
-below imports anything above. `persistence.ts`, `remoteSave.ts` and `sync.ts`
-sit at the top and are the only consumers of `merge` + `DocStore` together.
+below imports anything above. `persistence.ts` and `sync.ts` sit at the top;
+`syncEngine.ts` is their single consumer of `merge` + `DocStore` together.
 
-Module size rule: each new module is well under the 350–450 line split threshold.
+Module size rule: modules split when they mix concerns (AGENTS.md).
+`syncEngine.ts` stays one concern — the single step — even though its
+documentation takes it past the 450-line guideline.
 
 ---
 

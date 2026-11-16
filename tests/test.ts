@@ -1,4 +1,4 @@
-import { test as base, expect, type Locator, type Page } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
 
 const env =
     (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
@@ -239,3 +239,256 @@ export async function setupDoc(
     await page.goto('/');
     await unlockApp(page, passphrase);
 }
+
+// ── Remote-mode helpers ──────────────────────────────────────────────────────
+
+/** An encrypted row as the backend stores it: `<salt>` + `<envelope>`. */
+export interface MockRecord {
+    salt: string;
+    data: string;
+    updated_at?: string;
+}
+
+/**
+ * Encrypts a document in the runner — no page load, no app bundle, no reload.
+ * Accepts the nested shape used by `setupDoc` or a flat `OutlineDoc`.
+ */
+export async function encryptMockDoc(
+    doc: NestedNode | { nodes: unknown[] },
+    passphrase = 'password'
+): Promise<MockRecord> {
+    const flat = 'nodes' in doc ? doc : nestedToFlat(doc as NestedNode);
+    const salt = Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(16))).toString('base64');
+    return { salt, data: await encryptForSeed(JSON.stringify(flat), passphrase, salt) };
+}
+
+export interface MockSupabaseOptions {
+    userEmail?: string | null;
+    userId?: string;
+    /** The record the device downloads (and unlocks) with. */
+    downloadData?: MockRecord | null;
+    /** Sign-in / sign-up rejection message. */
+    authErrorMessage?: string | null;
+    /** Sign-up succeeds but returns no session, like a confirmation-required project. */
+    confirmRequired?: boolean;
+    /** Fail every upsert (runtime-mutable through `__mockSupabase.failUpserts`). */
+    alwaysFailUpsert?: boolean;
+    /** Delay only the first upsert, to observe the syncing state. */
+    firstUpsertDelayMs?: number;
+    /** Every head() probe reports a fresh timestamp, so the poll always pulls. */
+    headAdvances?: boolean;
+    /** Shrink the 60 s poll interval to 60 ms. */
+    speedUpPolling?: boolean;
+    rememberedMode?: 'local' | 'remote' | null;
+    /** Clear localStorage once before the app boots. */
+    resetStorage?: boolean;
+    /** Accelerate the retry backoff. */
+    retryBaseMs?: number;
+}
+
+/**
+ * Installs the mocked Supabase client behind the `__TEST_HOOKS__` seam, with a
+ * one-shot storage seed. Exposes live state at `window.__mockSupabase`:
+ * `{ serverRecord, upsertCallCount, upserts, headCalls, readCalls,
+ *    updateCalls, deleteCalls }`.
+ */
+export async function installMockSupabase(
+    page: import('@playwright/test').Page,
+    options: MockSupabaseOptions = {}
+) {
+    await page.addInitScript((options: MockSupabaseOptions) => {
+        const withStamp = (record: MockRecord, stamp: string) => ({
+            salt: record.salt,
+            data: record.data,
+            updated_at: record.updated_at ?? stamp
+        });
+        const now = new Date().toISOString();
+        const downloaded = options.downloadData ? withStamp(options.downloadData, now) : null;
+        const state: any = {
+            serverRecord: downloaded,
+            upsertCallCount: 0,
+            upserts: [] as unknown[],
+            headCalls: 0,
+            readCalls: 0,
+            updateCalls: [] as Record<string, unknown>[],
+            deleteCalls: [] as Record<string, unknown>[],
+            // Mutable at runtime, so a test can start failing after the unlock
+            // save has settled instead of racing it.
+            failUpserts: options.alwaysFailUpsert === true,
+            // A test sets this at runtime to fail the next N attempts.
+            failUpsertTimes: 0
+        };
+        (window as any).__mockSupabase = state;
+        if (options.retryBaseMs != null) (window as any).__retryBaseMs = options.retryBaseMs;
+        if (options.speedUpPolling) {
+            const nativeSetInterval = window.setInterval.bind(window);
+            window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: any[]) =>
+                nativeSetInterval(handler, timeout === 60_000 ? 60 : timeout, ...args)) as typeof window.setInterval;
+        }
+
+        const session: { user: { id: string; email: string } | null } = {
+            user: options.userEmail ? { id: options.userId ?? 'user-1', email: options.userEmail } : null
+        };
+
+        const builder = () => {
+            let columns = '';
+            const query: any = {
+                select: (next?: string) => { columns = next ?? ''; return query; },
+                eq: () => query,
+                single: async () => {
+                    if (columns === 'updated_at') {
+                        state.headCalls++;
+                        if (options.headAdvances) {
+                            return { data: { updated_at: new Date(Date.now() + state.headCalls).toISOString() }, error: null };
+                        }
+                        return state.serverRecord
+                            ? { data: { updated_at: state.serverRecord.updated_at }, error: null }
+                            : { data: null, error: { code: 'PGRST116' } };
+                    }
+                    state.readCalls++;
+                    return state.serverRecord
+                        ? { data: state.serverRecord, error: null }
+                        : { data: null, error: { code: 'PGRST116' } };
+                },
+                upsert: (payload: MockRecord) => ({
+                    select: () => ({
+                        single: async () => {
+                            state.upsertCallCount++;
+                            state.upserts.push({ ...payload });
+                            if (options.firstUpsertDelayMs && state.upsertCallCount === 1) {
+                                await new Promise<void>(resolve => setTimeout(resolve, options.firstUpsertDelayMs));
+                            }
+                            if (state.failUpserts || state.failUpsertTimes > 0) {
+                                if (state.failUpsertTimes > 0) state.failUpsertTimes--;
+                                return { data: null, error: { message: 'mock network error', code: '503' } };
+                            }
+                            state.serverRecord = {
+                                salt: payload.salt,
+                                data: payload.data,
+                                updated_at: payload.updated_at ?? new Date().toISOString()
+                            };
+                            return { data: { updated_at: state.serverRecord.updated_at }, error: null };
+                        }
+                    })
+                }),
+                delete: () => ({
+                    eq: async (column: string, value: string) => {
+                        state.deleteCalls.push({ [column]: value });
+                        state.serverRecord = null;
+                        return { data: null, error: null };
+                    }
+                })
+            };
+            return query;
+        };
+
+        const auth = {
+            signInWithPassword: async ({ email }: { email: string }) => {
+                if (options.authErrorMessage) return { data: { user: null }, error: { message: options.authErrorMessage } };
+                session.user = { id: options.userId ?? 'user-1', email };
+                return { data: { user: session.user }, error: null };
+            },
+            signUp: async ({ email }: { email: string }) => {
+                if (options.authErrorMessage) return { data: { user: null }, error: { message: options.authErrorMessage } };
+                if (options.confirmRequired) {
+                    session.user = null;
+                    return { data: { user: { id: options.userId ?? 'user-1', email }, session: null }, error: null };
+                }
+                session.user = { id: options.userId ?? 'user-1', email };
+                return { data: { user: session.user, session: { access_token: 't' } }, error: null };
+            },
+            signOut: async () => { session.user = null; return { error: null }; },
+            getSession: async () => ({ data: { session: session.user ? { user: session.user } : null }, error: null }),
+            getUser: async () => ({ data: { user: session.user }, error: null }),
+            updateUser: async (payload: Record<string, unknown>) => {
+                state.updateCalls.push(payload);
+                return { data: { user: session.user }, error: null };
+            },
+            resetPasswordForEmail: async () => ({ error: null })
+        };
+
+        Object.defineProperty(window, 'supabase', {
+            configurable: true,
+            get: () => ({ createClient: () => ({ auth, from: builder }) }),
+            set: () => { }
+        });
+
+        const seedKey = 'vmd-mock-supabase-seeded';
+        if (!sessionStorage.getItem(seedKey) && options.resetStorage) {
+            sessionStorage.setItem(seedKey, '1');
+            localStorage.clear();
+        }
+        if (options.rememberedMode) localStorage.setItem('vmd_last_mode', options.rememberedMode);
+        localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+    }, options);
+}
+
+/** Walk the storage wizard from wherever it is to the remote credentials form. */
+export async function openStorageWizard(page: import('@playwright/test').Page) {
+    const group = page.locator('.wizard-options');
+    if (await group.isVisible().catch(() => false)) return;
+    const changeMode = page.getByRole('button', { name: /Change mode/i });
+    await expect(changeMode).toBeVisible({ timeout: 10000 });
+    await changeMode.click();
+    await expect(group).toBeVisible({ timeout: 10000 });
+}
+
+/**
+ * Unlock into Remote mode through the UI, from whichever step the lock screen
+ * is on: the memory-mode banner, the account credentials step, or the
+ * passphrase step of a still-valid session. Waits for the app to render.
+ */
+export async function unlockRemote(
+    page: import('@playwright/test').Page,
+    options: { email?: string; password?: string; passphrase?: string } = {}
+) {
+    const email = page.getByLabel('Email');
+    const enable = page.getByRole('button', { name: /Enable Secure Storage/i });
+    const passphrase = page.locator('#auth-passphrase');
+    await expect(email.or(passphrase).or(enable).first()).toBeVisible({ timeout: 15000 });
+
+    if (await enable.isVisible().catch(() => false)) {
+        await enable.click();
+        await page.getByRole('button', { name: /In the cloud/ }).click();
+    }
+    if (await email.isVisible().catch(() => false)) {
+        await email.fill(options.email ?? 'a@b.com');
+        await page.getByLabel('Account password').fill(options.password ?? 'pw123456');
+        await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    }
+    await page.getByLabel('Encryption passphrase').fill(options.passphrase ?? 'password');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+}
+
+/** Focus the first visible node and type into its editor. */
+export async function editFirstNodeText(page: import('@playwright/test').Page, text: string) {
+    const input = page.locator('.node-content input').first();
+    if (await input.count() === 0) {
+        await page.locator('.node-text-md').first().click();
+    }
+    await page.locator('.node-content input').first().fill(text);
+}
+
+/** Update the first root child through the model (no focus/editor involved). */
+export async function setFirstNodeTextViaModel(page: import('@playwright/test').Page, text: string) {
+    await page.evaluate(async ({ text }: { text: string }) => {
+        const outline = (await import('/js/app.js' as string)).e2e.outline as any;
+        const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
+        if (rootChildren.length > 0) outline.updateNode(rootChildren[0], { text });
+    }, { text });
+}
+
+/** Decrypt the mocked server row and return the first node's text. */
+export async function remoteFirstNodeText(page: import('@playwright/test').Page, passphrase: string) {
+    return page.evaluate(async ({ passphrase }: { passphrase: string }) => {
+        const { decrypt } = (await import('/js/app.js' as string)).e2e;
+        const record = (window as any).__mockSupabase?.serverRecord;
+        if (!record?.data || !record?.salt) return null;
+        const doc = JSON.parse(await decrypt(record.data, passphrase, record.salt));
+        const root = doc.nodes.find((node: any) => node.id === 'root');
+        const firstChildId = root?.children?.[0];
+        return doc.nodes.find((node: any) => node.id === firstChildId)?.text || null;
+    }, { passphrase });
+}
+

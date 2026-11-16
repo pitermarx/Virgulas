@@ -3,6 +3,10 @@
 - **Severity:** High (it is how sync-01 and sync-02 happened)
 - **Confidence:** code-read
 - **Spec impact:** none
+- **Status:** implemented on this branch — `syncEngine.ts` owns the one
+  `syncOnce({ doc?, attempt })` step and returns a typed `SyncOutcome`; the
+  persistence save edge and `sync.ts` only decide when to call it. Delete this
+  item when the change merges.
 
 ## Description
 
@@ -16,8 +20,8 @@ They differ in subtle ways: which paths call `recordCompletedRemotePush`, which 
 
 ## Evidence
 
-- [source/js/persistence.ts](../../source/js/persistence.ts) (`flushDeferredPush`, `doSave`)
-- [source/js/sync.ts](../../source/js/sync.ts) (`startPolling`, `resolveConflicts`)
+- [source/js/persistence.ts](../../source/js/persistence.ts) (the Remote save edge)
+- [source/js/syncEngine.ts](../../source/js/syncEngine.ts) (`syncOnce`)
 
 ## Suggested fix
 

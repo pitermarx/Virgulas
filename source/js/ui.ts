@@ -1,14 +1,13 @@
 import { html } from 'htm/preact';
-import { signal, computed, effect } from '@preact/signals';
+import { signal, effect } from '@preact/signals';
 import outline from "./outline.js"
 import persistence, { localSaveFailed } from './persistence.js';
 import { renderInlineMarkdown, renderBlockMarkdown } from './markdown.js';
-import { log, isMobile, store, appVersion } from './utils.js';
+import { isMobile, store } from './utils.js';
 import { keydown, zoomIn, toggleSearchMode, handleSearchKeyDown, enterSearchMode, tasksPanelOpen, optionsOpen, suppressUnhandledBackspace } from './shortcuts.js';
 import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, getFirstClosedParent, resetSearchNavigation } from './search.js';
-import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './sync.js';
-import { openDialogFocus } from './dialogs.js';
-import { groupedTasks, pendingTaskCount, hasOverdueTasks } from './tasks.js';
+import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './syncEngine.js';
+import { groupedTasks, hasOverdueTasks } from './tasks.js';
 import { formatDueDate, daysUntilDue } from './meta.js';
 
 const focusId = signal<string | null>(null)
@@ -19,12 +18,12 @@ const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
 // ── Static shell modals (keyboard shortcuts) ─────────────────────────────────
 // Previously inline <script>/onclick handlers in index.html; moved here so the
 // page can ship a strict script-src CSP without 'unsafe-inline'.
-export function openModal(id: string) {
+function openModal(id: string) {
   const modal = document.getElementById(id)
   if (modal) modal.style.display = ''
 }
 
-export function closeModals(event: Event) {
+function closeModals(event: Event) {
   const target = event.target as Element | null
   if (!target?.classList) return
   const isOverlay = target.classList.contains('modal-overlay')
@@ -442,7 +441,6 @@ function Node({ node, indent = 0 }: any) {
 
 // ── Tasks Panel ───────────────────────────────────────────────────────────────
 
-const doneGroupExpanded = signal(false)
 const WIDE_LAYOUT_QUERY = '(min-width: 1160px)'
 
 // True when id is already visible in the current view: it is the zoomed node
@@ -459,7 +457,7 @@ function isNodeVisibleInZoom(id: string, zoomId: string) {
     return false
 }
 
-function TaskRow({ item, onNavigate }: any) {
+function TaskRow({ item }: any) {
     const node = outline.get(item.id)
     if (!node) return null
 
@@ -525,7 +523,7 @@ function TaskGroup({ title, items, defaultExpanded = true }: any) {
 
 // Scheduled group windows: how many days out to show by default (persisted).
 const SCHEDULED_WINDOW_OPTIONS = [3, 7, 30, Infinity]
-export const scheduledWindowDays = signal(Number(store.scheduledWindow.get('3')) || 3)
+const scheduledWindowDays = signal(Number(store.scheduledWindow.get('3')) || 3)
 
 function setScheduledWindow(days: number) {
     scheduledWindowDays.value = days
@@ -630,8 +628,6 @@ export function StatusToolbar() {
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
     const label = SYNC_LABELS[syncState] || syncState
-    const pendingCount = pendingTaskCount.value
-    const hasFocusedNode = focusId.value !== null
 
     return html`
     <div class="status-toolbar" role="contentinfo">

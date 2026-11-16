@@ -1,4 +1,4 @@
-import { setupDoc, submitUnlock, test, expect } from '../test';
+import { submitUnlock, test, expect } from '../test';
 
 // Follows https://specification.website. Covers the served behaviour of the
 // artifacts added for the crawl/discovery/security/a11y required tier.

@@ -1,132 +1,16 @@
-import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp } from '../test';
+import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp, encryptMockDoc, installMockSupabase, openStorageWizard } from '../test';
 
-const installMockSupabase = async (page: Page, options?: {
-  userEmail?: string;
-  authErrorMessage?: string;
-  downloadData?: { salt: string; data: string; updated_at?: string } | null;
-}) => {
-  await page.addInitScript(({ userEmail, authErrorMessage, downloadData }) => {
-    const initialServerRecord = downloadData
-      ? {
-        salt: downloadData.salt,
-        data: downloadData.data,
-        updated_at: downloadData.updated_at || new Date().toISOString()
-      }
-      : null;
+/** Encrypt a document for a mock server record (runner-side, no page load). */
+const remoteRecord = (passphrase: string, doc: Record<string, unknown>) =>
+  encryptMockDoc(doc as { nodes: unknown[] }, passphrase);
 
-    (window as any).__mockSupabaseState = {
-      serverRecord: initialServerRecord
-    };
-
-    const sessionState = {
-      user: userEmail ? { id: 'user-1', email: userEmail } : null as any
-    };
-
-    const queryBuilder = {
-      select: () => queryBuilder,
-      eq: () => queryBuilder,
-      single: async () => (window as any).__mockSupabaseState.serverRecord
-        ? { data: (window as any).__mockSupabaseState.serverRecord, error: null }
-        : { data: null, error: { code: 'PGRST116' } },
-      upsert: (payload: { salt: string; data: string; updated_at: string }) => ({
-        select: () => ({
-          single: async () => {
-            (window as any).__mockSupabaseState.serverRecord = {
-              salt: payload.salt,
-              data: payload.data,
-              updated_at: payload.updated_at
-            };
-            return { data: { updated_at: payload.updated_at }, error: null };
-          }
-        })
-      })
-    };
-
-    const client = {
-      auth: {
-        signInWithPassword: async ({ email }: { email: string }) => {
-          if (authErrorMessage) return { data: { user: null }, error: { message: authErrorMessage } };
-          sessionState.user = { id: 'user-1', email };
-          return { data: { user: sessionState.user }, error: null };
-        },
-        signUp: async ({ email }: { email: string }) => {
-          if (authErrorMessage) return { data: { user: null }, error: { message: authErrorMessage } };
-          sessionState.user = { id: 'user-1', email };
-          return { data: { user: sessionState.user }, error: null };
-        },
-        signOut: async () => {
-          sessionState.user = null;
-          return { error: null };
-        },
-        getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-        getUser: async () => ({ data: { user: sessionState.user }, error: null })
-      },
-      from: () => queryBuilder
-    };
-
-    Object.defineProperty(window, 'supabase', {
-      configurable: true,
-      get: () => ({
-        createClient: () => client
-      }),
-      set: () => { }
-    });
-
-    localStorage.setItem('backendconfig', JSON.stringify({
-      url: 'http://127.0.0.1:54321',
-      key: 'anon'
-    }));
-  }, options ?? {});
-};
-
-const createEncryptedPayload = async (
-  page: Page,
-  passphrase: string,
-  doc: Record<string, unknown>
-) => {
-  return await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
-    const { encrypt } = (await import('/js/app.js' as string)).e2e;
-    const outline = (await import('/js/app.js' as string)).e2e.outline;
-    outline.reset();
-    function loadChildren(children: any[], parentId: string) {
-      for (const child of children || []) {
-        outline.addChild(parentId, { id: child.id, text: child.text });
-        loadChildren(child.children || [], child.id);
-      }
-    }
-    loadChildren(doc.children || [], 'root');
-    const json = outline.serialize();
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-    const salt = btoa(String.fromCharCode(...saltBytes));
-    const data = await encrypt(json, passphrase, salt);
-    return { salt, data };
-  }, { passphrase, doc });
-};
-
-const seedEncryptedLocalDoc = async (
-  page: Page,
-  passphrase: string,
-  doc: Record<string, unknown>
-) => {
-  await page.evaluate(async ({ passphrase, doc }: { passphrase: string; doc: any }) => {
+const seedEncryptedLocalDoc = async (page: Page, passphrase: string, doc: Record<string, unknown>) => {
+  const record = await remoteRecord(passphrase, doc);
+  await page.evaluate(({ record }) => {
     localStorage.clear();
-    const { encrypt } = (await import('/js/app.js' as string)).e2e;
-    const outline = (await import('/js/app.js' as string)).e2e.outline;
-    outline.reset();
-    function loadChildren(children: any[], parentId: string) {
-      for (const child of children || []) {
-        outline.addChild(parentId, { id: child.id, text: child.text });
-        loadChildren(child.children || [], child.id);
-      }
-    }
-    loadChildren(doc.children || [], 'root');
-    const json = outline.serialize();
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-    const salt = btoa(String.fromCharCode(...saltBytes));
-    const encrypted = await encrypt(json, passphrase, salt);
-    localStorage.setItem('vmd_data_enc', `${salt}|${encrypted}`);
+    localStorage.setItem('vmd_data_enc', `${record.salt}|${record.data}`);
     localStorage.setItem('vmd_last_mode', 'local');
-  }, { passphrase, doc });
+  }, { record });
 };
 
 const corruptLocalEncryptedDoc = async (page: Page) => {
@@ -136,17 +20,6 @@ const corruptLocalEncryptedDoc = async (page: Page) => {
     if (!stored || separatorIndex < 0) throw new Error('No encrypted local document to corrupt');
     localStorage.setItem('vmd_data_enc', `${stored.slice(0, separatorIndex)}|v2:not-a-number:abc`);
   });
-};
-
-const openAdvancedStorageOptions = async (page: Page) => {
-  const wizardGroup = page.locator('.wizard-options');
-  if (await wizardGroup.isVisible().catch(() => false)) {
-    return;
-  }
-  const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
-  await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
-  await changeModeBtn.click();
-  await expect(wizardGroup).toBeVisible({ timeout: 10000 });
 };
 
 test.describe('Authentication', () => {
@@ -326,7 +199,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page);
     await page.goto('/');
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
 
@@ -410,7 +283,7 @@ test.describe('Authentication', () => {
   test('first load can sign in before passphrase creation and switch to unlock for synced data', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [
@@ -425,7 +298,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
     await page.getByLabel('Email').fill('existing@virgulas.com');
@@ -453,7 +326,7 @@ test.describe('Authentication', () => {
   test('valid remote session preselects remote and only needs passphrase to unlock', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [{ id: 'remote-1', text: 'From Server', children: [] }]
@@ -480,7 +353,7 @@ test.describe('Authentication', () => {
   test('switching valid remote session to local signs out after confirmation', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
@@ -514,7 +387,7 @@ test.describe('Authentication', () => {
   test('remote "Sign out" can be dismissed from Options', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
@@ -547,7 +420,7 @@ test.describe('Authentication', () => {
   test('remote "Sign out" confirms and returns to memory mode', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [{ id: 'remote-2', text: 'Remote Data', children: [] }]
@@ -628,10 +501,10 @@ test.describe('Authentication', () => {
       localStorage.clear();
       localStorage.setItem('vmd_last_mode', 'local');
     });
-    await installMockSupabase(page);
+    await installMockSupabase(page, { confirmRequired: true });
     await page.reload();
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
     await page.getByLabel('Email').fill('mock-signup@virgulas.com');
@@ -657,7 +530,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { authErrorMessage: 'Invalid login credentials' });
     await page.reload();
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
     await page.getByLabel('Email').fill('mock-error@virgulas.com');
@@ -673,7 +546,7 @@ test.describe('Authentication', () => {
   test('remote decrypt failure offers reset with new passphrase', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'old-passphrase', {
+    const remoteDoc = await remoteRecord('old-passphrase', {
       id: 'root',
       text: 'Legacy Remote',
       children: []
@@ -686,7 +559,7 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { downloadData: remoteDoc });
     await page.reload();
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
     await page.getByLabel('Email').fill('recover@virgulas.com');
@@ -714,13 +587,13 @@ test.describe('Authentication', () => {
     });
     await page.reload();
 
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
 
     await page.getByRole('button', { name: /In the cloud/ }).click();
     await page.reload();
     await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'remote');
 
-    await openAdvancedStorageOptions(page); // no session → goes to choose-mode without dialog
+    await openStorageWizard(page); // no session → goes to choose-mode without dialog
     await page.getByRole('button', { name: /On this device/ }).click();
     await page.getByRole('button', { name: /Encrypted storage/ }).click();
     await page.reload();
@@ -755,7 +628,7 @@ test.describe('Authentication', () => {
     });
 
     await page.goto('/');
-    await openAdvancedStorageOptions(page);
+    await openStorageWizard(page);
     await page.getByRole('button', { name: /On this device/ }).click();
     await page.getByRole('button', { name: /.vmd file/ }).click();
     await expect(page.getByText('File System Access API is not supported in this browser.')).toBeVisible();
@@ -955,7 +828,7 @@ test.describe('Authentication', () => {
   test('remote unlock applies URL hash zoom target', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [
@@ -1032,7 +905,7 @@ test.describe('Authentication', () => {
   test('sign out returns to the in-memory demo and remembers memory mode', async ({ page }) => {
     await page.goto('/');
 
-    const remoteDoc = await createEncryptedPayload(page, 'remote-passphrase', {
+    const remoteDoc = await remoteRecord('remote-passphrase', {
       id: 'root',
       text: 'Remote Root',
       children: [{ id: 'r1', text: 'Remote Data', children: [] }]

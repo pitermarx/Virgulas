@@ -1,156 +1,35 @@
-import { test, expect, pickStorageMode, type Page } from '../test';
+import {
+    test,
+    expect,
+    type Page,
+    encryptMockDoc,
+    installMockSupabase,    unlockRemote,
+    editFirstNodeText,
+    setFirstNodeTextViaModel,
+    remoteFirstNodeText
+} from '../test';
 
-/** Installs a mock Supabase client with configurable upsert behaviour. */
-const installFailingMockSupabase = async (
-    page: Page,
-    options: {
-        userEmail?: string;
-        downloadData?: { salt: string; data: string } | null;
-        failUpsertTimes?: number;   // fail the first N upsert calls, then succeed
-        alwaysFailUpsert?: boolean; // fail every upsert call regardless
-    } = {}
-) => {
-    await page.addInitScript(
-        ({ userEmail, downloadData, failUpsertTimes, alwaysFailUpsert }) => {
-            const initialRecord = downloadData
-                ? { salt: downloadData.salt, data: downloadData.data, updated_at: new Date().toISOString() }
-                : null;
+/** The document every payload starts from: one node, "Sync Test Node". */
+const syncDoc = { id: 'root', text: 'Root', children: [{ id: 'n1', text: 'Sync Test Node', children: [] }] };
 
-            (window as any).__mockSupabaseState = {
-                serverRecord: initialRecord,
-                upsertCallCount: 0
-            };
+// ─── adapters kept for the call sites below ───────────────────────────────────
 
-            const sessionState = {
-                user: userEmail ? { id: 'user-sync', email: userEmail } : null as any
-            };
+/** The mock network fails the scripted upserts with the accelerated backoff. */
+const installFailingMockSupabase = (page: Page, options: Parameters<typeof installMockSupabase>[1] = {}) =>
+    installMockSupabase(page, { rememberedMode: 'remote', retryBaseMs: 30, ...options });
 
-            const queryBuilder = {
-                select: () => queryBuilder,
-                eq: () => queryBuilder,
-                single: async () =>
-                    (window as any).__mockSupabaseState.serverRecord
-                        ? { data: (window as any).__mockSupabaseState.serverRecord, error: null }
-                        : { data: null, error: { code: 'PGRST116' } },
-                upsert: (payload: { salt: string; data: string; updated_at: string }) => {
-                    (window as any).__mockSupabaseState.upsertCallCount++;
-                    const callNo = (window as any).__mockSupabaseState.upsertCallCount;
-                    const shouldFail = alwaysFailUpsert || (failUpsertTimes != null && callNo <= failUpsertTimes);
-                    return {
-                        select: () => ({
-                            single: async () => {
-                                if (shouldFail) {
-                                    return { data: null, error: { message: 'mock network error', code: '503' } };
-                                }
-                                (window as any).__mockSupabaseState.serverRecord = {
-                                    salt: payload.salt,
-                                    data: payload.data,
-                                    updated_at: payload.updated_at
-                                };
-                                return { data: { updated_at: payload.updated_at }, error: null };
-                            }
-                        })
-                    };
-                }
-            };
+/** Encrypt the standard sync document (runner-side, no page load). */
+const buildEncryptedPayload = (_page: Page, passphrase: string) => encryptMockDoc(syncDoc, passphrase);
 
-            const client = {
-                auth: {
-                    signInWithPassword: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'user-sync', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signUp: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'user-sync', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signOut: async () => { sessionState.user = null; return { error: null }; },
-                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
-                },
-                from: () => queryBuilder
-            };
+/** Unlock with the four-argument shape the sync tests use. */
+const unlockSync = (page: Page, email: string, accountPass: string, passphrase: string) =>
+    unlockRemote(page, { email, password: accountPass, passphrase });
 
-            Object.defineProperty(window, 'supabase', {
-                configurable: true,
-                get: () => ({ createClient: () => client }),
-                set: () => { }
-            });
+const editFirstNode = (page: Page, text: string) => editFirstNodeText(page, text);
 
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
-        },
-        options
-    );
-};
+const updateFirstNodeViaModel = (page: Page, text: string) => setFirstNodeTextViaModel(page, text);
 
-/** Encrypts a doc and returns { salt, data } using the page's crypto module. */
-const buildEncryptedPayload = async (page: Page, passphrase: string) => {
-    return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { encrypt } = (await import('/js/app.js' as string)).e2e;
-        const outline = (await import('/js/app.js' as string)).e2e.outline;
-        outline.reset();
-        outline.addChild('root', { text: 'Sync Test Node' });
-        const json = outline.serialize();
-        const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-        const salt = btoa(String.fromCharCode(...saltBytes));
-        const data = await encrypt(json, passphrase, salt);
-        return { salt, data };
-    }, { passphrase });
-};
-
-const openAdvancedStorageOptions = async (page: Page) => {
-  const wizardGroup = page.locator('.wizard-options');
-  if (await wizardGroup.isVisible().catch(() => false)) {
-    return;
-  }
-  const changeModeBtn = page.getByRole('button', { name: /Change mode/i });
-  await expect(changeModeBtn).toBeVisible({ timeout: 10000 });
-  await changeModeBtn.click();
-  await expect(wizardGroup).toBeVisible({ timeout: 10000 });
-};
-
-/** Unlock the app in remote mode via the lock screen UI. */
-const unlockRemote = async (page: Page, email: string, accountPass: string, passphrase: string) => {
-    await pickStorageMode(page, 'remote');
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Account password').fill(accountPass);
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await page.getByLabel('Encryption passphrase').fill(passphrase);
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
-};
-
-/** Trigger an edit on the first visible node. */
-const editFirstNode = async (page: Page, text: string) => {
-    const existingInput = page.locator('.node-content input').first();
-    if (await existingInput.count() === 0) {
-        await page.locator('.node-text-md').first().click();
-    }
-    await page.locator('.node-content input').first().fill(text);
-};
-
-const updateFirstNodeViaModel = async (page: Page, text: string) => {
-    await page.evaluate(async ({ text }: { text: string }) => {
-        const outline = (await import('/js/app.js' as string)).e2e.outline as any;
-        const rootChildren: string[] = outline.get('root')?.children?.peek?.() || [];
-        if (rootChildren.length > 0) {
-            outline.updateNode(rootChildren[0], { text });
-        }
-    }, { text });
-};
-
-const readRemoteFirstNodeText = async (page: Page, passphrase: string) => {
-    return await page.evaluate(async ({ passphrase }: { passphrase: string }) => {
-        const { decrypt } = (await import('/js/app.js' as string)).e2e;
-        const record = (window as any).__mockSupabaseState.serverRecord;
-        if (!record?.data || !record?.salt) return null;
-        const json = await decrypt(record.data, passphrase, record.salt);
-        const doc = JSON.parse(json);
-        const root = doc.nodes.find((node: any) => node.id === 'root');
-        const firstChildId = root?.children?.[0];
-        return doc.nodes.find((node: any) => node.id === firstChildId)?.text || null;
-    }, { passphrase });
-};
+const readRemoteFirstNodeText = (page: Page, passphrase: string) => remoteFirstNodeText(page, passphrase);
 
 test.describe('Sync status indicator', () => {
     test('sync-dot shows synced after a successful remote upload', async ({ page }) => {
@@ -163,7 +42,7 @@ test.describe('Sync status indicator', () => {
         await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
 
         await editFirstNode(page, 'Synced Edit');
 
@@ -184,7 +63,7 @@ test.describe('Sync status indicator', () => {
         await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
 
         await editFirstNode(page, 'Error Edit');
 
@@ -209,7 +88,7 @@ test.describe('Sync status indicator', () => {
         });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
 
         await editFirstNode(page, 'Offline Edit');
 
@@ -222,52 +101,15 @@ test.describe('Sync status indicator', () => {
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
 
-        // Add a small delay to upsert so we can catch the 'syncing' state
-        await page.addInitScript(({ downloadData }: { downloadData: { salt: string; data: string } }) => {
-            (window as any).__retryBaseMs = 30;
-            const initialRecord = { ...downloadData, updated_at: new Date().toISOString() };
-            (window as any).__mockSupabaseState = { serverRecord: initialRecord, upsertCallCount: 0 };
-
-            const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
-            const queryBuilder = {
-                select: () => queryBuilder, eq: () => queryBuilder,
-                single: async () => ({ data: (window as any).__mockSupabaseState.serverRecord, error: null }),
-                upsert: (payload: any) => {
-                    (window as any).__mockSupabaseState.upsertCallCount++;
-                    return {
-                        select: () => ({
-                            single: async () => {
-                                // Long delay so Playwright can reliably observe the 'syncing' DOM state
-                                await new Promise<void>(r => setTimeout(r, 3000));
-                                (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
-                                return { data: { updated_at: payload.updated_at }, error: null };
-                            }
-                        })
-                    };
-                }
-            };
-            const client = {
-                auth: {
-                    signInWithPassword: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signUp: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signOut: async () => { sessionState.user = null; return { error: null }; },
-                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
-                },
-                from: () => queryBuilder
-            };
-            Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => { } });
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
-        }, { downloadData: payload });
+        // Delay the first upsert so Playwright can observe the 'syncing' state.
+        await installFailingMockSupabase(page, {
+            userEmail: 'user@test.com',
+            downloadData: payload,
+            firstUpsertDelayMs: 3000
+        });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
 
         await editFirstNode(page, 'Transition Edit');
 
@@ -288,7 +130,10 @@ test.describe('Sync status indicator', () => {
         await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
+        // The unlock itself arms one save; settle it so it cannot pollute the count.
+        await settleUnlockSave(page);
+        const baseline = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
 
         // Two edits in quick succession: the second lands before the write
         // debounce fires, so only the final text may be uploaded. No sleep
@@ -298,7 +143,7 @@ test.describe('Sync status indicator', () => {
 
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 5000 });
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            () => page.evaluate((base) => (window as any).__mockSupabase.upsertCallCount - base, baseline),
             { timeout: 5000, intervals: [100] }
         ).toBe(1);
 
@@ -311,60 +156,15 @@ test.describe('Sync status indicator', () => {
         const payload = await buildEncryptedPayload(page, passphrase);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
-        await page.addInitScript(({ downloadData }: { downloadData: { salt: string; data: string } }) => {
-            (window as any).__retryBaseMs = 30;
-            const initialRecord = { ...downloadData, updated_at: new Date().toISOString() };
-            (window as any).__mockSupabaseState = { serverRecord: initialRecord, upsertCallCount: 0 };
-
-            const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
-            const queryBuilder = {
-                select: () => queryBuilder,
-                eq: () => queryBuilder,
-                single: async () => ({ data: (window as any).__mockSupabaseState.serverRecord, error: null }),
-                upsert: (payload: any) => {
-                    (window as any).__mockSupabaseState.upsertCallCount++;
-                    const callNo = (window as any).__mockSupabaseState.upsertCallCount;
-                    return {
-                        select: () => ({
-                            single: async () => {
-                                if (callNo === 1) {
-                                    await new Promise<void>(r => setTimeout(r, 2500));
-                                }
-                                (window as any).__mockSupabaseState.serverRecord = { ...payload, updated_at: payload.updated_at };
-                                return { data: { updated_at: payload.updated_at }, error: null };
-                            }
-                        })
-                    };
-                }
-            };
-            const client = {
-                auth: {
-                    signInWithPassword: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signUp: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signOut: async () => { sessionState.user = null; return { error: null }; },
-                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
-                },
-                from: () => queryBuilder
-            };
-
-            Object.defineProperty(window, 'supabase', {
-                configurable: true,
-                get: () => ({ createClient: () => client }),
-                set: () => { }
-            });
-
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
-        }, { downloadData: payload });
+        // The first upload is slow, so the second edit lands while it is in flight.
+        await installFailingMockSupabase(page, {
+            userEmail: 'user@test.com',
+            downloadData: payload,
+            firstUpsertDelayMs: 2500
+        });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
 
         await editFirstNode(page, 'First Upload');
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: syncing', { timeout: 10000 });
@@ -373,7 +173,7 @@ test.describe('Sync status indicator', () => {
 
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 8000 });
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            () => page.evaluate(() => (window as any).__mockSupabase.upsertCallCount),
             { timeout: 8000, intervals: [100] }
         ).toBe(2);
 
@@ -386,66 +186,14 @@ test.describe('Sync status indicator', () => {
         const payload = await buildEncryptedPayload(page, passphrase);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
-        await page.addInitScript(({ downloadData }: { downloadData: { salt: string; data: string } }) => {
-            (window as any).__retryBaseMs = 30;
-            (window as any).__syncPollIntervalMs = 100;
-
-            const initialRecord = { ...downloadData, updated_at: new Date().toISOString() };
-            const state = {
-                serverRecord: initialRecord,
-                upsertCallCount: 0,
-                singleCallCount: 0
-            };
-            (window as any).__mockSupabaseState = state;
-
-            const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
-            const queryBuilder = {
-                select: () => queryBuilder,
-                eq: () => queryBuilder,
-                single: async () => {
-                    state.singleCallCount++;
-                    return { data: state.serverRecord, error: null };
-                },
-                upsert: (payload: any) => {
-                    state.upsertCallCount++;
-                    return {
-                        select: () => ({
-                            single: async () => {
-                                state.serverRecord = { ...payload, updated_at: payload.updated_at };
-                                return { data: { updated_at: payload.updated_at }, error: null };
-                            }
-                        })
-                    };
-                }
-            };
-            const client = {
-                auth: {
-                    signInWithPassword: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signUp: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'u', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signOut: async () => { sessionState.user = null; return { error: null }; },
-                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
-                },
-                from: () => queryBuilder
-            };
-
-            Object.defineProperty(window, 'supabase', {
-                configurable: true,
-                get: () => ({ createClient: () => client }),
-                set: () => { }
-            });
-
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
-        }, { downloadData: payload });
+        await installFailingMockSupabase(page, {
+            userEmail: 'user@test.com',
+            downloadData: payload,
+            speedUpPolling: true
+        });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
 
         // Four edits back to back stay inside the write debounce; no upload may
         // start while the edits keep coming.
@@ -453,11 +201,11 @@ test.describe('Sync status indicator', () => {
             await updateFirstNodeViaModel(page, text);
         }
 
-        const duringTypingUploads = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
+        const duringTypingUploads = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
         expect(duringTypingUploads).toBe(0);
 
         await expect.poll(
-            () => page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount),
+            () => page.evaluate(() => (window as any).__mockSupabase.upsertCallCount),
             { timeout: 5000, intervals: [100] }
         ).toBeGreaterThan(0);
 
@@ -475,21 +223,24 @@ test.describe('Sync retry behaviour', () => {
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
         await installFailingMockSupabase(page, {
             userEmail: 'user@test.com',
-            downloadData: payload,
-            failUpsertTimes: FAIL_TIMES
+            downloadData: payload
         });
         await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
-        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
+        // Let the save the unlock arms finish, then start the failure script so
+        // only this edit's uploads are counted.
+        await settleUnlockSave(page);
+        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
+        await page.evaluate((failTimes) => { (window as any).__mockSupabase.failUpsertTimes = failTimes; }, FAIL_TIMES);
 
         await editFirstNode(page, 'Retry Edit');
 
         // The sync-dot starts at 'synced' (initial value), so we must NOT check for 'synced'
         // before confirming the upload actually ran. Use expect.poll to wait for all retries.
         await expect.poll(
-            () => page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls),
+            () => page.evaluate((baseline) => (window as any).__mockSupabase.upsertCallCount - baseline, baselineCalls),
             { timeout: 10000, intervals: [100] }
         ).toBeGreaterThanOrEqual(FAIL_TIMES + 1);
 
@@ -497,7 +248,7 @@ test.describe('Sync retry behaviour', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
 
         // upsert was called FAIL_TIMES + 1 (the final successful attempt)
-        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
+        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabase.upsertCallCount - baseline, baselineCalls);
         expect(callDelta).toBe(FAIL_TIMES + 1);
     });
 
@@ -510,14 +261,15 @@ test.describe('Sync retry behaviour', () => {
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
         await installFailingMockSupabase(page, {
             userEmail: 'user@test.com',
-            downloadData: payload,
-            alwaysFailUpsert: true
+            downloadData: payload
         });
         await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
-        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabaseState.upsertCallCount);
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
+        await settleUnlockSave(page);
+        const baselineCalls = await page.evaluate(() => (window as any).__mockSupabase.upsertCallCount);
+        await page.evaluate(() => { (window as any).__mockSupabase.failUpserts = true; });
 
         await editFirstNode(page, 'Exhaust Retries');
 
@@ -525,7 +277,7 @@ test.describe('Sync retry behaviour', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
 
         // Exactly 1 (initial attempt) + MAX_RETRIES calls were made
-        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabaseState.upsertCallCount - baseline, baselineCalls);
+        const callDelta = await page.evaluate((baseline) => (window as any).__mockSupabase.upsertCallCount - baseline, baselineCalls);
         expect(callDelta).toBe(MAX_RETRIES + 1);
     });
 
@@ -545,7 +297,7 @@ test.describe('Sync retry behaviour', () => {
                 serverRecord: { ...downloadData, updated_at: new Date().toISOString() },
                 upsertCallCount: 0
             };
-            (window as any).__mockSupabaseState = state;
+            (window as any).__mockSupabase = state;
 
             const sessionState = { user: { id: 'u', email: 'user@test.com' } as any };
             const queryBuilder = {
@@ -584,10 +336,11 @@ test.describe('Sync retry behaviour', () => {
             };
             Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => { } });
             localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('vmd_last_mode', 'remote');
         }, { downloadData: payload });
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', 'sync-pass');
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
 
         // Edit while upsert is failing → error state
         await editFirstNode(page, 'Failing Write');
@@ -693,77 +446,38 @@ const buildChildrenConflictPayload = async (
 };
 
 /**
- * Installs a mock that serves `remotePayload` from `read()` but with a
- * `updated_at` value in the future (so `checkRemoteNewer` returns true),
- * while keeping `lastSyncedAt` at 0 in localStorage.
+ * Wait for the save the unlock itself arms. Any later publish is then the only
+ * remote change the next edit can merge against, so a conflict is deterministic
+ * instead of racing that first save.
+ */
+const settleUnlockSave = (page: Page) =>
+    expect.poll(
+        () => page.evaluate(() => (window as any).__mockSupabase.upsertCallCount),
+        { timeout: 10000, intervals: [100] }
+    ).toBeGreaterThan(0);
+
+/**
+ * Boot with `payload` on the server, and hand back a call that replaces the row
+ * with `remotePayload` — another device publishing while this one is open.
+ * Publishing after unlock is what makes the next save see a changed head.
  */
 const installMockWithRemoteUpdate = async (
     page: Page,
     payload: { salt: string; data: string },
     remotePayload: { salt: string; data: string }
 ) => {
-    await page.addInitScript(
-        ({ payload, remotePayload }: {
-            payload: { salt: string; data: string };
-            remotePayload: { salt: string; data: string };
-        }) => {
-            // Start with the local payload (what the user unlocks with)
-            const localRecord = { ...payload, updated_at: new Date(Date.now() - 60_000).toISOString() };
-            // The remote record is "newer"
-            const remoteRecord = { ...remotePayload, updated_at: new Date(Date.now() + 60_000).toISOString() };
-
-            let callCount = 0;
-            (window as any).__mockSupabaseState = { serverRecord: remoteRecord, upsertCallCount: 0 };
-            (window as any).__retryBaseMs = 30;
-
-            const sessionState = { user: { id: 'user-conflict', email: 'user@test.com' } as any };
-            const queryBuilder = {
-                select: () => queryBuilder,
-                eq: () => queryBuilder,
-                single: async () => {
-                    callCount++;
-                    // First call is from unlockRemote (downloads local doc to decrypt)
-                    // Subsequent calls are from checkRemoteNewer / pullAndMerge
-                    const record = callCount === 1 ? localRecord : remoteRecord;
-                    return { data: record, error: null };
-                },
-                upsert: (p: any) => {
-                    (window as any).__mockSupabaseState.upsertCallCount++;
-                    return {
-                        select: () => ({
-                            single: async () => {
-                                (window as any).__mockSupabaseState.serverRecord = { ...p, updated_at: p.updated_at };
-                                return { data: { updated_at: p.updated_at }, error: null };
-                            }
-                        })
-                    };
-                }
-            };
-            const client = {
-                auth: {
-                    signInWithPassword: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'user-conflict', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signUp: async ({ email }: { email: string }) => {
-                        sessionState.user = { id: 'user-conflict', email };
-                        return { data: { user: sessionState.user }, error: null };
-                    },
-                    signOut: async () => { sessionState.user = null; return { error: null }; },
-                    getSession: async () => ({ data: { session: sessionState.user ? { user: sessionState.user } : null }, error: null }),
-                    getUser: async () => ({ data: { user: sessionState.user }, error: null })
-                },
-                from: () => queryBuilder
-            };
-            Object.defineProperty(window, 'supabase', {
-                configurable: true, get: () => ({ createClient: () => client }), set: () => { }
-            });
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://mock', key: 'anon' }));
-            // Keep lastSyncedAt at 0 so remote will appear newer
-            localStorage.removeItem('vmd_sync_ts');
-        },
-        { payload, remotePayload }
-    );
+    await installMockSupabase(page, {
+        downloadData: payload,
+        userEmail: 'user@test.com',
+        rememberedMode: 'remote',
+        retryBaseMs: 30
+    });
+    return () => page.evaluate((remote: { salt: string; data: string }) => {
+        (window as any).__mockSupabase.serverRecord = {
+            ...remote,
+            updated_at: new Date(Date.now() + 60_000).toISOString()
+        };
+    }, remotePayload);
 };
 
 // ─── Pull-before-push ─────────────────────────────────────────────────────────
@@ -800,10 +514,12 @@ test.describe('Pull-before-push', () => {
         );
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
-        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+        const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
+        await settleUnlockSave(page);
+        await publishRemote();
 
         // Zoom into n1 and edit it. Sync merge-apply should not reset zoom to root.
         await page.evaluate(async () => {
@@ -836,12 +552,14 @@ test.describe('Pull-before-push', () => {
         const remotePayload = await buildConflictPayload(page, passphrase, 'Remote Version', T_REMOTE);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
-        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+        const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
 
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
+        await settleUnlockSave(page);
+        await publishRemote();
 
-        // Edit the local node via UI — this sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
+        // Edit the local node via UI - this sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
         await editFirstNode(page, 'Local Version');
 
         // Conflict modal should appear (local and remote both changed n1 after last sync)
@@ -862,9 +580,11 @@ test.describe('Conflict resolution modal', () => {
         const remotePayload = await buildConflictPayload(page, passphrase, remoteText, T_REMOTE);
 
         await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
-        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
+        const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
+        await settleUnlockSave(page);
+        await publishRemote();
 
         // Edit the local node via UI — sets n1.lastModified = Date.now() > lastSyncedAt AND triggers sync
         await editFirstNode(page, localText);
@@ -962,26 +682,26 @@ test.describe('Conflict resolution modal', () => {
         await expect(page.locator('.conflict-overlay')).toBeVisible();
     });
 
-    test('"Apply" is disabled until all conflicts are resolved', async ({ page }) => {
-        await setupConflict(page, 'A', 'B');
+    test('shows both values, requires every conflict, and a local choice closes it', async ({ page }) => {
+        await setupConflict(page, 'My local text', 'My remote text');
 
+        // Both sides are shown, labelled with the field.
+        await expect(page.locator('.conflict-field-label')).toHaveText(/text/i);
+        await expect(page.locator('.conflict-value-textarea').first()).toContainText('My local text');
+        await expect(page.locator('.conflict-value-textarea').last()).toContainText('My remote text');
+
+        // The dialog blocks the app but is not an error state.
+        await expect(page.locator('.sync-dot')).not.toHaveAttribute('title', 'Sync: error');
         const applyBtn = page.getByRole('button', { name: 'Apply' });
         await expect(applyBtn).toBeDisabled();
 
-        // Choose local for the conflict
-        await page.locator('.conflict-keep-btn').first().click();
-        await expect(applyBtn).toBeEnabled();
-    });
-
-    test('"Keep local" resolves to local value and Apply closes modal', async ({ page }) => {
-        await setupConflict(page, 'Local Wins', 'Remote Loses');
-
         await page.locator('.conflict-keep-btn').first().click();  // Keep local
-        await page.getByRole('button', { name: 'Apply' }).click();
+        await expect(applyBtn).toBeEnabled();
+        await applyBtn.click();
 
         await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
-        // The local text should be in the outline
-        await expect(page.locator('.node-text-md').first()).toContainText('Local Wins');
+        await expect(page.locator('.node-text-md').first()).toContainText('My local text');
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
     });
 
     test('"Keep remote" resolves to remote value and Apply closes modal', async ({ page }) => {
@@ -995,18 +715,18 @@ test.describe('Conflict resolution modal', () => {
         await expect(page.locator('.node-text-md').first()).toContainText('Remote Wins');
     });
 
-    test('"Use all local" resolves all conflicts to local and enables Apply', async ({ page }) => {
+    test('"Use all local" resolves every conflict to local and enables Apply', async ({ page }) => {
         await setupConflict(page, 'AllLocal', 'AllRemote');
 
         await page.getByRole('button', { name: 'Use all local' }).click();
         const applyBtn = page.getByRole('button', { name: 'Apply' });
         await expect(applyBtn).toBeEnabled();
         await applyBtn.click();
-
         await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.node-text-md').first()).toContainText('AllLocal');
     });
 
-    test('"Use all remote" resolves all conflicts to remote', async ({ page }) => {
+    test('"Use all remote" resolves every conflict to remote', async ({ page }) => {
         await setupConflict(page, 'Discard', 'Keep This');
 
         await page.getByRole('button', { name: 'Use all remote' }).click();
@@ -1014,20 +734,6 @@ test.describe('Conflict resolution modal', () => {
 
         await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
         await expect(page.locator('.node-text-md').first()).toContainText('Keep This');
-    });
-
-    test('modal blocks interaction: sync-dot stays synced after apply', async ({ page }) => {
-        await setupConflict(page, 'Block A', 'Block B');
-
-        // While modal is open, sync-dot should not be 'error'
-        await expect(page.locator('.sync-dot')).not.toHaveAttribute('title', 'Sync: error');
-
-        // Resolve and apply
-        await page.locator('.conflict-keep-btn').first().click();
-        await page.getByRole('button', { name: 'Apply' }).click();
-
-        await expect(page.locator('.conflict-overlay')).not.toBeVisible({ timeout: 10000 });
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
     });
 
     test('children conflict can be resolved by keeping remote values', async ({ page }) => {
@@ -1051,10 +757,11 @@ test.describe('Conflict resolution modal', () => {
             localStorage.clear();
             localStorage.setItem('vmd_last_mode', 'local');
         });
-        await installMockWithRemoteUpdate(page, localPayload, remotePayload);
-
+        const publishRemote = await installMockWithRemoteUpdate(page, localPayload, remotePayload);
         await page.reload();
-        await unlockRemote(page, 'user@test.com', 'pass', passphrase);
+        await unlockSync(page, 'user@test.com', 'pass', passphrase);
+        await settleUnlockSave(page);
+        await publishRemote();
 
         // Add a local child to change `children` on the same parent before sync.
         await page.locator('[data-node-id="n1"] .node-text-md').click();

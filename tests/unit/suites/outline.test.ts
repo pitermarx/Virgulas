@@ -137,7 +137,7 @@ describe("Adding nodes", () => {
   })
 
   it("addChild to non-root parent", () => {
-    const parent = addChild('root', { id: 'P' })
+    addChild('root', { id: 'P' })
     const child = addChild('P', { id: 'CH' })
     assertEqual(child.parentId, 'P', "Child parentId should be 'P'")
     assertChildren('P', ['CH'])
@@ -767,7 +767,7 @@ describe("getVMD", () => {
 describe("setVMD", () => {
 
   it("Basic parsing creates child nodes", () => {
-    const parent = addChild('root', { id: 'P', text: 'P' })
+    addChild('root', { id: 'P', text: 'P' })
     outline.setVMD("- X\n- Y\n", 'P')
     const children = outline.getRoot()!.children.peek()
     assertEqual(children.length, 2, "Should have 2 children")
@@ -777,16 +777,15 @@ describe("setVMD", () => {
   })
 
   it("+ bullet sets open to false", () => {
-    const parent = addChild('root', { id: 'P' })
+    addChild('root', { id: 'P' })
     addChild('P', { id: 'DUMMY' }) // child so + renders
     outline.setVMD("+ Closed\n  - child\n", 'P')
-    const ch = outline.get('P')!.children.peek()
     // The first bullet updates P itself (open state)
     assertEqual(outline.get('P')!.open.peek(), false, "P should be closed after + bullet (regression: bug #4)")
   })
 
   it("- bullet sets open to true", () => {
-    const parent = addChild('root', { id: 'P', open: false })
+    addChild('root', { id: 'P', open: false })
     outline.setVMD("- Open\n", 'P')
     assertEqual(outline.get('P')!.open.peek(), true, "P should be open after - bullet")
   })
@@ -1201,7 +1200,7 @@ describe("Navigation Edge Cases", () => {
 describe("VMD Parser Edge Cases", () => {
 
   it("setVMD handles input starting with indentation", () => {
-    const base = addChild('root', { id: 'P' })
+    addChild('root', { id: 'P' })
     // Simulating a partial paste that might have leading spaces
     const indentedVMD = "  - Indented Node\n    - Child"
 
@@ -1211,7 +1210,7 @@ describe("VMD Parser Edge Cases", () => {
   })
 
   it("setVMD attaches multi-line descriptions to the correct nested node", () => {
-    const base = addChild('root', { id: 'P' })
+    addChild('root', { id: 'P' })
     const complexVMD = "- Parent\n  - Child\n    Description for child\n    More description"
 
     outline.setVMD(complexVMD, 'P')

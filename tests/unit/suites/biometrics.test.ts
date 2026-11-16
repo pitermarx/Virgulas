@@ -1,6 +1,7 @@
 import { describe, it } from 'bun:test'
 import { biometrics } from '../../../source/js/biometrics.js'
-import { assert, assertEqual } from '../testing.js'
+import { resetIdbConnections } from '../../../source/js/idb.js'
+import { assertEqual } from '../testing.js'
 
 // ─── Minimal in-memory IndexedDB (happy-dom does not provide one) ─────────────
 
@@ -45,6 +46,9 @@ class FakeDB {
 }
 
 function installFakeIndexedDB() {
+    // A fresh fake replaces the global; drop the cached connections so the next
+    // call opens the new one.
+    resetIdbConnections()
     const databases = new Map<string, FakeDB>()
         ; (globalThis as any).indexedDB = {
             open(name: string) {
