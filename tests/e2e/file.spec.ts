@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '../test';
+import { test, expect, type Page, submitLockSheet } from '../test';
 
 /**
  * Installs a mock File System Access API and a mock IndexedDB backend for
@@ -148,6 +148,7 @@ const installMockFilesystem = async (page: Page, options: { initialContent?: str
     }, { initialContent: options.initialContent ?? '- Hello File World' });
 };
 
+
 test.describe('File mode', () => {
     test('opens a .vmd file and renders its content', async ({ page }) => {
         await installMockFilesystem(page, { initialContent: '- Hello File World' });
@@ -159,9 +160,7 @@ test.describe('File mode', () => {
         await expect(page.locator('#splash')).toBeHidden();
         await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
 
-        await page.getByRole('button', { name: 'Unlock' }).click();
-
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.node-content').first()).toContainText('Hello File World');
         await expect(page.locator('.status-mode')).toHaveText('File');
     });
@@ -174,9 +173,7 @@ test.describe('File mode', () => {
 
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.node-content')).toHaveCount(1);
         await expect.poll(
             () => page.evaluate(() => {
@@ -206,9 +203,7 @@ test.describe('File mode', () => {
         await page.getByRole('button', { name: /A \.vmd file/ }).click();
 
         await expect(page.locator('.bottom-sheet')).toHaveAttribute('data-auth-mode', 'filesystem');
-        await page.getByRole('button', { name: 'Unlock' }).click();
-
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('Carried to a file');
         await expect(page.locator('.status-mode')).toHaveText('File');
 
@@ -230,8 +225,7 @@ test.describe('File mode', () => {
 
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
 
         // Focus and edit the first node
         await page.locator('.node-text-md').first().click();
@@ -266,8 +260,7 @@ test.describe('File mode', () => {
         // First load: open the file (saves handle to mock IDB via sessionStorage)
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
 
         const pickerCallsAfterFirstOpen = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -276,8 +269,7 @@ test.describe('File mode', () => {
         // Reload: tryReopen() should find the handle in IDB and not call showOpenFilePicker
         await page.reload();
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.node-content').first()).toContainText('Persistent Node');
 
         const pickerCallsAfterReload = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -424,8 +416,7 @@ test.describe('File mode', () => {
         await expect(page.locator('#splash')).toBeHidden();
 
         // Unlock: tryReopen finds the denied handle, falls back to showOpenFilePicker
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
 
         // The picker was invoked exactly once (fallback path)
         const pickerCalls = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
@@ -443,8 +434,7 @@ test.describe('File mode', () => {
 
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.status-mode')).toHaveText('File');
 
         await page.getByRole('button', { name: 'Options' }).click();
@@ -469,8 +459,7 @@ test.describe('File mode', () => {
 
         await page.goto('/');
         await expect(page.locator('#splash')).toBeHidden();
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+                await submitLockSheet(page);
         await expect(page.locator('.status-mode')).toHaveText('File');
 
         await page.getByRole('button', { name: 'Options' }).click();

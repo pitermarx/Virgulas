@@ -700,9 +700,9 @@ bun run typecheck                # tsc app config + test config
   attempt. A retried attempt whose failure was the page or browser closing (`Page closed`,
   `Target closed`, `browser has disconnected`) is reported as infrastructure and does not fail
   `main`: a retry is the only remedy for it. Assertion and timeout retries stay fatal.
-- The unlock helpers spend a bounded budget (under Playwright's 60 s test timeout) and surface the
-  lock-screen error, so a slow boot fails as "unlock failed: …" instead of a test timeout whose
-  next action reports "Page closed".
+- The lock-sheet submits go through `unlockApp`/`submitLockSheet`, which retry the click: the sheet
+  re-renders while the wizard and File picker settle, and a plain click can land on a button that is
+  about to be replaced.
 - CI shards the suite across three jobs with `--shard=<i>/3`.
 - Every workflow pins Bun to one exact version (`bun-version` in each job); bump it in a pull request
   that runs the full suite, never to `latest`.
