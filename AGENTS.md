@@ -672,7 +672,9 @@ bun run typecheck                # tsc app config + test config
 - The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
-- `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 4 per CI shard.
+- `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 3 per CI shard.
+  Four WebKit workers on a four-core runner produced page-closed and unlock-timeout flakes that
+  always passed on retry; CI stays at three.
 - Never pace a spec with `page.waitForTimeout`: await the observable condition instead
   (`expect.poll`, a web-first assertion, or `page.clock` when timing itself is the property).
 - CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`

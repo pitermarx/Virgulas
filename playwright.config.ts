@@ -105,9 +105,11 @@ export default defineConfig({
   timeout: 60_000,
   // Scale with the machine instead of a fixed five: the shards already divide
   // the work in CI, where the count only has to fit the runner's cores; a big
-  // developer box no longer runs five at a time.
+  // developer box no longer runs five at a time. CI stays at three: four WebKit
+  // workers on a four-core runner produced page-closed and unlock-timeout flakes
+  // that always passed on retry, so the extra parallelism only cost main reruns.
   workers: isCI
-    ? Math.max(1, Math.min(4, availableParallelism()))
+    ? Math.max(1, Math.min(3, availableParallelism()))
     : Math.max(1, Math.min(availableParallelism() - 1, 8)),
   reporter: isCI
     // The JSON report feeds scripts/flaky-report.ts, which names retried tests
