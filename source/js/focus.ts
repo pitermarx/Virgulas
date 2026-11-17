@@ -1,9 +1,8 @@
 // Focus and selection state for the outliner surface, plus the small DOM
 // helpers that keep focus transfer from fighting a re-render.
 //
-// It lives here so the node/toolbar components (and `shortcuts.ts`'s callers)
-// read one owner instead of a UI module that also renders them. The rendered
-// components stay in `ui.ts` until the component split moves them out.
+// It lives here so the components in `source/components` and the shortcut
+// callers read one owner instead of a component module.
 
 import { signal } from '@preact/signals'
 

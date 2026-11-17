@@ -30,6 +30,7 @@ const GROUPS = {
         join(ROOT, 'source', 'site.webmanifest'),
         join(ROOT, 'source', 'css'),
         join(ROOT, 'source', 'js'),
+        join(ROOT, 'source', 'components'),
         join(ROOT, 'tsconfig.json'),
         join(ROOT, 'package.json'),
     ],

@@ -105,6 +105,8 @@ for (const file of await readdir(jsOutDir)) {
 }
 // The modular CSS sources are bundled into js/app.css; don't ship the originals.
 await rm(path.join(outDir, 'css'), { recursive: true, force: true })
+// Components are bundled into js/app.js too; the source tree must not ship.
+await rm(path.join(outDir, 'components'), { recursive: true, force: true })
 
 // ── App version stamping ─────────────────────────────────────────────────────
 const pkg = JSON.parse(await readFile(path.resolve('package.json'), 'utf8'))

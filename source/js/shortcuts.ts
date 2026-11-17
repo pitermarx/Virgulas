@@ -6,7 +6,7 @@ import { log, store } from './utils.js';
 export const tasksPanelOpen = signal(false)
 export const optionsOpen = signal(false)
 
-/** Minimum shape of the editor focus object shared by ui.ts and the tests. */
+/** Minimum shape of the editor focus object shared by `focus.ts` and the tests. */
 export interface EditorFocus {
     Id: { value: any }
     Type: { value: any }
