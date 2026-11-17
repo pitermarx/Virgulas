@@ -460,15 +460,19 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `docCodec.ts`:
   Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
 - `model.ts`:
-  Shared document-model constants (`MODEL_VERSION`) and `CorruptDocumentError`. No imports, so `outline.ts` and `docCodec.ts` can share them without a cycle.
+  Shared document-model types (`OutlineNode`, `OutlineDoc`, `DocCodec`), `MODEL_VERSION` and
+  `CorruptDocumentError`. No imports, so `storage.ts`, `outline.ts` and `docCodec.ts` can all
+  share them without a cycle.
 - `merge.ts`:
   Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
 - `storage.ts`:
   Storage seam contracts (see `docs/storage-interface.md`): `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, `StoreCapabilities`, and the two-channel `StoreError` taxonomy. Contracts only — adapters import this module, never the reverse.
 - `encryptedStore.ts`:
   The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
-- `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
-  Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+- `fileStore.ts`, `localStore.ts`:
+  Built-in backend adapters: the File System Access `.vmd` handle store and the `store`-slot
+  RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+  Memory has no adapter: the live outline is the store (`14.12`).
 - `fileHandles.ts`:
   The File System Access handle cache (pick, reopen, clear), backed by `idb.ts`. File mode's `isSupported()` gate lives here.
 - `idb.ts`:
@@ -484,13 +488,14 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   `LockScreen`/`SecureStoragePrompt` components. Its auth state (scenario, step,
   user, busy/errors) lives here, not in the app shell; `app.ts` mounts the
   component and asks `isWizardOverlayOpen()`, and `options.ts` reaches the same
-  state through `lockNow` / `resetSessionState` / `resetMemoryDocument`.
+  state through `lockNow` / `resetSessionState`; `persistence.loadIntroDocument()`
+  owns the tour text.
 - `options.ts`:
   The Options modal and its private state (account info, backend deletion
   capability, busy flag, the admin form fields). Binds its own dialog focus and
   calls the lock screen's API for lock/purge; persistence owns mode and storage.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The debounce itself lives in `savePipeline.ts`.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The live session is one `sessionState` value (`locked`/`memory`/`filesystem`/`local`/`remote`); `authMode` is only the mode selected for the lock screen. The debounce itself lives in `savePipeline.ts`.
 - `syncEngine.ts`:
   The remote sync engine: the single `syncOnce` pull-before-push step, the
   injected composed DocStore, the head-token probe, the retry policy, the

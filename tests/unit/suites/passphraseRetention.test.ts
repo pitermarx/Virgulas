@@ -25,8 +25,8 @@ describe('passphrase retention', () => {
           'persistence must not assign a plaintext passphrase signal'
       )
       assert(
-          /sessionUnlocked\.value\s*=\s*keySession\.unlocked/.test(src),
-          'the reactive session flag must mirror keySession.unlocked'
+          /sessionState\.value\s*=\s*'local'/.test(src) && /sessionState\.value\s*=\s*'remote'/.test(src),
+          'the live session must be one explicit state, not a keySession mirror'
       )
       assert(
           /keySession\.activeCredentials\(\)\?\.passphrase/.test(src),
@@ -109,7 +109,7 @@ describe('passphrase retention', () => {
 
       for (const [name, body] of teardowns) {
           const forget = body.indexOf('biometrics.forget()')
-          const lock = body.indexOf('markSessionUnlocked()')
+          const lock = body.indexOf("sessionState.value = 'locked'")
           assert(forget > -1, `${name} must revoke the device seal`)
           assert(lock > -1, `${name} must lock the session`)
           assert(forget < lock, `${name} must revoke the seal before reporting a locked session`)

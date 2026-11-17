@@ -9,7 +9,7 @@
 import { effect } from '@preact/signals'
 import outline from './outline.js'
 import { StoreError, type DocStore } from './storage.js'
-import type { OutlineDoc } from './docCodec.js'
+import type { OutlineDoc } from './model.js'
 import { log } from './utils.js'
 
 export type SaveMode = 'local' | 'remote' | 'filesystem' | 'memory'

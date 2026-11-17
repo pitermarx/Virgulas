@@ -5,10 +5,9 @@ import { describe, it } from 'bun:test'
 // This is the piece that makes future backends cheap to trust — a new adapter
 // proves itself against this file instead of against the whole app.
 //
-// PR 2a adapters: memory, file (fake handle), local slot (fake + real slot),
+// PR 2a adapters: file (fake handle), local slot (fake + real slot),
 // encrypted-over-fake-raw, codecStore lift. cached() pairs join in PR 2b.
 
-import { memoryStore } from '../../../source/js/memoryStore.js'
 import { fileStore, isFileStoreAvailable } from '../../../source/js/fileStore.js'
 import { slotRaw } from '../../../source/js/localStore.js'
 import { encrypted, createKeySession } from '../../../source/js/encryptedStore.js'
@@ -240,16 +239,14 @@ async function docStoreContract(make: () => StringStore, label: string) {
 await rawStoreContract(() => fakeRaw(), 'fake raw')
 await rawStoreContract(() => slotRaw(fakeSlot()), 'local slot (fake)')
 
-await stringStoreContract(() => memoryStore(), 'memory')
 await stringStoreContract(() => fileStore(fakeFileHandle() as unknown as FileSystemFileHandle), 'file (fake handle)')
+await docStoreContract(() => fileStore(fakeFileHandle() as unknown as FileSystemFileHandle), 'file (fake handle)')
 
 const sharedRaw = fakeRaw()
 await stringStoreContract(() => encrypted(sharedRaw, createKeySession()), 'encrypted over fake raw', { passphrase: 'test-passphrase-123' })
 
 const sharedSlot = fakeSlot()
 await stringStoreContract(() => encrypted(slotRaw(sharedSlot), createKeySession()), 'encrypted over local slot', { passphrase: 'test-passphrase-123' })
-
-await docStoreContract(() => memoryStore(), 'memory')
 
 // ─── unlock result passthrough ──────────────────────────────────────────────
 
@@ -332,14 +329,6 @@ describe('contract — local composed DocStore', () => {
 
 
 describe('capability descriptors', () => {
-
-  it('memory: durable never, change detection on, always available', () => {
-      const caps = memoryStore().capabilities
-      assertEqual(caps.durable, 'never', 'memory durability')
-      assertEqual(caps.changeDetection, true, 'head available')
-      assertEqual(caps.available, true, 'no environment requirement')
-      assertEqual(caps.encrypted, false, 'not encrypted')
-  })
 
   it('file: durable always, available tracks showSaveFilePicker presence', () => {
       assertEqual(isFileStoreAvailable({} as any), false, 'unavailable without the API')

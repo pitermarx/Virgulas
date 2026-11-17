@@ -5,7 +5,7 @@ import { describe, it, beforeEach } from 'bun:test'
 // with the live outline so the pure codecs cannot drift from outline.ts.
 import outline from '../../../source/js/outline.js'
 import { jsonCodec, vmdCodec } from '../../../source/js/docCodec.js'
-import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
+import type { OutlineDoc, OutlineNode } from '../../../source/js/model.js'
 import { CorruptDocumentError } from '../../../source/js/outline.js'
 import { UnsupportedVersionError } from '../../../source/js/crypto2.js'
 import { StoreError } from '../../../source/js/storage.js'

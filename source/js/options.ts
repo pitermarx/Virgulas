@@ -16,7 +16,7 @@ import inbox from './inbox.js'
 import { inboxNodeName } from './capture.js'
 import { bindDialogFocus } from './dialogs.js'
 import { optionsOpen } from './shortcuts.js'
-import { lockNow, resetSessionState, resetMemoryDocument } from './lockScreen.js'
+import { lockNow, resetSessionState } from './lockScreen.js'
 
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 })
 /** True when the backend can delete the auth record itself (TrailBase). */
@@ -258,7 +258,7 @@ export const OptionsModal = () => {
     optionsOpen.value = false;
 
     if (currentMode === 'memory') {
-      await resetMemoryDocument();
+      await persistence.loadIntroDocument();
       return;
     }
 

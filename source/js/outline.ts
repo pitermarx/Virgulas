@@ -1,7 +1,7 @@
 import { signal, effect, createModel } from "@preact/signals"
 import { randomId, UnsupportedVersionError } from "./crypto2.js"
-import { CorruptDocumentError, MODEL_VERSION } from './model.js'
-import { parseVmdNodeLine, parseVmdTree, vmdNodeId, writeVmd, type OutlineDoc } from './docCodec.js'
+import { CorruptDocumentError, MODEL_VERSION, type OutlineDoc } from './model.js'
+import { parseVmdNodeLine, parseVmdTree, vmdNodeId, writeVmd } from './docCodec.js'
 import { log } from './utils.js';
 import { parseMeta, advanceDueDate } from './meta.js';
 

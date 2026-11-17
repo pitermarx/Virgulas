@@ -3,13 +3,13 @@
 //
 // Its state lives here, not in the app shell. `app.ts` mounts `LockScreen` and
 // reads `isWizardOverlayOpen()`; Options reaches the same state through
-// `lockNow` / `resetSessionState` / `resetMemoryDocument`. `authMode` is
+// `lockNow` / `resetSessionState`, and persistence.loadIntroDocument(). `authMode` is
 // re-exported from `persistence.ts`, which owns it.
 
 import { effect, signal } from '@preact/signals'
 import { html } from 'htm/preact'
 import outline, { CorruptDocumentError } from './outline.js'
-import type { OutlineDoc } from './docCodec.js'
+import type { OutlineDoc } from './model.js'
 import persistence, { authMode, remoteRekeyedNotice } from './persistence.js'
 import type { PersistenceMode } from './persistence.js'
 import { store } from './utils.js'
@@ -18,7 +18,6 @@ import { biometrics } from './biometrics.js'
 import { captureOnly } from './capture.js'
 import { CorruptEnvelopeError, WrongPassphraseError } from './crypto2.js'
 
-const authScenario = signal('empty-local')
 const authHasLocalData = signal(false)
 const authHasEncryptedStorage = signal(true)
 export const browserSupportWarning = signal('')
@@ -27,8 +26,8 @@ const password = signal('')
 const passphrase = signal('')
 const unlockError = signal('')
 const unlockMessage = signal('')
-const canResetRemoteData = signal(false)
-const canResetLocalData = signal(false)
+/** The last failed unlock attempt; the reset buttons are derived from its type. */
+const unlockFailure = signal<unknown>(null)
 const isBusy = signal(false)
 // The choose-mode sheet is a wizard: path first (device vs cloud), then the
 // concrete local storage choice. The cloud path goes straight to the
@@ -49,37 +48,12 @@ const serverLabel = (): string => {
   try { return new URL(backendUrl()).host } catch { return backendUrl() }
 }
 
-const isRemoteSessionValid = () =>
-  authMode.value === 'remote' && authScenario.value === 'remote-session-valid' && !!authUser.value
+const isRemoteSessionValid = () => authMode.value === 'remote' && !!authUser.value
 const isLocalCreate = () => authMode.value === 'local' && !authHasLocalData.value
-
-let cachedIntroText: string | null = null
-
-async function getIntroText() {
-  if (cachedIntroText !== null) return cachedIntroText
-  try {
-    const resp = await fetch('/intro.vmd')
-    cachedIntroText = resp.ok ? await resp.text() : ''
-  } catch {
-    cachedIntroText = ''
-  }
-  return cachedIntroText
-}
-
-async function loadLockedBackgroundIntro() {
-  const introText = await getIntroText()
-  outline.reset()
-  if (introText && introText.trim()) {
-    outline.setRootVMD(introText)
-  } else {
-    outline.addChild('root', { text: '' })
-  }
-}
 
 export async function initAuthState(options: { forceLockScreen?: boolean } = {}) {
   const bootstrap = await persistence.getAuthBootstrap(options)
   authMode.value = bootstrap.mode as PersistenceMode
-  authScenario.value = bootstrap.scenario
   authHasLocalData.value = bootstrap.hasLocalData
   authHasEncryptedStorage.value = bootstrap.encryptedStorageAvailable
   browserSupportWarning.value = bootstrap.browserSupportWarning
@@ -94,7 +68,7 @@ export async function initAuthState(options: { forceLockScreen?: boolean } = {})
   }
 
   if (persistence.isLocked()) {
-    await loadLockedBackgroundIntro()
+    await persistence.loadLockedBackgroundIntro()
   }
 }
 
@@ -123,8 +97,7 @@ async function requestChangeMode() {
   wizardStep.value = 'storage';
   unlockError.value = '';
   unlockMessage.value = '';
-  canResetRemoteData.value = false;
-  canResetLocalData.value = false;
+  unlockFailure.value = null;
   passphrase.value = '';
   password.value = '';
   remotePasswordStage.value = false;
@@ -141,15 +114,9 @@ function pickMode(nextMode: PersistenceMode) {
     return;
   }
   authMode.value = nextMode;
-  authScenario.value = nextMode === 'local'
-    ? (authHasLocalData.value ? 'local-present-no-session' : 'empty-local')
-    : nextMode === 'filesystem'
-      ? 'filesystem-ready'
-      : 'remote-session-expired';
   persistence.setPreferredMode(nextMode);
   unlockError.value = '';
-  canResetRemoteData.value = false;
-  canResetLocalData.value = false;
+  unlockFailure.value = null;
   passphrase.value = '';
   remotePasswordStage.value = false;
   password.value = '';
@@ -162,8 +129,7 @@ async function submitUnlock(e: any) {
   if (isBusy.value) return;
   unlockError.value = '';
   unlockMessage.value = '';
-  canResetRemoteData.value = false;
-  canResetLocalData.value = false;
+  unlockFailure.value = null;
   isBusy.value = true;
   try {
     if (authMode.value === 'filesystem') {
@@ -209,9 +175,7 @@ async function submitUnlock(e: any) {
   } catch (error) {
     const message = String((error as { message?: string } | null)?.message || 'Failed to unlock.');
     unlockError.value = message;
-    canResetLocalData.value = authMode.value === 'local'
-      && (error instanceof CorruptEnvelopeError || error instanceof CorruptDocumentError);
-    canResetRemoteData.value = error instanceof WrongPassphraseError;
+    unlockFailure.value = error;
   } finally {
     isBusy.value = false;
   }
@@ -229,7 +193,6 @@ async function submitSignUp() {
     const result = await persistence.signUp(username.value, password.value);
     authUser.value = await persistence.getUser();
     if (authUser.value) {
-      authScenario.value = 'remote-session-valid';
       remotePasswordStage.value = false;
     }
 
@@ -239,7 +202,6 @@ async function submitSignUp() {
     // cloud sync look broken. Stay on the credentials step (email prefilled):
     // the user's next action is confirming and signing in, not a passphrase.
     if (persistence.needsEmailConfirmation()) {
-      authScenario.value = 'remote-email-unconfirmed';
       remotePasswordStage.value = false;
       // TrailBase's register reports success even when the account already
       // exists (anti-enumeration); the verification email only goes out for
@@ -312,7 +274,7 @@ async function submitResetLocalData() {
   try {
     persistence.clearLocalData();
     authHasLocalData.value = false;
-    canResetLocalData.value = false;
+    unlockFailure.value = null;
     const success = await persistence.unlock(passphrase.value, {
       mode: 'local',
       initialDoc: stagedMemoryDoc ?? undefined
@@ -348,7 +310,7 @@ async function submitResetRemoteData() {
       password: password.value
     });
     passphrase.value = '';
-    canResetRemoteData.value = false;
+    unlockFailure.value = null;
     document.body.setAttribute('data-main-view', 'rendered');
   } catch (error) {
     unlockError.value = String((error as { message?: string } | null)?.message || 'Failed to reset remote data.');
@@ -380,8 +342,7 @@ function openStorageWizard() {
   autoBioAttempted.value = false;
   unlockError.value = '';
   unlockMessage.value = '';
-  canResetRemoteData.value = false;
-  canResetLocalData.value = false;
+  unlockFailure.value = null;
   password.value = '';
   passphrase.value = '';
 }
@@ -535,6 +496,10 @@ export const LockScreen = () => {
 
   const modeLabel = isLocal ? 'Local' : isRemote ? 'Remote' : 'File';
 
+  const failure = unlockFailure.value;
+  const canResetLocal = isLocal && (failure instanceof CorruptEnvelopeError || failure instanceof CorruptDocumentError);
+  const canResetRemote = isRemote && failure instanceof WrongPassphraseError;
+
   return html`
     <div class="bottom-sheet" data-auth-mode=${mode} role="dialog" aria-modal="true" aria-labelledby="auth-title">
       <div class="sheet-handle" aria-hidden="true"></div>
@@ -682,13 +647,13 @@ export const LockScreen = () => {
               `}
               ${unlockMessage.value && html`<div class="form-success" role="status">${unlockMessage.value}</div>`}
               ${unlockError.value && html`<div class="form-error" id="auth-unlock-error" role="alert">${unlockError.value}</div>`}
-              ${canResetLocalData.value && html`
+              ${canResetLocal && html`
                 <div class="auth-secondary-actions">
                   <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
                     onClick=${submitResetLocalData}>Reset Local Data With New Passphrase</button>
                 </div>
               `}
-              ${canResetRemoteData.value && html`
+              ${canResetRemote && html`
                 <div class="auth-secondary-actions">
                   <button type="button" class="toolbar-btn" disabled=${isBusy.value || !passphrase.value.trim()}
                     onClick=${submitResetRemoteData}>Reset Remote Data With New Passphrase</button>
@@ -740,10 +705,9 @@ export const SecureStoragePrompt = () => {
 export async function lockNow() {
   await persistence.lock()
   authMode.value = 'local'
-  authScenario.value = authHasLocalData.value ? 'local-present-no-session' : 'empty-local'
   authStep.value = 'unlock'
   autoBioAttempted.value = false
-  await loadLockedBackgroundIntro()
+  await persistence.loadLockedBackgroundIntro()
 }
 
 /** Clear the auth state after a sign-out, purge or account deletion. */
@@ -754,14 +718,6 @@ export function resetSessionState() {
   stagedMemoryDoc = null
   unlockError.value = ''
   unlockMessage.value = ''
-}
-
-/** Restore the intro document in Memory mode (the purge action). */
-export async function resetMemoryDocument() {
-  const introText = await getIntroText()
-  outline.reset()
-  if (introText && introText.trim()) outline.setRootVMD(introText)
-  else outline.addChild('root', { text: '' })
 }
 
 /** The wizard overlay is drawn over the live memory session. */
