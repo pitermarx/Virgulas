@@ -9,6 +9,7 @@ import { searchQuery, searchResults, searchResultIndex, currentSearchMatchId, ge
 import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResolutions, resolveConflicts, type ConflictResolution } from './syncEngine.js';
 import { groupedTasks, hasOverdueTasks } from './tasks.js';
 import { formatDueDate, daysUntilDue } from './meta.js';
+import { modeLabel } from './modes.js';
 
 const focusId = signal<string | null>(null)
 const focusType = signal<string | null>(null)
@@ -626,7 +627,6 @@ function syncIcon(state: string) {
 export function StatusToolbar() {
     const mode = persistence.getMode()
     const isMemory = mode === 'memory'
-    const modeLabel = mode === 'remote' ? 'Remote' : mode === 'filesystem' ? 'File' : isMemory ? 'Memory' : 'Local'
     const remoteIdentity = mode === 'remote' ? persistence.getLastUsername() : ''
     const syncState = localSaveFailed.value
         ? 'save-failed'
@@ -666,7 +666,7 @@ export function StatusToolbar() {
             <span class="visually-hidden" role="status">Sync status: ${label}</span>
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
-            : html`<span class="status-mode" title="Current storage mode">${modeLabel}</span>`}
+            : html`<span class="status-mode" title="Current storage mode">${modeLabel(mode)}</span>`}
             ${localSaveFailed.value
             ? html`<span class="status-save-failed" title=${saveFailedLabel}>${saveFailedLabel}</span>`
             : null}

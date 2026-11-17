@@ -16,6 +16,7 @@ import inbox from './inbox.js'
 import { inboxNodeName } from './capture.js'
 import { bindDialogFocus } from './dialogs.js'
 import { optionsOpen } from './shortcuts.js'
+import { modes, isEncryptedMode } from './modes.js'
 import { lockNow, resetSessionState } from './lockScreen.js'
 
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 })
@@ -197,7 +198,7 @@ export const OptionsModal = () => {
 
   const currentMode = persistence.getMode();
   const info = accountInfo.value;
-  const hasPassphrase = currentMode === 'local' || currentMode === 'remote';
+  const hasPassphrase = isEncryptedMode(currentMode);
   const isRemote = currentMode === 'remote';
 
   function handleThemeToggle() {
@@ -249,11 +250,7 @@ export const OptionsModal = () => {
   }
 
   async function handlePurge() {
-    const purgeLabel = currentMode === 'remote'
-      ? 'Clear browser session and sign out? Your remote data on the server is unaffected.'
-      : currentMode === 'filesystem'
-        ? 'Clear the remembered file handle and local session? Your .vmd file on disk is unaffected.'
-        : 'Delete local data? This removes the encrypted outline, the quick-capture queue, and all remembered session data. This cannot be undone.';
+    const purgeLabel = modes[currentMode].prompt;
     if (!confirm(purgeLabel)) return;
     optionsOpen.value = false;
 
@@ -294,7 +291,7 @@ export const OptionsModal = () => {
 
           <dl class="admin-info">
             <dt>Mode</dt>
-            <dd>${currentMode}${hasPassphrase ? ' · encrypted' : currentMode === 'filesystem' ? ' · not encrypted' : ' · in-memory only'}</dd>
+            <dd>${currentMode}${modes[currentMode].detail}</dd>
 
             ${currentMode === 'local' && html`
               <dt>Browser storage</dt>
@@ -434,7 +431,7 @@ export const OptionsModal = () => {
           ${currentMode !== 'memory' && html`
             <div class="options-row options-row-danger">
               <button class="btn btn-danger" onClick=${handlePurge} disabled=${busy.value}>
-                ${currentMode === 'remote' ? 'Sign out' : currentMode === 'filesystem' ? 'Clear file session' : 'Delete local data'}
+                ${modes[currentMode].action}
               </button>
             </div>
           `}
