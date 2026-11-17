@@ -635,7 +635,7 @@ left behind.
 - **Supabase `js/chunk-*.js`** → cache-first (content-hashed, so not precached; Remote mode gets it offline).
 - **Any other same-origin request** → passthrough (not intercepted, not cached).
 
-A purge (`clearAppCaches`) first asks the worker to pause cache writes and drain the ones already in flight, then deletes, then resumes. Without that, a stale-while-revalidate write that started just before the delete could land after it and recreate the cache the purge just removed.
+A purge (`clearAppCaches`) first asks the worker to pause cache writes and drain the ones already in flight, then deletes, then resumes. Without that, a stale-while-revalidate write that started just before the delete could land after it and recreate the cache the purge just removed. The worker's `message` handler accepts only messages from its own origin.
 
 **Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed). The hashing itself lives in `scripts/sw-cache.ts` and is line-ending independent: text files are normalised to LF before hashing, so a clone with `core.autocrlf=true` computes the same hash as a Linux CI checkout. Binary assets are hashed byte for byte. `source/version.json` is deliberately outside the groups: the release job rewrites it and the worker serves it network-first, so a release must not force a cache bump on the next push.
 
