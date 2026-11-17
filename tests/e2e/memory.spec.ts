@@ -67,9 +67,14 @@ test.describe('Memory mode (first-ever visit)', () => {
         await expect(page.locator('[data-app-version]')).toHaveText(expectedVersion || '');
 
         // The GitHub link sits to the right of the version with a visible gap.
-        const versionBox = (await page.locator('[data-app-version]').boundingBox())!;
-        const linkBox = (await page.getByRole('link', { name: /See on GitHub/ }).boundingBox())!;
-        expect(linkBox.x - (versionBox.x + versionBox.width)).toBeGreaterThanOrEqual(8);
+        // Poll: the gap depends on the webfont metrics, which settle after the
+        // first paint, so a one-shot measurement can read a pre-font layout.
+        await expect.poll(async () => {
+            const versionBox = await page.locator('[data-app-version]').boundingBox();
+            const linkBox = await page.getByRole('link', { name: /See on GitHub/ }).boundingBox();
+            if (!versionBox || !linkBox) return -1;
+            return linkBox.x - (versionBox.x + versionBox.width);
+        }, { timeout: 5000 }).toBeGreaterThanOrEqual(8);
     });
 
     test('Enable Secure Storage banner opens the storage wizard', async ({ page }) => {
