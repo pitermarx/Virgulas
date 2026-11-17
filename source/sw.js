@@ -23,6 +23,9 @@ async function cachePut(cache, request, response) {
 }
 
 self.addEventListener('message', (event) => {
+  const trustedOrigin = self.location.origin
+  if (event.origin && event.origin !== trustedOrigin) return
+
   const reply = event.ports[0]
   if (event.data?.type === 'drain-cache-writes') {
     cachingPaused = true
