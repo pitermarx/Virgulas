@@ -5,7 +5,7 @@ import { describe, it } from 'bun:test'
 // document-level merge() contract: the merged/conflict result shape,
 // metadata carry-over, baseline semantics, and pureness.
 import { CONFLICT_FIELDS, attachMissingChildren, documentsEquivalent, merge, mergeDocuments } from '../../../source/js/merge.js'
-import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
+import type { OutlineDoc, OutlineNode } from '../../../source/js/model.js'
 import { assert, assertEqual } from '../testing.js'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

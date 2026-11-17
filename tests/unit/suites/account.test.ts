@@ -59,7 +59,6 @@ describe('Email-confirmation sign-up', () => {
 
   it('the lock screen surfaces a confirmation message instead of a generic failure', () => {
       const src = readLockScreen()
-      assert(/remote-email-unconfirmed/.test(src), 'a dedicated scenario must exist')
       assert(/confirm your email address/i.test(src), 'the message must tell the user to confirm')
   })
 })

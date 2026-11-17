@@ -152,20 +152,25 @@ export async function submitUnlock(
  * Unlock is a key derivation + decrypt, and the lock sheet also re-renders while
  * the boot probes settle, so a submit can be swallowed and the crypto can take
  * seconds on a contended CI runner. Retry the submit until the app renders, with
- * an explicit budget rather than the suite default: two WebKit integration tests
- * needed a retry on 2026-11-14 for exactly this.
+ * a budget well under Playwright's 60 s test timeout: spending the whole test
+ * budget here made the next action fail as "Page closed" after the timeout
+ * (the WebKit tasks.spec failure) instead of naming the unlock problem. On a
+ * genuine failure, read the lock-screen error instead of timing out silently.
  */
 export async function unlockApp(
     page: import('@playwright/test').Page,
     passphrase = 'password'
 ) {
     const rendered = page.locator('body[data-main-view="rendered"]');
+    const lockError = page.locator('#auth-unlock-error');
     await expect(async () => {
-        // A submit that did land still counts when the render was slow.
         if (await rendered.count() > 0) return;
+        if (await lockError.isVisible().catch(() => false)) {
+            throw new Error(`unlock failed: ${(await lockError.textContent())?.trim()}`);
+        }
         await submitUnlock(page, passphrase);
-        await expect(rendered, 'the app renders after the unlock').toHaveCount(1, { timeout: 20_000 });
-    }).toPass({ timeout: 60_000 });
+        await expect(rendered, 'the app renders after the unlock').toHaveCount(1, { timeout: 10_000 });
+    }).toPass({ timeout: 30_000 });
 }
 
 /**
@@ -457,8 +462,17 @@ export async function unlockRemote(
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
     }
     await page.getByLabel('Encryption passphrase').fill(options.passphrase ?? 'password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    const rendered = page.locator('body[data-main-view="rendered"]');
+    await expect(async () => {
+        // A submit that already landed counts even when the render was slow.
+        if (await rendered.count() > 0) return;
+        const error = page.locator('#auth-unlock-error');
+        if (await error.isVisible().catch(() => false)) {
+            throw new Error(`remote unlock failed: ${(await error.textContent())?.trim()}`);
+        }
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(rendered, 'the app renders after the remote unlock').toHaveCount(1, { timeout: 10_000 });
+    }).toPass({ timeout: 25_000 });
 }
 
 /** Focus the first visible node and type into its editor. */

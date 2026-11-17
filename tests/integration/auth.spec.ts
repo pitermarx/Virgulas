@@ -831,6 +831,9 @@ test.describe('Authentication', () => {
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.goto('about:blank');
     await page.goto('/#remote-parent');
+    // The app probes the remembered session and draws the lock sheet before it
+    // exposes the unlock form; unlocking into that boot would race the backdrop.
+    await expect(page.getByRole('button', { name: 'Unlock' })).toBeVisible({ timeout: 15000 });
 
     const unlockResult = await page.evaluate(async () => {
       const persistence = (await import('/js/app.js' as string)).e2e.persistence as any;

@@ -3,7 +3,8 @@
 // miss, and the Phase 5 data-model work depends on them holding.
 import { describe, it, beforeEach } from 'bun:test'
 import outline from '../../../source/js/outline.js'
-import { jsonCodec, type OutlineDoc, type OutlineNode } from '../../../source/js/docCodec.js'
+import { jsonCodec } from '../../../source/js/docCodec.js'
+import type { OutlineDoc, OutlineNode } from '../../../source/js/model.js'
 import { merge, mergeDocuments } from '../../../source/js/merge.js'
 import { assert, assertEqual } from '../testing.js'
 

@@ -20,7 +20,7 @@ import { log, store } from './utils.js'
 import { CONFLICT_FIELDS, attachMissingChildren, documentsEquivalent, merge } from './merge.js'
 import type { NodeConflict } from './merge.js'
 import { jsonCodec } from './docCodec.js'
-import type { OutlineDoc, OutlineNode } from './docCodec.js'
+import type { OutlineDoc, OutlineNode } from './model.js'
 import { StoreError, type DocStore } from './storage.js'
 
 export interface RemoteSyncAttempt {

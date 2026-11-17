@@ -460,15 +460,19 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `docCodec.ts`:
   Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
 - `model.ts`:
-  Shared document-model constants (`MODEL_VERSION`) and `CorruptDocumentError`. No imports, so `outline.ts` and `docCodec.ts` can share them without a cycle.
+  Shared document-model types (`OutlineNode`, `OutlineDoc`, `DocCodec`), `MODEL_VERSION` and
+  `CorruptDocumentError`. No imports, so `storage.ts`, `outline.ts` and `docCodec.ts` can all
+  share them without a cycle.
 - `merge.ts`:
   Pure three-way merge over the outline model (local vs remote vs numeric baseline): node-level `mergeDocuments` and document-level `merge`. No store I/O.
 - `storage.ts`:
   Storage seam contracts (see `docs/storage-interface.md`): `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, `StoreCapabilities`, and the two-channel `StoreError` taxonomy. Contracts only — adapters import this module, never the reverse.
 - `encryptedStore.ts`:
   The crypto decorator: `encrypted(raw, session)` wraps a RawStore into a StringStore, and `KeySession` is the single in-memory retention point for the session passphrase (rotation, lock). All crypto goes through `crypto2.ts` (Rule 7).
-- `memoryStore.ts`, `fileStore.ts`, `localStore.ts`:
-  Built-in backend adapters: RAM string store, File System Access `.vmd` handle store, and the `store`-slot RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+- `fileStore.ts`, `localStore.ts`:
+  Built-in backend adapters: the File System Access `.vmd` handle store and the `store`-slot
+  RawStore behind `vmd_data_enc` (`salt|envelope`, quota failures surface as `too-large`).
+  Memory has no adapter: the live outline is the store (`14.12`).
 - `fileHandles.ts`:
   The File System Access handle cache (pick, reopen, clear), backed by `idb.ts`. File mode's `isSupported()` gate lives here.
 - `idb.ts`:
@@ -484,13 +488,14 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   `LockScreen`/`SecureStoragePrompt` components. Its auth state (scenario, step,
   user, busy/errors) lives here, not in the app shell; `app.ts` mounts the
   component and asks `isWizardOverlayOpen()`, and `options.ts` reaches the same
-  state through `lockNow` / `resetSessionState` / `resetMemoryDocument`.
+  state through `lockNow` / `resetSessionState`; `persistence.loadIntroDocument()`
+  owns the tour text.
 - `options.ts`:
   The Options modal and its private state (account info, backend deletion
   capability, busy flag, the admin form fields). Binds its own dialog focus and
   calls the lock screen's API for lock/purge; persistence owns mode and storage.
 - `persistence.ts`:
-  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The debounce itself lives in `savePipeline.ts`.
+  Persistence orchestration for Local/Remote/File/Memory modes, unlock/sign-in flows, autosave wiring, export/import. Local is `codecStore(jsonCodec, encrypted(slotRaw))`, File is `codecStore(vmdCodec, fileStore)` and Remote is `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` over one shared KeySession; Memory keeps no store instance (the live outline is the store, §14.12). `localSaveFailed` surfaces failed local/file saves (data-06); a rotated remote locks the session and prompts (sync-01) via `remoteRekeyedNotice`. Owns the session lifecycle, the store construction and the Remote save edge: every save keeps the durable local copy first, then hands the document to `syncEngine.syncOnce` when the typing gate is open. The live session is one `sessionState` value (`locked`/`memory`/`filesystem`/`local`/`remote`); `authMode` is only the mode selected for the lock screen. The debounce itself lives in `savePipeline.ts`.
 - `syncEngine.ts`:
   The remote sync engine: the single `syncOnce` pull-before-push step, the
   injected composed DocStore, the head-token probe, the retry policy, the
@@ -671,7 +676,12 @@ bun run typecheck                # tsc app config + test config
 - CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`
   lists the tests that passed only on a retry in the job summary and exits non-zero with
   `--strict`, which the `test` job passes on `main` — a green run there must pass on the first
-  attempt.
+  attempt. A retried attempt whose failure was the page or browser closing (`Page closed`,
+  `Target closed`, `browser has disconnected`) is reported as infrastructure and does not fail
+  `main`: a retry is the only remedy for it. Assertion and timeout retries stay fatal.
+- The unlock helpers spend a bounded budget (under Playwright's 60 s test timeout) and surface the
+  lock-screen error, so a slow boot fails as "unlock failed: …" instead of a test timeout whose
+  next action reports "Page closed".
 - CI shards the suite across three jobs with `--shard=<i>/3`.
 - Every workflow pins Bun to one exact version (`bun-version` in each job); bump it in a pull request
   that runs the full suite, never to `latest`.
@@ -716,7 +726,7 @@ Workflows live in `.github/workflows/`.
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
 | `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
-| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts and names retried tests in the job summary (fatal on `main`) |
+| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts and names retried tests in the job summary (fatal on `main` for assertion retries) |
 | `production-bundle` | every push/PR | builds the deploy bundle (`--no-sourcemap`, test hooks off), refuses a source map, and runs the behaviour specs that need no test seam against it; a failure blocks `deploy` |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |

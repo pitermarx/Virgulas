@@ -12,7 +12,7 @@
 // concern that never appears here.
 
 import { log } from './utils.js'
-import type { OutlineDoc, OutlineNode } from './docCodec.js'
+import type { OutlineDoc, OutlineNode } from './model.js'
 
 export interface NodeConflict {
     nodeId: string

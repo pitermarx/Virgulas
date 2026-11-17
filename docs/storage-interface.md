@@ -749,12 +749,12 @@ prompt instead of silently reverting the rotation (sync-01 fix).
 
 | Module | Responsibility | Origin |
 | --- | --- | --- |
-| `storage.ts` (new) | Contracts: `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, capabilities, `StoreError`, backend registry/factory. **Not** the `store` slots in `utils.ts` — Rule 7's vocabulary is unchanged; the new abstraction owns the capitalized `*Store` filenames (`encryptedStore.ts`, `cachedStore.ts`, `memoryStore.ts`, …), `utils.store` remains the localStorage-slot facade | extracted from `sync.ts` + new |
+| `storage.ts` (new) | Contracts: `DocStore`, `StringStore`, `RawStore`, `AuthProvider`, capabilities, `StoreError`, backend registry/factory. **Not** the `store` slots in `utils.ts` — Rule 7's vocabulary is unchanged; the new abstraction owns the capitalized `*Store` filenames (`encryptedStore.ts`, `cachedStore.ts`, …), `utils.store` remains the localStorage-slot facade | extracted from `sync.ts` + new |
 | `encryptedStore.ts` (new) | `encrypted()` decorator (string-level, codec-blind), `KeySession` (via `crypto2.ts`) | from `persistence.ts`/`sync.ts` envelope logic |
 | `cachedStore.ts` (new) | `cached()` decorator: write order, offline read fallback, exists-union, quota propagation | from `persistence.ts` local-cache branches |
 | `docCodec.ts` (new) | `DocCodec` contract, `jsonCodec`, `vmdCodec`, `codecStore` lift, parse/validate errors; owns the VMD parser/writer that `outline.ts` delegates to | codecs are the serialization source of truth |
 | `merge.ts` (new) | pure three-way merge over the model (baseline-aware) | from `sync.ts mergeDocuments` |
-| `memoryStore.ts`, `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters | from `persistence.ts` mode branches |
+| `fileStore.ts`, `localStore.ts` (new, tiny) | built-in string-level adapters (Memory has none: the live outline is its store) | from `persistence.ts` mode branches |
 | `supabaseBackend.ts` (new) | `RawStore` + `AuthProvider` over `@supabase/supabase-js` (dynamic import preserved) | from `sync.ts` |
 | `syncEngine.ts` (new) | The single `syncOnce` pull-before-push step: injected store, head probe, merge hand-off, retry policy, `vmd_sync_head`/`vmd_sync_ts` clocks, typing gate, status/conflict signals, conflict resolution | from `sync.ts` |
 | `sync.ts` (shrinks) | Backend resolution, the `remoteSync` auth facade, the 60s poll schedule — no client code, no sync step | remainder of current `sync.ts` |
@@ -1064,12 +1064,10 @@ ambiguous or conflicted with AGENTS rules. The design intent is unchanged.
     primary together), rather than deferring only the primary write. The
     deferred flush lands ~50ms after the typing gate opens, so the local cache
     write is delayed by well under a second in the worst case.
-12. **Memory mode keeps no store instance** (`codecStore(jsonCodec,
-    memoryStore())` is the composition template the other modes follow): the
-    live outline *is* the Memory store. It is already RAM-only, survives no
-    reload (non-goal), and has no unlock lifecycle, so a second codecStore-backed
-    copy would duplicate the document in RAM and re-serialize it on every save
-    for no observable effect. The intro still round-trips through `jsonCodec` on
-    load (validation for free), and `memoryStore()` remains the RAM adapter the
-    contract suite exercises. Local and File compose their DocStores exactly as
-    §5 describes; their read/write paths are doc-level.
+12. **Memory mode keeps no store instance**: the live outline *is* the Memory
+    store. It is already RAM-only, survives no reload (non-goal), and has no
+    unlock lifecycle, so a codecStore-backed copy would duplicate the document in
+    RAM and re-serialize it on every save for no observable effect. The tour loads
+    straight through `vmdCodec` into the model; the RAM adapter the contract
+    suite used to exercise was removed with this decision. Local and File compose
+    their DocStores exactly as §5 describes; their read/write paths are doc-level.

@@ -16,7 +16,7 @@ import {
     syncStatus
 } from '../../../source/js/syncEngine.js'
 import { StoreError, type DocStore, type StoreCapabilities } from '../../../source/js/storage.js'
-import type { OutlineDoc, OutlineNode } from '../../../source/js/docCodec.js'
+import type { OutlineDoc, OutlineNode } from '../../../source/js/model.js'
 import { assert, assertEqual } from '../testing.js'
 
 const CAPABILITIES: StoreCapabilities = {

@@ -16,7 +16,7 @@
 // reverse). The `store` slots in utils.ts (Rule 7's vocabulary) are unrelated
 // to these capitalized *Store contracts.
 
-import type { OutlineDoc } from './docCodec.js'
+import type { OutlineDoc } from './model.js'
 
 // ── Error taxonomy (§4.4) ─────────────────────────────────────────────────────
 

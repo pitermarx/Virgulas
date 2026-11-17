@@ -5,13 +5,12 @@ import {
 } from "./crypto2.js"
 import outline, { MODEL_VERSION } from "./outline.js"
 import { codecStore, jsonCodec, vmdCodec } from './docCodec.js'
-import type { OutlineDoc } from './docCodec.js'
+import type { OutlineDoc } from './model.js'
 import { createKeySession, encrypted } from './encryptedStore.js'
 import { slotRaw } from './localStore.js'
 import { fileStore } from './fileStore.js'
 import { fileHandleStore } from './fileHandles.js'
-import { memoryStore } from './memoryStore.js'
-import { parseBackendConfig, StoreError, type BackendConfig, type DocStore, type UnlockResult } from './storage.js'
+import { StoreError, type DocStore, type UnlockResult } from './storage.js'
 import {
   detectBrowserCapabilities,
   clearAppCaches,
@@ -37,7 +36,6 @@ import {
   backend
 } from './sync.js'
 import {
-  syncStatus,
   remoteRekeyed,
   setSyncHead,
   setLastSyncedAt,
@@ -102,15 +100,6 @@ function assertNewPassphrase(passphrase: string) {
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
 
-/** Reactive mirror of `keySession.unlocked` for the save effect and the lock
- * screen. The passphrase itself never leaves KeySession (docs §4.3); this flag
- * is all the orchestration and the UI ever hold. */
-const sessionUnlocked = signal(false)
-
-function markSessionUnlocked() {
-  sessionUnlocked.value = keySession.unlocked
-}
-
 const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
@@ -149,20 +138,6 @@ function hasDocumentNodes(doc: OutlineDoc | null): doc is OutlineDoc {
  * owns saves, retries and the deferred push), torn down on lock/sign-out.
  */
 let remoteCacheStore: DocStore | null = null          // the local cache side, doc-level
-
-/** The configured sync backend (resolved by `sync.ts`). */
-function getBackendConfig(): BackendConfig {
-  return parseBackendConfig(store.backend.get())
-}
-
-function setBackendConfig(config: BackendConfig) {
-  store.backend.set(JSON.stringify(config))
-}
-
-/** The configured backend's kind — UI branching (messages, labels). */
-function getBackendKind(): BackendConfig['backend'] {
-  return getBackendConfig().backend
-}
 
 async function buildRemoteStore(): Promise<DocStore> {
   const { raw } = await backend()
@@ -227,7 +202,7 @@ effect(() => {
   stopPolling()
   clearPendingSave()
   keySession.lock()
-  markSessionUnlocked()
+  sessionState.value = 'locked'
   teardownRemoteStore()
   remoteRekeyedNotice.value = true
 })
@@ -277,8 +252,14 @@ function applyHashZoomIfPresent() {
 }
 
 export const authMode = signal<PersistenceMode>('local')
-const filesystemReady = signal(false)
-const memoryReady = signal(false)
+/**
+ * The live session: what three readiness flags used to encode. `authMode` is
+ * the mode selected for the lock screen (it survives a lock); this is what is
+ * actually open right now, so no combination of "unlocked" and "ready" can
+ * contradict another.
+ */
+type SessionState = 'locked' | 'memory' | 'filesystem' | 'local' | 'remote'
+const sessionState = signal<SessionState>('locked')
 // Set when a sign-up succeeded but produced no session because the project
 // requires email confirmation. Consumed by the lock screen so the user gets an
 // actionable message instead of an unexplained unlock failure.
@@ -286,8 +267,8 @@ let pendingEmailConfirmation = false
 
 const savePipeline = createSavePipeline({
   mode: () => authMode.value,
-  isUnlocked: () => sessionUnlocked.value,
-  isFilesystemReady: () => filesystemReady.value,
+  isUnlocked: () => sessionState.value === 'local' || sessionState.value === 'remote',
+  isFilesystemReady: () => sessionState.value === 'filesystem',
   localStore: localDataStore,
   fileStore: () => fileDataStore,
   setLocalSaveFailed: (failed) => { localSaveFailed.value = failed },
@@ -350,7 +331,7 @@ function setupLocal(code: string, initialDoc?: OutlineDoc) {
     outline.addChild('root', { text: '' })
   }
   authMode.value = 'local'
-  markSessionUnlocked()
+  sessionState.value = 'local'
   rememberMode('local')
   void refreshLocalStorageDurability(false)
   return true
@@ -382,7 +363,7 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
 
     batch(() => {
       authMode.value = 'local'
-      markSessionUnlocked()
+      sessionState.value = 'local'
       applyHashZoomIfPresent()
     })
 
@@ -460,7 +441,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      markSessionUnlocked()
+      sessionState.value = 'remote'
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -487,7 +468,7 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
   batch(() => {
     authMode.value = 'remote'
-    markSessionUnlocked()
+    sessionState.value = 'remote'
     applyHashZoomIfPresent()
   })
   rememberMode('remote')
@@ -513,26 +494,42 @@ async function getIntroVmdText(): Promise<string> {
   return introVmdCache
 }
 
-async function unlockMemory() {
-  const introText = await getIntroVmdText()
-
+function applyIntro(introText: string) {
   outline.reset()
   if (introText && introText.trim()) {
-    // Memory mode round-trips the intro through jsonCodec: validation for
-    // free (docs §4.6); the live outline itself is the store (§14.12).
-    const memoryDataStore = codecStore(jsonCodec, memoryStore())
-    // The jsonCodec-backed store requires a model version on the document.
-    await memoryDataStore.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...vmdCodec.parse(introText) })
-    loadDocIntoOutline((await memoryDataStore.read())!)
+    loadDocIntoOutline(vmdCodec.parse(introText))
   } else {
-    outline.addChild('root', { text: '' }) // fallback: intro fetch failed, initialize with one empty node
+    outline.addChild('root', { text: '' }) // fallback: intro fetch failed, one empty node
   }
+}
+
+/**
+ * Reset the live model to the in-app tour. Memory mode and a purge both use it;
+ * the text is fetched once and cached for the session.
+ */
+async function loadIntroDocument() {
+  applyIntro(await getIntroVmdText())
+}
+
+/**
+ * The backdrop behind the lock screen. A session can open while the fetch is in
+ * flight (a fast unlock, or the biometric auto-unlock), so re-check after the
+ * await: loading the tour over a live document would reset it and drop the
+ * zoom target.
+ */
+async function loadLockedBackgroundIntro() {
+  const introText = await getIntroVmdText()
+  if (sessionState.value === 'locked') applyIntro(introText)
+}
+
+async function unlockMemory() {
+  await loadIntroDocument()
 
   applyHashZoomIfPresent()
 
   batch(() => {
     authMode.value = 'memory'
-    memoryReady.value = true
+    sessionState.value = 'memory'
   })
   return true
 }
@@ -574,7 +571,7 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
 
   batch(() => {
     authMode.value = 'filesystem'
-    filesystemReady.value = true
+    sessionState.value = 'filesystem'
   })
   rememberMode('filesystem')
   // Only the branches that already wrote the file are saved; the adopted memory
@@ -605,8 +602,8 @@ async function unlock(code: string, options: UnlockOptions = {}) {
 
 export default {
   wipeDeviceData,
-  isLocked: () => !sessionUnlocked.value && !filesystemReady.value && !memoryReady.value,
-  isMemory: () => memoryReady.value,
+  isLocked: () => sessionState.value === 'locked',
+  isMemory: () => sessionState.value === 'memory',
   hasFilesystem: () => fileHandleStore.isSupported(),
   getLastUsername: () => store.user.get('') || '',
   /**
@@ -621,16 +618,12 @@ export default {
       }
       return biometrics.enroll(current, userLabel ?? 'Virgulas user')
   },
-  getPreferredMode: () => normalizeMode(store.mode.get(null)),
   /** True when the last sign-up still needs the email confirmed before a session exists. */
   needsEmailConfirmation: () => pendingEmailConfirmation,
   clearEmailConfirmation: () => { pendingEmailConfirmation = false },
   setPreferredMode(mode: string | null) {
     rememberMode(mode)
   },
-  getBackendConfig,
-  setBackendConfig,
-  getBackendKind,
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
@@ -689,64 +682,58 @@ export default {
     // `forceLockScreen` therefore turns every memory outcome into the Local
     // lock screen. Memory stays reachable from there ("Skip — continue in
     // memory"), and the user can navigate away instead.
-    const lock = (mode: string, scenario: string, user: any = null) => {
+    const lock = (mode: string, user: any = null) => {
       if (options.forceLockScreen && mode === 'memory') {
-        return {
-          mode: 'local',
-          scenario: hasLocalData ? 'local-present-no-session' : 'empty-local',
-          user: null,
-          ...bootstrapBase
-        }
+        return { mode: 'local', user: null, ...bootstrapBase }
       }
-      return { mode, scenario, user, ...bootstrapBase }
+      return { mode, user, ...bootstrapBase }
     }
 
     const encryptedModeWouldBeSelected = preferredMode === 'local' || preferredMode === 'remote'
       || (!preferredMode && (hasLocalData || !!lastUsername))
       || (preferredMode === 'filesystem' && !hasFilesystem)
     if (!encryptedStorageAvailable && encryptedModeWouldBeSelected) {
-      return lock('memory', 'memory-unsupported')
+      return lock('memory')
     }
 
     // No remembered mode → check for data signals; if none exist, start in memory mode
     if (!preferredMode) {
       // Respect existing committed SPEC fallbacks for returning users who have data
-      if (user && hasRemoteData) return lock('remote', 'remote-session-valid', user)
-      if (hasSavedFileHandle && hasFilesystem) return lock('filesystem', 'filesystem-ready')
-      if (hasLocalData) return lock('local', 'local-present-no-session')
-      if (lastUsername) return lock('remote', 'remote-session-expired')
+      if (user && hasRemoteData) return lock('remote', user)
+      if (hasSavedFileHandle && hasFilesystem) return lock('filesystem')
+      if (hasLocalData) return lock('local')
+      if (lastUsername) return lock('remote')
       // True first-ever visitor: no mode remembered and no data signals → memory mode
-      return lock('memory', 'memory-fresh')
+      return lock('memory')
     }
 
     // User explicitly chose in-memory mode — remember it and stay in memory
     if (preferredMode === 'memory') {
-      return lock('memory', 'memory-remembered')
+      return lock('memory')
     }
 
     if (preferredMode === 'filesystem' && hasFilesystem) {
-      return { mode: 'filesystem', scenario: 'filesystem-ready', user: null, ...bootstrapBase }
+      return { mode: 'filesystem', user: null, ...bootstrapBase }
     }
 
     if (preferredMode === 'filesystem') {
       // filesystem preferred but API unavailable — fall back to lock screen for local
-      return { mode: 'local', scenario: hasLocalData ? 'local-present-no-session' : 'empty-local', user: null, ...bootstrapBase }
+      return { mode: 'local', user: null, ...bootstrapBase }
     }
 
     if (preferredMode === 'remote') {
       if (user && hasRemoteData) {
-        return { mode: 'remote', scenario: 'remote-session-valid', user, ...bootstrapBase }
+        return { mode: 'remote', user, ...bootstrapBase }
       }
-      return { mode: 'remote', scenario: 'remote-session-expired', user: null, ...bootstrapBase }
+      return { mode: 'remote', user: null, ...bootstrapBase }
     }
 
     if (preferredMode === 'local') {
-      const scenario = hasLocalData ? 'local-present-no-session' : 'empty-local'
-      return { mode: 'local', scenario, user: null, ...bootstrapBase }
+      return { mode: 'local', user: null, ...bootstrapBase }
     }
 
-    // Unknown stored mode value — start fresh in memory
-    return { mode: 'memory', scenario: 'memory-fresh', user: null, ...bootstrapBase }
+    // Unknown stored mode value - start fresh in memory
+    return { mode: 'memory', user: null, ...bootstrapBase }
   },
   clearLocalData() {
     void localDataStore.clear()
@@ -764,6 +751,8 @@ export default {
     rememberMode('memory')
     await clearAppCaches()
   },
+  loadIntroDocument,
+  loadLockedBackgroundIntro,
   async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
     store.user.set(email.trim())
@@ -805,7 +794,7 @@ export default {
     if (token) setSyncHead(token)
     batch(() => {
       authMode.value = 'remote'
-      markSessionUnlocked()
+      sessionState.value = 'remote'
     })
     rememberMode('remote')
     setLastSyncedAt(Date.now())
@@ -813,7 +802,6 @@ export default {
     savePipeline.markSaved()
     return true
   },
-  syncStatus,
   async lock() {
     // Flush pending work (local write; remote push if a remote session is active)
     // before dropping the key, so locking cannot lose the most recent edit.
@@ -822,9 +810,7 @@ export default {
     clearPendingSave()
     keySession.lock()
     teardownRemoteStore()
-    markSessionUnlocked()
-    filesystemReady.value = false
-    memoryReady.value = false
+    sessionState.value = 'locked'
   },
   async signOut() {
     stopPolling()
@@ -841,10 +827,9 @@ export default {
     await biometrics.forget().catch(() => { })
     // Lock the session before the remaining awaits so an in-flight save cannot
     // push to a session that is being torn down.
-    markSessionUnlocked()
+    sessionState.value = 'locked'
     await remoteSync.signOut()
     authMode.value = 'remote'
-    filesystemReady.value = false
     rememberMode('remote')
   },
   /**
@@ -873,7 +858,7 @@ export default {
     // Same ordering as signOut: the seal must be gone before the app reports a
     // locked session, or the biometric auto-unlock resurrects the deleted one.
     await biometrics.forget().catch(() => { })
-    markSessionUnlocked()
+    sessionState.value = 'locked'
 
     await getRemoteStore()?.clear() ?? await remoteSync.deleteOutline()
 
@@ -894,8 +879,6 @@ export default {
 
     await remoteSync.signOut()
     authMode.value = 'remote'
-    filesystemReady.value = false
-    memoryReady.value = false
   },
   async pickNewFile() {
     await fileHandleStore.pickNewFile()
@@ -916,12 +899,10 @@ export default {
   reset() {
     clearPendingSave()
     keySession.lock()
-    markSessionUnlocked()
+    sessionState.value = 'locked'
     localSaveFailed.value = false
     outline.reset()
     authMode.value = 'local'
-    filesystemReady.value = false
-    memoryReady.value = false
     wipeDeviceData()
   },
   async changePassphrase(newPassphrase: string) {
@@ -941,7 +922,6 @@ export default {
       keySession.rotate(newPassphrase)
       await localDataStore.write(doc)
       savePipeline.markSaved()
-      markSessionUnlocked()
       return true
     }
 
@@ -961,7 +941,6 @@ export default {
       setLastSyncedAt(Date.now())
     }
 
-    markSessionUnlocked()
     return true
   },
   exportVmd() {

@@ -18,38 +18,15 @@
 // codecStore() lifts a StringStore into a DocStore: read → parse,
 // write → serialize, token passthrough.
 
-import { CorruptDocumentError, MODEL_VERSION } from './model.js'
+import {
+    CorruptDocumentError,
+    MODEL_VERSION,
+    type DocCodec,
+    type OutlineDoc,
+    type OutlineNode
+} from './model.js'
 import { UnsupportedVersionError } from './crypto2.js'
 import { StoreError, type DocStore, type StringStore } from './storage.js'
-
-/** A serialized document node — the shape outline.serialize() emits. */
-export interface OutlineNode {
-    id: string
-    parentId?: string | null
-    text?: string
-    description?: string
-    children?: string[]
-    open?: boolean
-    done?: boolean | null
-    lastModified?: number
-    [key: string]: any
-}
-
-/**
- * A whole document value: the node list (always including the 'root' node)
- * plus any document-level metadata (modelVersion, dataVersion, …).
- */
-export interface OutlineDoc {
-    nodes: OutlineNode[]
-    [key: string]: any
-}
-
-export interface DocCodec {
-    serialize(doc: OutlineDoc): string
-    /** Validates; throws StoreError('invalid-document' | 'unsupported-runtime'),
-     * with the underlying typed error preserved as `cause`. */
-    parse(text: string): OutlineDoc
-}
 
 // ── jsonCodec ────────────────────────────────────────────────────────────────
 
