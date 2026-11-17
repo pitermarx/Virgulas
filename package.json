@@ -1,6 +1,6 @@
 {
     "name": "virgulas",
-    "version": "4.2.9",
+    "version": "4.2.10",
     "description": "Local-first browser outliner",
     "type": "module",
     "scripts": {
