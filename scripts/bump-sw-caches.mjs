@@ -24,7 +24,9 @@ const GROUPS = {
     ],
     APP_CACHE: [
         join(ROOT, 'source', 'index.html'),
-        join(ROOT, 'source', 'version.json'),
+        // Not version.json: the release job rewrites it on every version bump,
+        // and the worker serves it network-first, so a release would otherwise
+        // force a cache bump on the next unrelated push.
         join(ROOT, 'source', 'site.webmanifest'),
         join(ROOT, 'source', 'css'),
         join(ROOT, 'source', 'js'),
