@@ -17,6 +17,7 @@ import { inboxNodeName } from './capture.js'
 import { bindDialogFocus } from './dialogs.js'
 import { optionsOpen } from './shortcuts.js'
 import { modes, isEncryptedMode } from './modes.js'
+import { loadIntroDocument } from './intro.js'
 import { lockNow, resetSessionState } from './lockScreen.js'
 
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 })
@@ -255,7 +256,7 @@ export const OptionsModal = () => {
     optionsOpen.value = false;
 
     if (currentMode === 'memory') {
-      await persistence.loadIntroDocument();
+      await loadIntroDocument();
       return;
     }
 

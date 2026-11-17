@@ -913,6 +913,9 @@ function outlineFactory() {
         setVMD,
         setRootVMD,
         snapshot,
+        // Codec-parsed documents carry no model version; supply it before load
+        // validates the value. Shared by the storage seam and the intro loader.
+        loadDocument: (doc: OutlineDoc) => load({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc }),
         load,
         serialize,
         deserialize,
