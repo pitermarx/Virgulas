@@ -620,7 +620,7 @@ left behind.
 
 A purge (`clearAppCaches`) first asks the worker to pause cache writes and drain the ones already in flight, then deletes, then resumes. Without that, a stale-while-revalidate write that started just before the delete could land after it and recreate the cache the purge just removed.
 
-**Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed). The hashing itself lives in `scripts/sw-cache.ts` and is line-ending independent: text files are normalised to LF before hashing, so a clone with `core.autocrlf=true` computes the same hash as a Linux CI checkout. Binary assets are hashed byte for byte.
+**Version bumps are automated.** `scripts/bump-sw-caches.mjs` hashes each file group and increments the matching version constant in `sw.js` only when the files have changed. Hashes are stored in `scripts/.sw-cache-hashes.json` (committed). The hashing itself lives in `scripts/sw-cache.ts` and is line-ending independent: text files are normalised to LF before hashing, so a clone with `core.autocrlf=true` computes the same hash as a Linux CI checkout. Binary assets are hashed byte for byte. `source/version.json` is deliberately outside the groups: the release job rewrites it and the worker serves it network-first, so a release must not force a cache bump on the next push.
 
 - `bun install` runs the bump script automatically (via `postinstall`).
 - For changes to fonts, media, or app files, run `bun run sw:bump` before committing.
@@ -672,7 +672,9 @@ bun run typecheck                # tsc app config + test config
 - The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
-- `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 4 per CI shard.
+- `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 3 per CI shard.
+  Four WebKit workers on a four-core runner produced page-closed and unlock-timeout flakes that
+  always passed on retry; CI stays at three.
 - Never pace a spec with `page.waitForTimeout`: await the observable condition instead
   (`expect.poll`, a web-first assertion, or `page.clock` when timing itself is the property).
 - CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`

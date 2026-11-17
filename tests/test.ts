@@ -169,8 +169,8 @@ export async function unlockApp(
             throw new Error(`unlock failed: ${(await lockError.textContent())?.trim()}`);
         }
         await submitUnlock(page, passphrase);
-        await expect(rendered, 'the app renders after the unlock').toHaveCount(1, { timeout: 10_000 });
-    }).toPass({ timeout: 30_000 });
+        await expect(rendered, 'the app renders after the unlock').toHaveCount(1, { timeout: 20_000 });
+    }).toPass({ timeout: 40_000 });
 }
 
 /**
@@ -471,8 +471,8 @@ export async function unlockRemote(
             throw new Error(`remote unlock failed: ${(await error.textContent())?.trim()}`);
         }
         await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(rendered, 'the app renders after the remote unlock').toHaveCount(1, { timeout: 10_000 });
-    }).toPass({ timeout: 25_000 });
+        await expect(rendered, 'the app renders after the remote unlock').toHaveCount(1, { timeout: 20_000 });
+    }).toPass({ timeout: 40_000 });
 }
 
 /** Focus the first visible node and type into its editor. */
