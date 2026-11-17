@@ -9,7 +9,7 @@ import { assert } from '../testing.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const css = readFileSync(path.join(ROOT, 'source/css/base.css'), 'utf8')
-const ui = readFileSync(path.join(ROOT, 'source/js/ui.ts'), 'utf8')
+const ui = readFileSync(path.join(ROOT, 'source/components/toolbars.ts'), 'utf8')
 
 function blockText(selector: string): string {
     const start = css.indexOf(selector)

@@ -170,7 +170,7 @@ describe('Website Specification — accessibility contract', () => {
 
   it('the shell exposes main and contentinfo landmarks', () => {
       const app = read('source/js/app.ts')
-      const ui = read('source/js/ui.ts')
+      const ui = read('source/components/toolbars.ts')
       assert(app.includes('<main class="main-content" id="main-content"'), 'the document body needs a <main> landmark')
       assert(app.includes('inert='), 'background content should be inert while a modal is open')
       assert(ui.includes('role="contentinfo"'), 'the status toolbar should be a contentinfo landmark')

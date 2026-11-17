@@ -97,6 +97,7 @@ Do not create files outside these locations without explicit instruction:
 │   ├── favicon.ico/.svg    — root favicon fallbacks
 │   ├── .well-known/        — security.txt, gpc.json
 │   ├── css/                — modular stylesheets bundled into app.css
+│   ├── components/         — Preact components, one file per surface (outline, toolbars, tasks, conflict)
 │   ├── js/                 — TypeScript application modules (entry: app.ts)
 │   ├── fonts/              — self-hosted Inter webfonts
 │   └── media/              — icons and static assets (PWA icons, Quick capture icon)
@@ -364,7 +365,7 @@ Remote mode, plus the SRI-pinned Umami tracker.
 
 `source/js/app.ts` is the entry point. It renders the Preact tree, owns the lock screen and modal
 orchestration, and delegates everything else to the focused modules listed under
-[Frontend module map](#frontend-module-map-sourcejs).
+[Frontend module map](#frontend-module-map-sourcejs-sourcecomponents).
 
 ### Storage modes and boot
 
@@ -441,7 +442,7 @@ options) are not protected by the hash and are changed with a normal review.
 
 ---
 
-## Frontend module map (`source/js`)
+## Frontend module map (`source/js`, `source/components`)
 
 Use this as the default responsibility split. Keep files focused and avoid mixing concerns.
 
@@ -449,8 +450,19 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   App bootstrap, splash lifecycle, top-level render tree, modal orchestration.
   Mounts `LockScreen` and `OptionsModal`; the auth and Options state live in
   those modules, so this file only owns what composes them.
-- `ui.ts`:
-  Preact UI components for the outliner surface and toolbars (`Outline`, node rendering, search results UI, tasks panel, debug panels).
+- `components/outline.ts`:
+  The outliner surface: the node tree and its text/description editors, search results, and the
+  global keyboard/hash entry points. Focus/selection comes from `focus.ts`.
+- `components/toolbars.ts`:
+  The status toolbar (sync state, mode, identity), the main toolbar with search, the breadcrumbs
+  and zoom description, and the static keyboard-shortcuts modal handlers.
+- `components/tasksPanel.ts`:
+  The tasks panel: grouped pending/scheduled/done rows and the scheduled window.
+- `components/conflictModal.ts`:
+  The blocking sync-conflict dialog.
+- `focus.ts`:
+  Focus/selection state (`focusId`, `focusType`, `selectedIds`, the `focus` object) and the DOM
+  transfer/blur helpers shared by the components and `shortcuts.ts`.
 - `search.ts`:
   Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
 - `shortcuts.ts`:

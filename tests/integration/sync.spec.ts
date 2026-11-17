@@ -633,7 +633,7 @@ test.describe('Conflict resolution modal', () => {
 
         // The keys must arrive once the dialog owns focus and the app has finished
         // reacting to the blur: opening the dialog blurs the outline's input, and
-        // the app clears the focused node 75 ms later (ui.ts, scheduleBlurClear).
+        // the app clears the focused node 75 ms later (focus.ts, scheduleBlurClear).
         // Snapshotting before that settle compared a focused node with the cleared
         // one — a race that failed on a slow WebKit worker, not a shortcut leak.
         await expect

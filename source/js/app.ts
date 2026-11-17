@@ -1,6 +1,9 @@
 import { html, render } from 'htm/preact';
 import { signal, computed } from '@preact/signals';
-import { Outline, StatusToolbar, MainToolbar, ConflictModal, TasksPanel } from './ui.js';
+import { Outline } from '../components/outline.js';
+import { StatusToolbar, MainToolbar } from '../components/toolbars.js';
+import { ConflictModal } from '../components/conflictModal.js';
+import { TasksPanel } from '../components/tasksPanel.js';
 import { optionsOpen, tasksPanelOpen } from './shortcuts.js';
 import persistence from './persistence.js';
 import outline from './outline.js';
