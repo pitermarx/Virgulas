@@ -1,5 +1,6 @@
 import { describe, it } from 'bun:test'
-import { isEncryptedMode, modeLabel, modes } from '../../../source/js/modes.js'
+import { describeBrowserSupport, isEncryptedMode, modeLabel, modes, normalizeMode } from '../../../source/js/modes.js'
+import type { BrowserCapabilities } from '../../../source/js/utils.js'
 import { assert, assertEqual } from '../testing.js'
 
 // One owner for the four modes' UI traits and copy. Behavioural branches stay in
@@ -44,5 +45,21 @@ describe('storage mode table', () => {
       assertEqual(modes.local.action, 'Delete local data', 'local action')
       assert(modes.local.prompt.includes('cannot be undone'), 'local data is gone')
       assertEqual(modes.memory.action, 'Delete local data', 'memory action')
+  })
+
+  it('normalizes only the four stored mode values', () => {
+      assertEqual(normalizeMode('local'), 'local', 'local')
+      assertEqual(normalizeMode('remote'), 'remote', 'remote')
+      assertEqual(normalizeMode('filesystem'), 'filesystem', 'file')
+      assertEqual(normalizeMode('memory'), 'memory', 'memory')
+      assertEqual(normalizeMode('nonsense'), null, 'unknown mode')
+      assertEqual(normalizeMode(null), null, 'no stored mode')
+  })
+
+  it('warns about the APIs a mode needs', () => {
+      const all: BrowserCapabilities = { cryptoSubtle: true, compressionStreams: true, localStorage: true, indexedDB: true }
+      assertEqual(describeBrowserSupport(all, true), '', 'no warning when everything is available')
+      assert(describeBrowserSupport({ ...all, cryptoSubtle: false }, false).includes('Web Crypto'), 'names the missing crypto')
+      assert(describeBrowserSupport({ ...all, indexedDB: false }, true).includes('IndexedDB'), 'names the missing IndexedDB')
   })
 })

@@ -50,6 +50,7 @@ import {
 } from './syncEngine.js'
 import { cached } from './cachedStore.js'
 import { applyIntro, getIntroText, loadIntroDocument } from './intro.js'
+import { describeBrowserSupport, normalizeMode } from './modes.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
@@ -64,27 +65,6 @@ interface UnlockOptions {
   initialDoc?: OutlineDoc
 }
 
-function normalizeMode(mode: unknown): PersistenceMode | null {
-  return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
-}
-
-function describeBrowserSupport(capabilities: ReturnType<typeof detectBrowserCapabilities>, encryptedStorageAvailable: boolean) {
-  const warnings: string[] = []
-  if (!encryptedStorageAvailable) {
-    const missing = []
-    if (!capabilities.cryptoSubtle) missing.push('Web Crypto')
-    if (!capabilities.compressionStreams) missing.push('Compression Streams')
-    if (!capabilities.localStorage) missing.push('localStorage')
-    warnings.push(`Encrypted Local and Remote storage are unavailable because this browser lacks ${missing.join(', ')}. If either mode was selected, the app will continue in Memory without changing the saved mode or encrypted document.`)
-  }
-  if (!capabilities.indexedDB) {
-    warnings.push('IndexedDB is unavailable, so file handles will not be remembered between visits and biometric unlock is unavailable.')
-  }
-  return warnings.join(' ')
-}
-
-// Applies to newly chosen passphrases only; existing (possibly shorter) passphrases
-// must keep unlocking.
 function assertNewPassphrase(passphrase: string) {
   if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
     throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`)
