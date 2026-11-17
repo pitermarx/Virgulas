@@ -10,11 +10,7 @@ import { syncStatus, pendingConflicts, pendingMergedDoc, pendingConflictResoluti
 import { groupedTasks, hasOverdueTasks } from './tasks.js';
 import { formatDueDate, daysUntilDue } from './meta.js';
 import { modeLabel } from './modes.js';
-
-const focusId = signal<string | null>(null)
-const focusType = signal<string | null>(null)
-const selectedIds = signal<string[]>([])
-const focus = { Id: focusId, Type: focusType, SelectedIds: selectedIds }
+import { focus, focusId, focusType, selectedIds, requestNodeFocus, scheduleBlurClear, focusElement, focusMe } from './focus.js';
 
 // ── Static shell modals (keyboard shortcuts) ─────────────────────────────────
 // Previously inline <script>/onclick handlers in index.html; moved here so the
@@ -40,74 +36,8 @@ if (typeof document !== 'undefined') {
     closeModals(event)
   })
 }
-const FOCUS_TRANSFER_WINDOW_MS = 450
-const BLUR_SETTLE_MS = 75
-let pendingFocusTransfer: { id: string; type: string | null; expiresAt: number } | null = null
-
 // Sync body class for wide-screen side-by-side task panel layout
 effect(() => { document.body.classList.toggle('tasks-panel-is-open', tasksPanelOpen.value) })
-
-function getNodeIdFromElement(el: any) {
-    return el?.closest?.('.node-content')?.getAttribute('data-node-id') || null
-}
-
-function markFocusTransfer(id: string | null, type: string | null) {
-    pendingFocusTransfer = {
-        id: String(id),
-        type,
-        expiresAt: Date.now() + FOCUS_TRANSFER_WINDOW_MS
-    }
-}
-
-function requestNodeFocus(id: string | null, type: string | null) {
-    markFocusTransfer(id, type)
-    focusId.value = id
-    focusType.value = type
-}
-
-function hasActiveTransferForOtherNode(id: string | null) {
-    if (!pendingFocusTransfer) return false
-    if (Date.now() > pendingFocusTransfer.expiresAt) {
-        pendingFocusTransfer = null
-        return false
-    }
-    return pendingFocusTransfer.id !== String(id)
-}
-
-function clearTransferForElement(el: any) {
-    if (!pendingFocusTransfer) return
-    const nodeId = getNodeIdFromElement(el)
-    if (nodeId && nodeId === pendingFocusTransfer.id) {
-        pendingFocusTransfer = null
-    }
-}
-
-function focusElement(el: any) {
-    if (!el) return
-    if (document.activeElement !== el) {
-        try {
-            el.focus({ preventScroll: true })
-        } catch {
-            el.focus()
-        }
-    }
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    clearTransferForElement(el)
-}
-
-function scheduleBlurClear(id: string | null, type: string | null) {
-    setTimeout(() => {
-        const activeNodeId = getNodeIdFromElement(document.activeElement)
-        if (activeNodeId === String(id)) return
-        if (hasActiveTransferForOtherNode(id)) return
-        if (focusId.value === id && focusType.value === type) {
-            focusId.value = null
-            focusType.value = null
-        }
-    }, BLUR_SETTLE_MS)
-}
-
-const focusMe = { ref: focusElement }
 
 function openSearchWithQuery(query: string) {
     const nextQuery = String(query || '').trim()
