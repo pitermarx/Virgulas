@@ -29,17 +29,20 @@ const unlockMessage = signal('')
 /** The last failed unlock attempt; the reset buttons are derived from its type. */
 const unlockFailure = signal<unknown>(null)
 const isBusy = signal(false)
-// The choose-mode sheet is a wizard: path first (device vs cloud), then the
-// concrete local storage choice. The cloud path goes straight to the
-// credentials form — the server resolves itself.
-const wizardStep = signal<'storage' | 'local'>('storage')
-// The banner opens the wizard OVER the live memory session: nothing is locked
-// or captured until the user commits to a storage mode.
-const wizardOverlay = signal(false)
+// The lock sheet's flow: one value instead of authStep + wizardOverlay +
+// wizardStep + remotePasswordStage. The wizard asks the location first (device
+// vs cloud) and then the concrete local kind; the cloud path goes straight to
+// the credentials form because the server resolves itself. `overlay` is the same
+// wizard drawn over the live memory session: nothing is locked or captured until
+// the user commits to a storage mode.
+type WizardStep = 'location' | 'device'
+type LockFlow =
+  | { kind: 'unlock' }
+  | { kind: 'remote-password' } // email+password collected, awaiting the passphrase
+  | { kind: 'wizard'; step: WizardStep }
+  | { kind: 'overlay'; step: WizardStep }
+const lockFlow = signal<LockFlow>({ kind: 'unlock' })
 const authUser = signal<any>(null)
-const authStep = signal('unlock')
-// Remote unlock staging: email+password were collected and we await the passphrase.
-const remotePasswordStage = signal(false)
 const autoBioAttempted = signal(false)
 /** Names the resolved sync server for the credentials form. */
 const serverLabel = (): string => {
@@ -83,6 +86,13 @@ effect(() => {
 
 let stagedMemoryDoc: OutlineDoc | null = null;
 
+function setWizardStep(step: WizardStep) {
+  const flow = lockFlow.peek()
+  if (flow.kind === 'wizard' || flow.kind === 'overlay') lockFlow.value = { kind: flow.kind, step }
+}
+
+const isWizardFlow = (flow: LockFlow) => flow.kind === 'wizard' || flow.kind === 'overlay'
+
 async function requestChangeMode() {
   if (authMode.value === 'local' && authHasLocalData.value) {
     if (!confirm('Switching mode will clear your local encrypted data from this device. Continue?')) return;
@@ -93,14 +103,12 @@ async function requestChangeMode() {
     await persistence.signOut();
     authUser.value = null;
   }
-  authStep.value = 'choose-mode';
-  wizardStep.value = 'storage';
+  lockFlow.value = { kind: 'wizard', step: 'location' };
   unlockError.value = '';
   unlockMessage.value = '';
   unlockFailure.value = null;
   passphrase.value = '';
   password.value = '';
-  remotePasswordStage.value = false;
   autoBioAttempted.value = false;
 }
 
@@ -118,9 +126,8 @@ function pickMode(nextMode: PersistenceMode) {
   unlockError.value = '';
   unlockFailure.value = null;
   passphrase.value = '';
-  remotePasswordStage.value = false;
   password.value = '';
-  authStep.value = 'unlock';
+  lockFlow.value = { kind: 'unlock' };
   autoBioAttempted.value = false;
 }
 
@@ -163,11 +170,10 @@ async function submitUnlock(e: any) {
       // of keeping it in memory for the rest of the session.
       passphrase.value = '';
       stagedMemoryDoc = null;
-      remotePasswordStage.value = false;
+      lockFlow.value = { kind: 'unlock' };
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
-      stagedMemoryDoc = null;
       document.body.setAttribute('data-main-view', 'rendered');
     } else {
       unlockError.value = 'Unable to unlock this storage mode.';
@@ -192,9 +198,6 @@ async function submitSignUp() {
   try {
     const result = await persistence.signUp(username.value, password.value);
     authUser.value = await persistence.getUser();
-    if (authUser.value) {
-      remotePasswordStage.value = false;
-    }
 
     // Supabase returns a user object but no session when email confirmation is
     // required. Without this branch the app silently continued and the unlock
@@ -202,7 +205,6 @@ async function submitSignUp() {
     // cloud sync look broken. Stay on the credentials step (email prefilled):
     // the user's next action is confirming and signing in, not a passphrase.
     if (persistence.needsEmailConfirmation()) {
-      remotePasswordStage.value = false;
       // TrailBase's register reports success even when the account already
       // exists (anti-enumeration); the verification email only goes out for
       // new accounts, so "check your inbox" stays honest either way.
@@ -248,7 +250,7 @@ async function submitSignOut() {
   try {
     await persistence.signOut();
     authUser.value = null;
-    remotePasswordStage.value = false;
+    lockFlow.value = { kind: 'unlock' };
     await persistence.unlock('', { mode: 'memory' });
     persistence.setPreferredMode('memory');
     stagedMemoryDoc = null;
@@ -320,6 +322,7 @@ async function submitResetRemoteData() {
 }
 
 async function continueInMemory() {
+  lockFlow.value = { kind: 'unlock' };
   const staged = stagedMemoryDoc;
   stagedMemoryDoc = null;
   await persistence.unlock('', { mode: 'memory' });
@@ -335,9 +338,7 @@ async function continueInMemory() {
  * running memory session stays live behind the sheet — the document is only
  * captured when a storage mode is committed to (commitToWizardMode). */
 function openStorageWizard() {
-  wizardOverlay.value = true;
-  wizardStep.value = 'storage';
-  authStep.value = 'choose-mode';
+  lockFlow.value = { kind: 'overlay', step: 'location' };
   authMode.value = 'memory';
   autoBioAttempted.value = false;
   unlockError.value = '';
@@ -349,8 +350,7 @@ function openStorageWizard() {
 
 /** Abandons the wizard over a live session: the running document is untouched. */
 function closeStorageWizard() {
-  wizardOverlay.value = false;
-  authStep.value = 'unlock';
+  lockFlow.value = { kind: 'unlock' };
   unlockError.value = '';
 }
 
@@ -361,7 +361,7 @@ function closeStorageWizard() {
 async function commitToWizardMode(nextMode: PersistenceMode) {
   unlockError.value = '';
   if (nextMode === 'memory') {
-    if (wizardOverlay.value) {
+    if (lockFlow.peek().kind === 'overlay') {
       // Already live in memory: the wizard is just an overlay — dismiss it.
       closeStorageWizard();
       return;
@@ -373,7 +373,6 @@ async function commitToWizardMode(nextMode: PersistenceMode) {
   if (persistence.isMemory()) {
     stagedMemoryDoc = outline.snapshot();
   }
-  wizardOverlay.value = false;
   if (!persistence.isLocked()) {
     await persistence.lock();
   }
@@ -403,7 +402,7 @@ async function submitRemotePassword(e: any) {
     // A successful sign-in clears any earlier "confirm your email" state.
     persistence.clearEmailConfirmation();
     store.user.set(username.value.trim());
-    remotePasswordStage.value = true;
+    lockFlow.value = { kind: 'remote-password' };
   } catch (error) {
     unlockError.value = String((error as { message?: string } | null)?.message || 'Sign-in failed. Check your email and password.');
   } finally {
@@ -431,7 +430,7 @@ async function unlockWithBiometrics() {
       // KeySession now holds the secret; never mirror the recovered passphrase
       // into the lock-screen form state.
       passphrase.value = '';
-      remotePasswordStage.value = false;
+      lockFlow.value = { kind: 'unlock' };
       if (authMode.value === 'remote') {
         authUser.value = await persistence.getUser();
       }
@@ -457,23 +456,23 @@ effect(() => {
     return;
   }
 
-  const step = authStep.value;
+  const flow = lockFlow.value;
   const mode = authMode.value;
   const enrolled = biometrics.enrolled.value;
   const busy = isBusy.value;
   const isFilesystem = mode === 'filesystem';
   const isRemote = mode === 'remote';
   const isSessionValid = isRemoteSessionValid();
-  const isRemotePasswordStep = isRemote && !isSessionValid && !remotePasswordStage.value;
+  const needsRemoteCredentials = isRemote && !isSessionValid && flow.kind !== 'remote-password';
   const localCreate = mode === 'local' && !authHasLocalData.value;
 
   if (
-    step === 'unlock' &&
+    (flow.kind === 'unlock' || flow.kind === 'remote-password') &&
     enrolled &&
     !busy &&
     !isFilesystem &&
     !localCreate &&
-    !isRemotePasswordStep &&
+    !needsRemoteCredentials &&
     !autoBioAttempted.value
   ) {
     autoBioAttempted.value = true;
@@ -482,14 +481,17 @@ effect(() => {
 });
 
 export const LockScreen = () => {
-  const step = authStep.value;
+  const flow = lockFlow.value;
+  const inWizard = isWizardFlow(flow);
+  const wizardStep = inWizard ? flow.step : 'location';
+  const overlay = flow.kind === 'overlay';
   const mode = authMode.value;
   const isFilesystem = mode === 'filesystem';
   const isRemote = mode === 'remote';
   const isLocal = mode === 'local';
   const isSessionValid = isRemoteSessionValid();
 
-  const isRemotePasswordStep = isRemote && !isSessionValid && !remotePasswordStage.value;
+  const needsRemoteCredentials = isRemote && !isSessionValid && flow.kind !== 'remote-password';
 
   const passwordStepDisabled = isBusy.value || !username.value.trim() || !password.value;
   const unlockDisabled = isBusy.value || (!isFilesystem && !passphrase.value.trim());
@@ -506,14 +508,14 @@ export const LockScreen = () => {
       <div class="sheet-content">
         ${browserSupportWarning.value && html`<div class="form-error" role="alert">${browserSupportWarning.value}</div>`}
 
-        ${step === 'choose-mode' && html`
+        ${inWizard && html`
           <h2 class="auth-title" id="auth-title">
-            ${wizardStep.value === 'storage' ? 'Where should your notes live?' : 'On this device'}
+            ${wizardStep === 'location' ? 'Where should your notes live?' : 'On this device'}
           </h2>
 
-          ${wizardStep.value === 'storage' && html`
+          ${wizardStep === 'location' && html`
             <div class="wizard-options" role="group" aria-label="Storage location">
-              <button type="button" class="wizard-option" onClick=${() => { wizardStep.value = 'local'; }}>
+              <button type="button" class="wizard-option" onClick=${() => setWizardStep('device')}>
                 <span class="backend-option-text">
                   <span class="backend-name">On this device</span>
                   <span class="backend-desc">Private to this browser — encrypted, a file, or memory only</span>
@@ -528,13 +530,13 @@ export const LockScreen = () => {
               </button>
             </div>
             <div class="auth-memory-skip">
-              <button type="button" class="auth-memory-link" onClick=${wizardOverlay.value ? closeStorageWizard : continueInMemory} disabled=${isBusy.value}>
-                ${wizardOverlay.value ? 'Skip — keep notes in memory' : 'Skip — continue in memory'}
+              <button type="button" class="auth-memory-link" onClick=${overlay ? closeStorageWizard : continueInMemory} disabled=${isBusy.value}>
+                ${overlay ? 'Skip — keep notes in memory' : 'Skip — continue in memory'}
               </button>
             </div>
           `}
 
-          ${wizardStep.value === 'local' && html`
+          ${wizardStep === 'device' && html`
             <div class="wizard-options" role="group" aria-label="Local storage kind">
               <button type="button" class="wizard-option" onClick=${() => void commitToWizardMode('local')}
                 disabled=${!authHasEncryptedStorage.value}>
@@ -559,16 +561,16 @@ export const LockScreen = () => {
           `}
 
           ${unlockError.value && html`<div class="form-error" role="alert">${unlockError.value}</div>`}
-          ${wizardStep.value !== 'storage' && html`
+          ${wizardStep !== 'location' && html`
             <div class="auth-memory-skip">
-              <button type="button" class="auth-memory-link" onClick=${() => { wizardStep.value = 'storage'; unlockError.value = ''; }}>
+              <button type="button" class="auth-memory-link" onClick=${() => { setWizardStep('location'); unlockError.value = ''; }}>
                 Back
               </button>
             </div>
           `}
         `}
 
-        ${step === 'unlock' && html`
+        ${!inWizard && html`
           <h2 class="auth-title" id="auth-title">Unlock Virgulas</h2>
           <div class="status-text">
             ${isLocal && (isLocalCreate() ? 'Secure Your Workspace' : 'Encrypted Local Storage')}
@@ -576,7 +578,7 @@ export const LockScreen = () => {
             ${isFilesystem && 'File'}
           </div>
 
-          ${isRemotePasswordStep && html`
+          ${needsRemoteCredentials && html`
             <form onSubmit=${submitRemotePassword}>
               <div class="input-group">
                 <label for="auth-username" class="input-label">Email</label>
@@ -611,7 +613,7 @@ export const LockScreen = () => {
             </div>
           `}
 
-          ${!isRemotePasswordStep && html`
+          ${!needsRemoteCredentials && html`
             ${isRemote && isSessionValid && html`
               <div class="auth-secondary-actions">
                 <button type="button" class="toolbar-btn" disabled=${isBusy.value} onClick=${submitSignOut}>
@@ -620,10 +622,10 @@ export const LockScreen = () => {
               </div>
             `}
 
-            ${isRemote && !isSessionValid && remotePasswordStage.value && html`
+            ${flow.kind === 'remote-password' && html`
               <div class="auth-secondary-actions">
                 <button type="button" class="toolbar-btn" disabled=${isBusy.value}
-                  onClick=${() => { remotePasswordStage.value = false; unlockError.value = ''; }}>Back</button>
+                  onClick=${() => { lockFlow.value = { kind: 'unlock' }; unlockError.value = ''; }}>Back</button>
               </div>
             `}
 
@@ -705,7 +707,7 @@ export const SecureStoragePrompt = () => {
 export async function lockNow() {
   await persistence.lock()
   authMode.value = 'local'
-  authStep.value = 'unlock'
+  lockFlow.value = { kind: 'unlock' }
   autoBioAttempted.value = false
   await persistence.loadLockedBackgroundIntro()
 }
@@ -714,12 +716,12 @@ export async function lockNow() {
 export function resetSessionState() {
   authUser.value = null
   authHasLocalData.value = false
-  remotePasswordStage.value = false
+  lockFlow.value = { kind: 'unlock' }
   stagedMemoryDoc = null
   unlockError.value = ''
   unlockMessage.value = ''
 }
 
 /** The wizard overlay is drawn over the live memory session. */
-export const isWizardOverlayOpen = () => wizardOverlay.value
+export const isWizardOverlayOpen = () => lockFlow.value.kind === 'overlay'
 
