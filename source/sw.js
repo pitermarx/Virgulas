@@ -1,9 +1,39 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v8'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
-const APP_CACHE = 'virgulas-app-v195'
+const APP_CACHE = 'virgulas-app-v196'
 
 const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
+
+// Cache writes are tracked and can be paused: a purge deletes Cache Storage
+// while the page keeps running, and a stale-while-revalidate write started just
+// before the delete would otherwise land after it and recreate the cache the
+// purge just removed. `clearAppCaches()` pauses, drains, deletes, then resumes.
+let cachingPaused = false
+let pendingCacheWrites = Promise.resolve()
+
+function trackCacheWrite(write) {
+  pendingCacheWrites = pendingCacheWrites.then(() => write).catch(() => undefined)
+  return pendingCacheWrites
+}
+
+async function cachePut(cache, request, response) {
+  if (cachingPaused) return
+  await trackCacheWrite(cache.put(request, response))
+}
+
+self.addEventListener('message', (event) => {
+  const reply = event.ports[0]
+  if (event.data?.type === 'drain-cache-writes') {
+    cachingPaused = true
+    event.waitUntil(pendingCacheWrites.then(() => reply?.postMessage('drained')))
+    return
+  }
+  if (event.data?.type === 'resume-cache-writes') {
+    cachingPaused = false
+    reply?.postMessage('resumed')
+  }
+})
 
 // Font and icon assets — served cache-first; bump FONTS_CACHE on any change
 const FONTS_SHELL = [
@@ -157,7 +187,7 @@ async function networkFirstNavigation(request) {
     // (a real target="_blank" link) must not overwrite the cached app shell.
     if (response.ok && isShellNavigation(pathname)) {
       const cache = await caches.open(APP_CACHE)
-      await cache.put(SHELL_CACHE_KEY, response.clone())
+      await cachePut(cache, SHELL_CACHE_KEY, response.clone())
     }
     return response
   } catch {
@@ -181,7 +211,7 @@ async function cacheFirst(request, cacheName) {
   if (response.ok) {
     // Awaited (not floated) so the browser cannot stop the worker before the
     // entry lands.
-    await cache.put(request, response.clone())
+    await cachePut(cache, request, response.clone())
   }
   return response
 }
@@ -194,7 +224,7 @@ async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request)
     if (response.ok) {
-      await cache.put(request, response.clone())
+      await cachePut(cache, request, response.clone())
     }
     return response
   } catch {
@@ -220,7 +250,7 @@ async function staleWhileRevalidate(request, cacheName, event) {
     (response) => {
       if (!response.ok) return { response, cacheWrite: undefined }
       const cacheWrite = cachePromise
-        .then((cache) => cache.put(request, response.clone()))
+        .then((cache) => cachePut(cache, request, response.clone()))
         .catch(() => undefined)
       return { response, cacheWrite }
     },

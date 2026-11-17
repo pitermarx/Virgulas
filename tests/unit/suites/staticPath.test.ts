@@ -65,7 +65,7 @@ describe('service worker navigation caching', () => {
   })
 
   it('caches navigations under the shell key, never the requested URL', () => {
-      assert(/cache\.put\(SHELL_CACHE_KEY/.test(navHandler), 'navigations must be cached under SHELL_CACHE_KEY')
+      assert(/cachePut\(cache, SHELL_CACHE_KEY/.test(navHandler), 'navigations must be cached under SHELL_CACHE_KEY')
       assert(!/cache\.put\(request/.test(navHandler), 'navigations must not be cached under the requested URL')
   })
 
@@ -74,12 +74,22 @@ describe('service worker navigation caching', () => {
       // shell navigations (/ , /index.html) are cached — /privacy.html must not
       // overwrite the shell. The gate is `response.ok && isShellNavigation(...)`.
       assert(/if \(response\.ok && isShellNavigation\(pathname\)\)/.test(navHandler), 'navigation cache.put must be gated on response.ok AND isShellNavigation')
-      assert(/cache\.put\(SHELL_CACHE_KEY/.test(navHandler), 'shell navigations are cached under SHELL_CACHE_KEY')
+      assert(/cachePut\(cache, SHELL_CACHE_KEY/.test(navHandler), 'shell navigations are cached under SHELL_CACHE_KEY')
   })
 
   it('offers no URL-keyed navigation fallback', () => {
       assert(!/caches\.match\(request\)/.test(navHandler), 'the offline navigation fallback must match the shell key, not the request')
       assert(/caches\.match\(SHELL_CACHE_KEY\)/.test(navHandler), 'the offline navigation fallback must read SHELL_CACHE_KEY')
+  })
+
+  it('can pause and drain cache writes for a purge', () => {
+      // A stale-while-revalidate write that starts just before a purge must not
+      // land after the delete and recreate the cache; `clearAppCaches()` asks the
+      // worker to pause, drains, deletes, then resumes.
+      assert(/let cachingPaused = false/.test(swSource), 'the worker must track a pause flag')
+      assert(/if \(cachingPaused\) return/.test(swSource), 'every cache write must honour the pause')
+      assert(/drain-cache-writes/.test(swSource), 'the worker must answer the drain message')
+      assert(/resume-cache-writes/.test(swSource), 'the worker must accept the resume message')
   })
 })
 

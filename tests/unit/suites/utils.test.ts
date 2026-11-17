@@ -21,7 +21,12 @@ function fakeCacheStorage(names: string[]) {
     const deleted: string[] = []
     const storage = {
         async keys() { return names.slice() },
-        async delete(name: string) { deleted.push(name); return true }
+        async delete(name: string) {
+            deleted.push(name)
+            const index = names.indexOf(name)
+            if (index >= 0) names.splice(index, 1)
+            return index >= 0
+        }
     }
     return { storage, deleted }
 }

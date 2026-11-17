@@ -121,13 +121,44 @@ test.describe('Service worker offline shell', () => {
         // The offline shell and fonts caches exist before the purge.
         expect(await virgulasCacheCount()).toBeGreaterThan(0);
 
+        // Wait for the install precache to *finish* before purging. The poll above
+        // can see index.html while `addAll(FONTS_SHELL)` is still writing; a purge
+        // at that moment is followed by the install recreating both caches (the
+        // APP cache empty, the font cache full), which is not what a user does.
+        await expect.poll(
+            async () => page.evaluate(async () => {
+                const fonts = (await caches.keys()).find((key) => key.startsWith('virgulas-fonts-'));
+                const app = (await caches.keys()).find((key) => key.startsWith('virgulas-app-'));
+                if (!fonts || !app) return false;
+                const fontCache = await caches.open(fonts);
+                const appCache = await caches.open(app);
+                return !!(await fontCache.match('/media/quick-capture-192x192.png'))
+                    && !!(await appCache.match('/js/app.js'));
+            }),
+            { timeout: 20000 }
+        ).toBe(true);
+
         // Purge through the actual Options → "Delete local data" UI path.
         await purgeViaOptions(page);
 
         // The purge clears Cache Storage after the memory-mode boot, whose
         // /intro.vmd fetch the service worker would otherwise cache; the flow
-        // must end with no app-owned cache at all.
-        expect(await virgulasCacheCount()).toBe(0);
+        // must end with no app-owned cache at all. Poll briefly: a CacheStorage
+        // delete settles asynchronously. Report the names and entries when it
+        // does not, so the failing writer is identifiable.
+        const readCaches = () => page.evaluate(async () => {
+            const names = (await caches.keys()).filter((key) => key.startsWith('virgulas-'));
+            const entries: Record<string, string[]> = {};
+            for (const name of names) {
+                const cache = await caches.open(name);
+                entries[name] = (await cache.keys()).map((request) => new URL(request.url).pathname);
+            }
+            return { count: names.length, entries };
+        });
+        await expect.poll(async () => {
+            const cachesAfterPurge = await readCaches();
+            return JSON.stringify(cachesAfterPurge);
+        }, { timeout: 5000 }).toBe(JSON.stringify({ count: 0, entries: {} }));
     });
 
     test('a full purge leaves no user data in localStorage (priv-01)', async ({ page }) => {
