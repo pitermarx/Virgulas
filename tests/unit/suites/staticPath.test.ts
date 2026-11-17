@@ -82,6 +82,10 @@ describe('service worker navigation caching', () => {
       assert(/caches\.match\(SHELL_CACHE_KEY\)/.test(navHandler), 'the offline navigation fallback must read SHELL_CACHE_KEY')
   })
 
+  it('ignores messages from another origin', () => {
+      assert(/event\.origin\s*&&\s*event\.origin\s*!==\s*self\.location\.origin/.test(swSource), 'the message handler must verify the origin')
+  })
+
   it('can pause and drain cache writes for a purge', () => {
       // A stale-while-revalidate write that starts just before a purge must not
       // land after the delete and recreate the cache; `clearAppCaches()` asks the

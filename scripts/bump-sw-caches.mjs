@@ -32,7 +32,8 @@ const GROUPS = {
         join(ROOT, 'source', 'js'),
         join(ROOT, 'source', 'components'),
         join(ROOT, 'tsconfig.json'),
-        join(ROOT, 'package.json'),
+        // Not package.json: the release job rewrites its version on every bump,
+        // like version.json, and the app bundle is already hashed via source/js.
     ],
 }
 

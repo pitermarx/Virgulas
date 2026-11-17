@@ -1,7 +1,7 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v8'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
-const APP_CACHE = 'virgulas-app-v201'
+const APP_CACHE = 'virgulas-app-v203'
 
 const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
 
@@ -23,6 +23,9 @@ async function cachePut(cache, request, response) {
 }
 
 self.addEventListener('message', (event) => {
+  // Only this origin may drive the cache pause/drain protocol.
+  if (event.origin && event.origin !== self.location.origin) return
+
   const reply = event.ports[0]
   if (event.data?.type === 'drain-cache-writes') {
     cachingPaused = true
