@@ -457,8 +457,17 @@ export async function unlockRemote(
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
     }
     await page.getByLabel('Encryption passphrase').fill(options.passphrase ?? 'password');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    const rendered = page.locator('body[data-main-view="rendered"]');
+    await expect(async () => {
+        // A submit that already landed counts even when the render was slow.
+        if (await rendered.count() > 0) return;
+        const error = page.locator('#auth-unlock-error');
+        if (await error.isVisible().catch(() => false)) {
+            throw new Error(`remote unlock failed: ${(await error.textContent())?.trim()}`);
+        }
+        await page.getByRole('button', { name: 'Unlock' }).click();
+        await expect(rendered, 'the app renders after the remote unlock').toHaveCount(1, { timeout: 20_000 });
+    }).toPass({ timeout: 60_000 });
 }
 
 /** Focus the first visible node and type into its editor. */
