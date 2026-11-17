@@ -485,9 +485,11 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   The offline-cache decorator (§4.7): Remote = `codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))` — cache-first writes, network-only read fallback, exists-union, primary-only head and unlock.
 - `lockScreen.ts`:
   The lock screen: the storage wizard, the unlock/sign-up/reset flows and the
-  `LockScreen`/`SecureStoragePrompt` components. Its auth state (scenario, step,
-  user, busy/errors) lives here, not in the app shell; `app.ts` mounts the
-  component and asks `isWizardOverlayOpen()`, and `options.ts` reaches the same
+  `LockScreen`/`SecureStoragePrompt` components. Its flow is one `lockFlow` union
+  (`unlock`, `remote-password`, `wizard(step)`, `overlay(step)`), not separate
+  step/overlay booleans; the form fields, user and busy/error state live beside it,
+  not in the app shell. `app.ts` mounts the component and asks
+  `isWizardOverlayOpen()`, and `options.ts` reaches the same
   state through `lockNow` / `resetSessionState`; `persistence.loadIntroDocument()`
   owns the tour text.
 - `options.ts`:
