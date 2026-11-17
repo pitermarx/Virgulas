@@ -676,7 +676,12 @@ bun run typecheck                # tsc app config + test config
 - CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`
   lists the tests that passed only on a retry in the job summary and exits non-zero with
   `--strict`, which the `test` job passes on `main` — a green run there must pass on the first
-  attempt.
+  attempt. A retried attempt whose failure was the page or browser closing (`Page closed`,
+  `Target closed`, `browser has disconnected`) is reported as infrastructure and does not fail
+  `main`: a retry is the only remedy for it. Assertion and timeout retries stay fatal.
+- The unlock helpers spend a bounded budget (under Playwright's 60 s test timeout) and surface the
+  lock-screen error, so a slow boot fails as "unlock failed: …" instead of a test timeout whose
+  next action reports "Page closed".
 - CI shards the suite across three jobs with `--shard=<i>/3`.
 - Every workflow pins Bun to one exact version (`bun-version` in each job); bump it in a pull request
   that runs the full suite, never to `latest`.
@@ -721,7 +726,7 @@ Workflows live in `.github/workflows/`.
 | `commit-policy` | every push/PR | validates Conventional Commit headers in the range |
 | `audit` | every push/PR | `bun audit`; any advisory in the lockfile fails the run |
 | `unit` | every push/PR | typecheck and the unit suite, once per run (the E2E shards used to repeat it) |
-| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts and names retried tests in the job summary (fatal on `main`) |
+| `test` | every push/PR | E2E sharded across 3 jobs, with cached Bun dependencies and Playwright browsers; uploads Playwright results artifacts and names retried tests in the job summary (fatal on `main` for assertion retries) |
 | `production-bundle` | every push/PR | builds the deploy bundle (`--no-sourcemap`, test hooks off), refuses a source map, and runs the behaviour specs that need no test seam against it; a failure blocks `deploy` |
 | `publish-db` | `main` only | `bunx supabase link --project-ref "$SUPABASE_PROJECT"` then `bunx supabase db push --linked --include-all` |
 | `release` | `main` only | plans the semver bump with `scripts/release-from-commits.mjs`, creates the GitHub Release, commits the version bump |
