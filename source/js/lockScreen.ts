@@ -17,6 +17,7 @@ import { backendKind, backendUrl, remoteResetAvailable, remoteSync } from './syn
 import { biometrics } from './biometrics.js'
 import { captureOnly } from './capture.js'
 import { CorruptEnvelopeError, WrongPassphraseError } from './crypto2.js'
+import { modeLabel, isEncryptedMode } from './modes.js'
 
 const authHasLocalData = signal(false)
 const authHasEncryptedStorage = signal(true)
@@ -113,7 +114,7 @@ async function requestChangeMode() {
 }
 
 function pickMode(nextMode: PersistenceMode) {
-  if ((nextMode === 'local' || nextMode === 'remote') && !authHasEncryptedStorage.value) {
+  if (isEncryptedMode(nextMode) && !authHasEncryptedStorage.value) {
     unlockError.value = browserSupportWarning.value || 'Encrypted Local and Remote storage are unavailable in this browser.';
     return;
   }
@@ -496,8 +497,6 @@ export const LockScreen = () => {
   const passwordStepDisabled = isBusy.value || !username.value.trim() || !password.value;
   const unlockDisabled = isBusy.value || (!isFilesystem && !passphrase.value.trim());
 
-  const modeLabel = isLocal ? 'Local' : isRemote ? 'Remote' : 'File';
-
   const failure = unlockFailure.value;
   const canResetLocal = isLocal && (failure instanceof CorruptEnvelopeError || failure instanceof CorruptDocumentError);
   const canResetRemote = isRemote && failure instanceof WrongPassphraseError;
@@ -668,7 +667,7 @@ export const LockScreen = () => {
           `}
 
           <button type="button" class="subtle-switch" onClick=${requestChangeMode} disabled=${isBusy.value}>
-            Change mode (${modeLabel})
+            Change mode (${modeLabel(mode)})
           </button>
           <div class="auth-memory-skip">
             <button type="button" class="auth-memory-link" onClick=${continueInMemory} disabled=${isBusy.value}>

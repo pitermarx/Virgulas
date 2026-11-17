@@ -516,6 +516,9 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   marked + DOMPurify on every outline update.
 - `meta.ts`:
   `due:` / `rec:` metadata parsing and formatting.
+- `modes.ts`:
+  The four storage modes' UI traits and copy: label, encrypted, synced, and the Options
+  detail/action/prompt. Behavioural branches stay in their own modules.
 - `durability.ts`:
   Local-storage durability state: the persistent/best-effort signal, the
   dismissible reminder, and the once-per-session `persist()` request.
