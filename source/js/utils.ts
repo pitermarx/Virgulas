@@ -103,17 +103,49 @@ export async function requestPersistentStorage(storage = getStoragePersistenceAp
  * Best-effort: no-ops where the Cache Storage API is unavailable (insecure
  * contexts, some privacy modes) and never throws into a purge flow.
  */
+/**
+ * Ask the service worker to pause and finish its cache writes, then later to
+ * resume them. A stale-while-revalidate write started just before a purge can
+ * land after `caches.delete` and recreate the cache the purge just removed.
+ *
+ * Best-effort: no controller (first visit, insecure context, tests) returns at
+ * once, and an unresponsive worker is abandoned after one second.
+ */
+async function messageServiceWorker(type: 'drain-cache-writes' | 'resume-cache-writes'): Promise<void> {
+    const controller = typeof navigator === 'undefined' ? null : navigator.serviceWorker?.controller
+    if (!controller) return
+    if (type === 'resume-cache-writes') {
+        controller.postMessage({ type })
+        return
+    }
+    await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 1000)
+        const channel = new MessageChannel()
+        channel.port1.onmessage = () => {
+            clearTimeout(timer)
+            resolve()
+        }
+        controller.postMessage({ type }, [channel.port2])
+    })
+}
+
 export async function clearAppCaches(cacheStorage: CacheStorage | undefined = typeof caches === 'undefined' ? undefined : caches): Promise<void> {
     if (!cacheStorage) return
+    await messageServiceWorker('drain-cache-writes')
     try {
-        const names = await cacheStorage.keys()
-        await Promise.all(
-            names
-                .filter((name) => name.startsWith('virgulas-'))
-                .map((name) => cacheStorage.delete(name))
-        )
+        // Re-check after deleting: a CacheStorage delete can fail transiently
+        // (the API rejects with UnknownError under load), and a purge that
+        // silently leaves the cache behind is worse than one extra pass.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const names = (await cacheStorage.keys()).filter((name) => name.startsWith('virgulas-'))
+            if (names.length === 0) break
+            await Promise.all(names.map((name) => cacheStorage.delete(name)))
+            if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 50))
+        }
     } catch (error) {
         log('[Cache] Failed to clear app caches:', error)
+    } finally {
+        await messageServiceWorker('resume-cache-writes')
     }
 }
 
