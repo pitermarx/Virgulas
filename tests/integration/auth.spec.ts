@@ -159,9 +159,7 @@ test.describe('Authentication', () => {
     });
 
     await page.reload();
-    await page.locator('#auth-passphrase').fill('correct-horse');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await unlockApp(page, 'correct-horse');
     await expect(page.locator('.node-content').first()).toContainText('Legacy doc');
 
     // SPEC: a normal save re-encrypts a legacy envelope. Unlock itself no

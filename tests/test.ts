@@ -174,6 +174,28 @@ export async function unlockApp(
 }
 
 /**
+ * Submit whichever lock-sheet step is showing (passphrase or Open File) and wait
+ * for the app, retrying the click.
+ *
+ * The sheet re-renders while the storage wizard and the File picker settle, so a
+ * plain click can land on a button that is about to be replaced: the app then
+ * stays locked and the next assertion fails as "not rendered". A caller that
+ * needs the form refilled on each attempt passes `fill`.
+ */
+export async function submitLockSheet(
+    page: import('@playwright/test').Page,
+    options: { fill?: () => Promise<void> } = {}
+) {
+    await expect(async () => {
+        await options.fill?.();
+        const unlock = page.getByRole('button', { name: 'Unlock' });
+        await expect(unlock).toBeEnabled({ timeout: 1000 });
+        await unlock.click();
+        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 10_000 });
+    }).toPass({ timeout: 40_000 });
+}
+
+/**
  * Encrypts a document inside the test runner itself.
  *
  * `setupDoc` needs the ciphertext before the page navigates, so it cannot use the

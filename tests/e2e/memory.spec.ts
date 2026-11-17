@@ -1,4 +1,4 @@
-import { test, expect } from '../test';
+import { test, expect, submitLockSheet, unlockApp } from '../test';
 
 test.describe('Memory mode (first-ever visit)', () => {
     test('bypasses lock screen and loads INTRO.VMD on first visit', async ({ page }) => {
@@ -173,9 +173,9 @@ test.describe('storage setup adopts the in-memory document', () => {
         await expect(page.getByText('Where should your notes live?')).toBeVisible({ timeout: 3000 });
         await page.getByRole('button', { name: /On this device/ }).click();
         await page.getByRole('button', { name: /Encrypted storage/ }).click();
-        await page.getByLabel('Create a passphrase').fill('carry-pass-1');
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
+        await submitLockSheet(page, {
+            fill: async () => { await page.getByLabel('Create a passphrase').fill('carry-pass-1'); }
+        });
         await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
 
         // Reload: the carried document is on disk, encrypted (the autosave
@@ -183,9 +183,7 @@ test.describe('storage setup adopts the in-memory document', () => {
         await expect.poll(async () => await page.evaluate(() => localStorage.getItem('vmd_data_enc')), { timeout: 10000 }).toBeTruthy();
         await page.reload();
         await expect(page.getByLabel('Encryption passphrase')).toBeVisible({ timeout: 10000 });
-        await page.getByLabel('Encryption passphrase').fill('carry-pass-1');
-        await page.getByRole('button', { name: 'Unlock' }).click();
-        await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered', { timeout: 15000 });
+        await unlockApp(page, 'carry-pass-1');
         await expect(page.locator('.status-mode')).toHaveText('Local');
         await expect(page.locator('.node-content').first().locator('.node-text-md')).toContainText('My own note');
     });
