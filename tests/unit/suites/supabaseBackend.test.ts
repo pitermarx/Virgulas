@@ -309,15 +309,17 @@ describe('supabaseBackend — auth session storage', () => {
       assertEqual(store.supabaseSession.get(null), null, 'an empty map removes the slot')
   })
 
-  it('adopts and deletes a legacy sb-*-auth-token key written by an older build', () => {
+  it('a session key an old build wrote directly to localStorage is ignored', () => {
+      // D11 (2026-11-18): the adoption path is gone. A stale sb-*-auth-token
+      // key is not read into the slot; only the device wipe deletes it.
       store.supabaseSession.del()
       localStorage.setItem('sb-legacyproj-auth-token', 'legacy-token-json')
 
       const storage = supabaseAuthStorage()
       createSupabaseClient(() => ({}), 'https://legacyproj.supabase.co', 'anon-key')
 
-      assertEqual(storage.getItem('sb-legacyproj-auth-token'), 'legacy-token-json', 'legacy token adopted')
-      assertEqual(localStorage.getItem('sb-legacyproj-auth-token'), null, 'legacy key removed')
+      assertEqual(storage.getItem('sb-legacyproj-auth-token'), null, 'a stale key is not adopted')
+      assertEqual(localStorage.getItem('sb-legacyproj-auth-token'), 'legacy-token-json', 'the wipe sweep, not the client, owns stale keys')
   })
 
   it('ensureSupabaseClient builds through createSupabaseClient', () => {

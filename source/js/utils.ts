@@ -200,9 +200,11 @@ function slot(key: string) {
 export type StoreSlot = ReturnType<typeof slot>
 
 /**
- * A slot for a provider-owned key that predates the namespaced slots. The
- * Supabase SDK used to write `sb-<project-ref>-auth-token` directly; the
- * adapter adopts that value into `supabaseSession` and removes the old key.
+ * A slot for a provider-owned key that predates the namespaced slots — only
+ * the Supabase SDK's `sb-<project-ref>-auth-token` keys, which old builds let
+ * the SDK write directly to localStorage. Nothing reads them any more; the
+ * device wipe uses this helper to delete them so "Delete local data" is
+ * complete on browsers that signed in before the migration (priv-01).
  */
 export function legacySlot(key: string): StoreSlot {
     return slot(key)

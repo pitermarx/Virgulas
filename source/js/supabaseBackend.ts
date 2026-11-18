@@ -20,7 +20,7 @@
 // the Supabase client.
 
 import { HOSTED_BACKEND, StoreError, type AuthProvider, type AuthUser, type BackendConfig, type RawRecord, type RawStore } from './storage.js'
-import { legacySlot, store, type StoreSlot } from './utils.js'
+import { store, type StoreSlot } from './utils.js'
 
 // ── Client loading ───────────────────────────────────────────────────────────
 
@@ -83,29 +83,6 @@ export function supabaseAuthStorage(sessionSlot: StoreSlot = store.supabaseSessi
     }
 }
 
-/** The SDK's default session key for a project URL (`sb-<ref>-auth-token`). */
-function defaultAuthStorageKey(url: string): string | null {
-    try {
-        return `sb-${new URL(url).hostname.split('.')[0]}-auth-token`
-    } catch {
-        return null
-    }
-}
-
-/**
- * Adopts the token an older build let supabase-js write directly into
- * localStorage, then removes the old key. Without this, upgrading would sign
- * every existing Supabase user out and leave the token behind on the device.
- */
-function adoptLegacyAuthSession(url: string, storage: SupabaseAuthStorage) {
-    const key = defaultAuthStorageKey(url)
-    if (!key) return
-    const legacy = legacySlot(key)
-    const value = legacy.get()
-    if (value === null) return
-    if (storage.getItem(key) === null) storage.setItem(key, value)
-    legacy.del()
-}
 
 /** Options passed to `createClient`: the bundled client and the test seam both
  * go through this, so the auth session always lands in the store slot. */
@@ -116,12 +93,12 @@ function supabaseClientOptions(storage: SupabaseAuthStorage = supabaseAuthStorag
     }
 }
 
-/** Builds the SDK client through the injected factory, wiring the store-backed
- * auth persistence before the client can read a session. */
+/**
+ * Builds the SDK client through the injected factory, wiring the store-backed
+ * auth persistence before the client can read a session.
+ */
 export function createSupabaseClient(factory: ClientFactory, url: string, key: string): any {
-    const storage = supabaseAuthStorage()
-    adoptLegacyAuthSession(url, storage)
-    return factory(url, key, supabaseClientOptions(storage))
+    return factory(url, key, supabaseClientOptions())
 }
 
 let _clientFactory: ClientFactory | null = null
