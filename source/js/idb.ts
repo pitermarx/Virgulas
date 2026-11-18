@@ -1,10 +1,7 @@
-// A tiny IndexedDB key-value store.
-//
-// Two device-local features need one: the File System Access handle cache
-// (`fileHandles.ts`) and the biometric passphrase seal (`biometrics.ts`). Both
-// used to carry their own open/get/put/delete quartet; this is the single
-// implementation, and it keeps the open connection promise so repeated saves
-// do not reopen the database.
+// A tiny IndexedDB key-value store: one implementation for the File System
+// Access handle cache (fileHandles.ts) and the biometric passphrase seal
+// (biometrics.ts). Caches the open connection promise so repeated saves do
+// not reopen the database.
 
 interface IdbHandle {
     get<T>(key: string): Promise<T | null>

@@ -26,7 +26,7 @@ const NO_RESULTS: SearchResults = { ids: [], tree: null }
 /**
  * The search walk is shared through a single-slot `computed`, so the toolbar
  * counter, the results panel and the keyboard handler all reuse one traversal
- * instead of each rebuilding the tree (it used to run three times per keystroke).
+ * instead of each rebuilding the tree per keystroke.
  *
  * A `computed` memoizes exactly one value, so this cannot accumulate a result per
  * query the way a Map keyed by query would.

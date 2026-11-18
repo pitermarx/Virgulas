@@ -271,21 +271,13 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.i
   });
 }
 
-// ── Introspection surface for e2e specs ──────────────────────────────────────
-// The app ships as a single bundle; specs import these from the bundle so they
-// observe the exact same module singletons the running app uses.
 // ── E2E introspection seam (sec-05) ──────────────────────────────────────────
 //
-// The E2E specs import app singletons from the built bundle so they observe
-// the same module instances as the running app. That used to be done with plain
-// static re-exports, which meant any same-origin module — the SRI-pinned
-// analytics tracker included — could `import('/js/app.js')` and reach
-// `persistence.getPassphrase()` and the raw singletons.
-//
-// The singletons are now published only through this `e2e` binding, which is
-// populated exclusively in the Playwright bundle. In production `__TEST_HOOKS__`
-// is a compile-time `false`, so the object is empty and every binding stays
-// `undefined` — nothing reachable, nothing to read passphrase strings from.
+// Specs import app singletons from the built bundle so they observe the same
+// module instances the running app uses. The binding is populated only when
+// `__TEST_HOOKS__` is compiled in (the Playwright bundle); in production it is
+// a compile-time false, so the object stays empty and no same-origin script —
+// the SRI-pinned tracker included — can reach the singletons or a passphrase.
 export interface E2EExports {
   outline: typeof outline
   persistence: typeof persistence

@@ -299,7 +299,7 @@ async function encrypt(text: string, passphrase: string, salt: string, iteration
     return result
 }
 
-// Decrypts a stored envelope (v2 or legacy) with AES-GCM-256. Returns decrypted text.
+// Decrypts a stored v2 envelope with AES-GCM-256. Returns decrypted text.
 async function decrypt(envelope: string, passphrase: string, salt: string): Promise<string> {
     const subtle = typeof window === 'undefined' ? undefined : window.crypto?.subtle
     if (!subtle

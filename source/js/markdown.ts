@@ -238,17 +238,13 @@ markdown.use({
     }
 })
 
-// NOTE: do not add USE_PROFILES here. DOMPurify merges ALLOWED_TAGS/ALLOWED_ATTR
-// with a profile instead of replacing it, which silently widens the allow-list to
-// the whole HTML profile (form, input, style, class, id, ...). Keep the explicit
-// allow-list as the single source of truth. Exported so a regression test can
-// assert the profile is never reintroduced.
-// Block tags are allowed so a zoomed "Description" can read as a full markdown
-// document (headings, lists, quotes, fenced code, tables). This is still safe:
-// the sanitizer strips `class`, `id`, `style` and event handlers, and the list is
-// never widened by a DOMPurify profile (see the regression test). No form controls
-// (`input`, `form`, `button`, ...) are allowed, so GFM task-list checkboxes are
-// dropped while the item text survives.
+// Do not add USE_PROFILES: DOMPurify merges a profile with the allow-list
+// instead of replacing it, silently widening it to the whole HTML profile
+// (form, input, style, class, id, ...). The explicit allow-list is the single
+// source of truth; block tags let a zoomed description read as a full document
+// while form controls stay out, so GFM task checkboxes are dropped but the
+// item text survives. Exported so a regression test can assert the profile
+// never comes back.
 export const SANITIZE_OPTIONS: any = {
     ALLOWED_TAGS: [
         'strong', 'em', 'a', 'img', 'code', 'br', 'del',

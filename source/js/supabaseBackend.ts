@@ -4,8 +4,7 @@
 //
 // Identity binding (§4.2): orchestration never sees or supplies a user id —
 // the adapter sources it from the *locally cached session*
-// (`auth.getSession()`, no network round-trip; the pre-seam code ran
-// `auth.getUser()` on every push) and RLS `with check (auth.uid() = user_id)`
+// (`auth.getSession()`, no network round-trip) and RLS `with check (auth.uid() = user_id)`
 // server-verifies that the value matches the JWT, so it cannot be forged.
 // Removing the column from the wire entirely needs a migration and rides with
 // the deferred follow-up (§12).

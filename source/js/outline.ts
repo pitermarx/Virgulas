@@ -31,16 +31,16 @@ export interface SearchMatch {
 
 function outlineFactory() {
     const rootNodeId = 'root'
-    const modelVersion = MODEL_VERSION // for future compatibility, in case we need to change the structure
+    const modelVersion = MODEL_VERSION
     const dataVersion = signal(0) // incremented on every change, but debounced to avoid excessive updates during rapid changes
     // Always-incrementing counter for structural rebuilds (reset/deserialize).
     // dataVersion alone is not enough: unlock paths batch deserialize, and when the
     // restored dataVersion equals the previous value (commonly 0), subscribers never
     // re-run even though the node map was fully replaced.
     const structureVersion = signal(0)
-    const dirtyWrites = signal(0) // mark if there are unsaved changes, used to trigger version update
+    const dirtyWrites = signal(0)
     const map = new Map<string, Node>()
-    const zoomId = signal<string>(rootNodeId) // the currently zoomed in node, used for rendering and keyboard navigation
+    const zoomId = signal<string>(rootNodeId)
 
     // The satellite modules operate on this state through injected references.
     // The functions they receive (addChild, deleteNode, serialize, deserialize)
@@ -84,9 +84,8 @@ function outlineFactory() {
             return
         }
 
-        // I think if i remove this, i just get synchronized nodes, which is cool, 
-        // but needs more tests to make sure there are no edge cases where it causes problems
-        // so for now I'm keeping this check in place to prevent potential issues with duplicate ids
+        // An explicit id comes from deserialized or VMD-parsed trees; a duplicate
+        // would silently fork the node's children across two parents.
         if (optionalData.id && map.has(optionalData.id)) {
             console.error('Node with id already exists, cannot add new node with duplicate id')
             return

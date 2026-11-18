@@ -2,8 +2,7 @@
 // The RawStore over a `store` slot in utils.ts (Rule 7: all localStorage access
 // goes through those slots — this adapter is no exception). The at-rest shape
 // is exactly the `vmd_data_enc` value: `<salt>|<envelope>`; a value without
-// the separator is legacy/corrupt and reads as "no record", matching the
-// pre-seam behaviour.
+// the separator is corrupt and reads as "no record".
 //
 // The quota failure path (a failed slot write) surfaces as StoreError
 // 'too-large' instead of being swallowed — the adapter-level half of the

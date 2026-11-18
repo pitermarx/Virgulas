@@ -367,7 +367,7 @@ async function commitToWizardMode(nextMode: PersistenceMode) {
       closeStorageWizard();
       return;
     }
-    // Locked entry: the old "skip to memory" semantics.
+    // Locked entry: skip straight to the memory session.
     await continueInMemory();
     return;
   }

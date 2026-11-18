@@ -225,10 +225,9 @@ function applyHashZoomIfPresent() {
 
 export const authMode = signal<PersistenceMode>('local')
 /**
- * The live session: what three readiness flags used to encode. `authMode` is
- * the mode selected for the lock screen (it survives a lock); this is what is
- * actually open right now, so no combination of "unlocked" and "ready" can
- * contradict another.
+ * The live session: one value, because separate "unlocked"/"ready" flags could
+ * contradict each other. `authMode` is the mode selected for the lock screen
+ * (it survives a lock); this is what is actually open right now.
  */
 type SessionState = 'locked' | 'memory' | 'filesystem' | 'local' | 'remote'
 const sessionState = signal<SessionState>('locked')
@@ -326,8 +325,8 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
     const result = await localDataStore.unlock!(code)
     if (!result || result.text === null) {
       // The slot is occupied but holds no readable record (a value without
-      // the `<salt>|<envelope>` shape reads as "no record"). Match the
-      // pre-seam behaviour: treat it as first-time setup.
+      // the `<salt>|<envelope>` shape reads as "no record"): treat it as
+      // first-time setup rather than failing the unlock.
       log('Local data is unreadable, starting with a new document')
       return setupLocal(code, initialDoc)
     }

@@ -55,11 +55,10 @@ export function handleSearchKeyDown(e: any, focus: EditorFocus) {
 export function zoomIn(id: string, focus: EditorFocus) {
     outline.zoomIn(id)
     window.location.hash = id
-    // Zooming is a view change only: leave nothing focused. Focusing the first
-    // child (the old behaviour) stole focus from wherever the user was editing and
-    // made an edit-mode input appear as a side effect of zooming. With nothing
-    // focused the existing no-focus arrow rules apply, so `↓` moves to the first
-    // child and `↑` to the last.
+    // Zooming is a view change only: leaving something focused stole focus from
+    // an active edit and made an edit-mode input appear as a side effect of
+    // zooming. With nothing focused the no-focus arrow rules apply, so `↓`
+    // moves to the first child and `↑` to the last.
     focus.Id.value = null
     focus.Type.value = null
     focus.SelectedIds.value = []
