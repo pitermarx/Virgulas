@@ -6,10 +6,10 @@
 //
 //   v2:<iterations>:<base64(iv || ciphertext)>
 //
-// Payloads without the `v2:` prefix are legacy (raw base64, LEGACY_ITERATIONS).
+// A payload without the `v2:` prefix predates the header and is rejected as
+// corrupt (decided 2026-11-18, D9: no known payload predates the format).
 // `needsKdfUpgrade` reports when a stored envelope is below the current target;
 // the normal debounced save then re-encrypts it transparently.
-export const LEGACY_ITERATIONS = 310000
 export const DEFAULT_ITERATIONS = 600000
 /** Minimum length for a *new* encryption passphrase (existing ones still unlock). */
 export const MIN_PASSPHRASE_LENGTH = 10
@@ -20,9 +20,9 @@ export const MIN_PASSPHRASE_LENGTH = 10
  * PBKDF2 work is attacker-controlled through the envelope: a compromised or
  * malicious backend (or a corrupted row) can return `v2:4294967295:…` and make
  * unlock run an effectively unbounded derivation, hanging the tab. Legitimate
- * documents use LEGACY_ITERATIONS (310k) or DEFAULT_ITERATIONS (600k). The GCM
- * tag still fails for hostile values, so this is a denial-of-service guard, not
- * a confidentiality one.
+ * documents record at most the current target (600k); older envelopes may
+ * record less. The GCM tag still fails for hostile values, so this is a
+ * denial-of-service guard, not a confidentiality one.
  */
 export const MIN_ENVELOPE_ITERATIONS = 100000
 export const MAX_ENVELOPE_ITERATIONS = 5000000
@@ -253,16 +253,17 @@ function parseEnvelope(envelope: string): ParsedEnvelope {
         }
         return { iterations, combined: parsePayload(payload) }
     }
-    // Legacy payload: raw base64 written before KDF params were recorded.
-    return { iterations: LEGACY_ITERATIONS, combined: parsePayload(value) }
+    // No version header: predates the envelope format. Rejected as corrupt
+    // rather than decrypted with guessed parameters (D9, 2026-11-18).
+    throw new CorruptEnvelopeError('Encrypted data has no version header and cannot be decrypted.')
 }
 
-/** Iteration count recorded in a stored envelope (legacy payloads report LEGACY_ITERATIONS). */
+/** Iteration count recorded in a stored envelope (unreadable ones report the current target). */
 export function getEnvelopeIterations(envelope: string): number {
     try {
         return parseEnvelope(envelope).iterations
     } catch {
-        return LEGACY_ITERATIONS
+        return DEFAULT_ITERATIONS
     }
 }
 

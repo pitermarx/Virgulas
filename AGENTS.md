@@ -393,9 +393,9 @@ before any document work happens.
 - `crypto2.ts` is the only module allowed to encrypt or decrypt document data (Rule 7).
 - The stored value is `localStorage.vmd_data_enc` = `<salt>|<envelope>`; the salt is generated
   once and reused.
-- The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; legacy payloads are raw base64 and
-  decrypt at 310,000 iterations. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
-  AES-GCM-256, and a normal save re-encrypts an older envelope at the current parameters.
+- The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; values without the header are
+  rejected as corrupt. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
+  AES-GCM-256, and a normal save re-encrypts an envelope written at older parameters.
 - The derived key is cached for the unlocked session, so autosave does not re-run the KDF. The cache is multi-entry (bounded LRU) keyed by (passphrase, salt, iterations) so alternating salts cost one derivation each.
 - `biometrics.ts` may wrap the passphrase behind WebAuthn for device unlock. That wrapping key
   never encrypts the document (Rule 7).
