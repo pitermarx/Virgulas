@@ -234,8 +234,7 @@ Enforcement:
 
 ### Known drift (documented)
 
-These are known gaps between the spec and the current implementation. Do not assume the
-feature exists; update this list when a gap is found or closed.
+Known gaps between the spec and the implementation; update this list when one is found or closed.
 
 - None at the moment.
 

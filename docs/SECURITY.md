@@ -16,10 +16,10 @@ work*.
 
 ### Sync is clock-trusting with no anti-rollback
 
-**Evidence:** `source/js/sync.ts` — `mergeDocuments` resolves per-node conflicts with
-client wall-clock `lastModified`, and `checkRemoteNewer` trusts the `updated_at`
-value that the client itself writes on upsert (`remoteSync.upsert`, `persistence.ts`).
-`lastSyncedAt` is `Date.now()` stored in `vmd_sync_ts`.
+**Evidence:** `source/js/merge.ts` — `mergeDocuments` resolves per-node conflicts with
+client wall-clock `lastModified`, and `syncEngine.ts` trusts the `updated_at`
+value that the client itself writes on upsert (`supabaseBackend.ts`,
+`trailbaseBackend.ts`). `lastSyncedAt` is `Date.now()` stored in `vmd_sync_ts`.
 
 **Impact:**
 - A device with a skewed or forged clock wins every conflict, or makes deletions look
