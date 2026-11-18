@@ -76,7 +76,7 @@ function assertNewPassphrase(passphrase: string) {
 // All four modes route their data paths through the seam:
 //   Local   = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 //   File    = codecStore(vmdCodec, fileStore(handle))
-//   Memory  = the live outline (no store instance; see §14)
+//   Memory  = the live outline (no store instance; docs §4.6)
 //   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
@@ -161,7 +161,7 @@ function teardownRemoteStore() {
 }
 
 /**
- * sync-01 (docs §4.4/§11): a pull met a remote rotated on another device. The
+ * sync-01 (docs §4.4): a pull met a remote rotated on another device. The
  * session quiesces and locks WITHOUT flushing — flushing would write
  * ciphertext under the stale key and revert the rotation — and the lock screen
  * prompts for the new passphrase. Never followed by a push.
@@ -319,7 +319,7 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
 
   try {
     // unlock() performs the one-and-only passphrase verification (decryption
-    // is the verifier) in one round-trip (docs §14.7). It returns the at-rest
+    // is the verifier) in one round-trip (docs §4.1). It returns the at-rest
     // text, which the codec parses into the document value the orchestration
     // handles; reads and writes below are doc-level.
     const result = await localDataStore.unlock!(code)

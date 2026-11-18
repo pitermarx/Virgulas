@@ -14,7 +14,7 @@ import { createRemoteSyncAttempt, syncOnce } from './syncEngine.js'
 
 // ── Backend facade ───────────────────────────────────────────────────────────
 //
-// Client code lives in supabaseBackend.ts (docs/storage-interface.md §7): this
+// Client code lives in supabaseBackend.ts (docs/storage-interface.md §3): this
 // module keeps only backend resolution, scheduling and the auth facade.
 // `remoteSync` is a thin proxy over the backend adapters — no client
 // construction, no error-code mapping, no row payloads.
