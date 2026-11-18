@@ -34,12 +34,9 @@ const editingOption = signal<'email' | 'password' | 'passphrase' | null>(null);
 const bookmarkletCopied = signal(false);
 let bookmarkletCopiedTimer: ReturnType<typeof setTimeout> | null = null;
 
-function captureAppUrl() {
-  if (typeof window === 'undefined') return '/';
-  return `${window.location.origin}${window.location.pathname}`;
-}
-
-const bookmarkletHref = inbox.buildBookmarklet(captureAppUrl());
+const bookmarkletHref = inbox.buildBookmarklet(
+  typeof window === 'undefined' ? '/' : `${window.location.origin}${window.location.pathname}`
+);
 
 // The bookmarklet is a single control: clicking copies its source so it can be
 // pasted into a bookmark, while dragging (native anchor drag) installs it.
@@ -141,14 +138,12 @@ function enrollBiometric() {
     // sec-05: the passphrase string never leaves persistence — the enroll flow
     // reads it internally instead of handing it back to the app surface.
     await persistence.enrollBiometrics(accountInfo.value.email);
-    biometrics.enrolled.value = true;
   }, 'Biometric unlock enabled on this device.');
 }
 
 function forgetBiometric() {
   void biometrics.forget()
     .then(() => {
-      biometrics.enrolled.value = false;
       adminMessage.value = 'This device can no longer unlock with biometrics.';
     })
     .catch(err => {
@@ -253,9 +248,9 @@ export const OptionsModal = () => {
   async function handlePurge() {
     const purgeLabel = modes[currentMode].prompt;
     if (!confirm(purgeLabel)) return;
-    optionsOpen.value = false;
 
     if (currentMode === 'memory') {
+      optionsOpen.value = false;
       await loadIntroDocument();
       return;
     }
@@ -267,13 +262,17 @@ export const OptionsModal = () => {
       try {
         await persistence.signOut();
       } catch (err) {
+        // Keep the modal open so the failure is visible, and do not wipe this
+        // device while the remote session teardown is incomplete.
         adminError.value = String((err as { message?: string } | null)?.message || 'Failed to sign out.');
+        return;
       } finally {
         busy.value = false;
       }
       resetSessionState();
     }
 
+    optionsOpen.value = false;
     persistence.reset();
     resetSessionState();
     // Reload into memory mode so the intro appears.

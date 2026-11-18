@@ -234,7 +234,9 @@
       - Optional per device, offered under Options when WebAuthn is supported and a passphrase exists
       - The passphrase is sealed on-device with AES-GCM behind WebAuthn user verification
         The wrapping key is used only for this seal, never for document encryption
-      - Signing out, changing storage mode, deleting local data, or "Forget this device" revoke the seal
+      - Signing out, changing the passphrase, changing storage mode, deleting local data, or
+        "Forget this device" revoke the seal — a seal wraps one passphrase, so a rotation
+        makes it useless and the user re-enrols
       - It is a convenience gate, not a hardware key binding
     - PLAINTEXT METADATA
       Only the document payload (`vmd_data_enc`) is ciphertext. The following are stored in plaintext

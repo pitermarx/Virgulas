@@ -591,6 +591,27 @@ test.describe('Conflict resolution modal', () => {
         await expect(page.locator('.conflict-value-textarea').last()).toContainText('My remote text');
     });
 
+    test('a backdrop or foreign close click does not dismiss the blocking conflict dialog', async ({ page }) => {
+        await setupConflict(page, 'Stay A', 'Stay B');
+        const dialog = page.getByRole('dialog', { name: /Sync conflict|conflict/i });
+        await expect(dialog).toBeVisible();
+
+        // Clicking the backdrop (outside the dialog) leaves the blocking dialog up.
+        await page.locator('.conflict-overlay').click({ position: { x: 4, y: 4 } });
+        await expect(dialog).toBeVisible();
+
+        // A close-button click elsewhere in the document must not hide it either:
+        // the document-level closeModals handler skips the blocking dialog.
+        await page.evaluate(() => {
+            const button = document.createElement('button');
+            button.className = 'modal-close';
+            document.body.appendChild(button);
+            button.click();
+            button.remove();
+        });
+        await expect(dialog).toBeVisible();
+    });
+
     test('the conflict dialog is blocking: it owns focus, keeps Tab inside, and ignores Escape (a11y-02)', async ({ page }) => {
         await setupConflict(page, 'Blocked A', 'Blocked B');
         const dialog = page.getByRole('dialog', { name: /Sync conflict|conflict/i });

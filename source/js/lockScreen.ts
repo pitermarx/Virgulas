@@ -330,7 +330,6 @@ async function continueInMemory() {
   persistence.setPreferredMode('memory');
   if (staged) {
     outline.load(staged);
-  } else {
   }
   document.body.setAttribute('data-main-view', 'rendered');
 }
@@ -425,7 +424,8 @@ async function unlockWithBiometrics() {
       mode: authMode.value,
       username: username.value,
       password: password.value,
-      trustSession: isRemoteSessionValid()
+      trustSession: isRemoteSessionValid(),
+      initialDoc: stagedMemoryDoc ?? undefined,
     });
     if (success) {
       // KeySession now holds the secret; never mirror the recovered passphrase
@@ -465,7 +465,7 @@ effect(() => {
   const isRemote = mode === 'remote';
   const isSessionValid = isRemoteSessionValid();
   const needsRemoteCredentials = isRemote && !isSessionValid && flow.kind !== 'remote-password';
-  const localCreate = mode === 'local' && !authHasLocalData.value;
+  const localCreate = isLocalCreate();
 
   if (
     (flow.kind === 'unlock' || flow.kind === 'remote-password') &&

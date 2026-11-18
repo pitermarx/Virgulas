@@ -555,7 +555,7 @@ export default {
       if (!current) {
           throw new Error('Unlock with a passphrase before enabling biometric unlock.')
       }
-      return biometrics.enroll(current, userLabel ?? 'Virgulas user')
+      return biometrics.enroll(current, userLabel || 'Virgulas user')
   },
   /** True when the last sign-up still needs the email confirmed before a session exists. */
   needsEmailConfirmation: () => pendingEmailConfirmation,
@@ -853,6 +853,10 @@ export default {
       throw new Error('This mode has no encryption passphrase.')
     }
     const doc = outline.snapshot()
+
+    // The seal wraps one passphrase: a rotation leaves it useless, so revoke it
+    // with the change (the user re-enrols if they still want biometric unlock).
+    void biometrics.forget().catch(() => { })
 
     if (mode === 'local') {
       // Storage seam: rotation is the session's job -- a fresh salt and the

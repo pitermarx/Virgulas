@@ -98,16 +98,15 @@ function submitQuickCapture(event: any) {
     return
   }
 
-  if (enqueueIncomingCapture(quickCaptureText.value)) closeQuickCapture()
+  if (enqueueIncomingCapture(quickCaptureText.value, pendingCaptureIntent.value?.description ?? '')) closeQuickCapture()
 }
 
 /** Remove the capture parameters so a reload or re-share does not queue twice. */
-function stripCaptureParams(): string {
+function stripCaptureParams(): void {
   const url = new URL(window.location.href)
   ;['quick-add', 'quick-capture', ...inbox.SHARE_TARGET_KEYS].forEach(key => url.searchParams.delete(key))
   const cleanUrl = `${url.pathname}${url.search ? `?${url.searchParams.toString()}` : ''}${url.hash}`
   window.history.replaceState(null, '', cleanUrl || '/')
-  return cleanUrl || '/'
 }
 
 /** Handle capture URLs that arrive while the app is already running. */
