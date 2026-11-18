@@ -333,7 +333,7 @@ test.describe('Sync retry behaviour', () => {
                 from: () => queryBuilder
             };
             Object.defineProperty(window, 'supabase', { configurable: true, get: () => ({ createClient: () => client }), set: () => { } });
-            localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+            localStorage.setItem('backendconfig', JSON.stringify({ backend: 'supabase', url: 'http://127.0.0.1:54321', key: 'anon' }));
             localStorage.setItem('vmd_last_mode', 'remote');
         }, { downloadData: payload });
 
