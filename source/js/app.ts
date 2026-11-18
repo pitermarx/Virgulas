@@ -155,7 +155,6 @@ if (!captureOnly.value) {
     window.addEventListener('popstate', consumeQuickCaptureUrl);
   }
 }
-
 const Splash = () => {
   const ready = appReady.value;
   let isLocked = false;
@@ -225,11 +224,6 @@ const Splash = () => {
 
 if (!startCaptureIfRequested()) {
   render(html`<${Splash} />`, document.getElementById('app')!);
-  consumeQuickCaptureUrl();
-  if (typeof window !== 'undefined') {
-    window.addEventListener('pageshow', consumeQuickCaptureUrl);
-    window.addEventListener('popstate', consumeQuickCaptureUrl);
-  }
 }
 
 // Runtime mouse detection. CSS `any-hover` is unreliable on hybrid devices — a
