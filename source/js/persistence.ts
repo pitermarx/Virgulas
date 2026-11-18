@@ -49,6 +49,8 @@ import {
   skipNextRemotePush
 } from './syncEngine.js'
 import { cached } from './cachedStore.js'
+import { applyIntro, getIntroText, loadIntroDocument } from './intro.js'
+import { describeBrowserSupport, normalizeMode } from './modes.js'
 
 export type PersistenceMode = 'local' | 'remote' | 'filesystem' | 'memory'
 
@@ -63,27 +65,6 @@ interface UnlockOptions {
   initialDoc?: OutlineDoc
 }
 
-function normalizeMode(mode: unknown): PersistenceMode | null {
-  return mode === 'local' || mode === 'remote' || mode === 'filesystem' || mode === 'memory' ? mode : null
-}
-
-function describeBrowserSupport(capabilities: ReturnType<typeof detectBrowserCapabilities>, encryptedStorageAvailable: boolean) {
-  const warnings: string[] = []
-  if (!encryptedStorageAvailable) {
-    const missing = []
-    if (!capabilities.cryptoSubtle) missing.push('Web Crypto')
-    if (!capabilities.compressionStreams) missing.push('Compression Streams')
-    if (!capabilities.localStorage) missing.push('localStorage')
-    warnings.push(`Encrypted Local and Remote storage are unavailable because this browser lacks ${missing.join(', ')}. If either mode was selected, the app will continue in Memory without changing the saved mode or encrypted document.`)
-  }
-  if (!capabilities.indexedDB) {
-    warnings.push('IndexedDB is unavailable, so file handles will not be remembered between visits and biometric unlock is unavailable.')
-  }
-  return warnings.join(' ')
-}
-
-// Applies to newly chosen passphrases only; existing (possibly shorter) passphrases
-// must keep unlocking.
 function assertNewPassphrase(passphrase: string) {
   if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
     throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`)
@@ -110,15 +91,6 @@ let fileDataStore: DocStore | null = null
 
 function setFileHandle(handle: FileSystemFileHandle | null) {
   fileDataStore = handle ? codecStore(vmdCodec, fileStore(handle)) : null
-}
-
-/**
- * Loads a codec-parsed document into the live outline. VMD-sourced documents
- * carry no model version, so the wrapper supplies one (load validates it);
- * document-level fields already on the doc win over the defaults.
- */
-function loadDocIntoOutline(doc: OutlineDoc) {
-  outline.load({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
 }
 
 /**
@@ -479,38 +451,6 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   return true
 }
 
-let introVmdCache: string | null = null
-
-async function getIntroVmdText(): Promise<string> {
-  if (introVmdCache !== null) return introVmdCache
-  try {
-    const resp = await fetch('/intro.vmd', { cache: 'no-store' })
-    if (resp.ok) {
-      introVmdCache = await resp.text()
-      return introVmdCache
-    }
-  } catch { /* ignore */ }
-  introVmdCache = ''
-  return introVmdCache
-}
-
-function applyIntro(introText: string) {
-  outline.reset()
-  if (introText && introText.trim()) {
-    loadDocIntoOutline(vmdCodec.parse(introText))
-  } else {
-    outline.addChild('root', { text: '' }) // fallback: intro fetch failed, one empty node
-  }
-}
-
-/**
- * Reset the live model to the in-app tour. Memory mode and a purge both use it;
- * the text is fetched once and cached for the session.
- */
-async function loadIntroDocument() {
-  applyIntro(await getIntroVmdText())
-}
-
 /**
  * The backdrop behind the lock screen. A session can open while the fetch is in
  * flight (a fast unlock, or the biometric auto-unlock), so re-check after the
@@ -518,7 +458,7 @@ async function loadIntroDocument() {
  * zoom target.
  */
 async function loadLockedBackgroundIntro() {
-  const introText = await getIntroVmdText()
+  const introText = await getIntroText()
   if (sessionState.value === 'locked') applyIntro(introText)
 }
 
@@ -552,7 +492,7 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
   let fileHasContent = false
   if (hasDocumentNodes(doc)) {
     outline.reset()
-    loadDocIntoOutline(doc)
+    outline.loadDocument(doc)
     applyHashZoomIfPresent()
     fileHasContent = true
   } else if (adoptInitialDoc(initialDoc)) {
@@ -751,7 +691,6 @@ export default {
     rememberMode('memory')
     await clearAppCaches()
   },
-  loadIntroDocument,
   loadLockedBackgroundIntro,
   async signUp(email: string, password: string) {
     const res = await remoteSync.signUp(email.trim(), password)
@@ -886,7 +825,7 @@ export default {
     const doc = await fileDataStore!.read()
     if (hasDocumentNodes(doc)) {
       outline.reset()
-      loadDocIntoOutline(doc)
+      outline.loadDocument(doc)
       savePipeline.markSaved()
       applyHashZoomIfPresent()
     } else {

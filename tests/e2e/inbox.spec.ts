@@ -157,19 +157,20 @@ test.describe('Quick capture inbox', () => {
     // changed by real user input, so a programmatic fill() intermittently
     // skips the commit and the rename is silently lost. The dialog can also
     // re-take focus while the Options sheet settles, swallowing the keystrokes
-    // (seen as "Inboxd" under load), so verify the typed value and retry.
+    // (seen as "Inboxd" under load), so retry the whole rename until the write
+    // lands - verifying only the input value can pass on a value a re-render is
+    // about to discard.
     await expect(async () => {
       await inboxNameField.click();
       await inboxNameField.selectText();
       await inboxNameField.pressSequentially('Captured');
       await expect(inboxNameField).toHaveValue('Captured', { timeout: 1000 });
-    }).toPass({ timeout: 10000 });
-    await inboxNameField.press('Tab');
-    // The rename is only committed on blur; wait for the write to land before
-    // navigating away so a slow commit cannot surface as a confusing failure
-    // much later, when the queued capture reconciles into the default "Inbox".
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem('vmd_inbox_node_name')))
-      .toBe('Captured');
+      await inboxNameField.press('Tab');
+      await expect.poll(
+        async () => page.evaluate(() => localStorage.getItem('vmd_inbox_node_name')),
+        { timeout: 1000 }
+      ).toBe('Captured');
+    }).toPass({ timeout: 20000 });
     await options.getByRole('button', { name: 'Close' }).click();
 
     await page.goto('/?quick-add=custom%20name');

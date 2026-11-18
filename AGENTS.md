@@ -463,6 +463,9 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `focus.ts`:
   Focus/selection state (`focusId`, `focusType`, `selectedIds`, the `focus` object) and the DOM
   transfer/blur helpers shared by the components and `shortcuts.ts`.
+- `intro.ts`:
+  The in-app tour: one cached fetch of `/intro.vmd` and the one way to reset the model to it
+  (Memory mode, the locked backdrop, a purge).
 - `search.ts`:
   Search UI state and pure search helpers shared by UI and keyboard handling (`searchQuery`, `searchResultIndex`, `currentSearchMatchId`, match flattening helpers).
 - `shortcuts.ts`:
@@ -502,8 +505,7 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
   step/overlay booleans; the form fields, user and busy/error state live beside it,
   not in the app shell. `app.ts` mounts the component and asks
   `isWizardOverlayOpen()`, and `options.ts` reaches the same
-  state through `lockNow` / `resetSessionState`; `persistence.loadIntroDocument()`
-  owns the tour text.
+  state through `lockNow` / `resetSessionState`; `intro.ts` owns the tour text.
 - `options.ts`:
   The Options modal and its private state (account info, backend deletion
   capability, busy flag, the admin form fields). Binds its own dialog focus and
@@ -529,8 +531,9 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `meta.ts`:
   `due:` / `rec:` metadata parsing and formatting.
 - `modes.ts`:
-  The four storage modes' UI traits and copy: label, encrypted, synced, and the Options
-  detail/action/prompt. Behavioural branches stay in their own modules.
+  The four storage modes' UI traits and copy: label, encrypted, synced, the Options
+  detail/action/prompt, plus `normalizeMode` and the browser-support warning. Behavioural branches
+  stay in their own modules.
 - `durability.ts`:
   Local-storage durability state: the persistent/best-effort signal, the
   dismissible reminder, and the once-per-session `persist()` request.
