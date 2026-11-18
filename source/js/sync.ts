@@ -26,9 +26,7 @@ import { createRemoteSyncAttempt, syncOnce } from './syncEngine.js'
  * 1. an explicit `backendconfig` override (dev/testing; no UI),
  * 2. a same-origin TrailBase probe (the app served by `trail run
  *    --public-dir dist` — self-hosted or hosted),
- * 3. the legacy `supabaseconfig` read-through (existing users keep their
- *    hosted Supabase data),
- * 4. the hosted Supabase fallback for static deployments without a server.
+ * 3. the hosted Supabase fallback for static deployments without a server.
  * Resolution runs once per session and only inside the remote flows, so
  * startup never depends on a network round trip.
  */
@@ -39,14 +37,12 @@ let resolvedUrl = ''
 
 export async function backend(): Promise<{ raw: RawStore; auth: AuthProvider }> {
     if (!resolvedBackend) {
-        const override = store.backend.getOverride()
+        const override = store.backend.get()
         const config: BackendConfig = override
             ? parseBackendConfig(override)
             : await sameOriginTrailbase()
                 ? { backend: 'trailbase', url: '' }
-                : store.supabase.get()
-                    ? parseBackendConfig(store.supabase.get())
-                    : { ...HOSTED_BACKEND }
+                : { ...HOSTED_BACKEND }
         resolvedKind.value = config.backend === 'trailbase' ? 'trailbase' : 'supabase'
         resolvedUrl = config.url || ''
         if (config.backend === 'trailbase') {

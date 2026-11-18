@@ -111,7 +111,6 @@ const unlockRememberedRemote = async (page: Page) => {
     await page.goto('/');
     await page.evaluate(() => {
         localStorage.clear();
-        localStorage.removeItem('supabaseconfig');
         localStorage.setItem('vmd_last_mode', 'remote');
     });
     await page.reload();

@@ -16,10 +16,10 @@ export const test = base.extend({
         await page.route('https://um.vps.pitermarx.com/**', route => route.abort());
 
         if (configJson) {
-            // The legacy `supabaseconfig` key: the `backendconfig` read-through
-            // picks it up unless a test pins an explicit backend config.
+            // The explicit `backendconfig` override pins the resolved server
+            // before the app boots; a mock seed can still replace it later.
             await page.addInitScript((value: string) => {
-                localStorage.setItem('supabaseconfig', value);
+                localStorage.setItem('backendconfig', value);
             }, configJson);
         }
 
@@ -446,7 +446,7 @@ export async function installMockSupabase(
             localStorage.clear();
         }
         if (options.rememberedMode) localStorage.setItem('vmd_last_mode', options.rememberedMode);
-        localStorage.setItem('backendconfig', JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'anon' }));
+        localStorage.setItem('backendconfig', JSON.stringify({ backend: 'supabase', url: 'http://127.0.0.1:54321', key: 'anon' }));
     }, options);
 }
 

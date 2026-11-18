@@ -228,35 +228,15 @@ export function clearLegacySupabaseSessions(): void {
 }
 
 /**
- * Backend configuration slot (storage seam, docs §8): the config moves to
- * `backendconfig`, with a one-time read-through of the legacy
- * `supabaseconfig` key so existing browsers keep working without migration.
+ * Backend configuration slot (storage seam, docs §8): the pinned backend
+ * config in the current `{ backend, url?, key? }` shape.
  */
-function backendSlot() {
-    const next = slot('backendconfig')
-    const legacy = slot('supabaseconfig')
-    return {
-        get(fallback: string | null = null): string | null {
-            return next.get() ?? legacy.get() ?? fallback
-        },
-        /** The explicit `backendconfig` override only — no legacy read-through.
-         * Server resolution uses this to tell a pinned config apart from the
-         * legacy key and decide whether the same-origin probe may run. */
-        getOverride(): string | null {
-            return next.get()
-        },
-        set: next.set,
-        del: next.del
-    }
-}
-
 export const store = {
     theme: slot('vmd_theme'),
     mode: slot('vmd_last_mode'),
     user: slot('vmd_last_username'),
     data: slot('vmd_data_enc'),
-    backend: backendSlot(),
-    supabase: slot('supabaseconfig'),
+    backend: slot('backendconfig'),
     syncTs: slot('vmd_sync_ts'),
     syncHead: slot('vmd_sync_head'),
     backendSession: slot('vmd_backend_session'),

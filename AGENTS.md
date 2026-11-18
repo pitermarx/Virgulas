@@ -261,9 +261,8 @@ SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
-The app resolves Remote's server from `localStorage.backendconfig` (with a read-through of the
-legacy `localStorage.supabaseconfig`), then the same-origin TrailBase probe and the hosted
-Supabase fallback. When no config is stored, the hosted Supabase constants in `storage.ts` are
+The app resolves Remote's server from `localStorage.backendconfig`, then the same-origin TrailBase
+probe and the hosted Supabase fallback. When no config is stored, the hosted Supabase constants in `storage.ts` are
 the fallback:
 
 ```json
@@ -273,7 +272,8 @@ the fallback:
 }
 ```
 
-To use local Supabase in the browser, set `localStorage.supabaseconfig` with your local URL/key.
+To use local Supabase in the browser, set `localStorage.backendconfig` to
+`{ "backend": "supabase", "url": "<your-url>", "key": "<anon-key>" }`.
 
 ### Running locally
 
@@ -689,7 +689,7 @@ bun run typecheck                # tsc app config + test config
   Supabase reachable via `bunx supabase status -o env`. The config fails fast when neither is
   available, unless every selected file is under `tests/e2e/` — a shell, memory or file check
   runs without a Supabase stack.
-- The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
+- The fixture (`tests/test.ts`) overrides `localStorage.backendconfig` from `.env` before every
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
 - `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 3 per CI shard.
