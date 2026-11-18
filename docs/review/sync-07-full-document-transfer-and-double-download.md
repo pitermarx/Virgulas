@@ -31,7 +31,7 @@ Playwright with a request counter: startup in Remote mode performs one full read
 
 - **Phase:** [3 — Stop data loss and fix sync on the current model](README.md#phase-3)
 - **Size:** S
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** [roadmap-01](roadmap-01-queued-background-sync.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [scale-02](scale-02-transfer-cost-model.md)
 - **Shaped by:** —

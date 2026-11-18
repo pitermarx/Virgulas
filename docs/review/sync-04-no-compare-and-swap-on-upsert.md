@@ -26,7 +26,7 @@ Playwright with two contexts writing concurrently: the second write is rejected 
 
 - **Phase:** [5 — Sync and data model v2](README.md#phase-5)
 - **Size:** L
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md), [test-01](test-01-no-real-backend-e2e.md)
+- **Do these first:** [test-01](test-01-no-real-backend-e2e.md)
 - **Unblocks:** [dur-03](dur-03-no-versioned-backups.md), [roadmap-01](roadmap-01-queued-background-sync.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md)

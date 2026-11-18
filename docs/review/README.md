@@ -8,7 +8,7 @@ Security items whose detail would help an attacker (replay recipes, live hosted 
 ## How the order was chosen
 
 1. **Make the safety net first.** Sync and the data model are the riskiest code and cannot be refactored without invariant tests, a real-backend suite and a production-bundle smoke test (Phase 1).
-2. **Make it changeable before changing it.** Four copies of the push logic and module-level state are why the sync bugs exist. Consolidate them without changing behaviour (Phase 2).
+2. **Make it changeable before changing it.** The four copies of the push logic are now one `syncOnce` (struct-02, merged); the remaining Phase 2 work is the save-session object (struct-07) and the smaller duplications (struct-03).
 3. **Fix data loss on the current model, cheaply.** Fix what loses data today, but do not polish what Phase 5 replaces (Phase 3).
 4. **Decide before building.** Several items change shape depending on a handful of decisions (D1 to D8 below). Decide them with measured numbers (Phase 4), then build once (Phase 5).
 5. **Features last.** Roadmap features need the new data model, revisions and UI semantics to be stable (Phase 9).
@@ -26,7 +26,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
-| [2](#phase-2) | Make persistence and sync changeable | 3 | One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green. |
+| [2](#phase-2) | Make persistence and sync changeable | 2 | One save-session object (the single `syncOnce` exists); existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 7 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
 | [5](#phase-5) | Sync and data model v2 | 7 | Rollback is detected, concurrent writers cannot overwrite each other, history exists, and conflicts only appear for real same-field edits. |
@@ -61,10 +61,8 @@ The longest dependency chains, for planning. An arrow means "must be done before
 
 ```mermaid
 flowchart LR
-  test02["test-02 invariants"] --> struct02["struct-02 syncOnce"]
-  struct02 --> syncfix["sync-03, 05, 09"]
+  test02["test-02 invariants"] --> syncfix["sync-03, 05, 09"]
   test01["test-01 real backend"] --> sync04["sync-04 revision + CAS"]
-  struct02 --> sync04
   sync04 --> sec06["sec-06 envelope v3"]
   sec06 --> sec12["sec-12 anti-rollback"]
   test02 --> data05["data-05 data model v2"]
@@ -159,15 +157,14 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 ## Phase 2
 
-**Make persistence and sync changeable.** Remove the duplication and global state that cause the sync bugs, without changing behaviour.
+**Make persistence and sync changeable.** Finish removing the global state that caused the sync bugs, without changing behaviour.
 
-**Done when:** One `syncOnce` and one save-session object; existing unit and e2e suites unchanged and green.
+**Done when:** One save-session object (the single `syncOnce` already exists); existing unit and e2e suites unchanged and green.
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-02](struct-02-duplicated-remote-push-logic.md) — The remote push and merge logic exists in four copies | L | High | — | [roadmap-01](roadmap-01-queued-background-sync.md), [struct-01](struct-01-oversized-modules.md), [struct-03](struct-03-minor-duplications.md), [struct-05](struct-05-any-typing-and-unchecked-scripts.md), [sync-03](sync-03-no-backoff-on-failing-pull.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [sync-05](sync-05-last-synced-at-stamped-after-upload.md), [sync-07](sync-07-full-document-transfer-and-double-download.md), [sync-09](sync-09-retry-and-polling-hygiene.md) |
-| 2 | [struct-03](struct-03-minor-duplications.md) — Smaller duplications | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 3 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
+| 1 | [struct-03](struct-03-minor-duplications.md) — Smaller duplications | S | Low | — | — |
+| 2 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
 
 <a id="phase-3"></a>
 
@@ -180,12 +177,12 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [dur-01](dur-01-multi-tab-overwrites.md) — Two tabs overwrite each other's edits | M | High | [struct-07](struct-07-module-level-mutable-state.md) | — |
-| 2 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 3 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
+| 2 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | — | — |
+| 3 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | — | — |
 | 4 | [dur-04](dur-04-destructive-actions-without-safety-net.md) — Destructive actions have no safety net | S | Low | — | — |
 | 5 | [err-03](err-03-sync-errors-without-detail.md) — Sync errors carry no detail, retry action or diagnostics | M | Low | — | [roadmap-01](roadmap-01-queued-background-sync.md) |
-| 6 | [sync-05](sync-05-last-synced-at-stamped-after-upload.md) — `lastSyncedAt` is stamped after the upload, hiding edits made during it | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
-| 7 | [sync-09](sync-09-retry-and-polling-hygiene.md) — Retry and polling hygiene | S | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | [scale-02](scale-02-transfer-cost-model.md) |
+| 6 | [sync-05](sync-05-last-synced-at-stamped-after-upload.md) — `lastSyncedAt` is stamped after the upload, hiding edits made during it | S | Low | — | — |
+| 7 | [sync-09](sync-09-retry-and-polling-hygiene.md) — Retry and polling hygiene | S | Low | — | [scale-02](scale-02-transfer-cost-model.md) |
 
 <a id="phase-4"></a>
 
@@ -212,7 +209,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [data-05](data-05-denormalized-parent-children-no-tombstones.md) **SPEC** — Denormalized tree and no tombstones | L | Medium | — | [roadmap-03](roadmap-03-node-linking.md), [sec-12](sec-12-sync-anti-rollback.md), [sync-06](sync-06-disjoint-field-edits-conflict.md), [ux-02](ux-02-no-undo.md) |
-| 2 | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) — Upsert has no compare-and-swap, so concurrent devices can overwrite each other | L | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md), [test-01](test-01-no-real-backend-e2e.md) | [dur-03](dur-03-no-versioned-backups.md), [roadmap-01](roadmap-01-queued-background-sync.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md) |
+| 2 | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) — Upsert has no compare-and-swap, so concurrent devices can overwrite each other | L | Medium | [test-01](test-01-no-real-backend-e2e.md) | [dur-03](dur-03-no-versioned-backups.md), [roadmap-01](roadmap-01-queued-background-sync.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md) |
 | 3 | [dur-03](dur-03-no-versioned-backups.md) **SPEC** — No versioned backups or snapshots | L | Medium | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | 4 | [sync-06](sync-06-disjoint-field-edits-conflict.md) **SPEC** — Edits to different fields of the same node conflict | L | Medium | [data-05](data-05-denormalized-parent-children-no-tombstones.md) | [ux-03](ux-03-conflict-resolution-granularity.md) |
 | 5 | [sec-06](sec-06-no-aad-on-ciphertext.md) **SPEC** — Ciphertext is not bound to its context (no AAD) | M | Low | [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | [sec-12](sec-12-sync-anti-rollback.md) |
@@ -262,11 +259,11 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-01](struct-01-oversized-modules.md) — Several modules exceed the project's own size guidance | L | Medium | [struct-02](struct-02-duplicated-remote-push-logic.md), [struct-07](struct-07-module-level-mutable-state.md) | — |
+| 1 | [struct-01](struct-01-oversized-modules.md) — Several modules exceed the project's own size guidance | L | Medium | [struct-07](struct-07-module-level-mutable-state.md) | — |
 | 2 | [compat-02](compat-02-file-mode-chromium-only.md) — File mode exists only in Chromium browsers | M | Low | — | — |
 | 3 | [i18n-01](i18n-01-english-only-and-layout-dependent-shortcuts.md) — English-only UI, hard-coded locale and layout-dependent shortcuts | M | Low | — | — |
 | 4 | [perf-07](perf-07-sw-font-precache.md) — The service worker precaches every font subset on install | S | Low | — | — |
-| 5 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) — Loose typing and unchecked scripts | M | Low | [struct-02](struct-02-duplicated-remote-push-logic.md) | — |
+| 5 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) — Loose typing and unchecked scripts | M | Low | — | — |
 | 6 | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) — Monitoring, a status page and CSP violation reporting | M | — | [scale-03](scale-03-backend-availability-monitoring.md) | — |
 | 7 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) — Fingerprinted assets and immutable caching | M | — | — | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) |
 | 8 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) — Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | S | Medium | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) | — |
@@ -283,7 +280,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [ux-02](ux-02-no-undo.md) — No undo for edits or deletions | L | Medium | [data-05](data-05-denormalized-parent-children-no-tombstones.md), [struct-07](struct-07-module-level-mutable-state.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
-| 2 | [roadmap-01](roadmap-01-queued-background-sync.md) — Queued background sync | M | — | [err-03](err-03-sync-errors-without-detail.md), [struct-02](struct-02-duplicated-remote-push-logic.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | — |
+| 2 | [roadmap-01](roadmap-01-queued-background-sync.md) — Queued background sync | M | — | [err-03](err-03-sync-errors-without-detail.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | — |
 | 3 | [roadmap-02](roadmap-02-drag-and-drop-reordering.md) — Drag-and-drop reordering (solve multi-select move first) | L | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [ux-02](ux-02-no-undo.md) | — |
 | 4 | [roadmap-03](roadmap-03-node-linking.md) **SPEC** — Node linking (decide the storage design first) | L | — | [data-05](data-05-denormalized-parent-children-no-tombstones.md), [perf-01](perf-01-grouped-tasks-per-keystroke.md) | — |
 | 5 | [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) — Tags and mentions with autocomplete | M | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [perf-01](perf-01-grouped-tasks-per-keystroke.md) | — |
@@ -387,7 +384,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [struct-01](struct-01-oversized-modules.md) | Several modules exceed the project's own size guidance | [8](#phase-8) | L | Medium |
-| [struct-02](struct-02-duplicated-remote-push-logic.md) | The remote push and merge logic exists in four copies | [2](#phase-2) | L | High |
 | [struct-03](struct-03-minor-duplications.md) | Smaller duplications | [2](#phase-2) | S | Low |
 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) | Loose typing and unchecked scripts | [8](#phase-8) | M | Low |
 | [struct-07](struct-07-module-level-mutable-state.md) | Module-level mutable state in the save and sync pipeline | [2](#phase-2) | M | Low |

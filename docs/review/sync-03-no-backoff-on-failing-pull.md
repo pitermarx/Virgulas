@@ -26,7 +26,7 @@ Unit test: after a failed pull for timestamp T, further polls with the same T do
 
 - **Phase:** [3 — Stop data loss and fix sync on the current model](README.md#phase-3)
 - **Size:** S
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

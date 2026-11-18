@@ -31,4 +31,4 @@ The new suite is the test.
 - **Unblocks:** [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
-- **Related:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Related:** —

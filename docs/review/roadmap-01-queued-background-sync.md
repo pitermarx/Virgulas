@@ -16,7 +16,7 @@ The local ciphertext is always written first, so the document itself is not lost
 
 - Smallest useful version: remember "remote dirty" (a flag with the local version number, stored in the non-secret metadata), and on `online`, on `visibilitychange` to visible and at the next poll, run one sync pass. Since every upload is the whole document, there is nothing to queue beyond the flag; a queue of operations only makes sense with a delta protocol (sync-07).
 - Use the Background Sync API where available only as a bonus; it is Chromium-only.
-- Build on one `syncOnce` function (struct-02) and the revision check (sync-04), otherwise a replayed offline push can overwrite newer remote data (sync-01).
+- Build on the one `syncOnce` function (struct-02, merged into `syncEngine.ts`) and the revision check (sync-04), otherwise a replayed offline push can overwrite newer remote data (sync-01).
 - Show the pending state in the status indicator ("N changes waiting", err-03).
 
 ## Open questions
@@ -32,7 +32,7 @@ Playwright with the context set offline then online: the change reaches the mock
 
 - **Phase:** [9 — Features](README.md#phase-9)
 - **Size:** M
-- **Do these first:** [err-03](err-03-sync-errors-without-detail.md), [struct-02](struct-02-duplicated-remote-push-logic.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md)
+- **Do these first:** [err-03](err-03-sync-errors-without-detail.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md)
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** [sync-07](sync-07-full-document-transfer-and-double-download.md)
