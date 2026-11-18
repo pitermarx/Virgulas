@@ -221,10 +221,8 @@ export const HOSTED_BACKEND: BackendConfig = {
 const DEFAULT_BACKEND: BackendConfig = { backend: 'trailbase', url: '' }
 
 /**
- * Parses the persisted backend config slot. Backwards compatible with both
- * legacy shapes: the pre-seam `supabaseconfig` value `{ url, key }` (a custom
- * Supabase when the url differs from the hosted default, the hosted server
- * otherwise) and the current `{ backend, url?, key? }`. An empty/absent
+ * Parses the persisted backend config slot: `{ backend, url?, key? }`.
+ * Anything unrecognised falls back to the default backend. An empty/absent
  * TrailBase url means the app's own origin.
  */
 export function parseBackendConfig(raw: string | null | undefined): BackendConfig {
@@ -238,13 +236,6 @@ export function parseBackendConfig(raw: string | null | undefined): BackendConfi
                         url: typeof parsed.url === 'string' ? parsed.url : (parsed.backend === 'trailbase' ? '' : undefined),
                         key: typeof parsed.key === 'string' && parsed.key ? parsed.key : undefined
                     }
-                }
-                // Legacy `{ url, key }` shape (the old supabaseconfig):
-                const url = typeof parsed.url === 'string' ? parsed.url : undefined
-                if (url) {
-                    if (url === HOSTED_BACKEND.url) return { backend: 'virgulas', url: HOSTED_BACKEND.url, key: HOSTED_BACKEND.key }
-                    const key = typeof parsed.key === 'string' ? parsed.key : undefined
-                    return { backend: 'supabase', url, key }
                 }
             }
         } catch { /* fall through to the default */ }

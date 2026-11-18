@@ -106,6 +106,16 @@ These change how later items are implemented. Record each in the SPEC or an ADR 
 | D6 | Inbound content policy | Anything arriving by link or paste: query-string documents, remote images, shared capture payloads. | Never write on a GET without a click; link-loaded documents open read-only in Memory mode; remote images load on click. Capture writes are already click-confirmed. | Settled (sec-01), Phase 6 (sec-08) | [sec-08](sec-08-remote-image-tracking.md), [roadmap-07](roadmap-07-load-vmd-from-query-string.md) |
 | D7 | Asset pipeline and cache ownership | Hashed file names and a manifest-driven service worker, with caching headers set at Cloudflare. | Adopt it; it also removes the hand-kept shell list and the cache bump script. | Phase 8 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md), [perf-05](perf-05-sw-stale-chunk-after-deploy.md), [perf-07](perf-07-sw-font-precache.md), [web-05](web-05-small-cleanups.md), [sec-09](sec-09-csp-unsafe-inline-styles.md) |
 | D8 | Supported browsers | Publish a support floor and feature-detect what is required, or keep the implicit current floor. | Publish the floor (the last two versions of each engine, at least the versions that provide the APIs the encrypted modes require, such as Web Crypto and WebAuthn). | Phase 8 | [compat-02](compat-02-file-mode-chromium-only.md) |
+
+Stabilization decisions D9 to D12 (legacy migration windows, multi-tab) are detailed in
+[simplification-decisions.md](simplification-decisions.md); all four were decided on 2026-11-18:
+
+| # | Decision | Options | Decided | Shapes |
+| --- | --- | --- | --- | --- |
+| D9 | Legacy raw-base64 envelopes (310k) | A. Keep until the D4 v3 envelope. B. Drop now. | B (2026-11-18) | [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md) |
+| D10 | Legacy `supabaseconfig` read-through | A. Drop at the next minor release with a release note. B. Keep. | Drop now (2026-11-18) | [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md) |
+| D11 | Legacy `sb-*-auth-token` adoption | A. Drop with D10, one re-login. B. Keep. | Drop now (2026-11-18) | [priv-03](priv-03-account-erasure-is-manual.md) |
+| D12 | Multi-tab overwrites | A. Fix in this phase (dur-01). B. Accept until Phase 5. | A (2026-11-18) | [dur-01](dur-01-multi-tab-overwrites.md) |
 Items that have two halves, a quick part now and a bigger part after a decision:
 - [sync-07](sync-07-full-document-transfer-and-double-download.md): drop the duplicate startup download in Phase 3; the protocol change is D2.
 - [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md): hosted settings in Phase 0B; backend options are D3.

@@ -156,8 +156,7 @@
         sign-in/sign-up form; there is no backend picker and no server URL to enter
       - Server resolution (remote flows only; never at startup): an explicit backendconfig
         override (dev/testing), then a same-origin TrailBase probe (the app served by
-        `trail run --public-dir dist` — self-hosted or hosted), then the legacy
-        supabaseconfig read-through for existing users, then the hosted Supabase fallback.
+        `trail run --public-dir dist` — self-hosted or hosted), then the hosted Supabase fallback.
         The credentials form names the resolved server ("this server" for same-origin)
       - Every step below the first has a Back link; the credentials form can reopen the wizard
         via "Change mode"
@@ -215,14 +214,16 @@
       It is not a separate localStorage key
     - The encryption key is derived from the passphrase and the salt via PBKDF2-HMAC-SHA256
       - Current target: 600,000 iterations, 256-bit output
-      - Legacy payloads written before the envelope existed used 310,000 iterations and still decrypt
+      - Payloads written before the envelope header existed have no version prefix and are
+        rejected as corrupt rather than decrypted with guessed parameters
       - The derived key is never stored — it is cached in memory for the unlocked session only
     - All document data is encrypted with the derived key using AES-GCM-256 with a unique IV per write
       The IV is prepended to the ciphertext; both are base64-encoded in the stored envelope
     - Stored form: `localStorage.vmd_data_enc` holds `<salt>|<envelope>`
       Envelope: `v2:<iterations>:<base64(iv || ciphertext)>`
-      Unprefixed values are legacy raw base64 and decrypt at the legacy iteration count
-    - A normal save re-encrypts a legacy envelope at the current target parameters (transparent upgrade)
+      Unprefixed values are rejected as corrupt
+    - A normal save re-encrypts an envelope written at older parameters at the current target
+      (transparent upgrade)
     - If the passphrase is forgotten, encrypted data is unrecoverable. There is no cryptographic recovery path.
       A destructive reset path may replace remote encrypted data with a new empty document and a new passphrase.
     + PASSPHRASE RULES
@@ -240,7 +241,7 @@
       because they are non-secret operational metadata:
       `vmd_theme`, `vmd_last_mode`, `vmd_last_username`, `vmd_sync_ts`, `vmd_sync_head`,
       `vmd_scheduled_window`, `vmd_inbox_node_name`, `vmd_inbox_queue`, `vmd_storage_notice_dismissed`,
-      `vmd_debug`, `backendconfig` (with a read-through of the legacy `supabaseconfig`),
+      `vmd_debug`, `backendconfig`,
       `vmd_backend_session` (TrailBase sign-in tokens), and `vmd_supabase_session`
       All localStorage access goes through the store slots in `utils.ts`
   + ACCOUNTS AND SYNC

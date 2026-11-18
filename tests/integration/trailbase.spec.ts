@@ -29,6 +29,12 @@ function makeTrailState(): TrailState {
 /** Installs the route-mocked TrailBase API. The state lives in the Node scope:
  * Playwright route handlers run here, not in the page. */
 const installTrailbaseMock = async (page: Page, state: TrailState) => {
+    // The e2e fixture pins Supabase in `backendconfig` for every navigation,
+    // and an explicit override outranks the same-origin probe. Remove it so
+    // the probe decides and resolves the mocked TrailBase on this origin.
+    // Init scripts run in registration order, so this runs after the fixture's.
+    await page.addInitScript(() => localStorage.removeItem('backendconfig'));
+
     const fulfill = (route: any, status: number, body?: any) =>
         route.fulfill({ status, contentType: 'application/json', body: body ? JSON.stringify(body) : undefined });
 
@@ -111,7 +117,6 @@ const unlockRememberedRemote = async (page: Page) => {
     await page.goto('/');
     await page.evaluate(() => {
         localStorage.clear();
-        localStorage.removeItem('supabaseconfig');
         localStorage.setItem('vmd_last_mode', 'remote');
     });
     await page.reload();
@@ -125,7 +130,7 @@ const unlockRememberedRemote = async (page: Page) => {
     await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
 };
 
-/** A fresh first-run: no remembered mode, no legacy Supabase config — so the
+/** A fresh first-run: no remembered mode and no pinned backend config — so the
  * same-origin probe decides the backend. Seeds local mode so the boot lands
  * on the lock screen (memory mode would bypass it). */
 const freshVisit = async (page: Page) => {

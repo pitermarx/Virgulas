@@ -140,32 +140,34 @@ test.describe('Authentication', () => {
     await expect(page.locator('body')).not.toHaveAttribute('data-main-view', 'rendered');
   });
 
-  test('upgrades a legacy envelope to the current KDF parameters on the next save', async ({ page }) => {
+  test('upgrades an envelope written at older parameters on the next save', async ({ page }) => {
     await page.goto('/');
 
-    // Seed a pre-v2 payload: raw base64 at the legacy 310k iterations.
+    // Seed a versioned envelope written at the older 310k target: it still
+    // decrypts, and the next save re-encrypts at the current 600k. (A payload
+    // without the v2 header is corrupt and never reaches this flow; that lock
+    // screen path has its own journey below.)
     await page.evaluate(async () => {
       const app = (await import('/js/app.js' as string)).e2e;
       app.outline.reset();
-      app.outline.addChild('root', { text: 'Legacy doc' });
+      app.outline.addChild('root', { text: 'Old params doc' });
       const json = app.outline.serialize();
       const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
       const salt = btoa(String.fromCharCode(...saltBytes));
-      const versioned = await app.encrypt(json, 'correct-horse', salt, 310000);
-      const legacy = versioned.split(':').slice(2).join(':');
+      const old = await app.encrypt(json, 'correct-horse', salt, 310000);
       localStorage.clear();
-      localStorage.setItem('vmd_data_enc', `${salt}|${legacy}`);
+      localStorage.setItem('vmd_data_enc', `${salt}|${old}`);
       localStorage.setItem('vmd_last_mode', 'local');
     });
 
     await page.reload();
     await unlockApp(page, 'correct-horse');
-    await expect(page.locator('.node-content').first()).toContainText('Legacy doc');
+    await expect(page.locator('.node-content').first()).toContainText('Old params doc');
 
-    // SPEC: a normal save re-encrypts a legacy envelope. Unlock itself no
-    // longer writes (the document was just read), so the upgrade rides on the
-    // next edit.
-    await editFirstNodeText(page, 'Legacy doc edited');
+    // SPEC: a normal save re-encrypts an envelope written at older parameters.
+    // Unlock itself no longer writes (the document was just read), so the
+    // upgrade rides on the next edit.
+    await editFirstNodeText(page, 'Old params doc edited');
     await page.locator('body').click();
     await expect.poll(
       async () => page.evaluate(() => localStorage.getItem('vmd_data_enc')),

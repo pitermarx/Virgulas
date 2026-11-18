@@ -23,6 +23,13 @@ try {
 
 test.skip(!stackUp, 'local TrailBase compose stack (scripts/trailbase/compose.yml) is not running')
 
+// The e2e fixture pins Supabase in `backendconfig` for every navigation, and
+// an explicit override outranks the same-origin probe. Remove it so the probe
+// resolves the real TrailBase serving this origin.
+test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.removeItem('backendconfig'))
+})
+
 /** Boots the app fresh and opens the cloud credentials form. */
 async function openCloudCredentials(page: Page) {
     await page.goto(BASE);

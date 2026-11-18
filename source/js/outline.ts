@@ -331,7 +331,6 @@ function outlineFactory() {
     }
 
     function reset() {
-        console.trace('OUTLINE RESET')
         zoomId.value = rootNodeId
         const root = map.get(rootNodeId);
         if (root) {

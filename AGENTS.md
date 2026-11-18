@@ -261,9 +261,8 @@ SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
-The app resolves Remote's server from `localStorage.backendconfig` (with a read-through of the
-legacy `localStorage.supabaseconfig`), then the same-origin TrailBase probe and the hosted
-Supabase fallback. When no config is stored, the hosted Supabase constants in `storage.ts` are
+The app resolves Remote's server from `localStorage.backendconfig`, then the same-origin TrailBase
+probe and the hosted Supabase fallback. When no config is stored, the hosted Supabase constants in `storage.ts` are
 the fallback:
 
 ```json
@@ -273,7 +272,8 @@ the fallback:
 }
 ```
 
-To use local Supabase in the browser, set `localStorage.supabaseconfig` with your local URL/key.
+To use local Supabase in the browser, set `localStorage.backendconfig` to
+`{ "backend": "supabase", "url": "<your-url>", "key": "<anon-key>" }`.
 
 ### Running locally
 
@@ -393,9 +393,9 @@ before any document work happens.
 - `crypto2.ts` is the only module allowed to encrypt or decrypt document data (Rule 7).
 - The stored value is `localStorage.vmd_data_enc` = `<salt>|<envelope>`; the salt is generated
   once and reused.
-- The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; legacy payloads are raw base64 and
-  decrypt at 310,000 iterations. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
-  AES-GCM-256, and a normal save re-encrypts an older envelope at the current parameters.
+- The envelope is `v2:<iterations>:<base64(iv || ciphertext)>`; values without the header are
+  rejected as corrupt. The current default is 600,000 PBKDF2-HMAC-SHA256 iterations with
+  AES-GCM-256, and a normal save re-encrypts an envelope written at older parameters.
 - The derived key is cached for the unlocked session, so autosave does not re-run the KDF. The cache is multi-entry (bounded LRU) keyed by (passphrase, salt, iterations) so alternating salts cost one derivation each.
 - `biometrics.ts` may wrap the passphrase behind WebAuthn for device unlock. That wrapping key
   never encrypts the document (Rule 7).
@@ -689,7 +689,7 @@ bun run typecheck                # tsc app config + test config
   Supabase reachable via `bunx supabase status -o env`. The config fails fast when neither is
   available, unless every selected file is under `tests/e2e/` — a shell, memory or file check
   runs without a Supabase stack.
-- The fixture (`tests/test.ts`) overrides `localStorage.supabaseconfig` from `.env` before every
+- The fixture (`tests/test.ts`) overrides `localStorage.backendconfig` from `.env` before every
   page load.
 - Locally Playwright runs Chromium only. In CI (`CI=true`) it runs Chromium, Firefox, and WebKit.
 - `workers` follows the machine (`availableParallelism()`): up to 8 locally, up to 3 per CI shard.

@@ -5,11 +5,11 @@ import { assert, assertEqual } from '../testing.js'
 
 // priv-01: "Delete local data" (persistence.reset) and "Delete account" must
 // wipe every device-local storage slot that holds user data, not just the
-// ciphertext. The theme and the non-secret Supabase config are the only slots
+// ciphertext. The theme and the non-secret backend config are the only slots
 // allowed to survive.
 
 /** The only store slots that a wipe is allowed to keep. */
-const ALLOWED_SLOTS = ['theme', 'supabase'] as const
+const ALLOWED_SLOTS = ['theme', 'backend'] as const
 
 function slotNames(): string[] {
     return Object.keys(store)

@@ -1,14 +1,13 @@
 import { describe, it } from 'bun:test'
 // encrypted() decorator suite (docs/storage-interface.md §10, rollout PR 2a):
-// envelope round-trip, salt reuse, legacy 310k decrypt + upgrade-on-save,
-// WrongKey mapping, key-cache behaviour (sync-10), remote-rekeyed (sync-01),
-// rotation flow (§6.7).
+// envelope round-trip, salt reuse, upgrade-on-save for older-parameter
+// envelopes, WrongKey mapping, key-cache behaviour (sync-10), remote-rekeyed
+// (sync-01), rotation flow (§6.7).
 
 import { encrypted, createKeySession, type KeySession } from '../../../source/js/encryptedStore.js'
 import { StoreError, type RawRecord, type RawStore } from '../../../source/js/storage.js'
 import {
     DEFAULT_ITERATIONS,
-    LEGACY_ITERATIONS,
     WrongPassphraseError,
     CorruptEnvelopeError,
     UnsupportedVersionError,
@@ -143,31 +142,28 @@ describe('encrypted() — lifecycle', () => {
 
 describe('encrypted() — envelope compatibility', () => {
 
-  it('a legacy 310k envelope decrypts, and the next save upgrades it to current parameters', async () => {
+  it('a headerless pre-v2 envelope is rejected as corrupt, not decrypted', async () => {
       const raw = fakeRaw()
       const salt = generateSalt()
-      const legacy = (await encrypt('legacy payload', PASS, salt, LEGACY_ITERATIONS))
+      const headerless = (await encrypt('legacy payload', PASS, salt, 310000))
           .replace(/^v\d+:\d+:/, '')   // raw base64, pre-v2 at-rest shape
-      raw.records.push({ data: legacy, salt })
+      raw.records.push({ data: headerless, salt })
 
       const store = encrypted(raw, createKeySession())
-      await store.unlock(PASS)
-      assertEqual(await store.read(), 'legacy payload', 'legacy envelope decrypts')
-
-      await store.write('legacy payload updated')
-      const upgraded = (await raw.readRaw())!.data
-      assert(upgraded.startsWith(`v2:${DEFAULT_ITERATIONS}:`), 'save re-encrypts at current parameters')
-      assertEqual(getEnvelopeIterations(upgraded), DEFAULT_ITERATIONS, 'recorded iterations upgraded')
+      const error = await expectStoreError(() => store.unlock(PASS), 'corrupt-data', 'headerless envelope')
+      assert(error.cause instanceof CorruptEnvelopeError, 'cause is CorruptEnvelopeError')
   })
 
-  it('a versioned envelope written at legacy iterations also upgrades on save', async () => {
+  it('a versioned envelope written at older iterations still upgrades on save', async () => {
       const raw = fakeRaw()
       const salt = generateSalt()
-      raw.records.push({ data: await encrypt('v2 legacy', PASS, salt, LEGACY_ITERATIONS), salt })
+      raw.records.push({ data: await encrypt('old params', PASS, salt, 310000), salt })
 
       const store = encrypted(raw, createKeySession())
       await store.unlock(PASS)
-      await store.write('v2 legacy updated')
+      assertEqual(await store.read(), 'old params', 'older-parameter envelope decrypts')
+
+      await store.write('old params updated')
       assertEqual(getEnvelopeIterations((await raw.readRaw())!.data), DEFAULT_ITERATIONS, 'upgraded')
   })
 

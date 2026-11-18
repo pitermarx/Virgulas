@@ -83,7 +83,7 @@ if (!useExternalBaseUrl) {
       );
     }
   } else {
-    env.PLAYWRIGHT_SUPABASE_CONFIG = JSON.stringify({ url, key });
+    env.PLAYWRIGHT_SUPABASE_CONFIG = JSON.stringify({ backend: 'supabase', url, key });
   }
 }
 

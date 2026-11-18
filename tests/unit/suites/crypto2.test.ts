@@ -7,7 +7,6 @@ import {
     getEnvelopeIterations,
     needsKdfUpgrade,
     DEFAULT_ITERATIONS,
-    LEGACY_ITERATIONS,
     MIN_ENVELOPE_ITERATIONS,
     MAX_ENVELOPE_ITERATIONS,
     MIN_PASSPHRASE_LENGTH,
@@ -111,27 +110,34 @@ describe('KDF envelope parameters', () => {
       assert(!needsKdfUpgrade(encrypted), 'fresh payload needs no upgrade')
   })
 
-  it('Legacy raw-base64 payloads still decrypt and report legacy iterations', async () => {
-      const text = 'legacy payload'
-      const passphrase = 'legacy-pass-123'
+  it('Payloads without the v2 header are rejected as corrupt', async () => {
+      const text = 'pre-header payload'
+      const passphrase = 'old-pass-123456'
       const salt = generateSalt()
-      // Build a legacy payload: encrypt at legacy iterations, then strip the header.
-      const versioned = await encrypt(text, passphrase, salt, LEGACY_ITERATIONS)
-      const legacy = versioned.split(':').slice(2).join(':')
+      // Build the pre-header shape: encrypt, then strip the version header.
+      const versioned = await encrypt(text, passphrase, salt, 310000)
+      const headerless = versioned.split(':').slice(2).join(':')
 
-      assert(!legacy.startsWith('v2:'), 'legacy payload has no version header')
-      assertEqual(getEnvelopeIterations(legacy), LEGACY_ITERATIONS, 'legacy iterations')
-      assert(needsKdfUpgrade(legacy), 'legacy payload needs upgrade')
-      assertEqual(await decrypt(legacy, passphrase, salt), text, 'legacy payload decrypts')
+      assert(!headerless.startsWith('v2:'), 'payload has no version header')
+      assertEqual(getEnvelopeIterations(headerless), DEFAULT_ITERATIONS, 'unreadable envelopes report the current target')
+      assert(!needsKdfUpgrade(headerless), 'no upgrade hint for an envelope that cannot be read')
+      let threw = false
+      try {
+          await decrypt(headerless, passphrase, salt)
+      } catch (e) {
+          threw = true
+          assert(e instanceof CorruptEnvelopeError, 'a headerless payload is classified as corruption')
+      }
+      assert(threw, 'decrypt must reject a headerless payload')
   })
 
-  it('Versioned payloads written with legacy iterations still decrypt', async () => {
+  it('Versioned payloads written at older iterations still decrypt', async () => {
       const text = 'old v2 payload'
       const passphrase = 'v2-old-pass-123'
       const salt = generateSalt()
-      const old = await encrypt(text, passphrase, salt, LEGACY_ITERATIONS)
+      const old = await encrypt(text, passphrase, salt, 310000)
 
-      assert(old.startsWith(`v2:${LEGACY_ITERATIONS}:`), 'records the legacy iteration count')
+      assert(old.startsWith('v2:310000:'), 'records the iteration count it was written with')
       assert(needsKdfUpgrade(old), 'reports upgrade needed')
       assertEqual(await decrypt(old, passphrase, salt), text, 'decrypts at the recorded iterations')
   })
