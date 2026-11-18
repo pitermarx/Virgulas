@@ -197,7 +197,7 @@ function generateSalt(): string {
 // `String.fromCharCode(...bytes)` (which throws RangeError past ~64k bytes).
 const BASE64_CHUNK_SIZE = 0x8000
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
     let binary = ''
     for (let i = 0; i < bytes.length; i += BASE64_CHUNK_SIZE) {
         binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK_SIZE))
@@ -205,7 +205,7 @@ function toBase64(bytes: Uint8Array): string {
     return btoa(binary)
 }
 
-function fromBase64(base64: string): Uint8Array {
+export function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
     const binary = atob(base64)
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i++) {
