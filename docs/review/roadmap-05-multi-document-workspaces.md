@@ -23,7 +23,7 @@ Save and switch between several named outlines instead of one monolithic tree.
 4. Add a document switcher UI with rename, delete and the active document in the URL hash or path (the hash currently carries zoom).
 5. Make the inbox target one chosen document.
 
-Do the revision and sync work (sec-12, struct-02) before this, otherwise every sync bug is multiplied per document.
+Do the revision and sync work (sec-12, sync-04) before this, otherwise every sync bug is multiplied per document.
 
 ## Tests
 

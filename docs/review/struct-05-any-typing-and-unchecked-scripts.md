@@ -26,7 +26,7 @@ Type the Preact components (`Node` props, `JSX` event types), give `SyncNode` an
 
 - **Phase:** [8 — Delivery, platform and housekeeping](README.md#phase-8)
 - **Size:** M
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

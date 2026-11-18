@@ -30,7 +30,7 @@ Existing suites; add a test for whichever VMD escape the SPEC confirms.
 
 - **Phase:** [2 — Make persistence and sync changeable](README.md#phase-2)
 - **Size:** S
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** [sec-10](sec-10-markdown-sanitizer-roundtrip.md)

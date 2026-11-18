@@ -28,7 +28,7 @@ Unit tests for the retry classifier. A Playwright test with the page hidden asse
 
 - **Phase:** [3 — Stop data loss and fix sync on the current model](README.md#phase-3)
 - **Size:** S
-- **Do these first:** [struct-02](struct-02-duplicated-remote-push-logic.md)
+- **Do these first:** —
 - **Unblocks:** [scale-02](scale-02-transfer-cost-model.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
