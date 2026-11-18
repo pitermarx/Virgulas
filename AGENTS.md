@@ -471,7 +471,21 @@ Use this as the default responsibility split. Keep files focused and avoid mixin
 - `shortcuts.ts`:
   Keyboard interaction and focus/navigation behaviour (including search key handling).
 - `outline.ts`:
-  Core document model and tree operations (CRUD, move/indent/outdent, serialization, search tree generation); delegates VMD parsing/writing to `docCodec.ts`.
+  The document: the flat node map, the version signals, CRUD (create/delete/update, reset),
+  snapshot/deserialize with validation, and the search-tree walk. Composes the node model
+  (`node.ts`), tree mutations (`treeOps.ts`), keyboard navigation (`navigation.ts`) and the
+  VMD editing surface (`vmdEditor.ts`) over that state; the singleton export is unchanged.
+- `node.ts`:
+  The per-node signal model (`NodeModel`, the `Node` types): field signals, done-state toggles
+  with recurrence advance, child-list operations. Owns no shared state.
+- `treeOps.ts`:
+  Tree mutations over the node map: sibling moves with edge promotion to the grandparent,
+  indent, outdent. Receives the map; owns nothing.
+- `navigation.ts`:
+  Keyboard navigation over the node map, constrained to the zoom context (next, prev, siblings).
+- `vmdEditor.ts`:
+  The VMD editing surface: the per-node editor parser path and the parse-then-replay root
+  path, over the document state injected by `outline.ts`.
 - `docCodec.ts`:
   Document serialization boundary (storage seam, see `docs/storage-interface.md`): the `OutlineDoc` value type, `jsonCodec` (Local/Remote at-rest format) and `vmdCodec` (File/export format). Owns the VMD parser/writer; `outline.ts` delegates its VMD paths here.
 - `model.ts`:
