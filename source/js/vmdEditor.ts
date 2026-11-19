@@ -5,7 +5,8 @@ import { log } from './utils.js'
 
 // The VMD editing surface over the live model. Two paths, two parsers:
 //   - setVMD edits one node's subtree in place, line by line, using the
-//     per-node editor parser (parseVmdNodeLine) with its backtick escape.
+//     per-node editor parser (parseVmdNodeLine). It consumes the §4.1
+//     backslash escape (what writeVmd emits) plus the legacy backtick form.
 //   - setRootVMD replaces the zoom root's children by parsing the whole text
 //     with the codec's pure parser (parseVmdTree) first — an invalid document
 //     never touches the live tree — then replaying it through addChild.
@@ -71,8 +72,9 @@ export function createVmdEditor(ctx: VmdEditorContext) {
             for (const line of lines) {
                 if (!line.trim()) continue;
 
-                // Match regular bullet points (-, +)
-                const match = line.match(/^(\s*)([-+])(.*)$/);
+                // Match regular bullet points (-, +) — the marker must be
+                // followed by a space (VMD.md §4); `-foo` is a description.
+                const match = line.match(/^(\s*)([-+]) (.*)$/);
                 if (match) {
                     const [, indentStr, bullet, rawText] = match;
                     const parsed = parseVmdNodeLine(rawText)
@@ -98,9 +100,13 @@ export function createVmdEditor(ctx: VmdEditorContext) {
                     const lastOnStack = stack[stack.length - 1].node
                     const existingDescription = lastOnStack.description.peek()
                     let trimmedLine = line.trim();
-                    if (trimmedLine.startsWith('`-') || trimmedLine.startsWith('`+') || trimmedLine.startsWith('``')) {
-                        // remove the escape character for lines that start with what would look like a bullet point
-                        // so that users can have description lines that look like bullet points without them being parsed as such
+                    if (trimmedLine.startsWith('\\-') || trimmedLine.startsWith('\\+') || trimmedLine.startsWith('\\\\')
+                        || trimmedLine.startsWith('`-') || trimmedLine.startsWith('`+') || trimmedLine.startsWith('``')) {
+                        // Remove the escape character so a description line can look
+                        // like a bullet without being parsed as one. The backslash
+                        // form is the format's (VMD.md §4.1) and is what writeVmd
+                        // emits; the backtick form is the editor's legacy input
+                        // escape, still accepted when typed by hand.
                         trimmedLine = trimmedLine.substring(1)
                     }
                     lastOnStack.description.value = existingDescription ? `${existingDescription}\n${trimmedLine}` : trimmedLine
