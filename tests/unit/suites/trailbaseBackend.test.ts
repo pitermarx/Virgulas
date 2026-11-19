@@ -318,6 +318,77 @@ describe('trailbaseRaw — records', () => {
           assert(patched, 'PATCH issued to the existing row id')
           assert(typeof token === 'string', 'token resolved')
           assertEqual(await raw.head!(), token, 'head equals the write token')
+          const saved = JSON.parse(store.backendSession.get()!)
+          assertEqual(saved.rowId, '42', 'the discovered row id is cached for the next save')
+      } finally {
+          fetcher.restore()
+          store.backendSession.del()
+      }
+  })
+
+  it('a cached row id writes without the pre-read download', async () => {
+      seedSession()
+      const session = JSON.parse(store.backendSession.get()!)
+      session.rowId = '42'
+      store.backendSession.set(JSON.stringify(session))
+
+      let listed = false
+      let patched = false
+      const fetcher = fakeFetch([
+          (call) => {
+              if (call.url.endsWith('/api/records/v1/outlines?_limit=1')) {
+                  listed = true
+                  return { status: 200, json: { records: [{ id: 42, data: 'old', updated_at: 1 }] } }
+              }
+              if (call.url.endsWith('/api/records/v1/outlines/42') && call.method === 'PATCH') {
+                  patched = true
+                  return { status: 200, json: { record: { id: 42 } } }
+              }
+              return null
+          }
+      ])
+      try {
+          const raw = trailbaseRaw(CONFIG)
+          const token = await raw.writeRaw({ data: 'direct write' })
+          assert(patched, 'PATCH issued to the cached row id')
+          assert(!listed, 'no full-record download before the write')
+          assert(typeof token === 'string', 'token resolved')
+      } finally {
+          fetcher.restore()
+          store.backendSession.del()
+      }
+  })
+
+  it('a 404 on the cached row falls back to the lookup and re-caches the new id', async () => {
+      seedSession()
+      const session = JSON.parse(store.backendSession.get()!)
+      session.rowId = 'gone-row'
+      store.backendSession.set(JSON.stringify(session))
+
+      const seen: string[] = []
+      const fetcher = fakeFetch([
+          (call) => {
+              if (call.url.endsWith('/api/records/v1/outlines/gone-row') && call.method === 'PATCH') {
+                  seen.push('404')
+                  return { status: 404, json: {} }
+              }
+              if (call.url.endsWith('/api/records/v1/outlines?_limit=1')) {
+                  seen.push('list')
+                  return { status: 200, json: { records: [{ id: 7, data: 'old', updated_at: 1 }] } }
+              }
+              if (call.url.endsWith('/api/records/v1/outlines/7') && call.method === 'PATCH') {
+                  seen.push('patch7')
+                  return { status: 200, json: { record: { id: 7 } } }
+              }
+              return null
+          }
+      ])
+      try {
+          const raw = trailbaseRaw(CONFIG)
+          await raw.writeRaw({ data: 'after remote delete' })
+          assertEqual(seen.join(','), '404,list,patch7', 'the cache miss falls back to the lookup')
+          const saved = JSON.parse(store.backendSession.get()!)
+          assertEqual(saved.rowId, '7', 'the new row id is cached')
       } finally {
           fetcher.restore()
           store.backendSession.del()
