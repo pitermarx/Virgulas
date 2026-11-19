@@ -13,6 +13,14 @@ import { log, store } from './utils.js'
 
 type Slot = typeof store.data
 
+/**
+ * Optional observation of the slot's exact stored length: called after every
+ * successful write, every valid read, and every clear (0). persistence wires
+ * it to the document-size quota (quota.ts); the adapter owns nothing beyond
+ * reporting the length of what it just handled.
+ */
+export type SlotObserver = (chars: number) => void
+
 /** Non-cryptographic content hash (FNV-1a): change detection only, not security. */
 function hashString(value: string): string {
     let hash = 0x811c9dc5
@@ -23,7 +31,7 @@ function hashString(value: string): string {
     return (hash >>> 0).toString(36)
 }
 
-export function slotRaw(slot: Slot): RawStore {
+export function slotRaw(slot: Slot, observe?: SlotObserver): RawStore {
     const capabilities: StoreCapabilities = {
         durable: 'prompt',
         encrypted: false,
@@ -43,6 +51,7 @@ export function slotRaw(slot: Slot): RawStore {
                 log('Invalid encrypted data format, missing "|" salt separator')
                 return null
             }
+            observe?.(value.length)
             return { salt: value.slice(0, separator), data: value.slice(separator + 1) }
         },
 
@@ -52,11 +61,13 @@ export function slotRaw(slot: Slot): RawStore {
                 // data-06: a quota failure must surface, not silently drop the save.
                 throw new StoreError('too-large', 'The document does not fit in this browser\'s local storage.')
             }
+            observe?.(value.length)
             return hashString(value)
         },
 
         async clearRaw(): Promise<void> {
             slot.del()
+            observe?.(0)
         },
 
         async exists(): Promise<boolean> {

@@ -73,8 +73,10 @@ test.describe('Admin / Options modal', () => {
     await openOptions(page);
 
     await expect(page.getByText('Blob', { exact: true })).toBeVisible();
-    await expect(page.getByText(/AES-GCM-256/)).toBeVisible();
+    await expect(page.getByText(/chars · AES-GCM-256/)).toBeVisible();
     await expect(page.getByText(/PBKDF2 600k/)).toBeVisible();
+    // A small document shows no quota share: it rounds below 1%.
+    await expect(page.getByText(/% of browser storage/)).toHaveCount(0);
   });
 
   test('exports the current document as a .vmd download', async ({ page }) => {

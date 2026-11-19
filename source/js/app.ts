@@ -22,6 +22,7 @@ import {
   startCaptureIfRequested
 } from './capture.js';
 import { currentSearchMatchId, getFirstClosedParent } from './search.js';
+import { noteSlotChars } from './quota.js';
 import { startTodayTicker } from './tasks.js';
 import { bindDialogFocus } from './dialogs.js';
 import {
@@ -205,6 +206,16 @@ const Splash = () => {
                   onClick=${persistence.dismissLocalStoragePersistenceNotice}>×</button>
               </div>
             `}
+            ${!isLocked && (persistence.getMode() === 'local' || persistence.getMode() === 'remote')
+              && persistence.slotQuotaNotice.value !== 'ok' && html`
+              <div class="storage-persistence-notice" role=${persistence.slotQuotaNotice.value === 'full' ? 'alert' : 'status'}>
+                <p>${persistence.slotQuotaNotice.value === 'full'
+                  ? 'This document nearly fills this browser\u2019s storage \u2014 the next save may fail. Export a backup, trim it, or use File storage.'
+                  : 'This document is getting large for browser storage. Export a backup, or use File storage.'}</p>
+                <button type="button" class="toolbar-btn" aria-label="Dismiss size reminder" title="Dismiss size reminder"
+                  onClick=${persistence.dismissSlotQuotaNotice}>×</button>
+              </div>
+            `}
             <${SecureStoragePrompt} />
           `} />
           <${Outline} />
@@ -284,6 +295,7 @@ export interface E2EExports {
   mergeDocuments: typeof mergeDocuments
   currentSearchMatchId: typeof currentSearchMatchId
   getFirstClosedParent: typeof getFirstClosedParent
+  noteSlotChars: typeof noteSlotChars
 }
 
 const e2eExports: E2EExports = typeof __TEST_HOOKS__ !== 'undefined' && __TEST_HOOKS__
@@ -299,6 +311,7 @@ const e2eExports: E2EExports = typeof __TEST_HOOKS__ !== 'undefined' && __TEST_H
     mergeDocuments,
     currentSearchMatchId,
     getFirstClosedParent,
+    noteSlotChars,
   }
   : {} as E2EExports;
 

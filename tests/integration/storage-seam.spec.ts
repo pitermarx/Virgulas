@@ -111,6 +111,33 @@ test.describe('storage seam — remote flows', () => {
         expect(await upsertCount(page)).toBe(upsertsBeforeRotation);
     });
 
+    test('the document-size quota reminder warns, dismisses, and re-arms on escalation', async ({ page }) => {
+        await bootRemote(page);
+
+        // Near the limit (~60% of the browser quota): a dismissible reminder.
+        await page.evaluate(async () => {
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(3_100_000);
+        });
+        const reminder = page.locator('.storage-persistence-notice', { hasText: 'getting large' });
+        await expect(reminder).toBeVisible();
+
+        // A dismissal is remembered: a later save at the same level stays quiet.
+        await page.locator('[aria-label="Dismiss size reminder"]').click();
+        await expect(reminder).toBeHidden();
+        await page.evaluate(async () => {
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(3_200_000);
+        });
+        await expect(reminder).toBeHidden();
+
+        // Escalating near the critical level re-arms it as the stronger alert.
+        await page.evaluate(async () => {
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(4_900_000);
+        });
+        const alert = page.locator('.storage-persistence-notice[role="alert"]');
+        await expect(alert).toBeVisible();
+        await expect(alert).toContainText('next save may fail');
+    });
+
     test('edits that only reached the offline cache survive a re-unlock', async ({ page }) => {
         await bootRemote(page);
         await page.evaluate(() => { (window as any).__retryBaseMs = 30; });

@@ -161,6 +161,14 @@ describe('supabaseRaw — record mapping', () => {
       const rejected = supabaseRaw(fakeSupabaseClient({ tableError: { status: 400, message: 'Bad request' } }).client)
       await expectStoreError(() => rejected.readRaw(), 'invalid-input', '400')
   })
+
+  it('a check-constraint rejection (23514) maps to too-large — the server size cap is not retryable', async () => {
+      // PostgREST reports the size-cap constraint as a 400 plus the Postgres
+      // code, so it must be matched before the invalid-input catch-all.
+      const oversized = supabaseRaw(fakeSupabaseClient({ tableError: { status: 400, code: '23514', message: 'new row violates check constraint "outlines_data_size_check"' } }).client)
+      const error = await expectStoreError(() => oversized.readRaw(), 'too-large', '23514')
+      assertEqual(error.message.includes('outlines_data_size_check'), true, 'provider message preserved')
+  })
 })
 
 describe('supabaseRaw — write path', () => {

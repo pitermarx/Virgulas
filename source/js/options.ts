@@ -19,8 +19,15 @@ import { optionsOpen } from './shortcuts.js'
 import { modes, isEncryptedMode } from './modes.js'
 import { loadIntroDocument } from './intro.js'
 import { lockNow, resetSessionState } from './lockScreen.js'
+import { SLOT_QUOTA_CHARS } from './quota.js'
 
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 })
+
+/** The blob line's quota share: shown once it rounds above zero. */
+function quotaShare(chars: number): string {
+    const pct = Math.round((chars / SLOT_QUOTA_CHARS) * 100)
+    return pct > 0 ? ` · ${pct}% of browser storage` : ''
+}
 /** True when the backend can delete the auth record itself (TrailBase). */
 const accountDeletesUser = signal(false)
 const busy = signal(false)
@@ -354,7 +361,7 @@ export const OptionsModal = () => {
 
             ${hasPassphrase && html`
               <dt>Blob</dt>
-              <dd class="admin-inline-value">${info.encryptedBytes} chars · AES-GCM-256 · PBKDF2 ${DEFAULT_ITERATIONS / 1000}k</dd>
+              <dd class="admin-inline-value">${info.encryptedBytes} chars${quotaShare(info.encryptedBytes)} · AES-GCM-256 · PBKDF2 ${DEFAULT_ITERATIONS / 1000}k</dd>
             `}
           </dl>
 

@@ -72,6 +72,29 @@ test.describe('Sync status indicator', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
     });
 
+    test('an oversized document is rejected once: error status, no retry burn', async ({ page }) => {
+        await page.goto('/');
+        const payload = await buildEncryptedPayload(page, 'sync-pass');
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installFailingMockSupabase(page, {
+            userEmail: 'user@test.com',
+            downloadData: payload,
+            rejectUpsertTooLarge: true
+        });
+        await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
+
+        await page.reload();
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
+
+        await editFirstNode(page, 'Oversized Edit');
+
+        // The server's size-cap check violation (23514) fails the push at once.
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
+        const upserts = await page.evaluate(() => (window as any).__mockSupabase.upserts.length);
+        expect(upserts).toBe(1);
+    });
+
     test('sync-dot shows offline when navigator.onLine is false and upload fails', async ({ page }) => {
         await page.goto('/');
         const payload = await buildEncryptedPayload(page, 'sync-pass');

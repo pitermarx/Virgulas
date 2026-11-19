@@ -300,6 +300,8 @@ export interface MockSupabaseOptions {
     confirmRequired?: boolean;
     /** Fail every upsert (runtime-mutable through `__mockSupabase.failUpserts`). */
     alwaysFailUpsert?: boolean;
+    /** Reject every upsert with the server's size-cap check violation (23514). */
+    rejectUpsertTooLarge?: boolean;
     /** Delay only the first upsert, to observe the syncing state. */
     firstUpsertDelayMs?: number;
     /** Every head() probe reports a fresh timestamp, so the poll always pulls. */
@@ -384,6 +386,9 @@ export async function installMockSupabase(
                             state.upserts.push({ ...payload });
                             if (options.firstUpsertDelayMs && state.upsertCallCount === 1) {
                                 await new Promise<void>(resolve => setTimeout(resolve, options.firstUpsertDelayMs));
+                            }
+                            if (options.rejectUpsertTooLarge) {
+                                return { data: null, error: { message: 'new row violates check constraint "outlines_data_size_check"', code: '23514', status: 400 } };
                             }
                             if (state.failUpserts || state.failUpsertTimes > 0) {
                                 if (state.failUpsertTimes > 0) state.failUpsertTimes--;

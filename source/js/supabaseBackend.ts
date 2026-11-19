@@ -160,6 +160,14 @@ function mapSupabaseError(error: any): StoreError {
     if (status === 413) {
         return new StoreError('too-large', message, error)
     }
+    // A check-constraint violation on the row is the server refusing a
+    // document above its size cap (supabase/schemas/outlines.sql): the same
+    // request cannot succeed on retry, so it maps like a 413. PostgREST
+    // reports it as a 400 with the Postgres code, so it must be matched
+    // before the invalid-input catch-all.
+    if (error?.code === '23514') {
+        return new StoreError('too-large', message, error)
+    }
     if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
         return new StoreError('invalid-input', message, error)
     }

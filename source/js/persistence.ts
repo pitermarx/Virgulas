@@ -27,6 +27,12 @@ import {
   refreshLocalStorageDurability,
   requestLocalStorageDurability
 } from './durability.js'
+import {
+  dismissSlotQuotaNotice,
+  noteSlotChars,
+  slotQuotaLevel,
+  slotQuotaNotice
+} from './quota.js'
 import inbox from './inbox.js'
 import { createSavePipeline } from './savePipeline.js'
 import {
@@ -83,7 +89,7 @@ function assertNewPassphrase(passphrase: string) {
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
 
-const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
+const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data, noteSlotChars), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
 export const localSaveFailed = signal(false)
@@ -118,7 +124,7 @@ async function buildRemoteStore(): Promise<DocStore> {
   // Composition (docs §5): codec over cached-over-encrypted — the crypto
   // decorator stays codec-blind and the slot/row bytes are unchanged.
   const primary = encrypted(raw, keySession)
-  const cache = encrypted(slotRaw(store.data), keySession)
+  const cache = encrypted(slotRaw(store.data, noteSlotChars), keySession)
   remoteCacheStore = codecStore(jsonCodec, cache)
   return codecStore(jsonCodec, cached(primary, cache, {
     // data-06 in Remote mode: the server row is the source of truth, so a
@@ -602,6 +608,9 @@ export default {
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
+  slotQuotaLevel,
+  slotQuotaNotice,
+  dismissSlotQuotaNotice,
   getMode: () => authMode.value,
   getUser: async () => {
     try {

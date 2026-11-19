@@ -3,10 +3,13 @@ create table if not exists public.outlines (
   salt text not null,
   data text not null,
   updated_at timestamptz not null default timezone('utc', now()),
-  -- Bound the row so a buggy or hostile client cannot bloat storage. The document is
-  -- a base64 envelope; 16 MiB is far above any realistic outline, salt is ~24 bytes.
+  -- Bound the row so a buggy or hostile client cannot bloat storage. 5 MiB sits
+  -- above any document a browser can even hold: the localStorage quota tops out
+  -- around 5 M ASCII chars (~4.8 MB) of `salt|envelope`, so a legitimate client
+  -- never reaches this cap — it exists to bound abusive writers, not users.
+  -- Salt is ~24 bytes.
   constraint outlines_salt_size_check check (octet_length(salt) < 1024),
-  constraint outlines_data_size_check check (octet_length(data) < 16777216)
+  constraint outlines_data_size_check check (octet_length(data) < 5242880)
 );
 
 alter table public.outlines enable row level security;

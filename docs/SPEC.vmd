@@ -187,6 +187,9 @@
       - If a Local save fails (for example the document no longer fits the browser's storage quota),
         the status toolbar reports a save-failed state instead of silently dropping the save;
         the state clears on the next successful save
+      - As the stored document grows, a dismissible reminder appears once it passes ~60% of the
+        browser's storage quota, and a stronger alert near the limit; a dismissal is remembered per
+        level, escalating to the alert re-arms it, and shrinking below a dismissed level resets it
       - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
       - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
       - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
@@ -200,6 +203,9 @@
       - If that offline copy cannot be written (for example the browser's storage quota is full),
         the remote save still completes and the status toolbar reports that the document is
         not saved locally; the state clears on the next successful local write
+      - The same size reminder covers the encrypted offline copy
+      - The server refuses a document above its row cap (5 MiB — above anything a browser can
+        store); the push fails without retries and the status toolbar reports the error state
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
@@ -450,7 +456,8 @@
     + OPTIONS PANEL
       - Summary: storage mode, encryption status, email/username, account password (Remote), and
         encryption passphrase are shown with inline "Change" actions
-      - Blob line: encrypted size in characters, `AES-GCM-256 · PBKDF2 600k`
+      - Blob line: encrypted size in characters and (once above ~1%) its share of the browser's
+        storage quota, `AES-GCM-256 · PBKDF2 600k`
       - Biometric unlock section: "Enable on this device" / "Forget this device" when supported
       - Quick capture section: entry-point summary, the "Save to" bookmarklet, and the Inbox node name
       - Data section: export and import `.vmd`
