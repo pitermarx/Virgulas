@@ -141,7 +141,7 @@ test.describe('storage seam — remote flows', () => {
         });
         const alert = page.locator('.storage-persistence-notice[role="alert"]');
         await expect(alert).toBeVisible();
-        await expect(alert).toContainText('next save may fail');
+        await expect(alert).toContainText('reached its storage budget');
     });
 
     test('edits that only reached the offline cache survive a re-unlock', async ({ page }) => {

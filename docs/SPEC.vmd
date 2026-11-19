@@ -188,9 +188,10 @@
         the status toolbar reports a save-failed state instead of silently dropping the save;
         the state clears on the next successful save
       - As the stored document grows, a dismissible reminder appears once it passes ~60% of its
-        storage budget — the browser's quota in Local mode — and a stronger alert near the
-        limit; a dismissal is remembered per level, escalating to the alert re-arms it, and
-        shrinking below a dismissed level resets it
+        storage budget — 2 MB in Local mode, a product line below the browser's physical ~5 MB
+        quota, chosen for save responsiveness — and a stronger alert at 97%; a dismissal is
+        remembered per level, escalating to the alert re-arms it, and shrinking below a
+        dismissed level resets it
       - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
       - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
       - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
@@ -452,7 +453,7 @@
       A fixed bar at the bottom of the screen containing:
       - The current storage mode, or "In memory — not saved" in Memory mode
       - A small storage-usage ring beside the mode: the document's share of its budget — the
-        browser's storage quota in Local mode, the account's plan cap in Remote mode — amber
+        2 MB Local budget, the account's plan cap in Remote mode — amber
         from 60% of that budget, red from 97% and when over it
       - A sync status indicator, visible only when the user is signed in, with synced / syncing /
         unsynced / error / offline states

@@ -94,9 +94,9 @@ Choose per device; your choice is remembered:
   source.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
-  or using File/Remote mode. A usage ring in the status toolbar tracks the document against the
-  browser's storage quota; a dismissible reminder appears past ~60% and a stronger warning near
-  the limit.
+  or using File/Remote mode. A usage ring in the status toolbar tracks the document against its
+  2 MB storage budget (a product line below the browser's physical quota, so saves stay quick);
+  a dismissible reminder appears past 60% and a stronger alert at 97%.
 - **Remote** — encrypted and synced to a cloud backend: the TrailBase instance serving the app
   (self-hosted or hosted), with the hosted Supabase project as the fallback for static deployments.
   An account email/password controls access; a separate passphrase controls encryption, so the

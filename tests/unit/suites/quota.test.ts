@@ -7,7 +7,7 @@ import { describe, it, beforeEach } from 'bun:test'
 import { slotRaw } from '../../../source/js/localStore.js'
 import { store } from '../../../source/js/utils.js'
 import {
-    BROWSER_QUOTA_BYTES,
+    LOCAL_BUDGET_BYTES,
     activeBudgetBytes,
     dismissSlotQuotaNotice,
     formatBytes,
@@ -30,13 +30,13 @@ describe('slotLevel — budget-relative thresholds', () => {
         assertEqual(slotLevel(plan * 0.97, plan), 'full', 'at critical')
     })
 
-    it('defaults to the browser quota; a plan budget becomes the binding budget', () => {
+    it('defaults to the Local budget; a plan budget becomes the binding budget', () => {
         resetSlotQuotaState()
-        assertEqual(activeBudgetBytes(), BROWSER_QUOTA_BYTES, 'browser default')
-        assertEqual(slotLevel(3_100_000), 'near', '62% of the browser quota')
+        assertEqual(activeBudgetBytes(), LOCAL_BUDGET_BYTES, 'local default')
+        assertEqual(slotLevel(LOCAL_BUDGET_BYTES * 0.62), 'near', '62% of the Local budget')
         setDocumentBudget(1_048_576)
         assertEqual(activeBudgetBytes(), 1_048_576, 'plan budget')
-        assertEqual(slotLevel(3_100_000), 'full', 'the same usage is over 97% of the plan')
+        assertEqual(slotLevel(LOCAL_BUDGET_BYTES * 0.62), 'full', 'the same usage is over 97% of the plan')
         resetSlotQuotaState()
     })
 })
@@ -61,45 +61,45 @@ describe('noteSlotChars — notice state machine', () => {
     })
 
     it('warns at near; a dismissal is remembered for that level', () => {
-        noteSlotChars(3_000_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.6)
         assertEqual(slotQuotaNotice.value, 'near', 'notice at warn')
         dismissSlotQuotaNotice()
         assertEqual(slotQuotaNotice.value, 'ok', 'dismissed')
         assertEqual(slotQuotaLevel.value, 'near', 'level unchanged by dismissal')
         // A later save at the same level does not nag again.
-        noteSlotChars(3_100_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.61)
         assertEqual(slotQuotaNotice.value, 'ok', 'same level stays dismissed')
         assertEqual(store.quotaDismissed.get(null), 'near', 'dismissal persisted')
     })
 
     it('escalating to full re-arms a dismissed near notice', () => {
-        noteSlotChars(3_000_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.6)
         dismissSlotQuotaNotice()
-        noteSlotChars(4_850_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.97)
         assertEqual(slotQuotaNotice.value, 'full', 'escalation re-arms')
     })
 
     it('shrinking below the dismissed level resets the dismissal', () => {
-        noteSlotChars(4_850_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.97)
         dismissSlotQuotaNotice()
         // A purge clears the slot.
         noteSlotChars(0)
         assertEqual(slotQuotaLevel.value, 'ok', 'level ok after clear')
         // The document regrew past warn: it warns once more, not forever silenced.
-        noteSlotChars(3_000_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.6)
         assertEqual(slotQuotaNotice.value, 'near', 'warns again after shrinking')
     })
 
     it('a dismissed full level stays quiet while the document stays full', () => {
-        noteSlotChars(4_850_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.97)
         dismissSlotQuotaNotice()
-        noteSlotChars(4_860_000)
+        noteSlotChars(LOCAL_BUDGET_BYTES * 0.98)
         assertEqual(slotQuotaNotice.value, 'ok', 'no repeated nagging at full')
     })
 
     it('a plan budget arriving after the usage re-derives level and notice', () => {
         noteSlotChars(700_000)
-        assertEqual(slotQuotaNotice.value, 'ok', '14% of the browser quota: silent')
+        assertEqual(slotQuotaNotice.value, 'ok', '33% of the Local budget: silent')
         setDocumentBudget(1_048_576)
         assertEqual(slotQuotaLevel.value, 'near', '67% of the plan cap: near')
         assertEqual(slotQuotaNotice.value, 'near', 'the notice follows the new budget')

@@ -73,9 +73,9 @@ test.describe('Admin / Options modal', () => {
     await openOptions(page);
 
     await expect(page.getByText('Blob', { exact: true })).toBeVisible();
-    // The blob line is budget-based and MB-first: the Local budget is the
-    // browser quota (5,000,000 bytes → "4.8 MB"), with no crypto alphabet soup.
-    await expect(page.getByText(/of 4.8 MB browser storage/)).toBeVisible();
+    // The blob line is budget-based and MB-first: the Local budget is 2 MB,
+    // with no crypto alphabet soup.
+    await expect(page.getByText(/of 2.0 MB browser storage/)).toBeVisible();
     await expect(page.getByText(/AES-GCM-256/)).toHaveCount(0);
     await expect(page.getByText(/PBKDF2 600k/)).toHaveCount(0);
   });

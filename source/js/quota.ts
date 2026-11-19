@@ -15,11 +15,13 @@ import { signal } from '@preact/signals'
 import { store } from './utils.js'
 
 /**
- * The browser's per-origin localStorage quota, in bytes — the Local budget.
- * Conservatively cross-browser (Chrome ~5.24 M, Firefox and Safari ~5 M;
- * none of them expose the real quota). The slot is ASCII, so bytes ≈ chars.
+ * The Local-mode document budget, in bytes: 2 MB, a product choice below the
+ * browser's ~5 MB physical localStorage quota. The budget sits where saves
+ * stay responsive (gzip + AES + base64 costs ~35 ms per MB on the main
+ * thread) and where the whole-document sync stays cheap — the browser's raw
+ * quota would let documents grow 2.5× past that point.
  */
-export const BROWSER_QUOTA_BYTES = 5_000_000
+export const LOCAL_BUDGET_BYTES = 2_097_152
 
 /** The usage share at which the dismissible reminder appears. */
 export const BUDGET_WARN_FRACTION = 0.6
@@ -52,7 +54,7 @@ let dismissedLevel = normalizeLevel(store.quotaDismissed.get(null))
 
 /** The budget the usage is measured against. */
 export function activeBudgetBytes(): number {
-    return documentBudgetBytes.value ?? BROWSER_QUOTA_BYTES
+    return documentBudgetBytes.value ?? LOCAL_BUDGET_BYTES
 }
 
 /** Pure: the quota level for an observed usage against a budget. */
