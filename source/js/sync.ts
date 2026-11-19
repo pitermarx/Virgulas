@@ -85,8 +85,6 @@ export const remoteSync = {
         if (!auth.requestPasswordReset) throw new StoreError('unsupported', 'This backend cannot send password reset emails.')
         await auth.requestPasswordReset(email)
     },
-    /** True when the configured backend can send password reset emails. */
-    hasPasswordReset: async () => !!(await backend()).auth.requestPasswordReset,
     /**
      * Self-service auth-account deletion — present only on backends that
      * support it (TrailBase does; Supabase needs the service role, which the

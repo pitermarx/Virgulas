@@ -154,6 +154,15 @@ function mapSupabaseError(error: any): StoreError {
     if (status === 401 || status === 403) {
         return new StoreError('unauthenticated', message, error)
     }
+    // A rejected request cannot succeed on retry: 413 is the oversized-document
+    // path (the retry policy must not burn three attempts on it), and the rest
+    // of the 4xx family is invalid input. Mirrors the TrailBase adapter.
+    if (status === 413) {
+        return new StoreError('too-large', message, error)
+    }
+    if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        return new StoreError('invalid-input', message, error)
+    }
     return new StoreError('network', message, error)
 }
 

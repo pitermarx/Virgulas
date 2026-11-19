@@ -171,12 +171,6 @@ export interface RawStore {
     /** Cheap existence probe — no key or session required. */
     exists(): Promise<boolean>
     head?(): Promise<string | null>
-    /**
-     * Push-based change notification (reserved, PR 4). Emits the new head
-     * token on remote change; the returned function unsubscribes. Absent ⇒
-     * polling only.
-     */
-    watch?(emit: (token: string) => void): () => void
 }
 
 // ── Unlock result (§4.3) ─────────────────────────────────────────────────

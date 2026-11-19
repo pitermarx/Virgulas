@@ -33,7 +33,6 @@ const RECORD_API = 'outlines'
 interface TrailbaseTokens {
     auth_token: string
     refresh_token: string | null
-    csrf_token?: string | null
 }
 
 interface PersistedSession {
@@ -164,8 +163,7 @@ async function authedFetch(config: BackendConfig, path: string, init: RequestIni
         if (refreshed.status === 200 && refreshed.json?.auth_token) {
             session.tokens = {
                 auth_token: refreshed.json.auth_token,
-                refresh_token: refreshed.json.refresh_token ?? session.tokens.refresh_token,
-                csrf_token: refreshed.json.csrf_token ?? session.tokens.csrf_token
+                refresh_token: refreshed.json.refresh_token ?? session.tokens.refresh_token
             }
             writeSession(session)
             response = await doFetch(session.tokens.auth_token)
@@ -307,8 +305,7 @@ export function trailbaseAuth(config: BackendConfig): AuthProvider {
             }
             const tokens: TrailbaseTokens = {
                 auth_token: response.json.auth_token,
-                refresh_token: response.json.refresh_token ?? null,
-                csrf_token: response.json.csrf_token ?? null
+                refresh_token: response.json.refresh_token ?? null
             }
             const claims = decodeJwtClaims(tokens.auth_token)
             const session: PersistedSession = {
