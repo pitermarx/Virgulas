@@ -137,12 +137,14 @@ export function createSavePipeline(deps: SavePipelineDeps): SavePipeline {
                         const fileStore = deps.fileStore()
                         if (fileStore) await fileStore.write(outline.snapshot())
                         deps.setLocalSaveFailed(false)
+                        // Only a successful write counts as saved: a failed one
+                        // must stay unsaved so the teardown flush retries it.
+                        lastSavedVersion = version
                         log('[Persistence] Saved filesystem doc v' + version)
                     } catch (error) {
                         console.error('[Persistence] Filesystem write failed:', error)
                         deps.setLocalSaveFailed(true)
                     }
-                    lastSavedVersion = version
                     return true
                 }
             } else if (!unlocked) {
@@ -175,8 +177,11 @@ export function createSavePipeline(deps: SavePipelineDeps): SavePipeline {
                     saveArmed = false
                     try {
                         const doc = outline.snapshot()
-                        lastSavedVersion = version
                         await deps.saveRemote(doc)
+                        // Only a successful save counts: a failed one must stay
+                        // unsaved so the teardown flush retries it instead of
+                        // silently dropping the edit with the key.
+                        lastSavedVersion = version
                         log('[Persistence] Saved doc v' + version)
                         return true
                     } catch (error) {

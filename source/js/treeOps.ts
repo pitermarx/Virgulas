@@ -84,9 +84,13 @@ export function createTreeOps(map: Map<string, Node>) {
         const siblingsToMove = siblings.slice(index + 1)
         const siblingsToStay = siblings.slice(0, index + 1)
         parent.children.value = siblingsToStay
+        // Direct children-array writes bypass the stamped removeChild/addChild,
+        // so stamp here: merge must see that both children lists changed.
+        parent.touch()
         if (siblingsToMove.length > 0) {
             node.open.value = true // make sure the node is open to show the moved children
             node.children.value = [...node.children.peek(), ...siblingsToMove]
+            node.touch()
             siblingsToMove.forEach(siblingId => {
                 map.get(siblingId)!.update({ parentId: node.id }) // Update parentId of the moved node
             })

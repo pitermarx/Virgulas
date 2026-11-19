@@ -53,6 +53,9 @@ export function idbStore(dbName: string, storeName: string): IdbHandle {
                 tx.objectStore(storeName).put(value, key)
                 tx.oncomplete = () => resolve()
                 tx.onerror = () => reject(tx.error)
+                // An abort (versionchange elsewhere, connection closed) fires
+                // onabort without onerror: without this the await hangs forever.
+                tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
             })
         },
 
@@ -63,6 +66,7 @@ export function idbStore(dbName: string, storeName: string): IdbHandle {
                 tx.objectStore(storeName).delete(key)
                 tx.oncomplete = () => resolve()
                 tx.onerror = () => reject(tx.error)
+                tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
             })
         }
     }

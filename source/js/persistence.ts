@@ -39,6 +39,7 @@ import {
   remoteRekeyed,
   setSyncHead,
   setLastSyncedAt,
+  getLastSyncedAt,
   noteLocalWriteActivity,
   allowImmediateRemoteSync,
   setRemoteStore,
@@ -49,6 +50,7 @@ import {
   skipNextRemotePush
 } from './syncEngine.js'
 import { cached } from './cachedStore.js'
+import { documentsEquivalent, merge } from './merge.js'
 import { applyIntro, getIntroText, loadIntroDocument } from './intro.js'
 import { describeBrowserSupport, normalizeMode } from './modes.js'
 
@@ -423,16 +425,42 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 
   const doc = jsonCodec.parse(unlockResult.text)
-  outline.load(doc)
+  // The offline cache can hold edits that never reached the primary: pushes
+  // that failed while offline, or a tab closed before the flush. Overwriting
+  // the cache with the primary here destroyed them; instead the cache merges
+  // in — cache-only edits survive, remote-only edits arrive, a genuine clash
+  // opens the conflict flow through the normal pull-before-push.
+  let docToLoad = doc
+  let cacheHasUnpushed = false
+  let cacheConflict = false
+  try {
+    const cached = await remoteCacheStore!.read()
+    if (cached && !documentsEquivalent(cached, doc)) {
+      const merged = merge(cached, doc, getLastSyncedAt())
+      if (merged.kind === 'merged') {
+        docToLoad = merged.doc
+        cacheHasUnpushed = !documentsEquivalent(merged.doc, doc)
+      } else {
+        // Load the cached doc and do NOT adopt the primary's head token (and
+        // keep the old sync baseline): the first poll then sees the remote as
+        // newer, re-runs the merge and opens the conflict modal through the
+        // standard pull-before-push path.
+        docToLoad = cached
+        unlockResult.headToken = null
+        cacheConflict = true
+      }
+    }
+  } catch { /* cache unreadable (absent, or rotated under an old salt): the primary is the truth */ }
+  outline.load(docToLoad)
   // Adopt the downloaded record's token as last-seen (docs §8), and mark the
   // sync baseline so the next edit doesn't falsely see remote as newer.
   if (unlockResult.headToken) setSyncHead(unlockResult.headToken)
-  // Prime the offline cache with the remote row (today's behaviour): the two
-  // copies share the session, so the salt matches (docs §4.7). Cache-side only —
-  // no upsert at unlock time. Best-effort: a failed cache write surfaces via
-  // the save-failed state, not a failed unlock.
+  // Prime the offline cache with the loaded document. The two copies share
+  // the session, so the salt matches (docs §4.7). Cache-side only — no upsert
+  // at unlock time. Best-effort: a failed cache write surfaces via the
+  // save-failed state, not a failed unlock.
   try {
-    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
+    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...docToLoad })
   } catch (error) {
     console.error('[Persistence] Offline cache priming failed:', error)
     if (error instanceof StoreError && error.code === 'too-large') localSaveFailed.value = true
@@ -443,10 +471,18 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     applyHashZoomIfPresent()
   })
   rememberMode('remote')
-  setLastSyncedAt(Date.now())
+  // The conflict path keeps the pre-unlock baseline so the poll's re-merge
+  // still sees which side changed which node.
+  if (!cacheConflict) setLastSyncedAt(Date.now())
   startPolling()
   // The document came from the server; there is nothing new to write.
   savePipeline.markSaved()
+  // Cache edits the primary never saw: the conflict path leaves the
+  // reconciliation to the first poll; the clean path pushes the merged
+  // result now so the primary catches up immediately.
+  if (cacheHasUnpushed && !cacheConflict) {
+    void syncOnce({ doc: outline.snapshot(), attempt: createRemoteSyncAttempt() })
+  }
   return true
 }
 

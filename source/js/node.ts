@@ -135,10 +135,21 @@ function nodeFactory(model: NodeInput = {}) {
             let changed = false
             if (update.text !== undefined && update.text !== text.peek()) { text.value = update.text; changed = true }
             if (update.description !== undefined && update.description !== description.peek()) { description.value = update.description; changed = true }
-            if (update.parentId !== undefined) parentId = update.parentId
+            if (update.parentId !== undefined && update.parentId !== parentId) {
+                parentId = update.parentId
+                // A structural move must count as a change: merge compares
+                // lastModified per node, and an un-stamped move is silently
+                // reverted by a merge that takes the remote's copy.
+                changed = true
+            }
             if (update.open !== undefined) open.value = !!update.open
             if (update.done !== undefined && update.done !== done.peek()) { done.value = update.done; changed = true }
             if (changed) lastModified = Date.now()
+        },
+        /** Stamp a structural change made without the stamped helpers (direct
+         * children-array writes in treeOps), so merges see it. */
+        touch() {
+            lastModified = Date.now()
         },
         removeChild(childId: string) {
             children.value = children.peek().filter(id => id !== childId)

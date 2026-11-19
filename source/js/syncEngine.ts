@@ -228,7 +228,7 @@ async function pullAndMerge(): Promise<PullAndMergeResult> {
         return { clean: true, mergedJson: null, needsPush: true }
     }
 
-    const localDoc = jsonCodec.parse(outline.serialize())
+    const localDoc = outline.snapshot()
     const lastSyncedAt = getLastSyncedAt()
     const result = merge(localDoc, remoteDoc, lastSyncedAt)
 
@@ -327,10 +327,36 @@ async function runSyncStep({ doc, attempt }: SyncStep): Promise<SyncOutcome> {
             }
             if (result.mergedJson) {
                 if (result.needsPush) {
+                    // Check staleness BEFORE the upload: once the merged document
+                    // is on the server, bailing out without applying it leaves the
+                    // server holding content the local doc never adopts, and the
+                    // next save overwrites the remote side's edits.
+                    if (attempt.epoch !== localWriteEpoch.peek()) return { kind: 'skipped', reason: 'stale' }
                     await upload(remote, jsonCodec.parse(result.mergedJson))
-                    if (attempt.epoch !== localWriteEpoch.peek()) return { kind: 'skipped', reason: 'stale' }
+                    // An edit that landed during the upload must survive the
+                    // apply: fold the live document into the just-uploaded merge
+                    // result instead of clobbering it. The live edit is newer
+                    // than both merge inputs, so the fold is clean unless the
+                    // same node was edited on both sides — which opens the
+                    // conflict flow like any pull does.
+                    if (attempt.epoch !== localWriteEpoch.peek()) {
+                        const liveDoc = outline.snapshot()
+                        const refolded = merge(liveDoc, jsonCodec.parse(result.mergedJson), getLastSyncedAt())
+                        if (refolded.kind === 'conflict') {
+                            pendingConflicts.value = refolded.conflicts
+                            pendingMergedDoc.value = refolded.partial
+                            pendingConflictResolutions.value = new Map()
+                            return { kind: 'conflict' }
+                        }
+                        // Not applyMerged: the folded document still owes the
+                        // server the live edit, so the deserialize-triggered
+                        // save must push it (applyMerged would skip that push).
+                        setLastSyncedAt(Date.now())
+                        outline.deserialize(jsonCodec.serialize(refolded.doc))
+                        syncStatus.value = 'synced'
+                        return { kind: 'merged', pushed: true }
+                    }
                 } else {
-                    if (attempt.epoch !== localWriteEpoch.peek()) return { kind: 'skipped', reason: 'stale' }
                     // The remote already has this content; adopt its token
                     // instead of creating an identical revision.
                     if (head) setSyncHead(head)

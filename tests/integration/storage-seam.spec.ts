@@ -110,4 +110,34 @@ test.describe('storage seam — remote flows', () => {
         // by that cycle would already be recorded — no observation window needed.
         expect(await upsertCount(page)).toBe(upsertsBeforeRotation);
     });
+
+    test('edits that only reached the offline cache survive a re-unlock', async ({ page }) => {
+        await bootRemote(page);
+        await page.evaluate(() => { (window as any).__retryBaseMs = 30; });
+
+        // Cut the server off: the next edit reaches the durable local copy (the
+        // offline cache) but every push fails.
+        await page.evaluate(() => { (window as any).__mockSupabase.failUpserts = true; });
+        const before = await upsertCount(page);
+        await editFirstNodeText(page, 'Offline edit');
+        await page.locator('body').click();
+
+        // The push ran and failed; the edit lives in the cache only.
+        await expect.poll(() => upsertCount(page), { timeout: 10000 }).toBeGreaterThan(before);
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
+
+        // Close and reopen the tab: the session ends on the device, but the
+        // offline cache row — the durable local copy — stays. (The explicit
+        // sign-out action purges it by design, priv-01, so it is not the path
+        // under test.)
+        await page.reload();
+
+        // The server row never got the edit. Before the cache merge, this unlock
+        // loaded the server row and overwrote the cache with it — the edit was
+        // silently destroyed. Now the two documents merge.
+        await page.evaluate(() => { (window as any).__mockSupabase.failUpserts = false; });
+        await unlockRemote(page, { email: 'a@b.com', password: 'pw123456', passphrase: PASSPHRASE });
+
+        await expect(page.locator('.node-text-md').first()).toHaveText('Offline edit');
+    });
 });
