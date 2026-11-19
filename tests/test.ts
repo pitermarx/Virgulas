@@ -362,7 +362,19 @@ export async function installMockSupabase(
             user: options.userEmail ? { id: options.userId ?? 'user-1', email: options.userEmail } : null
         };
 
-        const builder = () => {
+        const builder = (table?: string) => {
+            if (table === 'outline_plans') {
+                // The account's plan row (RLS-scoped read): present when
+                // planCapBytes is set, otherwise no row (the free default
+                // the client derives, like the real trigger's coalesce).
+                return {
+                    select: () => ({
+                        single: async () => options.planCapBytes != null
+                            ? { data: { max_data_bytes: options.planCapBytes }, error: null }
+                            : { data: null, error: { code: 'PGRST116', message: 'Row not found' } }
+                    })
+                };
+            }
             let columns = '';
             const query: any = {
                 select: (next?: string) => { columns = next ?? ''; return query; },

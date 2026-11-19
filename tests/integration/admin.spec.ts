@@ -73,10 +73,11 @@ test.describe('Admin / Options modal', () => {
     await openOptions(page);
 
     await expect(page.getByText('Blob', { exact: true })).toBeVisible();
-    await expect(page.getByText(/chars · AES-GCM-256/)).toBeVisible();
-    await expect(page.getByText(/PBKDF2 600k/)).toBeVisible();
-    // A small document shows no quota share: it rounds below 1%.
-    await expect(page.getByText(/% of browser storage/)).toHaveCount(0);
+    // The blob line is budget-based and MB-first: the Local budget is the
+    // browser quota (5,000,000 bytes → "4.8 MB"), with no crypto alphabet soup.
+    await expect(page.getByText(/of 4.8 MB browser storage/)).toBeVisible();
+    await expect(page.getByText(/AES-GCM-256/)).toHaveCount(0);
+    await expect(page.getByText(/PBKDF2 600k/)).toHaveCount(0);
   });
 
   test('exports the current document as a .vmd download', async ({ page }) => {

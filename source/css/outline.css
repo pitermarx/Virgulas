@@ -382,6 +382,14 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   text-transform: uppercase;
 }
 
+/* The storage-usage ring in the status toolbar (see toolbars.ts). */
+.quota-donut {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--color-text-faint);
+}
+
 .status-user {
   font-size: 0.75rem;
   color: var(--color-text-muted);

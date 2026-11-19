@@ -114,24 +114,30 @@ test.describe('storage seam — remote flows', () => {
     test('the document-size quota reminder warns, dismisses, and re-arms on escalation', async ({ page }) => {
         await bootRemote(page);
 
-        // Near the limit (~60% of the browser quota): a dismissible reminder.
+        // The remote unlock resolves the account budget: no plan row, so the
+        // free default (1 MiB) binds, not the browser quota.
+        await expect(page.locator('.quota-donut')).toHaveAttribute('title', /of 1.0 MB plan cap/, { timeout: 10000 });
+
+        // Near the limit (~67% of the plan cap): a dismissible reminder.
         await page.evaluate(async () => {
-            (await import('/js/app.js' as string)).e2e.noteSlotChars(3_100_000);
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(700_000);
         });
         const reminder = page.locator('.storage-persistence-notice', { hasText: 'getting large' });
         await expect(reminder).toBeVisible();
+        await expect(page.locator('.quota-donut')).toHaveAttribute('title', /684 KB of 1.0 MB plan cap \(67%\)/);
 
         // A dismissal is remembered: a later save at the same level stays quiet.
         await page.locator('[aria-label="Dismiss size reminder"]').click();
         await expect(reminder).toBeHidden();
         await page.evaluate(async () => {
-            (await import('/js/app.js' as string)).e2e.noteSlotChars(3_200_000);
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(710_000);
         });
         await expect(reminder).toBeHidden();
 
-        // Escalating near the critical level re-arms it as the stronger alert.
+        // Escalating near the critical level re-arms it as the stronger alert,
+        // and the ring goes red.
         await page.evaluate(async () => {
-            (await import('/js/app.js' as string)).e2e.noteSlotChars(4_900_000);
+            (await import('/js/app.js' as string)).e2e.noteSlotChars(1_020_000);
         });
         const alert = page.locator('.storage-persistence-notice[role="alert"]');
         await expect(alert).toBeVisible();

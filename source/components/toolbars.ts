@@ -5,6 +5,7 @@ import { html } from 'htm/preact'
 import { signal } from '@preact/signals'
 import outline from '../js/outline.js'
 import persistence, { localSaveFailed } from '../js/persistence.js'
+import { activeBudgetBytes, documentBudgetBytes, formatBytes, slotUsageBytes } from '../js/quota.js'
 import { renderBlockMarkdown } from '../js/markdown.js'
 import { isMobile } from '../js/utils.js'
 import { zoomIn, handleSearchKeyDown, enterSearchMode, toggleSearchMode, tasksPanelOpen, optionsOpen } from '../js/shortcuts.js'
@@ -91,6 +92,34 @@ function syncIcon(state: string) {
     }
 }
 
+/**
+ * The storage-usage ring: the document's share of its binding budget — the
+ * browser's quota in Local mode, the account's plan cap in Remote mode. Amber
+ * at 60% of that budget, red at 97% and over.
+ */
+export function QuotaDonut() {
+    const mode = persistence.getMode()
+    const used = slotUsageBytes.value
+    if ((mode !== 'local' && mode !== 'remote') || used <= 0) return null
+    const plan = mode === 'remote' ? documentBudgetBytes.value : null
+    const budget = activeBudgetBytes()
+    const fraction = Math.min(1, used / budget)
+    const over = used > budget
+    const color = over || fraction >= 0.97
+        ? 'var(--color-danger)'
+        : fraction >= 0.6 ? 'var(--color-syncing)' : 'var(--color-offline)'
+    const title = `Storage: ${formatBytes(used)} of ${formatBytes(budget)} ${plan !== null ? 'plan cap' : 'browser storage'}${over ? ' — over' : ''} (${Math.round(used / budget * 100)}%)`
+    const c = 2 * Math.PI * 5.5
+    return html`
+    <span class="quota-donut" role="img" title=${title} aria-label=${title}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.25"/>
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke=${color} stroke-width="2.5"
+          stroke-dasharray="${(c * fraction).toFixed(2)} ${c.toFixed(2)}" stroke-linecap="round" transform="rotate(-90 8 8)"/>
+      </svg>
+    </span>`
+}
+
 export function StatusToolbar() {
     const mode = persistence.getMode()
     const isMemory = mode === 'memory'
@@ -134,6 +163,7 @@ export function StatusToolbar() {
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
             : html`<span class="status-mode" title="Current storage mode">${modeLabel(mode)}</span>`}
+            ${!isMemory && html`<${QuotaDonut} />`}
             ${localSaveFailed.value
             ? html`<span class="status-save-failed" title=${saveFailedLabel}>${saveFailedLabel}</span>`
             : null}

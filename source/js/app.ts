@@ -210,8 +210,8 @@ const Splash = () => {
               && persistence.slotQuotaNotice.value !== 'ok' && html`
               <div class="storage-persistence-notice" role=${persistence.slotQuotaNotice.value === 'full' ? 'alert' : 'status'}>
                 <p>${persistence.slotQuotaNotice.value === 'full'
-                  ? 'This document nearly fills this browser\u2019s storage \u2014 the next save may fail. Export a backup, trim it, or use File storage.'
-                  : 'This document is getting large for browser storage. Export a backup, or use File storage.'}</p>
+                  ? 'This document nearly fills its storage budget \u2014 the next save may fail. Export a backup, trim it, or use File storage.'
+                  : 'This document is getting large for its storage budget. Export a backup, or use File storage.'}</p>
                 <button type="button" class="toolbar-btn" aria-label="Dismiss size reminder" title="Dismiss size reminder"
                   onClick=${persistence.dismissSlotQuotaNotice}>×</button>
               </div>

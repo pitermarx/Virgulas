@@ -94,8 +94,9 @@ Choose per device; your choice is remembered:
   source.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
-  or using File/Remote mode. A dismissible reminder appears as the document grows past ~60% of the
-  browser's storage quota, and a stronger warning near the limit.
+  or using File/Remote mode. A usage ring in the status toolbar tracks the document against the
+  browser's storage quota; a dismissible reminder appears past ~60% and a stronger warning near
+  the limit.
 - **Remote** — encrypted and synced to a cloud backend: the TrailBase instance serving the app
   (self-hosted or hosted), with the hosted Supabase project as the fallback for static deployments.
   An account email/password controls access; a separate passphrase controls encryption, so the
@@ -104,7 +105,7 @@ Choose per device; your choice is remembered:
   separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
   example the browser's storage is full), the remote save still completes and the status toolbar
   says the document is not saved locally. The same size reminder covers the offline copy, and the
-  server enforces a per-account cap — 1 MiB by default, raised for paid plans, with a 5 MiB
+  usage ring tracks the account's plan cap — 1 MiB by default, raised for paid plans, with a 5 MiB
   backstop — without retrying. Deleting the account removes the server document and,
   on a TrailBase server, the account itself; the hosted Supabase fallback keeps the account
   record unless support removes it.

@@ -11,7 +11,6 @@ import persistence from './persistence.js'
 import { biometrics } from './biometrics.js'
 import { remoteSync } from './sync.js'
 import { store, appVersion } from './utils.js'
-import { DEFAULT_ITERATIONS } from './crypto2.js'
 import inbox from './inbox.js'
 import { inboxNodeName } from './capture.js'
 import { bindDialogFocus } from './dialogs.js'
@@ -19,14 +18,16 @@ import { optionsOpen } from './shortcuts.js'
 import { modes, isEncryptedMode } from './modes.js'
 import { loadIntroDocument } from './intro.js'
 import { lockNow, resetSessionState } from './lockScreen.js'
-import { SLOT_QUOTA_CHARS } from './quota.js'
+import { activeBudgetBytes, documentBudgetBytes, formatBytes } from './quota.js'
 
 const accountInfo = signal({ email: '', mode: '', encryptedBytes: 0 })
 
-/** The blob line's quota share: shown once it rounds above zero. */
-function quotaShare(chars: number): string {
-    const pct = Math.round((chars / SLOT_QUOTA_CHARS) * 100)
-    return pct > 0 ? ` · ${pct}% of browser storage` : ''
+/** The blob line: the document's size against its binding budget, MB-first. */
+function quotaBlobLine(bytes: number): string {
+    const plan = accountInfo.value.mode === 'remote' ? documentBudgetBytes.value : null
+    const budget = activeBudgetBytes()
+    const pct = Math.round((bytes / budget) * 100)
+    return `${formatBytes(bytes)} of ${formatBytes(budget)} ${plan !== null ? 'plan cap' : 'browser storage'}${pct >= 1 ? ` (${pct}%)` : ''}`
 }
 /** True when the backend can delete the auth record itself (TrailBase). */
 const accountDeletesUser = signal(false)
@@ -361,7 +362,7 @@ export const OptionsModal = () => {
 
             ${hasPassphrase && html`
               <dt>Blob</dt>
-              <dd class="admin-inline-value">${info.encryptedBytes} chars${quotaShare(info.encryptedBytes)} · AES-GCM-256 · PBKDF2 ${DEFAULT_ITERATIONS / 1000}k</dd>
+              <dd class="admin-inline-value">${quotaBlobLine(info.encryptedBytes)}</dd>
             `}
           </dl>
 
