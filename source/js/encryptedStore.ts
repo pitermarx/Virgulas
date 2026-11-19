@@ -137,8 +137,8 @@ function requireCredentials(session: KeySession): { passphrase: string; salt: st
  * - On an empty store, unlock *adopts* the passphrase with a fresh salt
  *   (first-time setup wraps the first write — the decorator generates the
  *   salt once and reuses it).
- * - A successful save of a legacy 310k envelope re-encrypts at current
- *   parameters (upgrade-on-save, unchanged).
+ * - A successful save of an envelope written at older parameters re-encrypts
+ *   at current parameters (upgrade-on-save).
  * - A read whose record salt differs from the session's active salt raises
  *   'remote-rekeyed' (another device rotated the passphrase) — never swallowed
  *   and never followed by a push (fixes sync-01).

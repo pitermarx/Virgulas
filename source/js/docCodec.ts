@@ -123,7 +123,15 @@ export function writeVmd(
         if (node.description) {
             const descIndent = '  '.repeat(level + 1)
             for (const line of node.description.split('\n')) {
-                result += `${descIndent}${line}\n`
+                // VMD.md §4.1: a description line that would re-parse as an item
+                // (or as an escape) is written with a leading backslash, which
+                // the parsers consume back. Without this, a description holding
+                // a markdown list re-parses as child nodes and the text is lost.
+                const trimmed = line.trimStart()
+                const escaped = trimmed.startsWith('-') || trimmed.startsWith('+') || trimmed.startsWith('\\')
+                    ? `\\${line}`
+                    : line
+                result += `${descIndent}${escaped}\n`
             }
         }
     }
@@ -162,8 +170,10 @@ export function vmdNodeId(parentId: string, siblingIndex: number): string {
  * description line has no preceding node bullet. outline.setRootVMD() replays
  * this tree onto its zoom root, so both import paths share one parser.
  *
- * Note: outline.setVMD, the per-node editor path, uses a different backtick
- * escape and is deliberately NOT shared.
+ * Note: outline.setVMD, the per-node editor path, parses incrementally into
+ * the live subtree; both paths consume the §4.1 backslash escape (the editor
+ * additionally accepts the legacy backtick form), so what writeVmd emits
+ * re-parses identically through either path.
  */
 export function parseVmdTree(text: string): OutlineDoc {
     const root: OutlineNode = { id: 'root', children: [] }
@@ -173,7 +183,7 @@ export function parseVmdTree(text: string): OutlineDoc {
     for (const line of text.split(/\r?\n/)) {
         if (!line.trim()) continue
 
-        const match = line.match(/^(\s*)([-+])\s?(.*)$/)
+        const match = line.match(/^(\s*)([-+]) (.*)$/)
         if (match) {
             const [, indentStr, bullet, rawNodeText] = match
             const indentLen = indentStr.length

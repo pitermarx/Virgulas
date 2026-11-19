@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals'
 import { detectBrowserCapabilities } from './utils.js'
 import { idbStore } from './idb.js'
+import { fromBase64, toBase64 } from './crypto2.js'
 
 // Biometric (WebAuthn) unlock for Virgulas.
 //
@@ -28,20 +29,8 @@ const store = idbStore(IDB_NAME, IDB_STORE)
 /** Whether this device holds a sealed passphrase (reactive mirror of the store). */
 const enrolled = signal(false)
 
-const b64 = {
-  encode(buf: any) {
-    const bytes = new Uint8Array(buf)
-    let s = ''
-    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
-    return btoa(s)
-  },
-  decode(str: string) {
-    const s = atob(str)
-    const bytes = new Uint8Array(s.length)
-    for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i)
-    return bytes.buffer
-  }
-}
+// Only the base64 serialization helpers are shared with crypto2; the seal's
+// own AES-GCM wrap stays local (the Rule 7 exception for this module).
 
 async function generateAesKey() {
   return window.crypto.subtle.generateKey(
@@ -58,11 +47,11 @@ async function wrapPassphrase(passphrase: string, key: CryptoKey) {
   const combined = new Uint8Array(iv.length + ciphertext.byteLength)
   combined.set(iv)
   combined.set(new Uint8Array(ciphertext), iv.length)
-  return b64.encode(combined)
+  return toBase64(combined)
 }
 
 async function unwrapPassphrase(wrapped: string, key: CryptoKey) {
-  const combined = new Uint8Array(b64.decode(wrapped))
+  const combined = fromBase64(wrapped)
   const iv = combined.slice(0, 12)
   const ciphertext = combined.slice(12)
   const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
@@ -117,7 +106,7 @@ export const biometrics = {
       }
     })
 
-    const storedCredential = { id: b64.encode((credential as PublicKeyCredential).rawId) }
+    const storedCredential = { id: toBase64(new Uint8Array((credential as PublicKeyCredential).rawId)) }
 
     // 2. Wrap the passphrase with a fresh non-extractable key
     const aesKey = await generateAesKey()
@@ -142,7 +131,7 @@ export const biometrics = {
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge,
-          allowCredentials: [{ id: b64.decode(credential.id), type: 'public-key' }],
+          allowCredentials: [{ id: fromBase64(credential.id), type: 'public-key' }],
           userVerification: 'required',
           timeout: 120000
         }

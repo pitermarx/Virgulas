@@ -39,6 +39,7 @@ import {
   remoteRekeyed,
   setSyncHead,
   setLastSyncedAt,
+  getLastSyncedAt,
   noteLocalWriteActivity,
   allowImmediateRemoteSync,
   setRemoteStore,
@@ -49,6 +50,7 @@ import {
   skipNextRemotePush
 } from './syncEngine.js'
 import { cached } from './cachedStore.js'
+import { documentsEquivalent, merge } from './merge.js'
 import { applyIntro, getIntroText, loadIntroDocument } from './intro.js'
 import { describeBrowserSupport, normalizeMode } from './modes.js'
 
@@ -76,7 +78,7 @@ function assertNewPassphrase(passphrase: string) {
 // All four modes route their data paths through the seam:
 //   Local   = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
 //   File    = codecStore(vmdCodec, fileStore(handle))
-//   Memory  = the live outline (no store instance; see §14)
+//   Memory  = the live outline (no store instance; docs §4.6)
 //   Remote  = codecStore(jsonCodec, cached(encrypted(raw), encrypted(slotRaw)))
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
@@ -161,7 +163,7 @@ function teardownRemoteStore() {
 }
 
 /**
- * sync-01 (docs §4.4/§11): a pull met a remote rotated on another device. The
+ * sync-01 (docs §4.4): a pull met a remote rotated on another device. The
  * session quiesces and locks WITHOUT flushing — flushing would write
  * ciphertext under the stale key and revert the rotation — and the lock screen
  * prompts for the new passphrase. Never followed by a push.
@@ -225,10 +227,9 @@ function applyHashZoomIfPresent() {
 
 export const authMode = signal<PersistenceMode>('local')
 /**
- * The live session: what three readiness flags used to encode. `authMode` is
- * the mode selected for the lock screen (it survives a lock); this is what is
- * actually open right now, so no combination of "unlocked" and "ready" can
- * contradict another.
+ * The live session: one value, because separate "unlocked"/"ready" flags could
+ * contradict each other. `authMode` is the mode selected for the lock screen
+ * (it survives a lock); this is what is actually open right now.
  */
 type SessionState = 'locked' | 'memory' | 'filesystem' | 'local' | 'remote'
 const sessionState = signal<SessionState>('locked')
@@ -320,14 +321,14 @@ async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
 
   try {
     // unlock() performs the one-and-only passphrase verification (decryption
-    // is the verifier) in one round-trip (docs §14.7). It returns the at-rest
+    // is the verifier) in one round-trip (docs §4.1). It returns the at-rest
     // text, which the codec parses into the document value the orchestration
     // handles; reads and writes below are doc-level.
     const result = await localDataStore.unlock!(code)
     if (!result || result.text === null) {
       // The slot is occupied but holds no readable record (a value without
-      // the `<salt>|<envelope>` shape reads as "no record"). Match the
-      // pre-seam behaviour: treat it as first-time setup.
+      // the `<salt>|<envelope>` shape reads as "no record"): treat it as
+      // first-time setup rather than failing the unlock.
       log('Local data is unreadable, starting with a new document')
       return setupLocal(code, initialDoc)
     }
@@ -424,16 +425,42 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   }
 
   const doc = jsonCodec.parse(unlockResult.text)
-  outline.load(doc)
+  // The offline cache can hold edits that never reached the primary: pushes
+  // that failed while offline, or a tab closed before the flush. Overwriting
+  // the cache with the primary here destroyed them; instead the cache merges
+  // in — cache-only edits survive, remote-only edits arrive, a genuine clash
+  // opens the conflict flow through the normal pull-before-push.
+  let docToLoad = doc
+  let cacheHasUnpushed = false
+  let cacheConflict = false
+  try {
+    const cached = await remoteCacheStore!.read()
+    if (cached && !documentsEquivalent(cached, doc)) {
+      const merged = merge(cached, doc, getLastSyncedAt())
+      if (merged.kind === 'merged') {
+        docToLoad = merged.doc
+        cacheHasUnpushed = !documentsEquivalent(merged.doc, doc)
+      } else {
+        // Load the cached doc and do NOT adopt the primary's head token (and
+        // keep the old sync baseline): the first poll then sees the remote as
+        // newer, re-runs the merge and opens the conflict modal through the
+        // standard pull-before-push path.
+        docToLoad = cached
+        unlockResult.headToken = null
+        cacheConflict = true
+      }
+    }
+  } catch { /* cache unreadable (absent, or rotated under an old salt): the primary is the truth */ }
+  outline.load(docToLoad)
   // Adopt the downloaded record's token as last-seen (docs §8), and mark the
   // sync baseline so the next edit doesn't falsely see remote as newer.
   if (unlockResult.headToken) setSyncHead(unlockResult.headToken)
-  // Prime the offline cache with the remote row (today's behaviour): the two
-  // copies share the session, so the salt matches (docs §4.7). Cache-side only —
-  // no upsert at unlock time. Best-effort: a failed cache write surfaces via
-  // the save-failed state, not a failed unlock.
+  // Prime the offline cache with the loaded document. The two copies share
+  // the session, so the salt matches (docs §4.7). Cache-side only — no upsert
+  // at unlock time. Best-effort: a failed cache write surfaces via the
+  // save-failed state, not a failed unlock.
   try {
-    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...doc })
+    await remoteCacheStore!.write({ modelVersion: MODEL_VERSION, dataVersion: 0, ...docToLoad })
   } catch (error) {
     console.error('[Persistence] Offline cache priming failed:', error)
     if (error instanceof StoreError && error.code === 'too-large') localSaveFailed.value = true
@@ -444,10 +471,18 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
     applyHashZoomIfPresent()
   })
   rememberMode('remote')
-  setLastSyncedAt(Date.now())
+  // The conflict path keeps the pre-unlock baseline so the poll's re-merge
+  // still sees which side changed which node.
+  if (!cacheConflict) setLastSyncedAt(Date.now())
   startPolling()
   // The document came from the server; there is nothing new to write.
   savePipeline.markSaved()
+  // Cache edits the primary never saw: the conflict path leaves the
+  // reconciliation to the first poll; the clean path pushes the merged
+  // result now so the primary catches up immediately.
+  if (cacheHasUnpushed && !cacheConflict) {
+    void syncOnce({ doc: outline.snapshot(), attempt: createRemoteSyncAttempt() })
+  }
   return true
 }
 
@@ -556,7 +591,7 @@ export default {
       if (!current) {
           throw new Error('Unlock with a passphrase before enabling biometric unlock.')
       }
-      return biometrics.enroll(current, userLabel ?? 'Virgulas user')
+      return biometrics.enroll(current, userLabel || 'Virgulas user')
   },
   /** True when the last sign-up still needs the email confirmed before a session exists. */
   needsEmailConfirmation: () => pendingEmailConfirmation,
@@ -854,6 +889,10 @@ export default {
       throw new Error('This mode has no encryption passphrase.')
     }
     const doc = outline.snapshot()
+
+    // The seal wraps one passphrase: a rotation leaves it useless, so revoke it
+    // with the change (the user re-enrols if they still want biometric unlock).
+    void biometrics.forget().catch(() => { })
 
     if (mode === 'local') {
       // Storage seam: rotation is the session's job -- a fresh salt and the

@@ -14,7 +14,7 @@ import { createRemoteSyncAttempt, syncOnce } from './syncEngine.js'
 
 // ── Backend facade ───────────────────────────────────────────────────────────
 //
-// Client code lives in supabaseBackend.ts (docs/storage-interface.md §7): this
+// Client code lives in supabaseBackend.ts (docs/storage-interface.md §3): this
 // module keeps only backend resolution, scheduling and the auth facade.
 // `remoteSync` is a thin proxy over the backend adapters — no client
 // construction, no error-code mapping, no row payloads.
@@ -85,8 +85,6 @@ export const remoteSync = {
         if (!auth.requestPasswordReset) throw new StoreError('unsupported', 'This backend cannot send password reset emails.')
         await auth.requestPasswordReset(email)
     },
-    /** True when the configured backend can send password reset emails. */
-    hasPasswordReset: async () => !!(await backend()).auth.requestPasswordReset,
     /**
      * Self-service auth-account deletion — present only on backends that
      * support it (TrailBase does; Supabase needs the service role, which the

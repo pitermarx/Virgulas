@@ -26,7 +26,7 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
-| [2](#phase-2) | Make persistence and sync changeable | 2 | One save-session object (the single `syncOnce` exists); existing unit and e2e suites unchanged and green. |
+| [2](#phase-2) | Make persistence and sync changeable | 1 | One save-session object (the single `syncOnce` exists); existing unit and e2e suites unchanged and green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 7 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
 | [5](#phase-5) | Sync and data model v2 | 7 | Rollback is detected, concurrent writers cannot overwrite each other, history exists, and conflicts only appear for real same-field edits. |
@@ -173,8 +173,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-03](struct-03-minor-duplications.md) — Smaller duplications | S | Low | — | — |
-| 2 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
+| 1 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
 
 <a id="phase-3"></a>
 
@@ -394,7 +393,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [struct-01](struct-01-oversized-modules.md) | Several modules exceed the project's own size guidance | [8](#phase-8) | L | Medium |
-| [struct-03](struct-03-minor-duplications.md) | Smaller duplications | [2](#phase-2) | S | Low |
 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) | Loose typing and unchecked scripts | [8](#phase-8) | M | Low |
 | [struct-07](struct-07-module-level-mutable-state.md) | Module-level mutable state in the save and sync pipeline | [2](#phase-2) | M | Low |
 

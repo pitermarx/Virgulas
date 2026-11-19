@@ -27,7 +27,10 @@ function closeModals(event: Event) {
   const isClose = target.classList.contains('modal-close')
   if (!isOverlay && !isClose) return
   document.querySelectorAll('.modal-overlay').forEach((modal) => {
-    (modal as HTMLElement).style.display = 'none'
+    // The conflict dialog is blocking by design: it is resolved only through
+    // its own choices, never by a stray backdrop or foreign close click.
+    if (modal.classList.contains('conflict-overlay')) return
+    ;(modal as HTMLElement).style.display = 'none'
   })
 }
 

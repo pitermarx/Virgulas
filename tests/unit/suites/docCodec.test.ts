@@ -224,6 +224,40 @@ describe('vmdCodec — parse', () => {
       assertEqual(JSON.stringify(a.children), JSON.stringify([b.id]), 'children list preserved')
   })
 
+  it('a description holding a markdown list survives the round-trip', () => {
+      // VMD.md §4.1: the writer escapes description lines that would re-parse
+      // as items. Without the escape, '- item one' became a child node and the
+      // description text was lost on reload.
+      const original = doc([
+          node({ id: 'a', text: 'Notes', description: '- item one\nplain\n+ other' })
+      ])
+
+      const vmd = vmdCodec.serialize(original)
+      assert(vmd.includes('\\- item one'), `the item-looking line is escaped: ${JSON.stringify(vmd)}`)
+      assert(vmd.includes('\\+ other'), `the plus-looking line is escaped: ${JSON.stringify(vmd)}`)
+
+      const parsed = vmdCodec.parse(vmd)
+      const a = parsed.nodes.find(n => n.parentId === 'root')!
+      assertEqual(a.description, '- item one\nplain\n+ other', 'description content preserved')
+      assertEqual(parsed.nodes.length, 2, 'no child node was created from the list')
+  })
+
+  it('a description starting with a backslash survives the round-trip', () => {
+      const original = doc([
+          node({ id: 'a', text: 'Notes', description: '\\- literal' })
+      ])
+      const parsed = vmdCodec.parse(vmdCodec.serialize(original))
+      const a = parsed.nodes.find(n => n.parentId === 'root')!
+      assertEqual(a.description, '\\- literal', 'the backslash is not doubled per round-trip')
+  })
+
+  it('an item marker without a space is description text, not a node', () => {
+      const parsed = vmdCodec.parse('- real item\n  -not a bullet')
+      const items = parsed.nodes.filter(n => n.parentId === 'root')
+      assertEqual(items.length, 1, 'only the spaced marker makes a node')
+      assertEqual(items[0].description, '-not a bullet', 'the unspaced marker stays description text')
+  })
+
   // ─── cross-consistency with the live outline ────────────────────────────────
 })
 

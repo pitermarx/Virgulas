@@ -160,8 +160,11 @@ Item content and description text may contain standard inline Markdown (emphasis
 Metadata is parsed only on item lines, anchored to the end of the content string. Implementations must define a registry of valid property names and optional value regexes.
 
 **Registered Keys:**
-- `due` — value must match `\d{4}-\d{2}-\d{2}` and represent a valid Gregorian calendar date (a `yyyy-MM-dd` date). Used to mark a task's due date. Overdue tasks (due date strictly before today) are highlighted and prioritized in the Tasks sidebar; the tasks toolbar icon is highlighted when any pending task is overdue.
-- `rec` — value must match `\d*(y|m|w|d)`: an optional repeat count (default 1) plus a unit (`y` years, `m` months, `w` weeks, `d` days). Used to mark a task's recurrence. It only has an effect on a task that also carries a `due` date, where completing the task advances the due date instead of marking it done. For `m` and `y` units the day of month is clamped to the last valid day of the resulting month.
+- `due` — value must match `\d{4}-\d{2}-\d{2}` and represent a valid Gregorian calendar date (a `yyyy-MM-dd` date). Used to mark a task's due date.
+- `rec` — value must match `\d*(y|m|w|d)`: an optional repeat count (default 1) plus a unit (`y` years, `m` months, `w` weeks, `d` days). Used to mark a task's recurrence; it only has an effect on an item that also carries a `due` date. For `m` and `y` units the day of month is clamped to the last valid day of the resulting month.
+
+The product behaviour built on these values (task sidebar highlighting, overdue
+prioritisation, recurrence-on-completion) is defined in the product SPEC, not here.
 
 **Parsing Pipeline (per item line):**
 1. Extract checkbox (if present).

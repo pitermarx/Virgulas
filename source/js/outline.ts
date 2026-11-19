@@ -1,42 +1,26 @@
 import { signal, effect, createModel } from "@preact/signals"
 import { randomId, UnsupportedVersionError } from "./crypto2.js"
 import { CorruptDocumentError, MODEL_VERSION, type OutlineDoc } from './model.js'
-import { parseVmdNodeLine, parseVmdTree, vmdNodeId, writeVmd } from './docCodec.js'
+import { NodeModel, type Node, type NodeInput, type NodeUpdate } from './node.js'
+import { createNavigation } from './navigation.js'
+import { createTreeOps } from './treeOps.js'
+import { createVmdEditor } from './vmdEditor.js'
 import { log } from './utils.js';
-import { parseMeta, advanceDueDate } from './meta.js';
 
 // The model version and the corrupt-document error live in model.ts so the
 // codecs can share the VMD implementation without importing this module back.
 export { CorruptDocumentError, MODEL_VERSION } from './model.js'
+// The per-node signal model lives in node.ts; the type re-exports keep the
+// existing import sites (tasks, inbox) working through this module.
+export type { DoneState, Node, NodeInput, NodeUpdate } from './node.js'
 
-// The document structure is an infinite tree of nodes
-// a node is { id: string, parentId: string, text: string, description: string, children: string[], open: boolean, done: boolean|null }
-// the nodes are stored in a flat map { [id: string]: node }
-// there is always a root node with id 'root' and parentId null
-// the node properties are signals, so that we can update them individually without replacing the whole doc
-// the manipulations on the doc are done by updating the signals, and the view will react to the changes
-// done: null = plain node (not a task), false = unchecked task, true = completed task
-
-export type DoneState = boolean | null
-
-export interface NodeInput {
-    id?: string
-    parentId?: string | null
-    text?: string
-    description?: string
-    children?: string[]
-    open?: boolean
-    done?: DoneState
-    lastModified?: number
-}
-
-export interface NodeUpdate {
-    text?: string
-    description?: string
-    parentId?: string | null
-    open?: boolean
-    done?: DoneState
-}
+// The document structure is an infinite tree of nodes stored in a flat map
+// { [id: string]: node }, with a root node with id 'root' and parentId null.
+// The node signals live in node.ts; this module owns the document: the map,
+// the versions, CRUD, validation on load, and the search-tree walk. Tree
+// mutations (treeOps.ts), keyboard navigation (navigation.ts) and the VMD
+// editing surface (vmdEditor.ts) operate on this state through injected
+// references, so the document has exactly one owner.
 
 export interface SearchMatch {
     id: string
@@ -45,194 +29,34 @@ export interface SearchMatch {
     isMatch?: boolean
 }
 
-function nodeFactory(model: NodeInput = {}) {
-    const id = model.id
-    if (!id) {
-        throw new Error('Node must have an id')
-    }
-    let parentId: string | null = model.parentId ?? null
-    const text = signal(model.text || '')
-    const description = signal(model.description || '')
-    const children = signal<string[]>(model.children || [])
-    const open = signal(model.open === undefined ? true : !!model.open)
-    const done = signal<DoneState>(model.done !== undefined ? model.done : null)
-    let lastModified = model.lastModified || 0
-
-    // A pending task with rec:<n><y|m|w|d> and due:<date> advances its due date
-    // instead of becoming done. Returns true if it advanced (and thus handled the transition).
-    function tryAdvanceRecurrence() {
-        const raw = text.peek()
-        const { meta } = parseMeta(raw)
-        if (!meta.due || !meta.rec) return false
-        const nextDue = advanceDueDate(meta.due, meta.rec)
-        if (!nextDue) return false
-        // Replace only the due value in place, preserving token order/spacing.
-        text.value = raw.replace(`due:${meta.due}`, `due:${nextDue}`)
-        lastModified = Date.now()
-        return true
-    }
-
-    return {
-        get id() {
-            return id
-        },
-        get parentId() {
-            return parentId
-        },
-        get text() {
-            return text
-        },
-        get description() {
-            return description
-        },
-        get children() {
-            return children
-        },
-        get open() {
-            return open
-        },
-        get done() {
-            return done
-        },
-        get lastModified() {
-            return lastModified
-        },
-        get value() {
-            return {
-                id,
-                parentId,
-                text: text.value,
-                description: description.value,
-                children: children.value,
-                open: open.value,
-                done: done.value,
-                lastModified
-            }
-        },
-        peek() {
-            return {
-                id,
-                parentId,
-                text: text.peek(),
-                description: description.peek(),
-                children: children.peek(),
-                open: open.peek(),
-                done: done.peek(),
-                lastModified
-            }
-        },
-        toggleOpen() {
-            open.value = !open.peek()
-            lastModified = Date.now()
-        },
-        toggleDone() {
-            const current = done.peek()
-            if (current === null) { done.value = false }
-            else if (current === false) {
-                if (!tryAdvanceRecurrence()) done.value = true
-            }
-            else { done.value = null }  // cycle back to plain node
-            lastModified = Date.now()
-        },
-        removeTaskMark() {
-            done.value = null
-            lastModified = Date.now()
-        },
-        checkboxToggleDone() {
-            const current = done.peek()
-            if (current === false && tryAdvanceRecurrence()) return
-            // null → false (guard, promotes plain node), false → true, true → false. Never null.
-            done.value = current === null ? false : !current
-            lastModified = Date.now()
-        },
-        update(update: NodeUpdate) {
-            let changed = false
-            if (update.text !== undefined && update.text !== text.peek()) { text.value = update.text; changed = true }
-            if (update.description !== undefined && update.description !== description.peek()) { description.value = update.description; changed = true }
-            if (update.parentId !== undefined) parentId = update.parentId
-            if (update.open !== undefined) open.value = !!update.open
-            if (update.done !== undefined && update.done !== done.peek()) { done.value = update.done; changed = true }
-            if (changed) lastModified = Date.now()
-        },
-        removeChild(childId: string) {
-            children.value = children.peek().filter(id => id !== childId)
-            lastModified = Date.now()
-        },
-        addChild(childId: string, index = -1) {
-            const peek = children.peek()
-            if (index < 0 || index >= peek.length) {
-                children.value = [...peek, childId]
-            } else {
-                children.value = [...peek.slice(0, index), childId, ...peek.slice(index)]
-            }
-            lastModified = Date.now()
-        },
-        move(childId: string, direction: 'up' | 'down' = 'up') {
-            const peek = children.peek()
-            const index = peek.indexOf(childId)
-            if (index === -1) {
-                log('Child not found, cannot move')
-                return
-            }
-            if (direction === 'up' && index > 0) {
-                const newChildren = [...peek]
-                const temp = newChildren[index - 1]
-                newChildren[index - 1] = newChildren[index]
-                newChildren[index] = temp
-                children.value = newChildren
-                lastModified = Date.now()
-            } else if (direction === 'down' && index < peek.length - 1) {
-                const newChildren = [...peek]
-                const temp = newChildren[index + 1]
-                newChildren[index + 1] = newChildren[index]
-                newChildren[index] = temp
-                children.value = newChildren
-                lastModified = Date.now()
-            } else {
-                log('Cannot move child in that direction')
-                return
-            }
-        },
-        getChild(currentChildId: string, direction: 'next' | 'prev' = 'next'): string | null | undefined {
-            const peek = children.peek()
-            const index = peek.indexOf(currentChildId)
-            if (index === -1) {
-                log('Child not found, cannot get sibling')
-                return null
-            }
-            if (direction === 'prev') {
-                if (index <= 0) {
-                    return null
-                }
-                return peek[index - 1]
-
-            }
-            else if (direction === 'next') {
-                if (index === peek.length - 1) {
-                    return null
-                }
-                return peek[index + 1]
-            }
-        },
-    }
-}
-
-type NodeModelShape = ReturnType<typeof nodeFactory>
-export type Node = NodeModelShape & { [Symbol.dispose](): void }
-const NodeModel = createModel(nodeFactory as unknown as (...args: any[]) => any) as unknown as new (model?: NodeInput) => Node
-
 function outlineFactory() {
     const rootNodeId = 'root'
-    const modelVersion = MODEL_VERSION // for future compatibility, in case we need to change the structure
+    const modelVersion = MODEL_VERSION
     const dataVersion = signal(0) // incremented on every change, but debounced to avoid excessive updates during rapid changes
     // Always-incrementing counter for structural rebuilds (reset/deserialize).
     // dataVersion alone is not enough: unlock paths batch deserialize, and when the
     // restored dataVersion equals the previous value (commonly 0), subscribers never
     // re-run even though the node map was fully replaced.
     const structureVersion = signal(0)
-    const dirtyWrites = signal(0) // mark if there are unsaved changes, used to trigger version update
+    const dirtyWrites = signal(0)
     const map = new Map<string, Node>()
-    const zoomId = signal<string>(rootNodeId) // the currently zoomed in node, used for rendering and keyboard navigation
+    const zoomId = signal<string>(rootNodeId)
+
+    // The satellite modules operate on this state through injected references.
+    // The functions they receive (addChild, deleteNode, serialize, deserialize)
+    // are declarations below and hoist, so the wiring can sit with the state.
+    const tree = createTreeOps(map)
+    const nav = createNavigation(map, zoomId, rootNodeId)
+    const vmd = createVmdEditor({
+        map,
+        rootNodeId,
+        zoomId,
+        addChild,
+        deleteNode,
+        serialize,
+        deserialize,
+        markDirty: () => { dirtyWrites.value = dirtyWrites.peek() + 1 },
+    })
 
 
     function getNewId() {
@@ -260,9 +84,8 @@ function outlineFactory() {
             return
         }
 
-        // I think if i remove this, i just get synchronized nodes, which is cool, 
-        // but needs more tests to make sure there are no edge cases where it causes problems
-        // so for now I'm keeping this check in place to prevent potential issues with duplicate ids
+        // An explicit id comes from deserialized or VMD-parsed trees; a duplicate
+        // would silently fork the node's children across two parents.
         if (optionalData.id && map.has(optionalData.id)) {
             console.error('Node with id already exists, cannot add new node with duplicate id')
             return
@@ -531,237 +354,6 @@ function outlineFactory() {
         dirtyWrites.value = dirtyWrites.peek() + 1
     }
 
-    /**
-     * Move a node among its siblings, or out to the grandparent when it is
-     * already at the requested edge. `up` lands before the old parent, `down`
-     * after it.
-     */
-    function moveToSiblingEdge(node: Node, parent: Node | undefined, direction: 'up' | 'down') {
-        if (!parent) {
-            log('Node has no parent, cannot move')
-            return
-        }
-        const siblings = parent.children.peek()
-        const index = siblings.indexOf(node.id)
-        const atEdge = direction === 'up' ? index === 0 : index === siblings.length - 1
-        if (!atEdge) {
-            parent.move(node.id, direction)
-            return
-        }
-        const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
-        if (!grandParent) {
-            log(`Parent has no grandparent, cannot move ${direction}`)
-            return
-        }
-        parent.removeChild(node.id)
-        const parentIndex = grandParent.children.peek().indexOf(parent.id)
-        grandParent.addChild(node.id, direction === 'up' ? parentIndex : parentIndex + 1)
-        node.update({ parentId: grandParent.id })
-    }
-
-    function moveUp(node: Node, parent: Node | undefined) {
-        moveToSiblingEdge(node, parent, 'up')
-    }
-
-    function moveDown(node: Node, parent: Node | undefined) {
-        moveToSiblingEdge(node, parent, 'down')
-    }
-
-    function indent(node: Node, parent: Node | undefined) {
-        if (!parent) {
-            log('Node has no parent, cannot indent')
-            return
-        }
-
-        const ch = parent.children.peek()
-        const index = ch.indexOf(node.id)
-        if (index > 0) {
-            const newParentId = ch[index - 1]
-            const newParent = map.get(newParentId)
-            if (!newParent) {
-                log('New parent not found, cannot indent')
-                return
-            }
-            parent.removeChild(node.id) // Remove from current parent
-            newParent.addChild(node.id) // Add to new parent as last child
-            node.update({ parentId: newParent.id }) // Update parentId of the moved node
-            newParent.update({ open: true }) // make sure the new parent is open to show the moved node
-        } else {
-            log('Node is first child, cannot indent')
-            return
-        }
-    }
-
-    function outdent(node: Node, parent: Node | undefined) {
-        if (!parent) {
-            log('Node has no parent, cannot outdent')
-            return
-        }
-        const grandParent = parent.parentId ? map.get(parent.parentId) : undefined
-        if (!grandParent) {
-            log('Parent has no grandparent, cannot outdent')
-            return
-        }
-        // get children of parent that are after the current node, and move them to be children of the current node, so that they stay with the current node when it is outdented
-        const siblings = parent.children.peek()
-        const index = siblings.indexOf(node.id)
-        const siblingsToMove = siblings.slice(index + 1)
-        const siblingsToStay = siblings.slice(0, index + 1)
-        parent.children.value = siblingsToStay
-        if (siblingsToMove.length > 0) {
-            node.open.value = true // make sure the node is open to show the moved children
-            node.children.value = [...node.children.peek(), ...siblingsToMove]
-            siblingsToMove.forEach(siblingId => {
-                map.get(siblingId)!.update({ parentId: node.id }) // Update parentId of the moved node
-            })
-        }
-        parent.removeChild(node.id) // Remove from current parent
-        grandParent.addChild(node.id, grandParent.children.peek().indexOf(parent.id) + 1) // Add to grandparent after the parent
-        node.update({ parentId: grandParent.id }) // Update parentId of the moved node
-        log('Node outdented successfully')
-    }
-
-    function getVMD(nodeId: string, level = 0): string {
-        // The writer is shared with vmdCodec (docCodec.ts): the root is a
-        // container and is not rendered, so its children start at level 0.
-        return writeVmd(nodeId, id => map.get(id)?.peek(), nodeId === rootNodeId || level < 0 ? -1 : level)
-    }
-
-    /** Append a VMD-parsed child, preferring the stable positional ID shared
-     * with vmdCodec (see vmdNodeId there). */
-    function addVmdChild(parentId: string, nodeData: NodeInput, siblingIndex: number, previousSiblingId: string | false): Node | undefined {
-        const stable = addChild(parentId, { ...nodeData, id: vmdNodeId(parentId, siblingIndex) }, previousSiblingId)
-        if (stable) return stable
-        // The positional ID can only be taken if the same VMD was parsed into a
-        // subtree that still holds it. Fall back to a fresh ID so the rest of the
-        // document still parses instead of aborting.
-        return addChild(parentId, nodeData, previousSiblingId)
-    }
-
-    function setVMD(text: string, nodeId: string) {
-        if (nodeId === rootNodeId) {
-            log('Cannot set VMD on root node, skipping')
-            return
-        }
-        const node = map.get(nodeId)
-        if (!node) {
-            log('Node not found, cannot set VMD')
-            return
-        }
-        const parent = node.parentId ? map.get(node.parentId) : undefined
-        if (!parent) {
-            log('Parent node not found, cannot set VMD')
-            return
-        }
-        const stack: { node: Node; indentLevel: number }[] = [{ node: parent, indentLevel: -1 }, { node, indentLevel: 0 }];
-        const ser = serialize()
-        try {
-            // delete existing children before parsing new ones
-            node.children.peek().forEach(id => deleteNode(id))
-
-            const lines = text.split(/\r?\n/);
-            let firstLine = true
-            for (const line of lines) {
-                if (!line.trim()) continue;
-
-                // Match regular bullet points (-, +)
-                const match = line.match(/^(\s*)([-+])(.*)$/);
-                if (match) {
-                    const [, indentStr, bullet, rawText] = match;
-                    const parsed = parseVmdNodeLine(rawText)
-                    const nodeData = { ...parsed, open: bullet === '-' }
-
-                    // Pop stack until we find the correct parent level
-                    while (stack.length > 1 && stack[stack.length - 1].indentLevel >= indentStr.length) {
-                        if (!firstLine) stack.pop();
-                        else break
-                    }
-
-                    const lastOnStack = stack[stack.length - 1]
-                    if (lastOnStack.indentLevel === indentStr.length) {
-                        lastOnStack.node.update(nodeData)
-                    } else {
-                        const c = lastOnStack.node.children.peek()
-                        const prevSiblingId = c[c.length - 1]
-                        const lastNode = addVmdChild(lastOnStack.node.id, nodeData, c.length, prevSiblingId)
-                        stack.push({ node: lastNode!, indentLevel: indentStr.length });
-                    }
-                } else {
-                    // Handle description lines (indented content without bullets)
-                    const lastOnStack = stack[stack.length - 1].node
-                    const existingDescription = lastOnStack.description.peek()
-                    let trimmedLine = line.trim();
-                    if (trimmedLine.startsWith('`-') || trimmedLine.startsWith('`+') || trimmedLine.startsWith('``')) {
-                        // remove the escape character for lines that start with what would look like a bullet point
-                        // so that users can have description lines that look like bullet points without them being parsed as such
-                        trimmedLine = trimmedLine.substring(1)
-                    }
-                    lastOnStack.description.value = existingDescription ? `${existingDescription}\n${trimmedLine}` : trimmedLine
-                }
-                firstLine = false
-            }
-            dirtyWrites.value = dirtyWrites.peek() + 1
-        }
-        catch (error) {
-            log('Error parsing VMD, reverting to previous state', error)
-            deserialize(ser)
-        }
-    }
-
-    function lastOpenChild(id: string): string | null {
-        const node = map.get(id)
-        if (!node) return null
-        const peek = node.peek()
-        if (!peek.open || peek.children.length === 0) {
-            return node.id
-        }
-
-        return lastOpenChild(peek.children[peek.children.length - 1])
-    }
-
-    function next(currentId: string, drillDown = true): string | null {
-        const node = map.get(currentId)
-        if (!node) return null
-        if (drillDown) {
-            const { open, children } = node.peek()
-            if (open && children.length > 0) {
-                return children[0]
-            }
-        }
-
-        const parent = node.parentId ? map.get(node.parentId) : undefined
-        if (!parent) return null
-
-        const nextSiblingId = parent.getChild(currentId, 'next')
-        if (nextSiblingId) {
-            return nextSiblingId
-        }
-
-        // Keep keyboard navigation constrained to what is visible in the current zoom context.
-        if (parent.id === zoomId.value && zoomId.value !== rootNodeId) {
-            return null
-        }
-
-        return next(parent.id, false)
-    }
-
-    function prev(currentId: string): string | null {
-        const node = map.get(currentId)
-        if (!node) return null
-        const parent = node.parentId ? map.get(node.parentId) : undefined
-        if (!parent) return null
-        const prevSiblingId = parent.getChild(currentId, 'prev')
-        if (prevSiblingId) {
-            return lastOpenChild(prevSiblingId)
-        }
-
-        if (parent.id === zoomId.value && zoomId.value !== rootNodeId) {
-            return null
-        }
-
-        return parent.id
-    }
-
     let dirtyDebounceTimeout = 800 // ms, time to wait after a change before updating the version, to allow for batching multiple changes together
     effect(() => {
         dirtyWrites.value // subscribe to changes on dirtyWrites to trigger version update
@@ -803,73 +395,6 @@ function outlineFactory() {
         return getMatches(rootNodeId)
     }
 
-    function nextSibling(id: string): string | null | undefined {
-        const node = map.get(id)
-        if (!node) return null
-        const parent = node.parentId ? map.get(node.parentId) : undefined
-        if (!parent) return null
-        return parent.getChild(id, 'next')
-    }
-
-    function prevSibling(id: string): string | null | undefined {
-        const node = map.get(id)
-        if (!node) return null
-        const parent = node.parentId ? map.get(node.parentId) : undefined
-        if (!parent) return null
-        return parent.getChild(id, 'prev')
-    }
-
-    function setRootVMD(text: string) {
-        const root = map.get(zoomId.value)
-        if (!root) return
-
-        // Parse first: an invalid VMD leaves the live document untouched. The
-        // parser is the codec's (docCodec.parseVmdTree), so File import and the
-        // root editor cannot disagree about the format.
-        let parsedDoc: OutlineDoc
-        try {
-            parsedDoc = parseVmdTree(text)
-        } catch (error) {
-            log('Error parsing root VMD, document left unchanged', error)
-            throw new Error('Invalid VMD: each description line must belong to a node.')
-        }
-
-        const serializedBeforeChange = serialize()
-        try {
-            const byId = new Map(parsedDoc.nodes.map(node => [node.id, node]))
-            const parsedRoot = byId.get('root')!
-
-            // Delete all existing children of the zoom root, then replay the
-            // parsed tree onto it through addChild so IDs, open/done state and
-            // the dirty counter keep the live-model semantics.
-            const existingChildren = [...root.children.peek()]
-            existingChildren.forEach(id => deleteNode(id, true))
-
-            const appendParsed = (parentId: string, parsedParentId: string) => {
-                const parsedParent = byId.get(parsedParentId)!
-                for (const parsedChildId of parsedParent.children || []) {
-                    const parsedChild = byId.get(parsedChildId)!
-                    const siblings = map.get(parentId)!.children.peek()
-                    const previousSiblingId = siblings[siblings.length - 1]
-                    const newNode = addVmdChild(parentId, {
-                        text: parsedChild.text,
-                        description: parsedChild.description,
-                        done: parsedChild.done ?? null,
-                        open: parsedChild.open ?? true
-                    }, siblings.length, previousSiblingId)
-                    if (newNode) appendParsed(newNode.id, parsedChildId)
-                }
-            }
-            appendParsed(root.id, parsedRoot.id)
-
-            dirtyWrites.value = dirtyWrites.peek() + 1
-        } catch (error) {
-            log('Error parsing root VMD, reverting to previous state', error)
-            deserialize(serializedBeforeChange)
-            throw new Error('Invalid VMD: each description line must belong to a node.')
-        }
-    }
-
     return {
         get dirtyDebounceTimeout() {
             return dirtyDebounceTimeout
@@ -903,14 +428,14 @@ function outlineFactory() {
                 zoomId.value = current.parentId
             }
         },
-        next: (id: string) => next(id, true),
-        prev,
-        nextSibling,
-        prevSibling,
+        next: (id: string) => nav.next(id, true),
+        prev: nav.prev,
+        nextSibling: nav.nextSibling,
+        prevSibling: nav.prevSibling,
 
-        getVMD: (id?: string) => getVMD(id || zoomId.value),
-        setVMD,
-        setRootVMD,
+        getVMD: (id?: string) => vmd.getVMD(id || zoomId.value),
+        setVMD: vmd.setVMD,
+        setRootVMD: vmd.setRootVMD,
         snapshot,
         // Codec-parsed documents carry no model version; supply it before load
         // validates the value. Shared by the storage seam and the intro loader.
@@ -924,12 +449,12 @@ function outlineFactory() {
         addChild,
         deleteNode: (id: string) => deleteNode(id),
         update: (id: string, data: NodeUpdate) => update(id, node => node.update(data)),
-        moveUp: (id: string) => update(id, moveUp),
-        moveDown: (id: string) => update(id, moveDown),
+        moveUp: (id: string) => update(id, tree.moveUp),
+        moveDown: (id: string) => update(id, tree.moveDown),
         toggleOpen: (id: string) => update(id, node => node.toggleOpen()),
         updateNode: (id: string, { text, description }: { text?: string; description?: string }) => update(id, node => node.update({ text, description })),
-        indent: (id: string) => update(id, indent),
-        outdent: (id: string) => update(id, outdent),
+        indent: (id: string) => update(id, tree.indent),
+        outdent: (id: string) => update(id, tree.outdent),
         toggleDone: (id: string) => update(id, node => node.toggleDone()),
         checkboxToggleDone: (id: string) => update(id, node => node.checkboxToggleDone()),
         removeTaskMark: (id: string) => update(id, node => node.removeTaskMark()),

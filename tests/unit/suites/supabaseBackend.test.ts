@@ -153,6 +153,14 @@ describe('supabaseRaw — record mapping', () => {
       const offline = supabaseRaw(fakeSupabaseClient({ tableError: { message: 'TypeError: Failed to fetch' } }).client)
       await expectStoreError(() => offline.readRaw(), 'network', 'transport failure')
   })
+
+  it('a 413 maps to too-large and other 4xx to invalid-input, so the retry policy never burns attempts on them', async () => {
+      const oversized = supabaseRaw(fakeSupabaseClient({ tableError: { status: 413, message: 'Payload too large' } }).client)
+      await expectStoreError(() => oversized.readRaw(), 'too-large', '413')
+
+      const rejected = supabaseRaw(fakeSupabaseClient({ tableError: { status: 400, message: 'Bad request' } }).client)
+      await expectStoreError(() => rejected.readRaw(), 'invalid-input', '400')
+  })
 })
 
 describe('supabaseRaw — write path', () => {

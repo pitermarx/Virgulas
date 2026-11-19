@@ -4,8 +4,7 @@
 //
 // Identity binding (§4.2): orchestration never sees or supplies a user id —
 // the adapter sources it from the *locally cached session*
-// (`auth.getSession()`, no network round-trip; the pre-seam code ran
-// `auth.getUser()` on every push) and RLS `with check (auth.uid() = user_id)`
+// (`auth.getSession()`, no network round-trip) and RLS `with check (auth.uid() = user_id)`
 // server-verifies that the value matches the JWT, so it cannot be forged.
 // Removing the column from the wire entirely needs a migration and rides with
 // the deferred follow-up (§12).
@@ -154,6 +153,15 @@ function mapSupabaseError(error: any): StoreError {
     const status = error?.status
     if (status === 401 || status === 403) {
         return new StoreError('unauthenticated', message, error)
+    }
+    // A rejected request cannot succeed on retry: 413 is the oversized-document
+    // path (the retry policy must not burn three attempts on it), and the rest
+    // of the 4xx family is invalid input. Mirrors the TrailBase adapter.
+    if (status === 413) {
+        return new StoreError('too-large', message, error)
+    }
+    if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        return new StoreError('invalid-input', message, error)
     }
     return new StoreError('network', message, error)
 }

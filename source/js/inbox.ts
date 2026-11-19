@@ -10,7 +10,6 @@ export interface InboxEntry {
 }
 
 export const DEFAULT_INBOX_NODE_NAME = 'Inbox'
-const INBOX_QUEUE_STORAGE_KEY = 'vmd_inbox_queue'
 const MAX_QUEUE_ITEMS = 500
 const MAX_ITEM_LENGTH = 10000
 const MAX_NODE_NAME_LENGTH = 100
@@ -264,10 +263,6 @@ export function reconcile() {
 
 export default {
     DEFAULT_INBOX_NODE_NAME,
-    INBOX_QUEUE_STORAGE_KEY,
-    MAX_QUEUE_ITEMS,
-    MAX_ITEM_LENGTH,
-    MAX_NODE_NAME_LENGTH,
     SHARE_TARGET_KEYS,
     parseCaptureUrl,
     buildBookmarklet,

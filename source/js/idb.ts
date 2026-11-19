@@ -1,10 +1,7 @@
-// A tiny IndexedDB key-value store.
-//
-// Two device-local features need one: the File System Access handle cache
-// (`fileHandles.ts`) and the biometric passphrase seal (`biometrics.ts`). Both
-// used to carry their own open/get/put/delete quartet; this is the single
-// implementation, and it keeps the open connection promise so repeated saves
-// do not reopen the database.
+// A tiny IndexedDB key-value store: one implementation for the File System
+// Access handle cache (fileHandles.ts) and the biometric passphrase seal
+// (biometrics.ts). Caches the open connection promise so repeated saves do
+// not reopen the database.
 
 interface IdbHandle {
     get<T>(key: string): Promise<T | null>
@@ -56,6 +53,9 @@ export function idbStore(dbName: string, storeName: string): IdbHandle {
                 tx.objectStore(storeName).put(value, key)
                 tx.oncomplete = () => resolve()
                 tx.onerror = () => reject(tx.error)
+                // An abort (versionchange elsewhere, connection closed) fires
+                // onabort without onerror: without this the await hangs forever.
+                tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
             })
         },
 
@@ -66,6 +66,7 @@ export function idbStore(dbName: string, storeName: string): IdbHandle {
                 tx.objectStore(storeName).delete(key)
                 tx.oncomplete = () => resolve()
                 tx.onerror = () => reject(tx.error)
+                tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
             })
         }
     }

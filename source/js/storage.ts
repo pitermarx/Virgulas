@@ -171,12 +171,6 @@ export interface RawStore {
     /** Cheap existence probe — no key or session required. */
     exists(): Promise<boolean>
     head?(): Promise<string | null>
-    /**
-     * Push-based change notification (reserved, PR 4). Emits the new head
-     * token on remote change; the returned function unsubscribes. Absent ⇒
-     * polling only.
-     */
-    watch?(emit: (token: string) => void): () => void
 }
 
 // ── Unlock result (§4.3) ─────────────────────────────────────────────────
@@ -194,11 +188,10 @@ export interface UnlockResult {
 
 /** The sync backends the app can talk to. There is no user-facing choice: the
  * server is TrailBase on the origin serving the app (`trail run --public-dir
- * dist`), resolved automatically in the remote flow. 'supabase'/'virgulas'
- * exist for the legacy hosted Supabase deployment and its existing users.
+ * dist`), resolved automatically in the remote flow.
  * - 'trailbase' — a TrailBase instance; url '' (the default) = the app's own origin
- * - 'supabase'  — a Supabase project (url + anon key), for legacy/existing sessions
- * - 'virgulas'  — the hosted Supabase deployment (the legacy read-through default)
+ * - 'supabase'  — a Supabase project (url + anon key)
+ * - 'virgulas'  — the hosted Supabase deployment (the static-hosting fallback)
  */
 export type BackendKind = 'virgulas' | 'supabase' | 'trailbase'
 
