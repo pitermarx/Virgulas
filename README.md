@@ -104,8 +104,8 @@ Choose per device; your choice is remembered:
   separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
   example the browser's storage is full), the remote save still completes and the status toolbar
   says the document is not saved locally. The same size reminder covers the offline copy, and the
-  server refuses documents above its row cap (5 MiB — larger than anything a browser can store)
-  without retrying. Deleting the account removes the server document and,
+  server enforces a per-account cap — 1 MiB by default, raised for paid plans, with a 5 MiB
+  backstop — without retrying. Deleting the account removes the server document and,
   on a TrailBase server, the account itself; the hosted Supabase fallback keeps the account
   record unless support removes it.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,

@@ -95,6 +95,36 @@ test.describe('Sync status indicator', () => {
         expect(upserts).toBe(1);
     });
 
+    test('a plan-cap downgrade rejects the push; raising the plan lets the next save through', async ({ page }) => {
+        await page.goto('/');
+        const payload = await buildEncryptedPayload(page, 'sync-pass');
+
+        await page.evaluate(() => { localStorage.clear(); localStorage.setItem('vmd_last_mode', 'local'); });
+        await installFailingMockSupabase(page, {
+            userEmail: 'user@test.com',
+            downloadData: payload,
+            planCapBytes: 10_000_000
+        });
+        await page.addInitScript(() => { (window as any).__retryBaseMs = 30; });
+
+        await page.reload();
+        await unlockSync(page, 'user@test.com', 'pass', 'sync-pass');
+
+        // A raised plan: the edit lands and settles.
+        await editFirstNode(page, 'Pro plan edit');
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
+
+        // The plan drops below the document size: the push is rejected at once.
+        await page.evaluate(() => { (window as any).__mockSupabase.planCapBytes = 10; });
+        await editFirstNode(page, 'Over-cap edit');
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
+
+        // The plan is raised again: the next save retries and lands.
+        await page.evaluate(() => { (window as any).__mockSupabase.planCapBytes = 10_000_000; });
+        await editFirstNode(page, 'Recovered edit');
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
+    });
+
     test('sync-dot shows offline when navigator.onLine is false and upload fails', async ({ page }) => {
         await page.goto('/');
         const payload = await buildEncryptedPayload(page, 'sync-pass');

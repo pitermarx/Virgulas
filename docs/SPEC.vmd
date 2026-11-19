@@ -204,8 +204,10 @@
         the remote save still completes and the status toolbar reports that the document is
         not saved locally; the state clears on the next successful local write
       - The same size reminder covers the encrypted offline copy
-      - The server refuses a document above its row cap (5 MiB — above anything a browser can
-        store); the push fails without retries and the status toolbar reports the error state
+      - The server enforces a per-account document cap: 1 MiB by default, raised per account
+        through the `outline_plans` table (paid plans), with an absolute backstop at 5 MiB —
+        above anything a browser can store; a rejected push fails without retries and the
+        status toolbar reports the error state
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper

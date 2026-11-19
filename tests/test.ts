@@ -302,6 +302,8 @@ export interface MockSupabaseOptions {
     alwaysFailUpsert?: boolean;
     /** Reject every upsert with the server's size-cap check violation (23514). */
     rejectUpsertTooLarge?: boolean;
+    /** The account's plan cap in bytes of `data` (runtime-mutable through `__mockSupabase.planCapBytes`). */
+    planCapBytes?: number;
     /** Delay only the first upsert, to observe the syncing state. */
     firstUpsertDelayMs?: number;
     /** Every head() probe reports a fresh timestamp, so the poll always pulls. */
@@ -344,6 +346,7 @@ export async function installMockSupabase(
             // Mutable at runtime, so a test can start failing after the unlock
             // save has settled instead of racing it.
             failUpserts: options.alwaysFailUpsert === true,
+            planCapBytes: options.planCapBytes ?? Number.POSITIVE_INFINITY,
             // A test sets this at runtime to fail the next N attempts.
             failUpsertTimes: 0
         };
@@ -386,6 +389,12 @@ export async function installMockSupabase(
                             state.upserts.push({ ...payload });
                             if (options.firstUpsertDelayMs && state.upsertCallCount === 1) {
                                 await new Promise<void>(resolve => setTimeout(resolve, options.firstUpsertDelayMs));
+                            }
+                            // The account's plan cap (the outline_plans trigger server-side):
+                            // a document at or above the cap is a check_violation, like the real
+                            // PostgREST shape, so the client maps it to too-large without retries.
+                            if (String(payload.data ?? '').length >= state.planCapBytes) {
+                                return { data: null, error: { message: 'Document exceeds the account plan cap.', code: '23514', status: 400 } };
                             }
                             if (options.rejectUpsertTooLarge) {
                                 return { data: null, error: { message: 'new row violates check constraint "outlines_data_size_check"', code: '23514', status: 400 } };
