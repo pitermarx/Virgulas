@@ -92,15 +92,16 @@ function isWithinZoom(nodeId: string, zoomId: string): boolean {
 // - pending: actionable now (no due date, or due date is today or in the past)
 // - scheduled: due date is strictly in the future
 // - done: completed tasks
-// Re-evaluated whenever any task signal, or the zoom, changes.
+// Re-evaluated whenever the (debounced) document version, the structure or
+// the zoom changes.
 export const groupedTasks = computed(() => {
-    // Subscribe to structural rebuilds (reset/deserialize) and immediate data changes.
-    // dirtyWrites increments synchronously on every mutation (update/addChild/deleteNode),
-    // so the panel reacts instantly instead of waiting for the debounced version bump.
-    // structureVersion is required because deserialize can restore the same dataVersion
-    // (often 0) inside a batch, which would otherwise leave this computed stale.
+    // structureVersion is required because deserialize can restore the same
+    // dataVersion (often 0) inside a batch, which would otherwise leave this
+    // computed stale. The debounced version (not the raw write counter) keeps
+    // the full grouping off the keystroke path: it re-runs once when typing
+    // settles instead of synchronously per key.
     void outline.structureVersion.value
-    void outline.dirtyWrites.value
+    void outline.version.value
     // Re-classify at midnight and when the tab returns to the foreground.
     void todayTick.value
     const zoomId = outline.zoomId.value
@@ -169,7 +170,10 @@ export interface TaskStats {
 
 export const taskStats = computed<TaskStats>(() => {
     void outline.structureVersion.value
-    void outline.dirtyWrites.value
+    // The debounced version, not the raw write counter: the toolbar badge may
+    // settle a beat after typing stops, and the O(document) scan stops running
+    // synchronously per keystroke.
+    void outline.version.value
     void todayTick.value
 
     let open = 0
@@ -185,9 +189,6 @@ export const taskStats = computed<TaskStats>(() => {
     }
     return { open, overdue }
 })
-
-// Count of open tasks (pending + scheduled)
-export const pendingTaskCount = computed(() => taskStats.value.open)
 
 // True when any pending task is overdue
 export const hasOverdueTasks = computed(() => taskStats.value.overdue)

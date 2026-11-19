@@ -279,9 +279,22 @@ export function clearMarkdownRenderCache() {
 function cachedRender(kind: 'inline' | 'block', text: string, decorateMeta: boolean, render: () => string): string {
     const key = `${kind}\u0000${decorateMeta ? '1' : '0'}\u0000${text}`
     const cached = renderCache.get(key)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) {
+        // Refresh insertion order so the eviction below drops the least
+        // recently rendered entry, not the oldest one still in use.
+        renderCache.delete(key)
+        renderCache.set(key, cached)
+        return cached
+    }
     const html = render()
-    if (renderCache.size >= RENDER_CACHE_LIMIT) renderCache.clear()
+    if (renderCache.size >= RENDER_CACHE_LIMIT) {
+        // Evict the least recently rendered entry. A clear-all here (the old
+        // behaviour) wiped every hit at once, so a document with more than
+        // RENDER_CACHE_LIMIT distinct texts re-rendered all of them in one
+        // stampede right after each wipe.
+        const oldest = renderCache.keys().next().value
+        if (oldest !== undefined) renderCache.delete(oldest)
+    }
     renderCache.set(key, html)
     return html
 }

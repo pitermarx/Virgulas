@@ -1,6 +1,6 @@
 import { signal, effect, createModel } from "@preact/signals"
 import { randomId, UnsupportedVersionError } from "./crypto2.js"
-import { CorruptDocumentError, MODEL_VERSION, type OutlineDoc } from './model.js'
+import { CorruptDocumentError, MODEL_VERSION, type OutlineDoc, type OutlineNode } from './model.js'
 import { NodeModel, type Node, type NodeInput, type NodeUpdate } from './node.js'
 import { createNavigation } from './navigation.js'
 import { createTreeOps } from './treeOps.js'
@@ -178,22 +178,27 @@ function outlineFactory() {
      * seam consumes; serialize() is only the JSON-text wrapper around it.
      */
     function snapshot(): OutlineDoc {
-        return {
-            modelVersion,
-            dataVersion: dataVersion.peek(),
-            nodes: [...map.values()]
-                .map(node => node.peek())
-                .map(node => ({
-                    id: node.id,
-                    parentId: node.parentId,
-                    text: node.text,
-                    description: node.description === '' ? undefined : node.description, // omit description if empty to save space
-                    children: node.children.length > 0 ? [...node.children] : undefined, // copy: the value must not alias the live model
-                    open: node.open === true ? undefined : node.open, // omit open if true to save space, since most nodes are open by default
-                    lastModified: node.lastModified > 0 ? node.lastModified : undefined, // omit lastModified when 0 for backwards compat
-                    done: node.done !== null && node.done !== undefined ? node.done : undefined, // omit done if null (not a task)
-                }))
+        const nodes: OutlineNode[] = []
+        for (const node of map.values()) {
+            // Read the node's signals directly: an intermediate peek()
+            // snapshot per node doubles the allocation on every save (perf-04).
+            const description = node.description.peek()
+            const children = node.children.peek()
+            const open = node.open.peek()
+            const done = node.done.peek()
+            const lastModified = node.lastModified
+            nodes.push({
+                id: node.id,
+                parentId: node.parentId,
+                text: node.text.peek(),
+                description: description === '' ? undefined : description, // omit description if empty to save space
+                children: children.length > 0 ? [...children] : undefined, // copy: the value must not alias the live model
+                open: open === true ? undefined : open, // omit open if true to save space, since most nodes are open by default
+                lastModified: lastModified > 0 ? lastModified : undefined, // omit lastModified when 0 for backwards compat
+                done: done !== null && done !== undefined ? done : undefined, // omit done if null (not a task)
+            })
         }
+        return { modelVersion, dataVersion: dataVersion.peek(), nodes }
     }
 
     function serialize(pretty = false) {

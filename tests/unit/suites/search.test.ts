@@ -128,15 +128,20 @@ describe('searchResults memo', () => {
       assert(first === second, 'repeated reads reuse the same object')
   })
 
-  it('invalidates when the document changes', () => {
+  it('invalidates when the document changes settle', () => {
       outline.addChild('root', { id: 'A', text: 'alpha' })
       searchQuery.value = 'alpha'
       assertEqual(searchResults.value.ids.join(','), 'A', 'initial match')
 
+      // The walk re-runs on the debounced document version, not the raw write
+      // counter, so a mutation invalidates once it settles (the version bump
+      // is simulated here the way the outline's debounce would fire it).
       outline.addChild('root', { id: 'B', text: 'alpha too' })
-      assertEqual(searchResults.value.ids.join(','), 'A,B', 'new match appears without re-setting the query')
+      outline.version.value = outline.version.peek() + 1
+      assertEqual(searchResults.value.ids.join(','), 'A,B', 'new match appears once typing settles')
 
       outline.updateNode('A', { text: 'changed' })
+      outline.version.value = outline.version.peek() + 1
       assertEqual(searchResults.value.ids.join(','), 'B', 'edited node drops out')
   })
 
