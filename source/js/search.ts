@@ -42,7 +42,10 @@ export const searchResults = computed<SearchResults>(() => {
     const query = searchQuery.value
     if (!query) return NO_RESULTS
 
-    void outline.dirtyWrites.value
+    // The debounced document version, not the raw write counter: while a
+    // search is open, background merges re-run the walk once when the change
+    // settles instead of synchronously per mutation.
+    void outline.version.value
     void outline.structureVersion.value
 
     const tree = outline.search(query)

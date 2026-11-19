@@ -1,7 +1,7 @@
 // Bump FONTS_CACHE when files in fonts/ or media/ change
 const FONTS_CACHE = 'virgulas-fonts-v8'
 // Bump APP_CACHE when the built app (bundle, HTML, CSS, manifest) changes
-const APP_CACHE = 'virgulas-app-v216'
+const APP_CACHE = 'virgulas-app-v219'
 
 const KNOWN_CACHES = new Set([FONTS_CACHE, APP_CACHE])
 
@@ -38,16 +38,14 @@ self.addEventListener('message', (event) => {
   }
 })
 
-// Font and icon assets — served cache-first; bump FONTS_CACHE on any change
+// Font and icon assets — served cache-first; bump FONTS_CACHE on any change.
+// Only the subsets a default locale renders are precached (~58 KB off the
+// first visit); the cache-first handler below fills any other subset on
+// demand, so nothing breaks for other scripts.
 const FONTS_SHELL = [
   './fonts/inter/inter-google.css',
-  './fonts/inter/inter-cyrillic.woff2',
-  './fonts/inter/inter-greek.woff2',
   './fonts/inter/inter-latin.woff2',
   './fonts/inter/inter-latin-ext.woff2',
-  './fonts/inter/inter-cyrillic-ext.woff2',
-  './fonts/inter/inter-vietnamese.woff2',
-  './fonts/inter/inter-greek-ext.woff2',
   './media/favicon.svg',
   './media/favicon.ico',
   './media/favicon-96x96.png',

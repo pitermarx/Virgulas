@@ -39,6 +39,10 @@ interface PersistedSession {
     tokens: TrailbaseTokens
     userId: string
     email?: string
+    /** The outlines row id, cached after the first write so saves stop
+     * re-downloading the record just to learn the id (the records API has no
+     * column projection — verified against the real server, 2026-11). */
+    rowId?: string | null
 }
 
 // ── Session persistence (Rule 7: via a store slot) ───────────────────────────
@@ -188,7 +192,12 @@ function headToken(updatedAt: unknown): string | null {
     return updatedAt === null || updatedAt === undefined ? null : String(updatedAt)
 }
 
-/** Lists the signed-in user's own outlines rows (the ACL scopes the list). */
+/** Lists the signed-in user's own outlines rows (the ACL scopes the list).
+ * Returns the FULL record: the TrailBase records API offers no column
+ * projection — `select`/`_select`/`columns`/`fields` are silently ignored
+ * (probed against the real server, 2026-11) — so a cheap `head()` cannot be
+ * built from this endpoint; only the write path avoids it, via the cached
+ * row id. */
 async function listOwn(config: BackendConfig): Promise<any | null> {
     const response = await authedFetch(config, `/api/records/v1/${RECORD_API}?_limit=1`, { method: 'GET' })
     if (response.status === 404) return null
@@ -229,8 +238,28 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
             const updatedAtMs = record.updatedAt && !Number.isNaN(Date.parse(record.updatedAt))
                 ? Date.parse(record.updatedAt)
                 : Date.now()
+
+            // The row id is stable per account: cached in the session after
+            // the first write, saves PATCH directly and stop re-downloading
+            // the whole record just to learn the id. A 404 (the row was
+            // deleted remotely, e.g. a reset on another device) drops the
+            // cache and falls back to the lookup.
+            if (session.rowId != null) {
+                const response = await authedFetch(config, `/api/records/v1/${RECORD_API}/${session.rowId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: record.data, salt: record.salt ?? null, updated_at: updatedAtMs })
+                })
+                if (response.status === 200) return headToken(updatedAtMs)
+                if (response.status !== 404) throw mapTrailbaseError(response.status, response.json)
+                session.rowId = null
+                writeSession(session)
+            }
+
             const existing = await listOwn(config)
             if (existing?.id !== undefined && existing?.id !== null) {
+                session.rowId = String(existing.id)
+                writeSession(session)
                 const response = await authedFetch(config, `/api/records/v1/${RECORD_API}/${existing.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -245,11 +274,25 @@ export function trailbaseRaw(config: BackendConfig): RawStore {
                     body: JSON.stringify({ user: session.userId, data: record.data, salt: record.salt ?? null, updated_at: updatedAtMs })
                 })
                 if (response.status !== 200) throw mapTrailbaseError(response.status, response.json)
+                const created = Array.isArray(response.json?.ids) ? response.json.ids[0] : null
+                if (created !== undefined && created !== null) {
+                    session.rowId = String(created)
+                    writeSession(session)
+                }
             }
             return headToken(updatedAtMs)
         },
 
         async clearRaw(): Promise<void> {
+            const session = readSession()
+            if (session?.rowId != null) {
+                const response = await authedFetch(config, `/api/records/v1/${RECORD_API}/${session.rowId}`, { method: 'DELETE' })
+                session.rowId = null
+                writeSession(session)
+                // 404 means the row is already gone: the cache is cleared either way.
+                if (response.status === 200 || response.status === 404) return
+                throw mapTrailbaseError(response.status, response.json)
+            }
             const existing = await listOwn(config)
             if (existing?.id === undefined || existing?.id === null) return
             const response = await authedFetch(config, `/api/records/v1/${RECORD_API}/${existing.id}`, { method: 'DELETE' })

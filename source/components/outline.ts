@@ -5,6 +5,7 @@
 // own files.
 
 import { html } from 'htm/preact'
+import { effect } from '@preact/signals'
 import outline from '../js/outline.js'
 import { renderInlineMarkdown } from '../js/markdown.js'
 import { isMobile } from '../js/utils.js'
@@ -20,6 +21,24 @@ function openSearchWithQuery(query: string) {
     searchQuery.value = nextQuery
     resetSearchNavigation()
 }
+
+// Focus and selection styling move through this effect, not the render:
+// NodeBody does not subscribe to focusId/selectedIds, so moving the focus no
+// longer re-renders every visible node body. The render still peeks the
+// current focus state, so a body re-rendered for its own reasons (children,
+// task state) writes the same classes the effect maintains.
+effect(() => {
+    const focused = focusId.value
+    const selected = selectedIds.value
+    for (const el of document.querySelectorAll('.node-focused')) el.classList.remove('node-focused')
+    for (const el of document.querySelectorAll('.node-selected')) el.classList.remove('node-selected')
+    const focusedEl = focused ? document.querySelector(`[data-node-id="${CSS.escape(focused)}"]`) : null
+    if (focusedEl) focusedEl.classList.add('node-focused')
+    for (const id of selected) {
+        const el = document.querySelector(`[data-node-id="${CSS.escape(id)}"]`)
+        if (el) el.classList.add('node-selected')
+    }
+})
 
 export function handleInteractiveMarkdownClick(e: any) {
     if (!(e?.target instanceof Element)) return false
@@ -186,14 +205,17 @@ function NodeText({ node }: any) {
 
 function NodeBody({ node }: any) {
     // Structure and task state only; text and description belong to NodeText
-    // and NodeDesc, so editing them must not re-render the body.
+    // and NodeDesc, so editing them must not re-render the body. Focus and
+    // selection are peeked, not subscribed: their styling moves through the
+    // module effect above, so an arrow key costs two class toggles instead
+    // of a re-render of every visible node.
     const id = node.id
     const children = node.children.value
     const open = node.open.value
     const done = node.done.value
     const hasChildren = children.length > 0
-    const isFocused = focusId.value === id
-    const isSelected = selectedIds.value.includes(id)
+    const isFocused = focusId.peek() === id
+    const isSelected = selectedIds.peek().includes(id)
     const isTask = done !== null
     const isDone = done === true
     const swipeState = {
@@ -294,7 +316,7 @@ function NodeBody({ node }: any) {
                 ${hasChildren && !open ? hasClosedChildrenBullet : hasChildren ? hasOpenChildrenBullet : NormalBullet}
             </svg>
         </span>
-        ${isTask && !isFocused && html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${(e: any) => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
+        ${isTask && html`<button class=${'task-checkbox' + (isDone ? ' task-checkbox--done' : '')} onClick=${(e: any) => { e.stopPropagation(); outline.checkboxToggleDone(id) }} aria-label=${isDone ? 'Mark undone' : 'Mark done'} aria-pressed=${isDone}>
             <svg viewBox="0 0 16 16" width="16" height="16">
                 ${isDone
                 ? html`<rect x="1" y="1" width="14" height="14" rx="3" fill="var(--color-accent-primary)"/><path d="M4 8l2.5 2.5L12 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
