@@ -148,6 +148,12 @@
   outline-offset: 1px;
 }
 
+/* The focused node hides its checkbox: editing shows the raw `[x]` prefix
+   instead. Pure CSS so focus moves never re-render the node body. */
+.node-focused .task-checkbox {
+  display: none;
+}
+
 /* ── Done node text ── */
 .node-content.node-done .node-text-input,
 .node-content.node-done .node-text-md {
