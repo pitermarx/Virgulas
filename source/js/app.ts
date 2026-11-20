@@ -34,6 +34,23 @@ import {
 } from './lockScreen.js';
 import { OptionsModal } from './options.js';
 
+/**
+ * The size-notice copy. Local mode offers the one-click Move flow, so its
+ * advice names it; Remote mode cannot offer one (the server row is the source
+ * of truth and a device mode switch never touches it), so it states the honest
+ * manual steps: export, then switch this device's mode.
+ */
+function quotaNoticeCopy(level: string, mode: string): string {
+  if (mode === 'remote') {
+    return level === 'full'
+      ? 'This document has reached its storage budget. Trim it, or export it and switch this device to File storage.'
+      : 'This document is getting large for its storage budget. Trim it, or export it and switch this device to File storage to keep growing.'
+  }
+  return level === 'full'
+    ? 'This document has reached its storage budget. Trim it \u2014 export a backup first \u2014 or move it to File storage.'
+    : 'This document is getting large for its storage budget. Trim it, or move it to File storage to keep growing.'
+}
+
 // Splash lifecycle. `appReady` flips once the initial auth state and the
 // webfont are ready; `splashDismissed` removes the node once its fade-out ends.
 const appReady = signal(false);
@@ -209,9 +226,11 @@ const Splash = () => {
             ${!isLocked && (persistence.getMode() === 'local' || persistence.getMode() === 'remote')
               && persistence.slotQuotaNotice.value !== 'ok' && html`
               <div class="storage-persistence-notice" role=${persistence.slotQuotaNotice.value === 'full' ? 'alert' : 'status'}>
-                <p>${persistence.slotQuotaNotice.value === 'full'
-                  ? 'This document has reached its storage budget. Trim it \u2014 export a backup first \u2014 or move it to File storage.'
-                  : 'This document is getting large for its storage budget. Trim it, or move it to File storage to keep growing.'}</p>
+                <p>${quotaNoticeCopy(persistence.slotQuotaNotice.value, persistence.getMode())}</p>
+                ${persistence.getMode() === 'local' && persistence.hasFilesystem() && html`
+                  <button type="button" class="toolbar-btn"
+                    onClick=${() => void persistence.moveToFilesystem()}>Move to File storage</button>
+                `}
                 <button type="button" class="toolbar-btn" aria-label="Dismiss size reminder" title="Dismiss size reminder"
                   onClick=${persistence.dismissSlotQuotaNotice}>×</button>
               </div>
