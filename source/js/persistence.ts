@@ -582,6 +582,55 @@ async function unlockFilesystem(initialDoc?: OutlineDoc) {
   return true
 }
 
+/**
+ * The "Move to File storage" action the large-document banner advises: write
+ * the live document to a destination file the save picker creates, switch the
+ * session to File mode on that handle, then clear the device-local copy — in
+ * that order, so no destructive confirm is needed: the file already holds the
+ * document before anything is cleared. Returns false when the user cancelled
+ * the picker or the write failed; the session is untouched in both cases.
+ */
+async function moveToFilesystem(): Promise<boolean> {
+  if (!fileHandleStore.isSupported()) return false
+  let handle: FileSystemFileHandle
+  try {
+    handle = await fileHandleStore.create()
+  } catch (error) {
+    // AbortError is the user closing the picker; anything else also leaves
+    // the session exactly as it was.
+    if ((error as { name?: string } | null)?.name !== 'AbortError') {
+      console.error('[Persistence] Move destination could not be picked:', error)
+    }
+    return false
+  }
+  // The document reaches the destination BEFORE the local copy is cleared:
+  // a failed write aborts the move with nothing lost.
+  setFileHandle(handle)
+  try {
+    await fileDataStore!.write(outline.snapshot())
+  } catch (error) {
+    console.error('[Persistence] Move write failed; nothing was cleared:', error)
+    setFileHandle(null)
+    return false
+  }
+  // The file holds the document now: the local copy is redundant, and the
+  // clear resets the quota state (the slot observer reports zero).
+  await localDataStore.clear()
+  // The Local passphrase is dead weight in an unencrypted mode — drop it with
+  // the key session instead of retaining it until the next lock.
+  keySession.lock()
+  localSaveFailed.value = false
+  setDocumentBudget(null)
+  batch(() => {
+    authMode.value = 'filesystem'
+    sessionState.value = 'filesystem'
+  })
+  rememberMode('filesystem')
+  // The file was just written with exactly this document: nothing is owed.
+  savePipeline.markSaved()
+  return true
+}
+
 async function unlock(code: string, options: UnlockOptions = {}) {
   const mode = options.mode || 'local'
   if (mode === 'memory') {
@@ -607,6 +656,7 @@ export default {
   isLocked: () => sessionState.value === 'locked',
   isMemory: () => sessionState.value === 'memory',
   hasFilesystem: () => fileHandleStore.isSupported(),
+  moveToFilesystem,
   getLastUsername: () => store.user.get('') || '',
   /**
    * sec-05: the passphrase never leaves KeySession. The only consumer that

@@ -192,6 +192,10 @@
         quota, chosen for save responsiveness — and a stronger alert at 97%; a dismissal is
         remembered per level, escalating to the alert re-arms it, and shrinking below a
         dismissed level resets it
+      - The Local size notice offers a "Move to File storage" action where the File System Access
+        API is available: the document is written to a destination file the user picks (created or
+        overwritten via the save picker), the session switches to File mode on that file, and the
+        local copy is cleared only after the write succeeds — no confirmation, because nothing is lost
       - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
       - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
       - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
@@ -206,7 +210,8 @@
         the remote save still completes and the status toolbar reports that the document is
         not saved locally; the state clears on the next successful local write
       - The same size reminder covers the encrypted offline copy, measured against the account's
-        plan cap
+        plan cap, advising to export and switch this device to File storage (a mode switch never
+        touches the server copy)
       - The server enforces a per-account document cap: 1 MiB by default, raised per account
         through the `outline_plans` table (paid plans), with an absolute backstop at 5 MiB —
         above anything a browser can store; a rejected push fails without retries and the
@@ -454,6 +459,9 @@
     - Export writes the current document as plain VMD text
     - Import replaces the document with the imported VMD and re-encrypts it on the next save
     - File mode is already plain VMD on disk and needs no export/import step
+    - The Local size banner's "Move to File storage" writes the current document to a user-picked
+      `.vmd` file and switches the device to File mode in one step; the local encrypted copy is
+      cleared only after the file write succeeds
   + INTERFACE
     + STATUS TOOLBAR
       A fixed bar at the bottom of the screen containing:

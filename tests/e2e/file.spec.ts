@@ -1,4 +1,4 @@
-import { test, expect, type Page, submitLockSheet } from '../test';
+import { test, expect, type Page, submitLockSheet, setupDoc } from '../test';
 
 /**
  * Installs a mock File System Access API and a mock IndexedDB backend for
@@ -477,5 +477,52 @@ test.describe('File mode', () => {
         await expect(page.locator('#splash')).toBeHidden();
         // Falls back to the in-memory tour.
         await expect(page.locator('.node-content').first()).toContainText('Welcome to Virgulas');
+    });
+
+    test('Move to File storage writes the document, switches mode and clears the local copy', async ({ page }) => {
+        // A Local document over 60% of its 2 MB budget shows the size banner,
+        // whose Move action replaces the export -> lock -> Change-mode
+        // (destructive confirm) -> reopen round trip.
+        await installMockFilesystem(page);
+        // The stored envelope is deflate-compressed, so repeated filler
+        // compresses ~400:1 and never reaches the budget: seed genuinely
+        // random text instead. ~1.8 MB of it encrypts to a ~1.58 MB slot —
+        // about 75% of the 2 MB Local budget, safely past the 60% reminder
+        // and far from the 97% alert.
+        let big = '';
+        while (big.length < 1_800_000) big += Math.random().toString(36).slice(2) + ' ';
+        await setupDoc(page, {
+            id: 'root', text: 'Root',
+            children: [
+                { id: 'mark', text: 'Move me marker', children: [] },
+                { id: 'big', text: big, children: [] }
+            ]
+        });
+
+        // The banner offers the move its copy promises.
+        const notice = page.locator('.storage-persistence-notice', { hasText: 'getting large' });
+        await expect(notice).toBeVisible();
+        const move = page.getByRole('button', { name: 'Move to File storage' });
+        await expect(move).toBeVisible();
+
+        await move.click();
+
+        // The destination file holds the document, the mode is File, and the
+        // local copy — and the banner with it — are gone. No confirm dialog
+        // stood in the way.
+        await expect(page.locator('.status-mode')).toHaveText('File');
+        await expect(page.locator('.storage-persistence-notice')).toHaveCount(0);
+        expect(await page.evaluate(() => localStorage.getItem('vmd_data_enc'))).toBeNull();
+        const moved = await page.evaluate(() => (window as any).__fsMockFiles['mock-file-new']);
+        expect(moved.content).toContain('Move me marker');
+        await expect(page.locator('.node-content').first()).toContainText('Move me marker');
+
+        // The destination was remembered: a reload reopens it without a picker.
+        const pickerCalls = await page.evaluate(() => (window as any).__showOpenFilePickerCallCount);
+        await page.reload();
+        await submitLockSheet(page);
+        await expect(page.locator('.status-mode')).toHaveText('File');
+        await expect(page.locator('.node-content').first()).toContainText('Move me marker');
+        expect(await page.evaluate(() => (window as any).__showOpenFilePickerCallCount)).toBe(pickerCalls);
     });
 });

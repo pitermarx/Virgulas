@@ -42,4 +42,21 @@ describe('fileHandleStore', () => {
         assertEqual(await fileHandleStore.hasSavedHandle(), false, 'no handle stored')
         assertEqual(await fileHandleStore.tryReopen(), false, 'nothing to reopen')
     })
+
+    it('create() picks a save destination and remembers it for reopens', async () => {
+        let picked: unknown = null
+        ;(globalThis as any).showSaveFilePicker = async (options: unknown) => {
+            picked = options
+            return handleWithPermission('granted')
+        }
+        try {
+            const handle = await fileHandleStore.create()
+            assertEqual(handle.name, 'notes.vmd', 'the save-picker handle is returned')
+            assertEqual(fileHandleStore.currentHandle()?.name, 'notes.vmd', 'and becomes the current handle')
+            assertEqual(await fileHandleStore.hasSavedHandle(), true, 'so a reload can reopen it')
+            assertEqual((picked as { suggestedName?: string })?.suggestedName, 'virgulas.vmd', 'a .vmd name is suggested')
+        } finally {
+            delete (globalThis as any).showSaveFilePicker
+        }
+    })
 })

@@ -27,6 +27,21 @@ export const fileHandleStore = {
         await this.save(handle)
     },
 
+    /**
+     * Creates or overwrites a destination file (the Move flow): the save
+     * picker can name a file that does not exist yet, which the open picker
+     * cannot. Nothing is written here — the bytes are the file store's job.
+     */
+    async create() {
+        const handle = await window.showSaveFilePicker!({
+            suggestedName: 'virgulas.vmd',
+            types: [{ description: 'Virgulas document', accept: { 'text/plain': ['.vmd'] } }]
+        })
+        current = handle
+        await this.save(handle)
+        return handle
+    },
+
     /** Reopens the remembered handle; false means "ask the user". */
     async tryReopen() {
         const handle = await handles.get<FileSystemFileHandle>(IDB_KEY).catch(() => null)
