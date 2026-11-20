@@ -295,6 +295,8 @@
         the device locks and prompts for the new passphrase instead of the next push silently reverting the rotation
       - Uploads are scheduled after typing pauses, so active typing supersedes stale background sync attempts
       - If the upload fails it is retried with exponential back-off (3 retries) then abandoned until the next write
+        A rejection for size (HTTP 413 or the row's size-cap check) is never retried: the same document
+        cannot fit until it shrinks
       - Merge is performed at the node level using per-node `lastModified` timestamps and a single `lastSyncedAt` timestamp
         - Node modified only on one side since `lastSyncedAt` → that side wins, no user action needed
         - Node modified on both sides → per-field direct value comparison:
@@ -311,10 +313,14 @@
         Per-conflict: "Keep local" / "Keep remote" buttons; bulk: "Use all local" / "Use all remote"
         "Apply" is disabled until every conflict has a resolution; pressing it pushes the merged result
       - The status toolbar shows a sync indicator while the user is signed in
-        Possible states: synced, syncing, unsynced (local edits not yet uploaded), error, offline
+        Possible states: synced, syncing, unsynced (local edits not yet uploaded), error, offline, too-large
         A failed write of the device-local offline copy is reported as save-failed instead:
         the remote save still completes, and the indicator returns to the sync state after
         the next successful local write
+        A push the server rejected for size is reported as too-large instead of error:
+        the indicator reads "Too large" and a badge says the document is too large to sync
+        and advises trimming it or exporting/moving it; the state clears on the next
+        successful upload
     + DATABASE SCHEMA
       - `outlines` table
         - `user_id` uuid primary key — references auth.users, cascade on delete

@@ -67,7 +67,7 @@ describe('sync indicator contrast and shape (a11y-03)', () => {
     }
 
     it('every sync state has its own glyph, not just a colour', () => {
-        for (const state of ['synced', 'syncing', 'unsynced', 'offline']) {
+        for (const state of ['synced', 'syncing', 'unsynced', 'offline', 'too-large']) {
             assert(ui.includes(`case '${state}':`), `syncIcon must draw the ${state} state`)
         }
         assert(ui.includes('SYNC_LABELS'), 'the indicator needs a visible state label')

@@ -113,7 +113,8 @@ Choose per device; your choice is remembered:
   saved back automatically after you pause typing.
 
 Remote sync pulls before it pushes, merges per node, and resolves same-field conflicts with a
-side-by-side "Keep local / Keep remote" dialog instead of guessing.
+side-by-side "Keep local / Keep remote" dialog instead of guessing. A document the server rejects
+for size shows its own "too large to sync" status instead of a generic sync error.
 
 Other data tools: export/import `.vmd` backups, change your encryption passphrase, and enable
 biometric unlock (fingerprint/face/device PIN) for this device.

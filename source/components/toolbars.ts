@@ -72,8 +72,12 @@ const SYNC_LABELS: Record<string, string> = {
     unsynced: 'Not synced',
     error: 'Sync error',
     offline: 'Offline',
+    'too-large': 'Too large',
     'save-failed': 'Not saved'
 }
+
+/** The remote too-large advice: permanent until the user acts on it. */
+const TOO_LARGE_HINT = 'The server rejected the document for size — trim it, or export or move it from Options.'
 
 // a11y-03: every state has its own glyph, so colour is never the only cue.
 function syncIcon(state: string) {
@@ -87,6 +91,9 @@ function syncIcon(state: string) {
             return svg(html`<path d="M6 10V2.7" /><path d="M3 5.5l3-3 3 3" />`)
         case 'offline':
             return svg(html`<path d="M3.6 9.2a2.7 2.7 0 0 1-.3-5.4 3.4 3.4 0 0 1 6.4.9 2.2 2.2 0 0 1-.3 4.3" /><path d="M2 10.6L10 1.8" />`)
+        case 'too-large':
+            // An upload stopped at the server's size ceiling.
+            return svg(html`<path d="M3.5 2.1h5" /><path d="M6 9.6V4.3" /><path d="M3.6 6.8L6 4.3 8.4 6.8" />`)
         default:
             return svg(html`<path d="M6 2.5v4.2" /><path d="M6 9.4v.2" />`)
     }
@@ -136,6 +143,7 @@ export function StatusToolbar() {
         error: 'var(--color-danger)',
         offline: 'var(--color-offline)',
         unsynced: 'var(--color-danger)',
+        'too-large': 'var(--color-danger)',
         'save-failed': 'var(--color-danger)'
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
@@ -166,6 +174,9 @@ export function StatusToolbar() {
             ${!isMemory && html`<${QuotaDonut} />`}
             ${localSaveFailed.value
             ? html`<span class="status-save-failed" title=${saveFailedLabel}>${saveFailedLabel}</span>`
+            : null}
+            ${mode === 'remote' && syncStatus.value === 'too-large'
+            ? html`<span class="status-too-large" title=${TOO_LARGE_HINT}>Too large to sync</span>`
             : null}
             ${mode === 'remote' && remoteIdentity ? html`<span class="status-user" title=${remoteIdentity}>${remoteIdentity}</span>` : null}
             <span class="status-brand">${isMobile ? "V" : "Virgulas"}</span>

@@ -407,7 +407,8 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   font-style: italic;
 }
 
-.status-save-failed {
+.status-save-failed,
+.status-too-large {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.03em;

@@ -72,7 +72,7 @@ test.describe('Sync status indicator', () => {
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
     });
 
-    test('an oversized document is rejected once: error status, no retry burn', async ({ page }) => {
+    test('an oversized document is rejected once: too-large status, no retry burn', async ({ page }) => {
         await page.goto('/');
         const payload = await buildEncryptedPayload(page, 'sync-pass');
 
@@ -89,8 +89,10 @@ test.describe('Sync status indicator', () => {
 
         await editFirstNode(page, 'Oversized Edit');
 
-        // The server's size-cap check violation (23514) fails the push at once.
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
+        // The server's size-cap check violation (23514) fails the push at once
+        // and surfaces as the dedicated status, not a transient sync error.
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: too-large', { timeout: 10000 });
+        await expect(page.locator('.status-too-large')).toHaveText('Too large to sync');
         const upserts = await page.evaluate(() => (window as any).__mockSupabase.upserts.length);
         expect(upserts).toBe(1);
     });
@@ -117,12 +119,14 @@ test.describe('Sync status indicator', () => {
         // The plan drops below the document size: the push is rejected at once.
         await page.evaluate(() => { (window as any).__mockSupabase.planCapBytes = 10; });
         await editFirstNode(page, 'Over-cap edit');
-        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: error', { timeout: 10000 });
+        await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: too-large', { timeout: 10000 });
+        await expect(page.locator('.status-too-large')).toBeVisible();
 
         // The plan is raised again: the next save retries and lands.
         await page.evaluate(() => { (window as any).__mockSupabase.planCapBytes = 10_000_000; });
         await editFirstNode(page, 'Recovered edit');
         await expect(page.locator('.sync-dot')).toHaveAttribute('title', 'Sync: synced', { timeout: 10000 });
+        await expect(page.locator('.status-too-large')).toHaveCount(0);
     });
 
     test('sync-dot shows offline when navigator.onLine is false and upload fails', async ({ page }) => {
