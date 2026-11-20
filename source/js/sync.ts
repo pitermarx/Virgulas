@@ -111,7 +111,18 @@ export const remoteSync = {
 
     /** Eager backend resolution — the wizard's cloud path calls this so the
      * credentials form names the resolved server as soon as it renders. */
-    resolveBackend: async () => backend()
+    resolveBackend: async () => backend(),
+
+    /**
+     * The account's document budget in bytes, when the backend knows one
+     * (Supabase's outline_plans row; no row means the free default). Absent
+     * (TrailBase) or failed reads yield null: no server budget, the browser
+     * quota binds.
+     */
+    documentBudget: async () => {
+        const { raw } = await backend()
+        return raw.documentBudget?.() ?? null
+    }
 }
 
 // ── Background polling (docs §6.4) ───────────────────────────────────────────

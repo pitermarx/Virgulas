@@ -73,8 +73,11 @@ test.describe('Admin / Options modal', () => {
     await openOptions(page);
 
     await expect(page.getByText('Blob', { exact: true })).toBeVisible();
-    await expect(page.getByText(/AES-GCM-256/)).toBeVisible();
-    await expect(page.getByText(/PBKDF2 600k/)).toBeVisible();
+    // The blob line is budget-based and MB-first: the Local budget is 2 MB,
+    // with no crypto alphabet soup.
+    await expect(page.getByText(/of 2.0 MB browser storage/)).toBeVisible();
+    await expect(page.getByText(/AES-GCM-256/)).toHaveCount(0);
+    await expect(page.getByText(/PBKDF2 600k/)).toHaveCount(0);
   });
 
   test('exports the current document as a .vmd download', async ({ page }) => {

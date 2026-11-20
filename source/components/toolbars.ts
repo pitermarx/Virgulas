@@ -5,6 +5,7 @@ import { html } from 'htm/preact'
 import { signal } from '@preact/signals'
 import outline from '../js/outline.js'
 import persistence, { localSaveFailed } from '../js/persistence.js'
+import { activeBudgetBytes, documentBudgetBytes, formatBytes, slotUsageBytes } from '../js/quota.js'
 import { renderBlockMarkdown } from '../js/markdown.js'
 import { isMobile } from '../js/utils.js'
 import { zoomIn, handleSearchKeyDown, enterSearchMode, toggleSearchMode, tasksPanelOpen, optionsOpen } from '../js/shortcuts.js'
@@ -71,8 +72,12 @@ const SYNC_LABELS: Record<string, string> = {
     unsynced: 'Not synced',
     error: 'Sync error',
     offline: 'Offline',
+    'too-large': 'Too large',
     'save-failed': 'Not saved'
 }
+
+/** The remote too-large advice: permanent until the user acts on it. */
+const TOO_LARGE_HINT = 'The server rejected the document for size — trim it, or export or move it from Options.'
 
 // a11y-03: every state has its own glyph, so colour is never the only cue.
 function syncIcon(state: string) {
@@ -86,9 +91,40 @@ function syncIcon(state: string) {
             return svg(html`<path d="M6 10V2.7" /><path d="M3 5.5l3-3 3 3" />`)
         case 'offline':
             return svg(html`<path d="M3.6 9.2a2.7 2.7 0 0 1-.3-5.4 3.4 3.4 0 0 1 6.4.9 2.2 2.2 0 0 1-.3 4.3" /><path d="M2 10.6L10 1.8" />`)
+        case 'too-large':
+            // An upload stopped at the server's size ceiling.
+            return svg(html`<path d="M3.5 2.1h5" /><path d="M6 9.6V4.3" /><path d="M3.6 6.8L6 4.3 8.4 6.8" />`)
         default:
             return svg(html`<path d="M6 2.5v4.2" /><path d="M6 9.4v.2" />`)
     }
+}
+
+/**
+ * The storage-usage ring: the document's share of its binding budget — the
+ * browser's quota in Local mode, the account's plan cap in Remote mode. Amber
+ * at 60% of that budget, red at 97% and over.
+ */
+export function QuotaDonut() {
+    const mode = persistence.getMode()
+    const used = slotUsageBytes.value
+    if ((mode !== 'local' && mode !== 'remote') || used <= 0) return null
+    const plan = mode === 'remote' ? documentBudgetBytes.value : null
+    const budget = activeBudgetBytes()
+    const fraction = Math.min(1, used / budget)
+    const over = used > budget
+    const color = over || fraction >= 0.97
+        ? 'var(--color-danger)'
+        : fraction >= 0.6 ? 'var(--color-syncing)' : 'var(--color-offline)'
+    const title = `Storage: ${formatBytes(used)} of ${formatBytes(budget)} ${plan !== null ? 'plan cap' : 'browser storage'}${over ? ' — over' : ''} (${Math.round(used / budget * 100)}%)`
+    const c = 2 * Math.PI * 5.5
+    return html`
+    <span class="quota-donut" role="img" title=${title} aria-label=${title}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.25"/>
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke=${color} stroke-width="2.5"
+          stroke-dasharray="${(c * fraction).toFixed(2)} ${c.toFixed(2)}" stroke-linecap="round" transform="rotate(-90 8 8)"/>
+      </svg>
+    </span>`
 }
 
 export function StatusToolbar() {
@@ -107,6 +143,7 @@ export function StatusToolbar() {
         error: 'var(--color-danger)',
         offline: 'var(--color-offline)',
         unsynced: 'var(--color-danger)',
+        'too-large': 'var(--color-danger)',
         'save-failed': 'var(--color-danger)'
     }
     const color = dotColors[syncState] || 'var(--color-danger)'
@@ -134,8 +171,12 @@ export function StatusToolbar() {
             ${isMemory
             ? html`<span class="status-memory-badge" title="Document lives in memory only — lost on close">In memory \u2014 not saved</span>`
             : html`<span class="status-mode" title="Current storage mode">${modeLabel(mode)}</span>`}
+            ${!isMemory && html`<${QuotaDonut} />`}
             ${localSaveFailed.value
             ? html`<span class="status-save-failed" title=${saveFailedLabel}>${saveFailedLabel}</span>`
+            : null}
+            ${mode === 'remote' && syncStatus.value === 'too-large'
+            ? html`<span class="status-too-large" title=${TOO_LARGE_HINT}>Too large to sync</span>`
             : null}
             ${mode === 'remote' && remoteIdentity ? html`<span class="status-user" title=${remoteIdentity}>${remoteIdentity}</span>` : null}
             <span class="status-brand">${isMobile ? "V" : "Virgulas"}</span>

@@ -94,7 +94,9 @@ Choose per device; your choice is remembered:
   source.)
 - **Local** — encrypted in this browser with a passphrase. No account. After the first save, Options
   shows whether the browser granted persistent storage; if not, the app recommends regular exports
-  or using File/Remote mode.
+  or using File/Remote mode. A usage ring in the status toolbar tracks the document against its
+  2 MB storage budget (a product line below the browser's physical quota, so saves stay quick);
+  a dismissible reminder appears past 60% and a stronger alert at 97%.
 - **Remote** — encrypted and synced to a cloud backend: the TrailBase instance serving the app
   (self-hosted or hosted), with the hosted Supabase project as the fallback for static deployments.
   An account email/password controls access; a separate passphrase controls encryption, so the
@@ -102,14 +104,17 @@ Choose per device; your choice is remembered:
   sign-in form emails a reset link (your encrypted notes are untouched — the passphrase is
   separate). The device keeps an encrypted offline copy; if that copy cannot be written (for
   example the browser's storage is full), the remote save still completes and the status toolbar
-  says the document is not saved locally. Deleting the account removes the server document and,
+  says the document is not saved locally. The same size reminder covers the offline copy, and the
+  usage ring tracks the account's plan cap — 1 MiB by default, raised for paid plans, with a 5 MiB
+  backstop — without retrying. Deleting the account removes the server document and,
   on a TrailBase server, the account itself; the hosted Supabase fallback keeps the account
   record unless support removes it.
 - **File** — open or create a plain `.vmd` file on disk (File System Access API). No encryption,
   saved back automatically after you pause typing.
 
 Remote sync pulls before it pushes, merges per node, and resolves same-field conflicts with a
-side-by-side "Keep local / Keep remote" dialog instead of guessing.
+side-by-side "Keep local / Keep remote" dialog instead of guessing. A document the server rejects
+for size shows its own "too large to sync" status instead of a generic sync error.
 
 Other data tools: export/import `.vmd` backups, change your encryption passphrase, and enable
 biometric unlock (fingerprint/face/device PIN) for this device.

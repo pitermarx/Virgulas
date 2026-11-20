@@ -200,6 +200,25 @@ describe('syncOnce — push', () => {
         assertEqual(syncStatus.peek(), 'error', 'the failure is surfaced')
     })
 
+    it('maps a too-large rejection to its own status, not the generic error', async () => {
+        const fake = fakeStore({ write: async () => { throw new StoreError('too-large', 'Document exceeds the account plan cap.') } })
+        setRemoteStore(fake.store)
+
+        const outcome = await syncOnce({ doc: LOCAL, attempt: createRemoteSyncAttempt() })
+
+        assertEqual(outcome.kind, 'failed', 'typed failure')
+        assertEqual(fake.writes.length, 1, 'a size rejection is not retried')
+        assertEqual(syncStatus.peek(), 'too-large', 'the dedicated status, not a transient sync error')
+
+        // The condition lasts only until the document fits again: the next
+        // successful push settles the indicator.
+        const good = fakeStore()
+        setRemoteStore(good.store)
+        const recovered = await syncOnce({ doc: LOCAL, attempt: createRemoteSyncAttempt() })
+        assertEqual(recovered.kind, 'pushed', 'the trimmed document lands')
+        assertEqual(syncStatus.peek(), 'synced', 'the status clears')
+    })
+
     it('pushes when the head moved but the remote row is gone', async () => {
         const fake = fakeStore({ head: 'h2', remote: null })
         setRemoteStore(fake.store)

@@ -171,6 +171,14 @@ export interface RawStore {
     /** Cheap existence probe — no key or session required. */
     exists(): Promise<boolean>
     head?(): Promise<string | null>
+    /**
+     * The account's document budget in bytes, when the backend knows one
+     * (Supabase's outline_plans row; no row means the backend's free
+     * default). Null/absent: no server-side budget — the browser quota is
+     * the binding allowance. A typed failure propagates; the caller falls
+     * back rather than misreport a cap.
+     */
+    documentBudget?(): Promise<number | null>
 }
 
 // ── Unlock result (§4.3) ─────────────────────────────────────────────────

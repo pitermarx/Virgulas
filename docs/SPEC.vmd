@@ -187,6 +187,11 @@
       - If a Local save fails (for example the document no longer fits the browser's storage quota),
         the status toolbar reports a save-failed state instead of silently dropping the save;
         the state clears on the next successful save
+      - As the stored document grows, a dismissible reminder appears once it passes ~60% of its
+        storage budget — 2 MB in Local mode, a product line below the browser's physical ~5 MB
+        quota, chosen for save responsiveness — and a stronger alert at 97%; a dismissal is
+        remembered per level, escalating to the alert re-arms it, and shrinking below a
+        dismissed level resets it
       - Options reports the Local copy as "Persistent" or "Best-effort" based on the Storage API result
       - When storage remains best-effort, show a one-time dismissible reminder to export backups periodically or use File or Remote mode
       - Treat Apple-vendor browser tabs outside standalone display mode as best-effort because WebKit may proactively evict script-written data
@@ -200,6 +205,12 @@
       - If that offline copy cannot be written (for example the browser's storage quota is full),
         the remote save still completes and the status toolbar reports that the document is
         not saved locally; the state clears on the next successful local write
+      - The same size reminder covers the encrypted offline copy, measured against the account's
+        plan cap
+      - The server enforces a per-account document cap: 1 MiB by default, raised per account
+        through the `outline_plans` table (paid plans), with an absolute backstop at 5 MiB —
+        above anything a browser can store; a rejected push fails without retries and the
+        status toolbar reports the error state
     + FILE MODE
       - The user opens or creates a `.vmd` file on disk using the browser File System Access API
       - The document is read and written as plain VMD text — no encryption, no JSON wrapper
@@ -284,6 +295,8 @@
         the device locks and prompts for the new passphrase instead of the next push silently reverting the rotation
       - Uploads are scheduled after typing pauses, so active typing supersedes stale background sync attempts
       - If the upload fails it is retried with exponential back-off (3 retries) then abandoned until the next write
+        A rejection for size (HTTP 413 or the row's size-cap check) is never retried: the same document
+        cannot fit until it shrinks
       - Merge is performed at the node level using per-node `lastModified` timestamps and a single `lastSyncedAt` timestamp
         - Node modified only on one side since `lastSyncedAt` → that side wins, no user action needed
         - Node modified on both sides → per-field direct value comparison:
@@ -300,10 +313,14 @@
         Per-conflict: "Keep local" / "Keep remote" buttons; bulk: "Use all local" / "Use all remote"
         "Apply" is disabled until every conflict has a resolution; pressing it pushes the merged result
       - The status toolbar shows a sync indicator while the user is signed in
-        Possible states: synced, syncing, unsynced (local edits not yet uploaded), error, offline
+        Possible states: synced, syncing, unsynced (local edits not yet uploaded), error, offline, too-large
         A failed write of the device-local offline copy is reported as save-failed instead:
         the remote save still completes, and the indicator returns to the sync state after
         the next successful local write
+        A push the server rejected for size is reported as too-large instead of error:
+        the indicator reads "Too large" and a badge says the document is too large to sync
+        and advises trimming it or exporting/moving it; the state clears on the next
+        successful upload
     + DATABASE SCHEMA
       - `outlines` table
         - `user_id` uuid primary key — references auth.users, cascade on delete
@@ -441,6 +458,9 @@
     + STATUS TOOLBAR
       A fixed bar at the bottom of the screen containing:
       - The current storage mode, or "In memory — not saved" in Memory mode
+      - A small storage-usage ring beside the mode: the document's share of its budget — the
+        2 MB Local budget, the account's plan cap in Remote mode — amber
+        from 60% of that budget, red from 97% and when over it
       - A sync status indicator, visible only when the user is signed in, with synced / syncing /
         unsynced / error / offline states
       - A "Search" button on mobile
@@ -450,7 +470,9 @@
     + OPTIONS PANEL
       - Summary: storage mode, encryption status, email/username, account password (Remote), and
         encryption passphrase are shown with inline "Change" actions
-      - Blob line: encrypted size in characters, `AES-GCM-256 · PBKDF2 600k`
+      - Blob line: the document's encrypted size against its storage budget, MB-first
+        (for example `1.4 MB of 1.0 MB plan cap`); no crypto parameters — the privacy page
+        documents those
       - Biometric unlock section: "Enable on this device" / "Forget this device" when supported
       - Quick capture section: entry-point summary, the "Save to" bookmarklet, and the Inbox node name
       - Data section: export and import `.vmd`

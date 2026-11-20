@@ -28,6 +28,7 @@ function serializeTimestamp(iso: string | undefined): string | undefined {
 interface FakeOptions {
     row?: { salt?: string | null; data?: string; updated_at?: string } | null
     tableError?: any                  // returned by every from('outlines') call
+    planRow?: number | null          // from('outline_plans'): cap in bytes; null = PGRST116 (free default)
     sessionUser?: any                  // auth.getSession() → data.session.user
     signUp?: { user: any; session: any; error?: any }
     resetError?: any                   // auth.resetPasswordForEmail → error
@@ -75,6 +76,18 @@ function fakeSupabaseClient(options: FakeOptions = {}) {
             }
         },
         from(table: string) {
+            if (table === 'outline_plans') {
+                return {
+                    select: (columns: string) => ({
+                        single: async () => {
+                            calls.push(`plans:select:${columns}`)
+                            if (options.planRow === null) return { data: null, error: { code: 'PGRST116', message: 'Row not found' } }
+                            if (options.tableError) return { data: null, error: options.tableError }
+                            return { data: options.planRow === undefined ? null : { max_data_bytes: options.planRow }, error: null }
+                        }
+                    })
+                }
+            }
             assertEqual(table, 'outlines', 'only the outlines table is used')
             return {
                 select: (columns: string) => ({
@@ -160,6 +173,27 @@ describe('supabaseRaw — record mapping', () => {
 
       const rejected = supabaseRaw(fakeSupabaseClient({ tableError: { status: 400, message: 'Bad request' } }).client)
       await expectStoreError(() => rejected.readRaw(), 'invalid-input', '400')
+  })
+
+  it('a check-constraint rejection (23514) maps to too-large — the server size cap is not retryable', async () => {
+      // PostgREST reports the size-cap constraint as a 400 plus the Postgres
+      // code, so it must be matched before the invalid-input catch-all.
+      const oversized = supabaseRaw(fakeSupabaseClient({ tableError: { status: 400, code: '23514', message: 'new row violates check constraint "outlines_data_size_check"' } }).client)
+      const error = await expectStoreError(() => oversized.readRaw(), 'too-large', '23514')
+      assertEqual(error.message.includes('outlines_data_size_check'), true, 'provider message preserved')
+  })
+})
+
+describe('supabaseRaw — document budget', () => {
+  it('reads the plan cap; no row is the free default; typed failures propagate', async () => {
+      const pro = supabaseRaw(fakeSupabaseClient({ planRow: 5242879 }).client)
+      assertEqual(await pro.documentBudget!(), 5242879, 'plan row cap')
+
+      const free = supabaseRaw(fakeSupabaseClient({ planRow: null }).client)
+      assertEqual(await free.documentBudget!(), 1048576, 'no plan row: free default')
+
+      const offline = supabaseRaw(fakeSupabaseClient({ tableError: { message: 'TypeError: Failed to fetch' } }).client)
+      await expectStoreError(() => offline.documentBudget!(), 'network', 'plan read transport failure')
   })
 })
 

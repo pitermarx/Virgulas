@@ -246,5 +246,6 @@ export const store = {
     scheduledWindow: slot('vmd_scheduled_window'),
     inboxNodeName: slot('vmd_inbox_node_name'),
     inboxQueue: slot('vmd_inbox_queue'),
-    storageNoticeDismissed: slot('vmd_storage_notice_dismissed')
+    storageNoticeDismissed: slot('vmd_storage_notice_dismissed'),
+    quotaDismissed: slot('vmd_quota_dismissed')
 }

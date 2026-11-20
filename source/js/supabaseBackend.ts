@@ -143,6 +143,12 @@ function isRowNotFound(error: any): boolean {
     return error?.code === 'PGRST116'
 }
 
+/**
+ * The free plan's default cap, in bytes. Mirrors the `coalesce` default in
+ * supabase/schemas/outline_plans.sql — an account with no plan row.
+ */
+export const FREE_PLAN_BYTES = 1_048_576
+
 function mapSupabaseError(error: any): StoreError {
     if (isRowNotFound(error)) {
         return new StoreError('not-found', 'No stored document on the server.', error)
@@ -158,6 +164,14 @@ function mapSupabaseError(error: any): StoreError {
     // path (the retry policy must not burn three attempts on it), and the rest
     // of the 4xx family is invalid input. Mirrors the TrailBase adapter.
     if (status === 413) {
+        return new StoreError('too-large', message, error)
+    }
+    // A check-constraint violation on the row is the server refusing a
+    // document above its size cap (supabase/schemas/outlines.sql): the same
+    // request cannot succeed on retry, so it maps like a 413. PostgREST
+    // reports it as a 400 with the Postgres code, so it must be matched
+    // before the invalid-input catch-all.
+    if (error?.code === '23514') {
         return new StoreError('too-large', message, error)
     }
     if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
@@ -256,6 +270,21 @@ export function supabaseRaw(client: any): RawStore {
                 if (error instanceof StoreError && error.code === 'not-found') return false
                 throw error
             }
+        },
+
+        /**
+         * The account's plan cap (RLS scopes the read to the caller's own
+         * row). No row is the free default the trigger applies; a typed
+         * failure propagates so the caller can fall back to the browser
+         * quota instead of misreporting a cap.
+         */
+        async documentBudget(): Promise<number | null> {
+            const { data, error } = await client.from('outline_plans').select('max_data_bytes').single()
+            if (error) {
+                if (isRowNotFound(error)) return FREE_PLAN_BYTES
+                throw mapSupabaseError(error)
+            }
+            return typeof data?.max_data_bytes === 'number' ? data.max_data_bytes : FREE_PLAN_BYTES
         },
 
         head

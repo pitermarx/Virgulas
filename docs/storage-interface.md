@@ -335,7 +335,8 @@ as `cause`, so the lock screen's `instanceof` branches keep working.
 
 Adapter mapping: Supabase `PGRST116` → `not-found` (surfaced as `read() → null`);
 401s → `unauthenticated`; transport failures → `network` (retryable — the
-orchestration's backoff keys off this); the 16 MiB size check → `too-large`
+orchestration's backoff keys off this); a size-cap rejection — the per-account plan cap or the
+absolute row cap — surfaces as a check violation (23514) → `too-large`
 (adapters enforce their own bounds, mirroring the SQL constraints); a
 localStorage quota failure in the local slot → `too-large` as well, surfaced
 instead of swallowed (fixes data-06).

@@ -382,6 +382,14 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   text-transform: uppercase;
 }
 
+/* The storage-usage ring in the status toolbar (see toolbars.ts). */
+.quota-donut {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--color-text-faint);
+}
+
 .status-user {
   font-size: 0.75rem;
   color: var(--color-text-muted);
@@ -399,7 +407,8 @@ body.detected-pointer-mouse .node-content:hover .collapse-toggle {
   font-style: italic;
 }
 
-.status-save-failed {
+.status-save-failed,
+.status-too-large {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.03em;

@@ -61,7 +61,7 @@ export interface SyncStep {
 
 // ── Status and conflict signals ──────────────────────────────────────────────
 
-export const syncStatus = signal<'synced' | 'syncing' | 'error' | 'offline'>('synced')
+export const syncStatus = signal<'synced' | 'syncing' | 'error' | 'offline' | 'too-large'>('synced')
 export const pendingConflicts = signal<NodeConflict[]>([])
 export const pendingMergedDoc = signal<OutlineDoc | null>(null)
 export const pendingConflictResolutions = signal<Map<string, 'local' | 'remote'>>(new Map())
@@ -250,13 +250,23 @@ async function pullAndMerge(): Promise<PullAndMergeResult> {
 
 /**
  * Maps a failed sync step onto the status/notice surfaces. A remote-rekeyed
- * failure only raises the prompt: it is never followed by an upload.
+ * failure only raises the prompt: it is never followed by an upload. A size
+ * rejection maps to the dedicated too-large status: it is permanent until the
+ * user trims or moves the document, so it must not read as a transient error.
  */
 function handleSyncFailure(error: unknown) {
     if (error instanceof StoreError && error.code === 'remote-rekeyed') {
         // sync-01: never swallowed, never followed by a push.
         remoteRekeyed.value = true
         syncStatus.value = 'error'
+        return
+    }
+    if (error instanceof StoreError && error.code === 'too-large') {
+        // The server refused the document for size (413 or the row's size-cap
+        // check): retrying the same bytes cannot succeed, and the fix is the
+        // user's — trim the document, or export/move it.
+        log('[Sync] document rejected for size:', error)
+        syncStatus.value = 'too-large'
         return
     }
     log('[Sync] sync step failed:', error)

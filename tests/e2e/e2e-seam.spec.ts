@@ -31,6 +31,7 @@ test('the e2e introspection seam is populated only in the test build', async ({ 
         'getFirstClosedParent',
         'inbox',
         'mergeDocuments',
+        'noteSlotChars',
         'outline',
         'persistence',
         'pendingConflicts',

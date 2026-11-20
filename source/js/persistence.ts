@@ -27,6 +27,13 @@ import {
   refreshLocalStorageDurability,
   requestLocalStorageDurability
 } from './durability.js'
+import {
+  dismissSlotQuotaNotice,
+  noteSlotChars,
+  setDocumentBudget,
+  slotQuotaLevel,
+  slotQuotaNotice
+} from './quota.js'
 import inbox from './inbox.js'
 import { createSavePipeline } from './savePipeline.js'
 import {
@@ -83,7 +90,7 @@ function assertNewPassphrase(passphrase: string) {
 //             -- one shared KeySession for the server row and the local cache
 const keySession = createKeySession()
 
-const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data), keySession))
+const localDataStore = codecStore(jsonCodec, encrypted(slotRaw(store.data, noteSlotChars), keySession))
 
 /** data-06: a failed local/file save surfaces here instead of being swallowed. */
 export const localSaveFailed = signal(false)
@@ -118,7 +125,7 @@ async function buildRemoteStore(): Promise<DocStore> {
   // Composition (docs §5): codec over cached-over-encrypted — the crypto
   // decorator stays codec-blind and the slot/row bytes are unchanged.
   const primary = encrypted(raw, keySession)
-  const cache = encrypted(slotRaw(store.data), keySession)
+  const cache = encrypted(slotRaw(store.data, noteSlotChars), keySession)
   remoteCacheStore = codecStore(jsonCodec, cache)
   return codecStore(jsonCodec, cached(primary, cache, {
     // data-06 in Remote mode: the server row is the source of truth, so a
@@ -160,6 +167,20 @@ function teardownRemoteStore() {
   // Nulls the sync module's store and the cache handle in one place.
   setRemoteStore(null)
   remoteCacheStore = null
+  setDocumentBudget(null)
+}
+
+/**
+ * The Remote document budget: the account's plan cap when the backend knows
+ * one, otherwise nothing (the browser quota binds). A failed read falls back
+ * silently rather than blocking the unlock it follows.
+ */
+async function refreshDocumentBudget(): Promise<void> {
+  try {
+    setDocumentBudget(await remoteSync.documentBudget())
+  } catch {
+    setDocumentBudget(null)
+  }
 }
 
 /**
@@ -311,6 +332,7 @@ function setupLocal(code: string, initialDoc?: OutlineDoc) {
 }
 
 async function unlockLocal(code: string, initialDoc?: OutlineDoc) {
+  setDocumentBudget(null) // the browser quota is the binding budget in Local
   const hasData = await localDataStore.exists()
 
   if (!hasData) {
@@ -386,6 +408,9 @@ async function unlockRemote({ passphrase: code, username, password, trustSession
   // connectivity, exactly as before.
   const remote = await buildRemoteStore()
   setRemoteStore(remote)
+  // The plan cap is display metadata, not an unlock dependency: fetch it
+  // beside the session, never blocking the unlock it decorates.
+  void refreshDocumentBudget()
 
   // One round-trip: unlock() verifies the passphrase by decrypting the
   // downloaded record and returns its text plus the record's change token
@@ -498,6 +523,7 @@ async function loadLockedBackgroundIntro() {
 }
 
 async function unlockMemory() {
+  setDocumentBudget(null) // no budget to show in Memory mode
   await loadIntroDocument()
 
   applyHashZoomIfPresent()
@@ -510,6 +536,7 @@ async function unlockMemory() {
 }
 
 async function unlockFilesystem(initialDoc?: OutlineDoc) {
+  setDocumentBudget(null) // File mode has no quota surface
   // Reopen the remembered handle silently, otherwise ask for a file. Handle
   // acquisition is orchestration; the bytes are the file store's job.
   if (!(await fileHandleStore.tryReopen())) {
@@ -602,6 +629,9 @@ export default {
   localStorageDurability,
   localStoragePersistenceNotice,
   dismissLocalStoragePersistenceNotice,
+  slotQuotaLevel,
+  slotQuotaNotice,
+  dismissSlotQuotaNotice,
   getMode: () => authMode.value,
   getUser: async () => {
     try {
