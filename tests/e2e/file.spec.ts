@@ -486,16 +486,22 @@ test.describe('File mode', () => {
         await installMockFilesystem(page);
         // The stored envelope is deflate-compressed, so repeated filler
         // compresses ~400:1 and never reaches the budget: seed genuinely
-        // random text instead. ~1.8 MB of it encrypts to a ~1.58 MB slot —
-        // about 75% of the 2 MB Local budget, safely past the 60% reminder
-        // and far from the 97% alert.
+        // random text instead. It rides in a node under a collapsed parent,
+        // so the DOM never renders it — the envelope must be heavy, the
+        // page must not be: a rendered ~1.8 MB node crashed WebKit targets
+        // on the shared CI runner (and slowed Firefox neighbours into a
+        // first-attempt retry, fatal on main). ~1.5 MB of random text
+        // encrypts to a ~1.3 MB slot — about 62% of the 2 MB Local budget,
+        // past the 60% reminder and far from the 97% alert.
         let big = '';
-        while (big.length < 1_800_000) big += Math.random().toString(36).slice(2) + ' ';
+        while (big.length < 1_500_000) big += Math.random().toString(36).slice(2) + ' ';
         await setupDoc(page, {
             id: 'root', text: 'Root',
             children: [
                 { id: 'mark', text: 'Move me marker', children: [] },
-                { id: 'big', text: big, children: [] }
+                { id: 'holder', text: 'Holds the bulk', open: false, children: [
+                    { id: 'big', text: big, children: [] }
+                ] }
             ]
         });
 
