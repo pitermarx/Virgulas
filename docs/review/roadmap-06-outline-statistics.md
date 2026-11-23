@@ -3,6 +3,7 @@
 - **Priority:** P3 (SPEC ROADMAP feature)
 - **Type:** feature
 - **Spec impact:** SPEC ROADMAP
+- **Status:** the `getStats()` helper this item referenced no longer exists; only `outline.getNodeCount()` remains after the outline split. Re-scope the work before building the feature.
 
 ## Description
 
@@ -14,7 +15,7 @@ Node count, word count and maximum depth, shown in Options or in a status-bar to
 
 ## Suggested approach
 
-- Show the stats in an Options section and a tooltip on the status bar; compute on demand (when Options opens or the tooltip is shown), not on every change. `getStats` walks the whole tree and allocates a snapshot per node (perf-04), which is fine on demand and wasteful per keystroke.
+- Show the stats in an Options section and a tooltip on the status bar; compute on demand (when Options opens or the tooltip is shown), not on every change. `getStats` walked the whole tree and allocated a snapshot per node, which is fine on demand and wasteful per keystroke.
 - Add task counts (pending, scheduled, done) from the existing selectors rather than a second scan.
 - Decide the scope: whole document or the zoomed subtree.
 - Once built, remove the "unused" entry for `getStats` from struct-04.

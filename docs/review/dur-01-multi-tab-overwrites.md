@@ -31,7 +31,7 @@ Playwright with two pages in one context: edit in both, assert nothing is lost (
 
 - **Phase:** [3 — Stop data loss and fix sync on the current model](README.md#phase-3)
 - **Size:** M
-- **Do these first:** [struct-07](struct-07-module-level-mutable-state.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

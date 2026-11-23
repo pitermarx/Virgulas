@@ -3,6 +3,7 @@
 - **Priority:** P4 (Website Specification, optional tier)
 - **Type:** collection of small items
 - **Spec impact:** SPEC SITE AND DISCOVERABILITY for the discovery files
+- **Status:** trim. Speculation Rules is explicitly not worth a CSP change; Critical CSS waits for sec-09 and a measurement. Keep `llms-full.txt` and GPC.
 
 ## Items
 

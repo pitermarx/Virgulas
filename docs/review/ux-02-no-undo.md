@@ -26,8 +26,8 @@ Unit tests per operation (undo then redo restores the serialised document); Play
 
 - **Phase:** [9 — Features](README.md#phase-9)
 - **Size:** L
-- **Do these first:** [data-05](data-05-denormalized-parent-children-no-tombstones.md), [struct-07](struct-07-module-level-mutable-state.md)
+- **Do these first:** [data-05](data-05-denormalized-parent-children-no-tombstones.md)
 - **Unblocks:** [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-05](roadmap-05-multi-document-workspaces.md)
 - **Its decision changes how these are built:** —
-- **Shaped by:** [data-05](data-05-denormalized-parent-children-no-tombstones.md), [dur-03](dur-03-no-versioned-backups.md), [struct-07](struct-07-module-level-mutable-state.md)
+- **Shaped by:** [data-05](data-05-denormalized-parent-children-no-tombstones.md), [dur-03](dur-03-no-versioned-backups.md)
 - **Related:** —

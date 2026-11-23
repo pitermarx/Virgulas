@@ -8,7 +8,7 @@ Security items whose detail would help an attacker (replay recipes, live hosted 
 ## How the order was chosen
 
 1. **Make the safety net first.** Sync and the data model are the riskiest code and cannot be refactored without invariant tests, a real-backend suite and a production-bundle smoke test (Phase 1).
-2. **Make it changeable before changing it.** The four copies of the push logic are now one `syncOnce` (struct-02, merged); the remaining Phase 2 work is the save-session object (struct-07) and the smaller duplications (struct-03).
+2. **Make it changeable before changing it.** The four copies of the push logic are now one `syncOnce` (struct-02, merged), and the save pipeline and sync queue live behind `createSavePipeline` and `runExclusiveRemoteSync` (struct-07, closed). The smaller duplications (struct-03) are closed too.
 3. **Fix data loss on the current model, cheaply.** Fix what loses data today, but do not polish what Phase 5 replaces (Phase 3).
 4. **Decide before building.** Several items change shape depending on a handful of decisions (D1 to D8 below). Decide them with measured numbers (Phase 4), then build once (Phase 5).
 5. **Features last.** Roadmap features need the new data model, revisions and UI semantics to be stable (Phase 9).
@@ -26,14 +26,14 @@ Severity and confidence labels are inside each item file; "verified" means a pro
 | [0A](#phase-0a) | Quick wins (code) | 0 | Each item merged with its test; no dependency on other items. |
 | [0B](#phase-0b) | Quick wins (operations and CI) | 3 | Hosted settings reviewed and mirrored in the repo; CI pinned and cheaper; basic monitoring exists. |
 | [1](#phase-1) | Safety net and baselines | 4 | Invariant tests, a real-backend suite, a production-bundle smoke job, and recorded performance, vitals and accessibility baselines. |
-| [2](#phase-2) | Make persistence and sync changeable | 1 | One save-session object (the single `syncOnce` exists); existing unit and e2e suites unchanged and green. |
+| [2](#phase-2) | Make persistence and sync changeable | 0 | Done: one save-session object (`createSavePipeline`) and one serialized sync queue; the existing unit and e2e suites stayed green. |
 | [3](#phase-3) | Stop data loss and fix sync on the current model | 7 | No known silent-loss path remains; sync bugs fixed behind `syncOnce`. |
 | [4](#phase-4) | Decide and measure | 3 | Decisions D1 to D8 recorded; transfer cost measured after the Phase 3 fixes. |
 | [5](#phase-5) | Sync and data model v2 | 7 | Rollback is detected, concurrent writers cannot overwrite each other, history exists, and conflicts only appear for real same-field edits. |
 | [6](#phase-6) | Security, privacy and compliance hardening | 7 | Privacy page matches behaviour; erasure is self-service; CSP tightened with reporting. |
-| [7](#phase-7) | Outline UI: performance and accessibility | 4 | Keystroke latency within budget on the baseline fixtures; axe and keyboard journeys pass. |
-| [8](#phase-8) | Delivery, platform and housekeeping | 9 | Hashed assets with a manifest-driven service worker; support floor published; large modules split. |
-| [9](#phase-9) | Features | 9 | Features from the SPEC roadmap delivered in dependency order. |
+| [7](#phase-7) | Outline UI: performance and accessibility | 3 | Keystroke latency within budget on the baseline fixtures; axe and keyboard journeys pass. |
+| [8](#phase-8) | Delivery, platform and housekeeping | 7 | Hashed assets with a manifest-driven service worker; support floor published; large modules split. |
+| [9](#phase-9) | Features | 8 | Features from the SPEC roadmap delivered in dependency order. |
 | [10](#phase-10) | Growth | 1 | Pricing and landing content live; plan and cost model agreed. |
 
 ```mermaid
@@ -70,8 +70,6 @@ flowchart LR
   sync06 --> ux03["ux-03 conflict UI"]
   data05 --> sec12
   sync04 --> dur03["dur-03 history"]
-  struct07 --> dur01["dur-01 multi-tab"]
-  struct07 --> ux02["ux-02 undo"]
   data05 --> ux02
   sec10["sec-10 single parse"] --> web01["web-01 Trusted Types"]
   sec10 --> perf02["perf-02 render cost"]
@@ -104,8 +102,8 @@ These change how later items are implemented. Record each in the SPEC or an ADR 
 | D4 | Encryption envelope v3 | Bundle in one version bump: AAD (user id, revision, header), iteration bounds, KDF parameters, revision inside the payload. | One `v3` that adds AAD and a revision and clamps iterations; keep `v2` decrypt and upgrade on next save. | Phase 5 | [sec-06](sec-06-no-aad-on-ciphertext.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-07](sec-07-pbkdf2-vs-memory-hard-kdf.md), [sec-14](sec-14-change-passphrase-without-reauth.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
 | D5 | Local storage backend | A. localStorage only. B. IndexedDB for ciphertext and snapshots, small metadata stays in localStorage. | B, because history, workspaces and quota all need it. | Phase 5 | [dur-03](dur-03-no-versioned-backups.md), [dur-04](dur-04-destructive-actions-without-safety-net.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | D6 | Inbound content policy | Anything arriving by link or paste: query-string documents, remote images, shared capture payloads. | Never write on a GET without a click; link-loaded documents open read-only in Memory mode; remote images load on click. Capture writes are already click-confirmed. | Settled (sec-01), Phase 6 (sec-08) | [sec-08](sec-08-remote-image-tracking.md), [roadmap-07](roadmap-07-load-vmd-from-query-string.md) |
-| D7 | Asset pipeline and cache ownership | Hashed file names and a manifest-driven service worker, with caching headers set at Cloudflare. | Adopt it; it also removes the hand-kept shell list and the cache bump script. | Phase 8 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md), [perf-05](perf-05-sw-stale-chunk-after-deploy.md), [perf-07](perf-07-sw-font-precache.md), [web-05](web-05-small-cleanups.md), [sec-09](sec-09-csp-unsafe-inline-styles.md) |
-| D8 | Supported browsers | Publish a support floor and feature-detect what is required, or keep the implicit current floor. | Publish the floor (the last two versions of each engine, at least the versions that provide the APIs the encrypted modes require, such as Web Crypto and WebAuthn). | Phase 8 | [compat-02](compat-02-file-mode-chromium-only.md) |
+| D7 | Asset pipeline and cache ownership | Hashed file names and a manifest-driven service worker, with caching headers set at Cloudflare. | Adopt it; it also removes the hand-kept shell list and the cache bump script. | Phase 8 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md), [perf-05](perf-05-sw-stale-chunk-after-deploy.md), [web-05](web-05-small-cleanups.md), [sec-09](sec-09-csp-unsafe-inline-styles.md) |
+| D8 | Supported browsers | Publish a support floor and feature-detect what is required, or keep the implicit current floor. | Publish the floor (the last two versions of each engine, at least the versions that provide the APIs the encrypted modes require, such as Web Crypto and WebAuthn). | Phase 8 | — |
 
 Stabilization decisions D9 to D12 (legacy migration windows, multi-tab) are detailed in
 [simplification-decisions.md](simplification-decisions.md); all four were decided on 2026-11-18:
@@ -158,9 +156,9 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [test-01](test-01-no-real-backend-e2e.md) — No end-to-end test talks to a real Supabase | L | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
+| 1 | [test-01](test-01-no-real-backend-e2e.md) — Real-backend coverage stops at mocks; the TrailBase live suite never runs in CI | L | Medium | — | [dep-02](dep-02-supabase-client-footprint.md), [priv-03](priv-03-account-erasure-is-manual.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) |
 | 2 | [a11y-04](a11y-04-no-automated-accessibility-testing.md) — No automated accessibility testing | M | Low | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) |
-| 3 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md) |
+| 3 | [perf-08](perf-08-document-size-limits-and-old-devices.md) — How large can a document grow before it lags (including old devices) | M | — | — | [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [web-03](web-03-core-web-vitals-measurement.md) |
 | 4 | [web-03](web-03-core-web-vitals-measurement.md) — Core Web Vitals measurement | S | — | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [growth-01](growth-01-publicity-and-monetisation.md), [web-05](web-05-small-cleanups.md) |
 
 <a id="phase-2"></a>
@@ -173,7 +171,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-07](struct-07-module-level-mutable-state.md) — Module-level mutable state in the save and sync pipeline | M | Low | — | [dur-01](dur-01-multi-tab-overwrites.md), [roadmap-05](roadmap-05-multi-document-workspaces.md), [sec-11](sec-11-no-idle-auto-lock.md), [struct-01](struct-01-oversized-modules.md), [ux-02](ux-02-no-undo.md) |
+| — | All Phase 2 items are closed. | — | — | — | — |
 
 <a id="phase-3"></a>
 
@@ -185,7 +183,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [dur-01](dur-01-multi-tab-overwrites.md) — Two tabs overwrite each other's edits | M | High | [struct-07](struct-07-module-level-mutable-state.md) | — |
+| 1 | [dur-01](dur-01-multi-tab-overwrites.md) — Two tabs overwrite each other's edits | M | High | — | — |
 | 2 | [sync-03](sync-03-no-backoff-on-failing-pull.md) — No backoff when a pull keeps failing | S | Medium | — | — |
 | 3 | [sync-07](sync-07-full-document-transfer-and-double-download.md) — Whole-document transfer on every sync, and a double download at startup | S | Medium | — | — |
 | 4 | [dur-04](dur-04-destructive-actions-without-safety-net.md) — Destructive actions have no safety net | S | Low | — | — |
@@ -236,7 +234,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [priv-03](priv-03-account-erasure-is-manual.md) — Account erasure needs a manual step | M | Medium | [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md), [test-01](test-01-no-real-backend-e2e.md) | — |
-| 2 | [sec-11](sec-11-no-idle-auto-lock.md) **SPEC** — No idle auto-lock, and session tokens stay in localStorage | M | Medium | [struct-07](struct-07-module-level-mutable-state.md) | — |
+| 2 | [sec-11](sec-11-no-idle-auto-lock.md) **SPEC** — No idle auto-lock, and session tokens stay in localStorage | M | Medium | — | — |
 | 3 | [sec-14](sec-14-change-passphrase-without-reauth.md) **SPEC** — `changePassphrase` does not require the current passphrase | S | Medium | — | — |
 | 4 | [sec-08](sec-08-remote-image-tracking.md) **SPEC** — Remote images in markdown leak the user's IP and open time | S | Low | — | [roadmap-07](roadmap-07-load-vmd-from-query-string.md) |
 | 5 | [sec-09](sec-09-csp-unsafe-inline-styles.md) — CSP allows `style-src 'unsafe-inline'` | M | Low | — | — |
@@ -256,7 +254,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | 1 | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md) — The outline has no tree semantics, and several controls are pointer-only | L | Medium | [a11y-04](a11y-04-no-automated-accessibility-testing.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) |
 | 2 | [perf-01](perf-01-grouped-tasks-per-keystroke.md) — Task selectors rescan the whole outline on every keystroke | M | Medium | [perf-08](perf-08-document-size-limits-and-old-devices.md) | [roadmap-03](roadmap-03-node-linking.md), [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) |
 | 3 | [perf-02](perf-02-subtree-rerender-no-render-cache.md) — Editing a node re-renders its whole visible subtree, and markdown has no render cache | L | Medium | [perf-08](perf-08-document-size-limits-and-old-devices.md), [sec-10](sec-10-markdown-sanitizer-roundtrip.md) | — |
-| 4 | [perf-04](perf-04-per-node-memory-footprint.md) — Per-node memory footprint | S | Low | [perf-08](perf-08-document-size-limits-and-old-devices.md) | — |
 
 <a id="phase-8"></a>
 
@@ -268,15 +265,13 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [struct-01](struct-01-oversized-modules.md) — Several modules exceed the project's own size guidance | L | Medium | [struct-07](struct-07-module-level-mutable-state.md) | — |
-| 2 | [compat-02](compat-02-file-mode-chromium-only.md) — File mode exists only in Chromium browsers | M | Low | — | — |
-| 3 | [i18n-01](i18n-01-english-only-and-layout-dependent-shortcuts.md) — English-only UI, hard-coded locale and layout-dependent shortcuts | M | Low | — | — |
-| 4 | [perf-07](perf-07-sw-font-precache.md) — The service worker precaches every font subset on install | S | Low | — | — |
-| 5 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) — Loose typing and unchecked scripts | M | Low | — | — |
-| 6 | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) — Monitoring, a status page and CSP violation reporting | M | — | [scale-03](scale-03-backend-availability-monitoring.md) | — |
-| 7 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) — Fingerprinted assets and immutable caching | M | — | — | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) |
-| 8 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) — Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | S | Medium | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) | — |
-| 9 | [web-05](web-05-small-cleanups.md) — Small website cleanups | M | — | [web-03](web-03-core-web-vitals-measurement.md) | — |
+| 1 | [struct-01](struct-01-oversized-modules.md) — Several modules exceed the project's own size guidance | L | Medium | — | — |
+| 2 | [i18n-01](i18n-01-english-only-and-layout-dependent-shortcuts.md) — English-only UI, hard-coded locale and layout-dependent shortcuts | M | Low | — | — |
+| 3 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) — Loose typing and unchecked scripts | M | Low | — | — |
+| 4 | [web-02](web-02-monitoring-status-page-and-csp-reporting.md) — Monitoring, a status page and CSP violation reporting | M | — | [scale-03](scale-03-backend-availability-monitoring.md) | — |
+| 5 | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) — Fingerprinted assets and immutable caching | M | — | — | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) |
+| 6 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) — Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | S | Medium | [web-04](web-04-fingerprinted-assets-and-immutable-caching.md) | — |
+| 7 | [web-05](web-05-small-cleanups.md) — Small website cleanups | M | — | [web-03](web-03-core-web-vitals-measurement.md) | — |
 
 <a id="phase-9"></a>
 
@@ -288,15 +283,14 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 
 | # | Item | Size | Severity | Do these first | Unblocks |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [ux-02](ux-02-no-undo.md) — No undo for edits or deletions | L | Medium | [data-05](data-05-denormalized-parent-children-no-tombstones.md), [struct-07](struct-07-module-level-mutable-state.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
+| 1 | [ux-02](ux-02-no-undo.md) — No undo for edits or deletions | L | Medium | [data-05](data-05-denormalized-parent-children-no-tombstones.md) | [roadmap-02](roadmap-02-drag-and-drop-reordering.md), [roadmap-05](roadmap-05-multi-document-workspaces.md) |
 | 2 | [roadmap-01](roadmap-01-queued-background-sync.md) — Queued background sync | M | — | [err-03](err-03-sync-errors-without-detail.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md) | — |
 | 3 | [roadmap-02](roadmap-02-drag-and-drop-reordering.md) — Drag-and-drop reordering (solve multi-select move first) | L | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [ux-02](ux-02-no-undo.md) | — |
 | 4 | [roadmap-03](roadmap-03-node-linking.md) **SPEC** — Node linking (decide the storage design first) | L | — | [data-05](data-05-denormalized-parent-children-no-tombstones.md), [perf-01](perf-01-grouped-tasks-per-keystroke.md) | — |
 | 5 | [roadmap-04](roadmap-04-tags-and-mentions-autocomplete.md) — Tags and mentions with autocomplete | M | — | [a11y-01](a11y-01-tree-semantics-and-pointer-only-controls.md), [perf-01](perf-01-grouped-tasks-per-keystroke.md) | — |
-| 6 | [roadmap-05](roadmap-05-multi-document-workspaces.md) **SPEC** — Multi-document workspaces | L | — | [dur-03](dur-03-no-versioned-backups.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md), [struct-07](struct-07-module-level-mutable-state.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [ux-02](ux-02-no-undo.md) | — |
+| 6 | [roadmap-05](roadmap-05-multi-document-workspaces.md) **SPEC** — Multi-document workspaces | L | — | [dur-03](dur-03-no-versioned-backups.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [ux-02](ux-02-no-undo.md) | — |
 | 7 | [roadmap-06](roadmap-06-outline-statistics.md) — Outline statistics | S | — | — | — |
 | 8 | [roadmap-07](roadmap-07-load-vmd-from-query-string.md) **SPEC** — Load a VMD document from the query string | M | — | [sec-08](sec-08-remote-image-tracking.md) | [growth-01](growth-01-publicity-and-monetisation.md) |
-| 9 | [roadmap-08](roadmap-08-account-page-extensions.md) — Account page extensions (MFA, recovery code, sessions) | M | — | [priv-03](priv-03-account-erasure-is-manual.md) | — |
 
 <a id="phase-10"></a>
 
@@ -369,9 +363,7 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- |
 | [perf-01](perf-01-grouped-tasks-per-keystroke.md) | Task selectors rescan the whole outline on every keystroke | [7](#phase-7) | M | Medium |
 | [perf-02](perf-02-subtree-rerender-no-render-cache.md) | Editing a node re-renders its whole visible subtree, and markdown has no render cache | [7](#phase-7) | L | Medium |
-| [perf-04](perf-04-per-node-memory-footprint.md) | Per-node memory footprint | [7](#phase-7) | S | Low |
 | [perf-05](perf-05-sw-stale-chunk-after-deploy.md) | Stale-while-revalidate can serve an `app.js` whose chunk no longer exists | [8](#phase-8) | S | Medium |
-| [perf-07](perf-07-sw-font-precache.md) | The service worker precaches every font subset on install | [8](#phase-8) | S | Low |
 | [perf-08](perf-08-document-size-limits-and-old-devices.md) | How large can a document grow before it lags (including old devices) | [1](#phase-1) | M | — |
 
 ### Accessibility
@@ -394,13 +386,12 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | --- | --- | --- | --- | --- |
 | [struct-01](struct-01-oversized-modules.md) | Several modules exceed the project's own size guidance | [8](#phase-8) | L | Medium |
 | [struct-05](struct-05-any-typing-and-unchecked-scripts.md) | Loose typing and unchecked scripts | [8](#phase-8) | M | Low |
-| [struct-07](struct-07-module-level-mutable-state.md) | Module-level mutable state in the save and sync pipeline | [2](#phase-2) | M | Low |
 
 ### Test quality
 
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
-| [test-01](test-01-no-real-backend-e2e.md) | No end-to-end test talks to a real Supabase | [1](#phase-1) | L | Medium |
+| [test-01](test-01-no-real-backend-e2e.md) | Real-backend coverage stops at mocks; the TrailBase live suite never runs in CI | [1](#phase-1) | L | Medium |
 
 ### CI
 
@@ -412,12 +403,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | Item | Title | Phase | Size | Severity |
 | --- | --- | --- | --- | --- |
 | [dep-02](dep-02-supabase-client-footprint.md) | The Supabase client chunk carries unused clients | [4](#phase-4) | M | Low |
-
-### Browser compatibility
-
-| Item | Title | Phase | Size | Severity |
-| --- | --- | --- | --- | --- |
-| [compat-02](compat-02-file-mode-chromium-only.md) | File mode exists only in Chromium browsers | [8](#phase-8) | M | Low |
 
 ### Locale
 
@@ -455,7 +440,6 @@ Items that have two halves, a quick part now and a bigger part after a decision:
 | [roadmap-05](roadmap-05-multi-document-workspaces.md) | Multi-document workspaces | [9](#phase-9) | L | — |
 | [roadmap-06](roadmap-06-outline-statistics.md) | Outline statistics | [9](#phase-9) | S | — |
 | [roadmap-07](roadmap-07-load-vmd-from-query-string.md) | Load a VMD document from the query string | [9](#phase-9) | M | — |
-| [roadmap-08](roadmap-08-account-page-extensions.md) | Account page extensions (MFA, recovery code, sessions) | [9](#phase-9) | M | — |
 
 ### Growth
 

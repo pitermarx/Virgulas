@@ -36,6 +36,6 @@ Build test: output names include a hash and `index.html` references them; unit t
 - **Size:** M
 - **Do these first:** —
 - **Unblocks:** [perf-05](perf-05-sw-stale-chunk-after-deploy.md)
-- **Its decision changes how these are built:** [perf-07](perf-07-sw-font-precache.md)
+- **Its decision changes how these are built:** —
 - **Shaped by:** —
 - **Related:** —

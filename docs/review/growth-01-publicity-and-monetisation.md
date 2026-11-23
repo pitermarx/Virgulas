@@ -12,7 +12,7 @@ Open questions from the notes, with constraints taken from what the product alre
 
 - Privacy-first positioning: local-first, end-to-end encrypted, cookieless self-hosted analytics, no third-party trackers. Any growth or payment tool must not undermine that (and the privacy page must stay true).
 - The only server cost is the Remote mode (one encrypted row per user), which is also the natural paid feature. Costs scale with the document size and poll traffic (scale-02), and open sign-up is currently an abuse risk (scale-01).
-- The account page design ([roadmap-08](roadmap-08-account-page-extensions.md)) carries a payments placeholder, so monetisation was considered before.
+- The account page currently has no payments surface; monetisation is a product decision, not a code finding.
 
 ## Monetisation options to weigh
 

@@ -18,7 +18,7 @@ the item is closed; `docs/SECURITY.md` carries the public summary of the open se
 
 - **Phase:** [6 — Security, privacy and compliance hardening](README.md#phase-6)
 - **Size:** M · needs a SPEC.vmd decision first (Rule 1)
-- **Do these first:** [struct-07](struct-07-module-level-mutable-state.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

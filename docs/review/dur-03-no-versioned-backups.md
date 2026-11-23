@@ -34,4 +34,4 @@ Unit tests for snapshot rotation and restore; Playwright for the restore flow.
 - **Unblocks:** [roadmap-05](roadmap-05-multi-document-workspaces.md)
 - **Its decision changes how these are built:** [dur-04](dur-04-destructive-actions-without-safety-net.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-14](sec-14-change-passphrase-without-reauth.md), [ux-02](ux-02-no-undo.md)
 - **Shaped by:** —
-- **Related:** [compat-02](compat-02-file-mode-chromium-only.md)
+- **Related:** —
