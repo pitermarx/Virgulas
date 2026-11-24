@@ -1,4 +1,4 @@
-import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp, encryptMockDoc, installMockSupabase, openStorageWizard, editFirstNodeText } from '../test';
+import { test, expect, type Page, seedEncryptedDoc, setupDoc, unlockApp, unlockRemote, encryptMockDoc, installMockSupabase, openStorageWizard, editFirstNodeText } from '../test';
 
 /** Encrypt a document for a mock server record (runner-side, no page load). */
 const remoteRecord = (passphrase: string, doc: Record<string, unknown>) =>
@@ -902,12 +902,26 @@ test.describe('Authentication', () => {
       localStorage.clear();
       localStorage.setItem('vmd_last_mode', 'remote');
     });
+    // Reproduce the lock-sheet boot race deterministically: the first passphrase
+    // entry is cleared by a re-render before the submit can land.
+    await page.addInitScript(() => {
+      let cleared = false;
+      document.addEventListener('input', (event) => {
+        const input = event.target;
+        if (cleared || !(input instanceof HTMLInputElement) || input.id !== 'auth-passphrase' || !input.value) return;
+        cleared = true;
+        queueMicrotask(() => {
+          (window as any).__clearedRemotePassphrase = true;
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }, true);
+    });
     await installMockSupabase(page, { userEmail: 'valid@virgulas.com', downloadData: remoteDoc });
     await page.reload();
 
-    await page.getByLabel('Encryption passphrase').fill('remote-passphrase');
-    await page.getByRole('button', { name: 'Unlock' }).click();
-    await expect(page.locator('body')).toHaveAttribute('data-main-view', 'rendered');
+    await unlockRemote(page, { email: 'valid@virgulas.com', passphrase: 'remote-passphrase' });
+    expect(await page.evaluate(() => (window as any).__clearedRemotePassphrase)).toBe(true);
 
     await page.getByRole('button', { name: 'Options' }).click();
     page.once('dialog', (dialog) => {
