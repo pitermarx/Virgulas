@@ -1,26 +1,23 @@
-# No end-to-end test talks to a real Supabase
+# Real-backend coverage stops at mocks; the TrailBase live suite never runs in CI
 
 - **Severity:** Medium
-- **Confidence:** measured (no `/auth/v1` or `/rest/v1` request in `tests/`; every sync and auth spec injects a hand-written `createClient` mock)
+- **Confidence:** measured (the TrailBase live suite exists; CI never starts its compose stack; no Supabase fallback live suite)
 - **Spec impact:** none
+- **Status:** narrowed. `tests/e2e/trailbase-live.spec.ts` drives the real app against a real local TrailBase (register, email verification, sign-in, upload, pull, RLS, delete) but skips itself unless the compose stack is running, and no workflow runs it. Every Supabase sync/auth spec still uses the `window.supabase` mock. The production-bundle job does not start a backend.
 
 ## Description
 
-The Playwright config refuses to start without local Supabase credentials, and CI starts a full local Supabase stack in each of the three shards, but `admin`, `auth`, `sync`, `sync-polling-merge` and `synctrigger` all replace the client with a mock through the test seam. So the real GoTrue, PostgREST, row-level security, size constraints and migrations are never exercised end to end. The mocks are re-implemented in at least four spec files and can drift from real behaviour (error shapes, `PGRST116`, `updated_at` handling, session refresh). Production specs that could cover the real client are excluded from the daily run because the seam is compiled out.
-
-## Evidence
-
-- [tests/integration/sync.spec.ts](../../tests/integration/sync.spec.ts), [tests/integration/auth.spec.ts](../../tests/integration/auth.spec.ts), [tests/integration/admin.spec.ts](../../tests/integration/admin.spec.ts), [tests/integration/sync-polling-merge.spec.ts](../../tests/integration/sync-polling-merge.spec.ts)
-- [playwright.config.ts](../../playwright.config.ts)
-- [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
+The app now defaults to TrailBase on the serving origin, with hosted Supabase as the fallback. The real-backend suite for the default shape exists, so the gap is narrower than "no real backend": it is not wired into CI, and the Supabase fallback has no live coverage. The mocks remain the only automated coverage for GoTrue, PostgREST, RLS, size constraints and migrations.
 
 ## Suggested fix
 
-Add a small real-backend suite that runs against the production-shaped bundle (the `production-bundle` job; ci-03) and local Supabase: sign up, sign in, upload, second context pulls, RLS denies another user's row, the 16 MiB constraint rejects, delete-account works. Keep mocks only for failure injection, and move the mock into one shared fixture in `tests/test.ts`. If the real suite is not added, stop starting Supabase in CI.
+1. Add a CI job that builds the app, starts `scripts/trailbase/compose.yml` (with Mailpit), waits for the health endpoints, and runs `tests/e2e/trailbase-live.spec.ts` against the built bundle. Keep it out of the sharded `test` job; it is a single production-shaped smoke.
+2. After that, add the same shape for the Supabase fallback: local Supabase, production bundle, one sign-up/upload/pull/RLS/delete journey. Keep mocks only for failure injection.
+3. If the Supabase live suite is not wanted, stop starting Supabase in the sharded `test` job (or document why it stays).
 
 ## Tests
 
-The new suite is the test.
+The CI job is the test. It must fail on a real auth/RLS/migration regression, not retry it away.
 
 <!-- roadmap -->
 ## Roadmap position

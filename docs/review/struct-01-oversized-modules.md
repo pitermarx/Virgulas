@@ -32,7 +32,7 @@ No new behaviour; the existing unit and e2e suites must stay green.
 
 - **Phase:** [8 — Delivery, platform and housekeeping](README.md#phase-8)
 - **Size:** L
-- **Do these first:** [struct-07](struct-07-module-level-mutable-state.md)
+- **Do these first:** —
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —

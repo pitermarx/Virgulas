@@ -13,7 +13,7 @@ Save and switch between several named outlines instead of one monolithic tree.
 - **Storage:** one `vmd_data_enc` key, one `outlines` row per user (primary key `user_id`), one remote sync state (`vmd_sync_ts`), one inbox target. Every module assumes a single document.
 - **Sync model:** whole-document upload (sync-07) means each extra document multiplies the transfer cost and the conflict surface.
 - **Quota:** localStorage is about 5 MB in total, so several documents need IndexedDB.
-- **Singletons:** `outline` is one module-level instance (struct-07), so switching documents means resetting and reloading it, and the undo stack (ux-02) must be per document.
+- **Singletons:** `outline` is one module-level instance, so switching documents means resetting and reloading it, and the undo stack (ux-02) must be per document.
 
 ## Suggested approach
 
@@ -34,7 +34,7 @@ Unit tests for migration of the single-document layout; Playwright for create, s
 
 - **Phase:** [9 — Features](README.md#phase-9)
 - **Size:** L · needs a SPEC.vmd decision first (Rule 1)
-- **Do these first:** [dur-03](dur-03-no-versioned-backups.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md), [struct-07](struct-07-module-level-mutable-state.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [ux-02](ux-02-no-undo.md)
+- **Do these first:** [dur-03](dur-03-no-versioned-backups.md), [sec-12](sec-12-sync-anti-rollback.md), [sec-13](sec-13-hosted-auth-config-and-configurable-backends.md), [sync-04](sync-04-no-compare-and-swap-on-upsert.md), [ux-02](ux-02-no-undo.md)
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** [data-05](data-05-denormalized-parent-children-no-tombstones.md), [sync-07](sync-07-full-document-transfer-and-double-download.md)

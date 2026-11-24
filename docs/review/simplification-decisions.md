@@ -74,7 +74,7 @@ guessed.
 
 - **What:** two tabs of the same browser can silently overwrite each other's
   local and remote edits. The roadmap plans an M-size Phase 3 fix
-  (a storage-event guard) behind struct-07.
+  (an exclusive writer tab).
 - **Decision actually needed:** does the stabilization phase *include* the
   Phase 3 sync/durability fixes, or defer them behind the Phase 5 data-model
   work? Accepting the case now removes an M item; the risk is silent loss in a
@@ -82,7 +82,7 @@ guessed.
 - **Options:** A. Fix in this phase (small storage-event guard).
   B. Accept and document as a known limitation until Phase 5.
 - **Decided (2026-11-18): fix in this phase (option A).** Silent data loss is
-  not acceptable; the guard lands behind struct-07's session object.
+  not acceptable; the guard lands behind the landed save-session object.
 
 ## Checked and kept — verified as justified, no decision needed
 

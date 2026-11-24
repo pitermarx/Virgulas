@@ -3,10 +3,11 @@
 - **Severity:** Low
 - **Confidence:** code-read
 - **Spec impact:** none
+- **Status:** mostly fixed. The deferred-push path is gone, and the normal upload path stamps `lastSyncedAt` only when the write epoch still matches, so an edit during the upload is not hidden. Remaining: the refold branch in `syncEngine.ts` stamps `Date.now()` after the upload (line 364); a remote edit that lands between that stamp and the folded push can still win for the same node.
 
 ## Description
 
-After a push, the code calls `setLastSyncedAt(Date.now())`. An edit made while the upload was in flight has a `lastModified` earlier than that value. The next merge sees it as unchanged, so a concurrent remote edit of the same node wins and the local edit is lost. Some paths guard with `isRemoteSyncAttemptStale`; the deferred-push path does not.
+The normal path now checks the write epoch before stamping, so an edit made during the upload keeps the old baseline and is not hidden. The remaining hole is the refold branch: it stamps completion time after uploading the merge result and before the folded local document is pushed. A remote edit that lands in that window is newer than the baseline and can win the same node.
 
 ## Evidence
 
@@ -16,7 +17,7 @@ After a push, the code calls `setLastSyncedAt(Date.now())`. An edit made while t
 
 ## Suggested fix
 
-Record the timestamp of the snapshot that was uploaded (`attempt.startedAt`, already available), not the completion time. Combine with the server `updated_at` from sync-04.
+In the refold branch, keep the pre-upload baseline (or record the uploaded snapshot time) so the folded local edit stays newer than the baseline. Let the triggered save stamp after its own successful push. Combine with the server `updated_at` from sync-04.
 
 ## Tests
 

@@ -3,6 +3,7 @@
 - **Severity:** Low
 - **Confidence:** code-read
 - **Spec impact:** localisation is a product decision
+- **Status:** re-scope. English-only UI and the `en-US` date format are the product, not defects. Keep the real bug: the shortcut matcher handles AltGr and Caps Lock badly; `dir="auto"` on node text is a small accessibility fix.
 
 ## Description
 

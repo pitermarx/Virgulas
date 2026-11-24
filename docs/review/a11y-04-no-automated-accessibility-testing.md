@@ -3,6 +3,7 @@
 - **Severity:** Low
 - **Confidence:** measured (no `axe` or equivalent in `package.json` or `tests/`)
 - **Spec impact:** none
+- **Status:** blocked on a dependency decision. `@axe-core/playwright` is a new dev dependency; Rule 6 requires explicit approval. Without it, replace the scan with a keyboard-only journey and a manual axe pass.
 
 ## Description
 

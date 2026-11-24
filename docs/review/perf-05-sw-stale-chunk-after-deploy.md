@@ -30,4 +30,4 @@ Playwright: install old build, deploy new build, switch to Remote without reload
 - **Unblocks:** —
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
-- **Related:** [perf-07](perf-07-sw-font-precache.md)
+- **Related:** —

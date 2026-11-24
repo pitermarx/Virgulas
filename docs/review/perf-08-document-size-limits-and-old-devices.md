@@ -3,6 +3,7 @@
 - **Priority:** P5
 - **Type:** measurement, then fixes
 - **Spec impact:** none; the result could become a documented limit
+- **Status:** partly measured. `tests/unit/suites/perfBudget.test.ts` guards the synthetic costs, and the 2 MB Local / 1 MiB Remote caps now bound the realistic document size. Still open: browser and real-device keystroke latency, unlock time, and a published supported-size statement.
 
 ## Question
 
@@ -29,7 +30,7 @@ Those are fast desktop numbers. The costs that matter on a phone are per keystro
 2. **Browser benchmark** with Playwright: Chromium with CDP `Emulation.setCPUThrottlingRate` at 4 and 6, WebKit for Safari timing. Record: load and unlock time (with the real 600k PBKDF2), time to first render, keystroke-to-paint latency in a leaf node and in a node with 1,000 visible descendants, save time, and memory.
 3. **Real devices:** an older iPhone and a low-end Android, using the Safari and Chrome remote inspectors. PBKDF2 at 600k iterations is the likely first wall on a phone (seconds per unlock), so measure it separately.
 4. **Budgets:** for example keystroke latency under 50 ms, unlock under 3 s on the reference device, and a documented supported size ("comfortable up to N nodes").
-5. **Guard in CI:** keep the Bun benchmark as a unit test with a generous budget so regressions show up (perf-04), and run the browser benchmark nightly.
+5. **Guard in CI:** keep the Bun benchmark as a unit test with a generous budget so regressions show up (the `perfBudget` suite), and run the browser benchmark nightly.
 
 ## Likely fixes if the numbers are bad
 
@@ -45,7 +46,7 @@ The benchmark suite is the test; commit the fixtures generator, not the fixtures
 - **Phase:** [1 — Safety net and baselines](README.md#phase-1)
 - **Size:** M
 - **Do these first:** —
-- **Unblocks:** [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [perf-04](perf-04-per-node-memory-footprint.md), [web-03](web-03-core-web-vitals-measurement.md)
+- **Unblocks:** [perf-01](perf-01-grouped-tasks-per-keystroke.md), [perf-02](perf-02-subtree-rerender-no-render-cache.md), [web-03](web-03-core-web-vitals-measurement.md)
 - **Its decision changes how these are built:** —
 - **Shaped by:** —
 - **Related:** —
