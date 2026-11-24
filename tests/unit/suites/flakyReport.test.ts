@@ -106,6 +106,18 @@ describe('flaky-report', () => {
         }
     });
 
+    it('treats a WebKit target crash as infrastructure, not a test failure', () => {
+        const flaky = flakyTests(flakyWith([
+            'Error: locator.count: Target crashed \n\nCall Log:\n- Timeout 40000ms exceeded while waiting on the predicate',
+        ]))
+        assertEqual(flaky[0].infrastructure, true, 'a crashed browser target is infrastructure')
+        assertEqual(shouldFailStrict(flaky), false, 'main must not fail for a renderer crash')
+
+        const summary = renderSummary(flaky, true)
+        assert(summary.includes('browser infrastructure, not fatal'), summary)
+        assert(!summary.includes('page closed:'), summary)
+    });
+
     it('keeps a test timeout fatal even when the timeout closed the page', () => {
         // This is the WebKit tasks.spec shape: the 60 s budget ran out and the
         // teardown closed the page, so the "Page closed" is a consequence, not a

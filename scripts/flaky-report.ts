@@ -7,11 +7,12 @@
 // (used on `main`, where a green run is expected on the first attempt) turns a
 // flaky test into a failure.
 //
-// A retry whose failure was only the engine closing the page (`Page closed`,
-// `Target closed`, `browser has disconnected`, a protocol error) is reported as
-// infrastructure instead: a retry is the only remedy for it, so failing `main`
-// for it just forces a manual rerun. Assertion and timeout failures stay fatal —
-// including a test timeout whose page was then closed by the teardown.
+// A retry whose failure was only the browser closing or crashing (`Page closed`,
+// `Target closed`, `Target crashed`, `browser has disconnected`, a protocol
+// error) is reported as infrastructure instead: a retry is the only remedy for
+// it, so failing `main` for it just forces a manual rerun. Assertion and timeout
+// failures stay fatal — including a test timeout whose page was then closed by
+// the teardown.
 //
 // Usage: bun scripts/flaky-report.ts [report.json] [--strict]
 
@@ -27,13 +28,13 @@ export type FlakyTest = {
     file: string;
     title: string;
     project: string;
-    /** The retried failure was the page/browser closing, not a test assertion. */
+    /** The retried failure was browser infrastructure, not a test assertion. */
     infrastructure: boolean;
 };
 
 /** Engine-level failures a retry can legitimately clear; assertions cannot. */
 const INFRASTRUCTURE_ERROR =
-    /page closed|target page, context or browser has been closed|target closed|browser has been closed|browser has disconnected|protocol error|page crashed/i;
+    /page closed|target page, context or browser has been closed|target closed|target crashed|browser has been closed|browser has disconnected|protocol error|page crashed/i;
 
 const collectSpecs = (suites: JsonSuite[] | undefined, out: JsonSpec[] = []): JsonSpec[] => {
     for (const suite of suites ?? []) {
@@ -62,9 +63,9 @@ export const flakyTests = (report: unknown): FlakyTest[] => {
                 file: spec.file ?? '',
                 title: spec.title ?? '',
                 project: test.projectName ?? '',
-                // Only a failure that is *nothing but* an engine closure is
-                // infrastructure. A test timeout followed by "Page closed" is a
-                // slow test (the timeout closed the page), so it stays fatal.
+                // Only a failure that is *nothing but* browser infrastructure is
+                // non-fatal. A test timeout followed by "Page closed" is a slow
+                // test (the timeout closed the page), so it stays fatal.
                 infrastructure: messages.length > 0 && messages.every(message => INFRASTRUCTURE_ERROR.test(message)),
             });
         }
@@ -89,12 +90,12 @@ export const renderSummary = (flaky: FlakyTest[], strict: boolean): string => {
         `${flaky.length} ${plural} passed only on a retry:`,
         '',
         ...flaky.map(test => `- [${test.project}] \`${test.file}\` — ${test.title}`
-            + (test.infrastructure ? ' (page closed: infrastructure, not fatal)' : '')),
+            + (test.infrastructure ? ' (browser infrastructure, not fatal)' : '')),
         '',
         strict
             ? fatal
                 ? '`main` must pass on the first attempt, so this fails the job.'
-                : '`main` does not fail for a page/browser that closed during an attempt.'
+                : '`main` does not fail for browser infrastructure during an attempt.'
             : 'Reported, not fatal, on pull requests.',
     ].join('\n');
 };
