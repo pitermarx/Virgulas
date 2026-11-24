@@ -713,9 +713,10 @@ bun run typecheck                # tsc app config + test config
 - CI writes a Playwright JSON report to `test-results/report.json`; `scripts/flaky-report.ts`
   lists the tests that passed only on a retry in the job summary and exits non-zero with
   `--strict`, which the `test` job passes on `main` — a green run there must pass on the first
-  attempt. A retried attempt whose failure was the page or browser closing (`Page closed`,
-  `Target closed`, `browser has disconnected`) is reported as infrastructure and does not fail
-  `main`: a retry is the only remedy for it. Assertion and timeout retries stay fatal.
+  attempt except for browser infrastructure. A retried attempt whose failure was only the browser
+  closing or crashing (`Page closed`, `Target closed`, `Target crashed`, `browser has disconnected`)
+  is reported as infrastructure and does not fail `main`: a retry is the only remedy for it.
+  Assertion and timeout retries stay fatal.
 - The lock-sheet submits go through `unlockApp`/`submitLockSheet`, which retry the click: the sheet
   re-renders while the wizard and File picker settle, and a plain click can land on a button that is
   about to be replaced.
