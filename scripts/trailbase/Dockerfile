@@ -44,7 +44,11 @@ RUN if [ -n "$APP_VERSION" ]; then \
       bun run build; \
     fi
 
-FROM trailbase/trailbase:latest
+# Pinned: 0.37.0 (2026-11-26) does not boot — its bundled auth UI wasm panics
+# parsing the server's git version (the regex crate in that build lacks its
+# unicode-perl feature), so the container exits before it ever listens. Move the
+# pin to the next release once scripts/trailbase/smoke-image.sh boots it.
+FROM trailbase/trailbase:0.36.3
 # The base image runs as the unprivileged `trailbase` user (uid/gid 1000) and
 # owns only the depot root. COPY would land as root, but TrailBase writes into
 # the depot on first start (a `migrations/<db>` state directory and the SQLite

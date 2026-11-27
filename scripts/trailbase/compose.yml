@@ -25,7 +25,8 @@ name: virgulas-trail
 
 services:
   trailbase:
-    image: trailbase/trailbase:latest
+    # Pinned: 0.37.0 does not boot (see the Dockerfile in this directory).
+    image: trailbase/trailbase:0.36.3
     # The stock image CMD plus --public-dir: serve the built app from the same
     # origin as the API — the deployment shape the app's server resolution
     # expects (same-origin TrailBase, no client-side URL). --spa matches the
