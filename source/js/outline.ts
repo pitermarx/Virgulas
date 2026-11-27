@@ -38,6 +38,11 @@ function outlineFactory() {
     // restored dataVersion equals the previous value (commonly 0), subscribers never
     // re-run even though the node map was fully replaced.
     const structureVersion = signal(0)
+    // Bumped by a task command (a checkbox click or Ctrl+Enter). Those are
+    // discrete actions, not typing, so the task selectors must show the result
+    // at once instead of waiting for the debounced dataVersion. It carries no
+    // save or sync meaning: it exists only to wake the task selectors.
+    const taskVersion = signal(0)
     const dirtyWrites = signal(0)
     const map = new Map<string, Node>()
     const zoomId = signal<string>(rootNodeId)
@@ -359,6 +364,17 @@ function outlineFactory() {
         dirtyWrites.value = dirtyWrites.peek() + 1
     }
 
+    /**
+     * A task command changes what the tasks panel and the toolbar badge show
+     * (the done state, and a recurrence advance rewrites the due date), so it
+     * wakes those selectors as soon as the write lands. A plain text edit goes
+     * through update() alone and keeps waiting for the debounced version.
+     */
+    function taskCommand(id: string, fn: (node: Node) => void) {
+        update(id, fn)
+        taskVersion.value = taskVersion.peek() + 1
+    }
+
     let dirtyDebounceTimeout = 800 // ms, time to wait after a change before updating the version, to allow for batching multiple changes together
     effect(() => {
         dirtyWrites.value // subscribe to changes on dirtyWrites to trigger version update
@@ -412,6 +428,7 @@ function outlineFactory() {
         },
         version: dataVersion,
         structureVersion,
+        taskVersion,
         dirtyWrites,
         get isDirty() {
             return dirtyWrites.value > 0
@@ -460,8 +477,8 @@ function outlineFactory() {
         updateNode: (id: string, { text, description }: { text?: string; description?: string }) => update(id, node => node.update({ text, description })),
         indent: (id: string) => update(id, tree.indent),
         outdent: (id: string) => update(id, tree.outdent),
-        toggleDone: (id: string) => update(id, node => node.toggleDone()),
-        checkboxToggleDone: (id: string) => update(id, node => node.checkboxToggleDone()),
+        toggleDone: (id: string) => taskCommand(id, node => node.toggleDone()),
+        checkboxToggleDone: (id: string) => taskCommand(id, node => node.checkboxToggleDone()),
         removeTaskMark: (id: string) => update(id, node => node.removeTaskMark()),
         getAllTasks: () => [...map.values()].filter(node => node.done.peek() !== null),
         updateTextRaw: (id: string, rawText: string) => update(id, node => {

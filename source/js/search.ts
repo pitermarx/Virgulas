@@ -34,9 +34,9 @@ const NO_RESULTS: SearchResults = { ids: [], tree: null }
  * `search()` deliberately reads nodes with `peek()` so it does not subscribe to
  * every node in the document, which also means it subscribes to nothing: the
  * invalidation signals have to be read explicitly or this would go stale.
- * Same set as `groupedTasks` (tasks.ts): `dirtyWrites` increments synchronously on
- * every mutation while `dataVersion` is debounced, and `structureVersion` covers a
- * reset/deserialize that restores an equal `dataVersion`.
+ * Those are the debounced `dataVersion` (a background merge re-runs the walk
+ * once it settles) and `structureVersion` (a reset/deserialize that restores an
+ * equal `dataVersion`).
  */
 export const searchResults = computed<SearchResults>(() => {
     const query = searchQuery.value
