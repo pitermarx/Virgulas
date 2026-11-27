@@ -11,6 +11,16 @@ function daysFromNow(days: number): string {
     return `${y}-${m}-${day}`;
 }
 
+/** The tasks sidebar's due chip label for a local date `days` from today. */
+function dueLabel(days: number): string {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+    const month = d.toLocaleString('en-US', { month: 'short' });
+    return d.getFullYear() === now.getFullYear()
+        ? `${month} ${d.getDate()}`
+        : `${month} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
 const openPanel = async (page: import('@playwright/test').Page) => {
     await page.keyboard.press('Control+Alt+k');
     const panel = page.locator('.tasks-panel');
@@ -125,6 +135,40 @@ test.describe('Recurring tasks', () => {
         await page.keyboard.press('Control+Enter');
         await page.keyboard.press('Escape');
         await expect(page.locator('[data-node-id="rec"] .task-checkbox')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    test('the tasks sidebar shows the advanced date as soon as the checkbox is clicked', async ({ page }) => {
+        // Install the fake clock before the app boots, so every timer it
+        // schedules is under the test's control; pausing later then freezes
+        // them all instead of leaving a real boot timer running.
+        await page.clock.install();
+        const due = daysFromNow(-1); // overdue, so it renders in Pending
+        await setupDoc(page, {
+            id: 'root',
+            text: 'Root',
+            children: [
+                { id: 'rec', text: 'Pay rent', meta: { due, rec: '1d' }, done: false, children: [] }
+            ]
+        });
+
+        await page.keyboard.press('Control+Alt+k');
+        const panel = page.locator('.tasks-panel');
+        await expect(panel).toBeVisible();
+        const row = panel.locator('.task-row').filter({ hasText: 'Pay rent' });
+        const dueChip = row.locator('.task-row-due');
+        await expect(dueChip).toHaveText(dueLabel(-1));
+
+        // Freeze time before the click, so the 800 ms version debounce can
+        // never fire while the assertion runs: only the task-command path can
+        // refresh the row. The click is dispatched directly because
+        // Playwright's actionability waits on animation frames, which a paused
+        // clock stops.
+        const fakeNow = await page.evaluate(() => Date.now());
+        await page.clock.pauseAt(fakeNow + 1_000);
+        await row.locator('.task-row-check').dispatchEvent('click');
+
+        await expect(dueChip).toHaveText(dueLabel(0));
+        await expect(row.locator('.task-row-check')).toHaveAttribute('aria-pressed', 'false');
     });
 
     test('rec is inert without a due date, and the badge sits beside the due chip', async ({ page }) => {

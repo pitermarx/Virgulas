@@ -244,6 +244,32 @@ describe("groupedTasks — zoom scoping", () => {
       assertEqual(groupedTasks.value.pending.length, 1, "zoomed task node itself is included")
   })
 })
+describe('task commands — immediate refresh', () => {
+    it('a recurring checkbox click advances the due date without waiting for the debounced version', () => {
+        const due = daysFromNow(-1)
+        setupDoc(node('t1', `Pay rent due:${due} rec:1d`, { done: false }))
+        assertEqual(groupedTasks.value.pending[0].due, due, 'starts on the old due date')
+
+        // No timer runs between these two reads: the advanced date must be
+        // visible now, not after the 800 ms version debounce.
+        outline.checkboxToggleDone('t1')
+
+        assertEqual(groupedTasks.value.pending[0].due, daysFromNow(0), 'the row shows the advanced date at once')
+        assertEqual(taskStats.value.open, 1, 'a recurrence advance keeps the task open')
+    })
+
+    it('Ctrl+Enter marks a task done and the panel and badge follow at once', () => {
+        setupDoc(node('t1', 'Buy milk', { done: false }))
+        assertEqual(groupedTasks.value.pending.length, 1, 'pending before the command')
+
+        outline.toggleDone('t1')
+
+        assertEqual(groupedTasks.value.pending.length, 0, 'leaves pending at once')
+        assertEqual(groupedTasks.value.done.length, 1, 'lands in done at once')
+        assertEqual(taskStats.value.open, 0, 'the badge follows at once')
+    })
+})
+
 describe('taskStats — status toolbar counts', () => {
     it('counts open tasks and overdue without building the grouped panel list', () => {
         setupDoc(
