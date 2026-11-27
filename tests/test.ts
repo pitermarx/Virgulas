@@ -489,7 +489,8 @@ export async function openStorageWizard(page: import('@playwright/test').Page) {
 /**
  * Unlock into Remote mode through the UI, from whichever step the lock screen
  * is on: the memory-mode banner, the account credentials step, or the
- * passphrase step of a still-valid session. Waits for the app to render.
+ * passphrase step of a still-valid session. Refills the passphrase on every
+ * retry because the lock sheet can re-render and clear it while boot settles.
  */
 export async function unlockRemote(
     page: import('@playwright/test').Page,
@@ -509,7 +510,6 @@ export async function unlockRemote(
         await page.getByLabel('Account password').fill(options.password ?? 'pw123456');
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
     }
-    await page.getByLabel('Encryption passphrase').fill(options.passphrase ?? 'password');
     const rendered = page.locator('body[data-main-view="rendered"]');
     await expect(async () => {
         // A submit that already landed counts even when the render was slow.
@@ -518,7 +518,7 @@ export async function unlockRemote(
         if (await error.isVisible().catch(() => false)) {
             throw new Error(`remote unlock failed: ${(await error.textContent())?.trim()}`);
         }
-        await page.getByRole('button', { name: 'Unlock' }).click();
+        await submitUnlock(page, options.passphrase ?? 'password');
         await expect(rendered, 'the app renders after the remote unlock').toHaveCount(1, { timeout: 20_000 });
     }).toPass({ timeout: 40_000 });
 }
